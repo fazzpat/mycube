@@ -1,4 +1,5 @@
-import { createRoom3D, createAvatarPreview } from "./room3d.js";
+import { createRoom3D, createAvatarPreview } from "./isoRoom.js";
+import { CLOTHING_STOCK, PET_STOCK, PUBLIC_PLACES } from "./storeCatalog.js";
 import { Chess } from "/vendor/chess.js";
 import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, snapshot as cubicsSnap, drawCubics, jokeAt } from "./cubics.js";
 
@@ -46,6 +47,11 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
     wardId: null,
     wardPreview: null,
     movingWallId: null,
+    places: [],
+    voice: "speak",
+    storeKind: null,
+    storeSel: null,
+    storePreview: null,
   };
 
   function setView(name) {
@@ -272,10 +278,29 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
     SHOW(banner);
   }
 
+  function ingestRooms(rooms) {
+    const list = rooms || [];
+    state.places = list.filter((r) => r.place);
+    state.rooms = list.filter((r) => !r.place);
+  }
+
+  function paintPlaces() {
+    const el = $("#places-list");
+    if (!el) return;
+    const places = state.places?.length ? state.places : PUBLIC_PLACES.map((p) => ({ id: p.id, name: p.name, shop: p.shop, occupantCount: 0 }));
+    el.innerHTML = places
+      .map((r) => `<button type="button" class="place-card" data-testid="place-${r.id}" data-shop="${r.shop || ""}" data-join-place="${r.id}"><strong>${escapeHtml(r.name)}</strong><span>${r.occupantCount || 0} inside · tap to visit</span></button>`)
+      .join("");
+    el.querySelectorAll("[data-join-place]").forEach((btn) => {
+      btn.addEventListener("click", () => tryJoin(btn.dataset.joinPlace));
+    });
+  }
+
   function paintLobby() {
     if (!state.me) return;
     $("#lobby-user").textContent = state.me.username;
     updateCoins();
+    paintPlaces();
 
     const list = $("#room-list");
     if (!state.rooms.length) {
@@ -360,7 +385,7 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
   }
 
   function tryJoin(roomId, password) {
-    const room = state.rooms.find((r) => r.id === roomId);
+    const room = (state.rooms || []).find((r) => r.id === roomId) || (state.places || []).find((r) => r.id === roomId) || PUBLIC_PLACES.find((r) => r.id === roomId);
     const invited = (state.me?.invites || []).some((i) => i.roomId === roomId);
     if (room?.locked && password == null && !invited && room.owner !== state.me?.username) {
       state.pendingJoin = roomId;
@@ -462,13 +487,14 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
       rec.destY = p.y;
       state.people.set(p.username, rec);
     });
-    $("#room-title").textContent = room.name;
-    $("#room-meta").textContent = `${room.locked ? "Locked" : "Open"} · ${room.people.length} here · ${room.owner}'s cube · ${room.size || 6}×${room.size || 6}`;
+    $("#room-title").textContent = "Cube: " + room.name;
+    $("#room-meta").textContent = "Owner: " + room.owner;
     updatePhoneBadge();
     const r3 = ensureRoom3D();
     r3.setGridSize(room.size || 6);
     r3.setStyle(room.wallpaper || "paint-cream", room.floorStyle || "wood");
     r3.setFurniture(room.furniture || []);
+    r3.setNpcs?.(room.npcs || []);
     r3.setLights(room.lightsOn !== false);
     r3.setUses(room.uses || {});
     r3.setChessMap(room.chess || {});
@@ -548,7 +574,9 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
           stack.innerHTML = active
             .map((b) => {
               const fading = b.until - now < 900;
-              return `<div class="speech-bubble${fading ? " fade" : ""}">${escapeHtml(b.text)}<i class="bubble-tail" aria-hidden="true"></i></div>`;
+              const color = (p.avatar && p.avatar.shirt) || "#9b5cff";
+              const shout = b.shout ? " shout" : "";
+              return `<div class="speech-bubble${shout}${fading ? " fade" : ""}"><span class="bubble-name" style="background:${color}">${escapeHtml(displayOf(p))}</span>${escapeHtml(b.text)}<i class="bubble-tail" aria-hidden="true"></i></div>`;
             })
             .join("");
         } else {
@@ -1206,7 +1234,113 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
     socket.emit("move", { x: dest.x, y: dest.y });
   }
 
+  function isShopProp(type) {
+    return ["shopkeeper", "rack", "mannequin", "petpen", "cage", "counter"].includes(type);
+  }
+
+
+  function setVoice(mode) {
+    state.voice = mode === "shout" ? "shout" : "speak";
+    $("#voice-speak")?.classList.toggle("on", state.voice === "speak");
+    $("#voice-shout")?.classList.toggle("on", state.voice === "shout");
+    const send = $("#chat-send");
+    if (send) send.textContent = state.voice === "shout" ? "Shout" : "Say";
+  }
+
+  function closeStorePanel() {
+    HIDE($("#store-panel"));
+    if (state.storePreview) {
+      state.storePreview.dispose?.();
+      state.storePreview = null;
+    }
+    state.storeKind = null;
+    state.storeSel = null;
+    const prev = $("#store-preview");
+    if (prev) prev.innerHTML = "";
+  }
+
+  function storeStock(kind) {
+    return kind === "pets" ? PET_STOCK : CLOTHING_STOCK;
+  }
+
+  function ownsStoreItem(kind, stock) {
+    const col = state.me?.collection;
+    if (!col) return false;
+    if (kind === "pets") return (col.pets || []).some((p) => p.item === stock.item);
+    return (col.clothes || []).some((c) => c.catalogId === stock.id);
+  }
+
+  function paintStorePreview() {
+    const el = $("#store-preview");
+    if (!el) return;
+    const stock = storeStock(state.storeKind).find((s) => s.id === state.storeSel);
+    if (state.storeKind === "pets") {
+      if (state.storePreview) { state.storePreview.dispose?.(); state.storePreview = null; }
+      el.innerHTML = `<div style="padding:12px;font-family:VT323,monospace;color:#00f0ff;text-align:center">${stock ? escapeHtml(stock.label) : ""}</div>`;
+      return;
+    }
+    if (!state.storePreview) {
+      el.innerHTML = "";
+      state.storePreview = createAvatarPreview(el);
+    }
+    const base = { ...(state.me?.avatar || {}) };
+    if (stock?.item) Object.assign(base, stock.item);
+    state.storePreview.setAvatar(base);
+    state.storePreview.resize?.();
+  }
+
+  function paintStorePanel() {
+    const kind = state.storeKind;
+    const title = $("#store-panel-title");
+    if (title) title.textContent = kind === "pets" ? "BYTE PETS" : "NEON THREADS";
+    const grid = $("#store-grid");
+    if (!grid) return;
+    const coins = state.me?.coins ?? 0;
+    grid.innerHTML = storeStock(kind)
+      .map((s) => {
+        const owned = ownsStoreItem(kind, s);
+        const sel = state.storeSel === s.id ? " selected" : "";
+        return `<button type="button" class="store-item${sel}" data-testid="store-item-${s.id}" data-store-id="${s.id}"><span>${escapeHtml(s.label)}${owned ? " · owned" : ""}</span><span class="price">${owned ? "✓" : s.price + "c"}</span></button>`;
+      })
+      .join("");
+    grid.querySelectorAll("[data-store-id]").forEach((b) => {
+      b.addEventListener("click", () => {
+        state.storeSel = b.dataset.storeId;
+        paintStorePanel();
+        paintStorePreview();
+      });
+    });
+    const buy = $("#store-buy");
+    const stock = storeStock(kind).find((s) => s.id === state.storeSel);
+    const owned = stock && ownsStoreItem(kind, stock);
+    if (buy) {
+      buy.disabled = !stock || owned || coins < (stock?.price || 0);
+      buy.textContent = !stock ? "Buy" : owned ? "Owned" : `Buy · ${stock.price}c`;
+    }
+  }
+
+  function openStorePanel(kind, sku) {
+    state.storeKind = kind === "pets" ? "pets" : "clothes";
+    const stock = storeStock(state.storeKind);
+    state.storeSel = sku && stock.some((s) => s.id === sku) ? sku : stock[0]?.id;
+    SHOW($("#store-panel"));
+    paintStorePanel();
+    paintStorePreview();
+  }
+
+  $("#voice-speak")?.addEventListener("click", () => setVoice("speak"));
+  $("#voice-shout")?.addEventListener("click", () => setVoice("shout"));
+  $("#store-close")?.addEventListener("click", closeStorePanel);
+  $("#store-buy")?.addEventListener("click", () => {
+    if (!state.storeKind || !state.storeSel) return;
+    socket.emit("buyStoreItem", { kind: state.storeKind, id: state.storeSel });
+  });
+
   function handleFurnitureClick(id, type, extra = {}) {
+    if (state.room?.shop && (isShopProp(type) || extra?.avatar)) {
+      openStorePanel(state.room.shop);
+      return;
+    }
     if (extra?.wallArt || HouseIso.isWallArt(type)) {
       if (!state.editMode) return;
       if (state.pendingPlace) return;
@@ -1226,11 +1360,11 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
     }
     const furn = (state.room?.furniture || []).find((x) => x.id === id);
     if (!furn) return;
-    if (type === "couch" || type === "chair") {
+    if (type === "couch" || type === "chair" || type === "hoverchair" || type === "capsulecouch") {
       approachFurniture(furn, () => socket.emit("sitFurniture", { id, seat: extra.seat }));
       return;
     }
-    if (type === "tv") {
+    if (type === "tv" || type === "holotv") {
       socket.emit("toggleTv", { id });
       return;
     }
@@ -1738,6 +1872,18 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
       setPhoneExpanded(true);
       return;
     }
+    if (app === "leave") {
+      closePhone();
+      socket.emit("leaveRoom");
+      return;
+    }
+    if (app === "clothes-store" || app === "pets-store") {
+      const id = app === "clothes-store" ? "place-neon-threads" : "place-byte-pets";
+      closePhone();
+      if (state.room?.id === id) openStorePanel(state.room.shop);
+      else tryJoin(id);
+      return;
+    }
     if (app === "wardrobe") {
       closePhone();
       state.creatorReturn = "room";
@@ -1851,7 +1997,7 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
     if (!body) return;
     const pets = state.me?.collection?.pets || [];
     if (!pets.length) {
-      body.innerHTML = `<p class="phone-empty">Win a cat, dog, or bunny on the daily spin, then bring them into cubes with you.</p>`;
+      body.innerHTML = `<p class="phone-empty">Visit BYTE PETS in the Mall (or the phone app) to adopt a pet, then bring them into cubes with you.</p>`;
       return;
     }
     body.innerHTML =
@@ -2296,7 +2442,7 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
   function sendChat() {
     const text = $("#chat-input").value;
     if (!text.trim()) return;
-    socket.emit("say", { text });
+    socket.emit("say", { text, shout: state.voice === "shout" });
     $("#chat-input").value = "";
     autosizeChat();
   }
@@ -2475,7 +2621,7 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
   /* ---------- socket ---------- */
   socket.on("loggedIn", ({ user, rooms }) => {
     state.me = user;
-    state.rooms = rooms;
+    ingestRooms(rooms);
     sessionStorage.setItem("hearthUser", user.username);
     if (!user.avatar) {
       state.draft = { ...HearthAvatar.defaults(), displayName: user.username };
@@ -2520,13 +2666,13 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
   });
 
   socket.on("roomsUpdated", (rooms) => {
-    state.rooms = rooms;
+    ingestRooms(rooms);
     if (state.view === "lobby") paintLobby();
     if (state.view === "room" && state.room) {
       const meta = rooms.find((r) => r.id === state.room.id);
       if (meta) {
         if ("locked" in meta) state.room.locked = meta.locked;
-        $("#room-meta").textContent = `${state.room.locked ? "Locked" : "Open"} · ${meta.occupantCount} here · ${state.room.owner}'s cube · ${state.room.size || 6}×${state.room.size || 6}`;
+        $("#room-meta").textContent = "Owner: " + state.room.owner;
       }
     }
   });
@@ -2554,6 +2700,7 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
     closeChessPanel();
     closeCubics();
     closeWardrobe();
+    closeStorePanel();
     hideFridgePicker();
     HIDE($("#activity-chip"));
     setBoxAuto(false);
@@ -2618,7 +2765,16 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
     renderPeople();
   });
 
-  socket.on("userSaid", ({ username, text }) => {
+  socket.on("storeBought", (payload) => {
+    if (!state.me) return;
+    if (payload.coins != null) state.me.coins = payload.coins;
+    if (payload.collection) state.me.collection = payload.collection;
+    updateCoins();
+    if (state.storeKind) paintStorePanel();
+    toast(payload.kind === "pets" ? "New pet added to your collection." : "Added to your wardrobe.");
+  });
+
+  socket.on("userSaid", ({ username, text, shout }) => {
     window.__lastSays.push({ username, text, at: Date.now(), roomId: state.room?.id });
     const p = state.people.get(username);
     if (!p) return;
@@ -2626,7 +2782,7 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
     p.bubble = text;
     p.bubbleUntil = until;
     p.bubbles = (p.bubbles || []).filter((b) => Date.now() < b.until);
-    p.bubbles.push({ text, until, id: until + "-" + p.bubbles.length });
+    p.bubbles.push({ text, until, id: until + "-" + p.bubbles.length, shout: Boolean(shout) });
     if (p.bubbles.length > 4) p.bubbles.shift();
     renderPeople();
   });
@@ -2888,6 +3044,11 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
     handleWallClick(wall, slot);
   };
   window.__openPhone = () => openPhone();
+  window.__leaveRoom = () => socket.emit("leaveRoom");
+  window.__openStore = (kind, sku) => openStorePanel(kind, sku);
+  window.__storeState = () => ({ kind: state.storeKind, sel: state.storeSel, coins: state.me?.coins, collection: state.me?.collection });
+  window.__buyStoreSel = () => socket.emit("buyStoreItem", { kind: state.storeKind, id: state.storeSel });
+
   window.__closePhone = () => closePhone();
   window.__openEmoteWheel = openEmoteWheel;
   window.__closeEmoteWheel = closeEmoteWheel;

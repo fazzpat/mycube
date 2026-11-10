@@ -4,6 +4,25 @@ import { Server } from "socket.io";
 import path from "path";
 import { fileURLToPath } from "url";
 import { Chess } from "chess.js";
+import {
+  SKINS as CAT_SKINS,
+  HAIR_STYLES as CAT_HAIR_STYLES,
+  HAIR_COLORS as CAT_HAIR_COLORS,
+  SHIRTS as CAT_SHIRTS,
+  TOPS as CAT_TOPS,
+  BOTTOMS as CAT_BOTTOMS,
+  BOTTOM_COLORS as CAT_BOTTOM_COLORS,
+  SHOES as CAT_SHOES,
+  ACCESSORIES as CAT_ACCESSORIES,
+  HEADPHONE_COLORS as CAT_HEADPHONE_COLORS,
+  PETS as CAT_PETS,
+  STORE_LOCKED,
+  CLOTHING_STOCK,
+  PET_STOCK,
+  PUBLIC_PLACES,
+  clothingById,
+  petById,
+} from "./public/js/storeCatalog.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT) || 3000;
@@ -53,6 +72,13 @@ const FURNITURE_CATALOG = {
   art_poster: { name: "CUBICS poster", price: 10, w: 1, h: 1, blocks: false, surface: "wall" },
   art_hang: { name: "Hang In There", price: 14, w: 1, h: 1, blocks: false, surface: "wall" },
   art_neon: { name: "my cube neon", price: 30, w: 1, h: 1, blocks: false, surface: "wall" },
+  hoverchair: { name: "Hover Chair", price: 30, w: 1, h: 1, blocks: true },
+  djdeck: { name: "Synth DJ Deck", price: 40, w: 2, h: 1, blocks: true },
+  sodavending: { name: "Cube Cola Vendor", price: 28, w: 1, h: 1, blocks: true },
+  neonsign: { name: "MyCube Neon Sign", price: 22, w: 1, h: 1, blocks: true },
+  capsulecouch: { name: "Capsule Couch", price: 36, w: 2, h: 1, blocks: true },
+  podplant: { name: "Glow Pod Plant", price: 16, w: 1, h: 1, blocks: true },
+  holotv: { name: "Holo TV", price: 32, w: 2, h: 1, blocks: true },
 };
 const WALL_ART_TYPES = new Set(["art_mona","art_starry","art_pop","art_sunset","art_cubism","art_poster","art_hang","art_neon"]);
 const WALLPAPERS = ["paint-cream", "paint-sage", "paint-blush", "paint-slate"];
@@ -195,23 +221,92 @@ function findSpawnTile(room) {
   return { x: 1, y: 1 };
 }
 
-const SKINS = ["#ffdfc4", "#f1c27d", "#e0ac69", "#c68642", "#8d5524", "#5c3317"];
-const HAIR_STYLES = ["short", "long", "curly", "bun", "spiky", "bangs"];
-const HAIR_COLORS = ["#2b1d16", "#6b3a2a", "#d4a017", "#f3e5c2", "#c0392b", "#4a90d9", "#7b4f9c", "#222222"];
-const SHIRTS = ["#ff7a59", "#7bc47f", "#6c7bff", "#f4c15d", "#ef476f", "#20b2aa", "#ff8fab", "#5c4d7d"];
-const TOPS = ["tshirt", "hoodie", "jacket"];
-const BOTTOMS = ["jeans", "joggers"];
-const BOTTOM_COLORS = ["#3d4f7c", "#2a2a2e", "#6b7280", "#c4a35a"];
-const SHOES = ["white", "black", "red", "gum"];
-const ACCESSORIES = ["none", "cap", "beanie", "chain", "headphones"];
-const HEADPHONE_COLORS = ["#2a2a2e", "#ff7a59", "#7c5cff", "#f4c15d", "#ef476f", "#20b2aa", "#f6f3ee", "#3d4f7c"];
+const SKINS = CAT_SKINS;
+const HAIR_STYLES = CAT_HAIR_STYLES;
+const HAIR_COLORS = CAT_HAIR_COLORS;
+const SHIRTS = CAT_SHIRTS;
+const TOPS = CAT_TOPS;
+const BOTTOMS = CAT_BOTTOMS;
+const BOTTOM_COLORS = CAT_BOTTOM_COLORS;
+const SHOES = CAT_SHOES;
+const ACCESSORIES = CAT_ACCESSORIES;
+const HEADPHONE_COLORS = CAT_HEADPHONE_COLORS;
 const PROPS = ["guitar", "skateboard", "coffee"];
-const PETS = ["cat", "dog", "bunny"];
+const PETS = CAT_PETS;
 
 const users = new Map();
 const rooms = new Map();
 let roomSeq = 1;
 let furnSeq = 1;
+
+function userOwnsStyle(user, field, value) {
+  if (!STORE_LOCKED[field] || !STORE_LOCKED[field].has(value)) return true;
+  return (user?.collection?.clothes || []).some((c) => c.item && c.item[field] === value);
+}
+
+function makePlaceFurniture(place) {
+  const items = [];
+  let i = 1;
+  const add = (type, x, y) => items.push({ id: place.id + "-f" + i++, type, x, y, rot: 0 });
+  if (place.shop === "clothes") {
+    add("rack", 1, 0);
+    add("rack", 3, 0);
+    add("mannequin", 5, 0);
+    add("mannequin", 5, 2);
+    add("counter", 2, 2);
+    add("lamp", 0, 0);
+    add("neonsign", 0, 2);
+  } else {
+    add("petpen", 1, 0);
+    add("petpen", 3, 0);
+    add("cage", 5, 0);
+    add("cage", 5, 2);
+    add("counter", 2, 2);
+    add("podplant", 0, 0);
+  }
+  return items;
+}
+
+function ensurePublicPlaces() {
+  for (const place of PUBLIC_PLACES) {
+    if (rooms.has(place.id)) continue;
+    const keeper = place.keeper || {};
+    rooms.set(place.id, {
+      id: place.id,
+      name: place.name,
+      owner: "MyCube",
+      locked: false,
+      password: "",
+      occupants: [],
+      furniture: makePlaceFurniture(place),
+      size: START_SIZE,
+      wallpaper: place.wallpaper || "paint-slate",
+      floorStyle: place.floorStyle || "tile",
+      lightsOn: true,
+      tvs: {},
+      chess: {},
+      uses: {},
+      wallArt: [],
+      seats: {},
+      arcade: {},
+      invites: new Set(),
+      publicPlace: true,
+      shop: place.shop,
+      npcs: [{
+        id: "keeper",
+        name: keeper.name || "Shopkeep",
+        x: 3,
+        y: 1,
+        avatar: { ...keeper, displayName: keeper.name || "Shopkeep" },
+      }],
+    });
+  }
+}
+
+function isRoomOwner(user, room) {
+  if (!user || !room || room.publicPlace) return false;
+  return room.owner.toLowerCase() === user.username.toLowerCase();
+}
 
 function clamp(n, min, max) {
   return Math.max(min, Math.min(max, n));
@@ -248,6 +343,8 @@ function publicRooms() {
     owner: r.owner,
     locked: r.locked,
     occupantCount: r.occupants.length,
+    place: Boolean(r.publicPlace),
+    shop: r.shop || null,
   }));
 }
 
@@ -311,6 +408,9 @@ function roomState(room) {
     serverTime: Date.now(),
     grid: roomSize(room),
     size: roomSize(room),
+    publicPlace: Boolean(room.publicPlace),
+    shop: room.shop || null,
+    npcs: (room.npcs || []).map((n) => ({ ...n })),
     occupants: room.occupants.slice(),
     people: room.occupants
       .map((name) => {
@@ -440,8 +540,8 @@ function canPlaceWallOn(room, type, wall, slot, ignoreId) {
 }
 
 function seatCountOf(type) {
-  if (type === "couch") return 2;
-  if (type === "chair") return 1;
+  if (type === "couch" || type === "capsulecouch") return 2;
+  if (type === "chair" || type === "hoverchair") return 1;
   return 0;
 }
 
@@ -677,7 +777,7 @@ function capturedFromHistory(engine) {
 function requireOwner(socket, user) {
   if (!user?.roomId) return null;
   const room = rooms.get(user.roomId);
-  if (!room || room.owner.toLowerCase() !== user.username.toLowerCase()) {
+  if (!room || !isRoomOwner(user, room)) {
     socket.emit("errorMsg", { message: "Only the cube owner can decorate this room." });
     return null;
   }
@@ -762,7 +862,7 @@ function leaveRoom(user) {
 
 function canEnter(user, room, password) {
   if (!room.locked) return { ok: true };
-  if (room.owner.toLowerCase() === user.username.toLowerCase()) return { ok: true };
+  if (isRoomOwner(user, room)) return { ok: true };
   if (room.invites.has(user.username.toLowerCase())) return { ok: true };
   if (password == null || password === "") return { ok: false, reason: "password_required" };
   if (password === room.password) return { ok: true };
@@ -908,7 +1008,20 @@ io.on("connection", (socket) => {
   socket.on("updateAvatar", (raw) => {
     const user = getUser(socket);
     if (!user) return;
-    user.avatar = sanitizeAvatar(raw);
+    const next = sanitizeAvatar(raw);
+    for (const field of Object.keys(STORE_LOCKED)) {
+      if (!userOwnsStyle(user, field, next[field]) && user.avatar) {
+        next[field] = user.avatar[field];
+        if (!userOwnsStyle(user, field, next[field])) {
+          if (field === "top") next[field] = "tshirt";
+          else if (field === "bottom") next[field] = "jeans";
+          else if (field === "shoes") next[field] = "white";
+          else if (field === "accessory") next[field] = "none";
+          else if (field === "hair") next[field] = "short";
+        }
+      }
+    }
+    user.avatar = next;
     if (!user.avatar.displayName) user.avatar.displayName = user.username;
     emitProfile(user);
     if (user.roomId) {
@@ -1050,7 +1163,7 @@ io.on("connection", (socket) => {
     trySit(user, room, furn, seat, socket);
   });
 
-  socket.on("say", ({ text } = {}) => {
+  socket.on("say", ({ text, shout } = {}) => {
     const user = getUser(socket);
     if (!user?.roomId) return;
     text = String(text || "").replace(/\s+/g, " ").trim().slice(0, 80);
@@ -1058,6 +1171,7 @@ io.on("connection", (socket) => {
     io.to(user.roomId).emit("userSaid", {
       username: user.username,
       text,
+      shout: Boolean(shout),
       at: Date.now(),
     });
   });
@@ -1116,7 +1230,7 @@ io.on("connection", (socket) => {
     const user = getUser(socket);
     if (!user?.roomId) return;
     const room = rooms.get(user.roomId);
-    if (!room || room.owner.toLowerCase() !== user.username.toLowerCase()) {
+    if (!room || !isRoomOwner(user, room)) {
       socket.emit("errorMsg", { message: "Only the room owner can send invites." });
       return;
     }
@@ -1234,7 +1348,7 @@ io.on("connection", (socket) => {
     const user = getUser(socket);
     if (!user?.roomId) return;
     const room = rooms.get(user.roomId);
-    if (!room || room.owner.toLowerCase() !== user.username.toLowerCase()) {
+    if (!room || !isRoomOwner(user, room)) {
       socket.emit("errorMsg", { message: "Only the cube owner can upgrade it." });
       return;
     }
@@ -1258,7 +1372,7 @@ io.on("connection", (socket) => {
     const user = getUser(socket);
     if (!user?.roomId) return;
     const room = rooms.get(user.roomId);
-    if (!room || room.owner.toLowerCase() !== user.username.toLowerCase()) {
+    if (!room || !isRoomOwner(user, room)) {
       socket.emit("errorMsg", { message: "Only the cube owner can lock this room." });
       return;
     }
@@ -1284,7 +1398,7 @@ io.on("connection", (socket) => {
     const user = getUser(socket);
     if (!user?.roomId) return;
     const room = rooms.get(user.roomId);
-    if (!room || room.owner.toLowerCase() !== user.username.toLowerCase()) return;
+    if (!room || !isRoomOwner(user, room)) return;
     if (WALLPAPERS.includes(wallpaper)) room.wallpaper = wallpaper;
     if (FLOORS.includes(floorStyle)) room.floorStyle = floorStyle;
     io.to(room.id).emit("roomStyle", { wallpaper: room.wallpaper, floorStyle: room.floorStyle });
@@ -1383,6 +1497,52 @@ io.on("connection", (socket) => {
     user.avatar = sanitizeAvatar({ ...user.avatar, ...(item.item || {}) });
     emitProfile(user);
     if (user.roomId) io.to(user.roomId).emit("userUpdated", snapshotPerson(user));
+  });
+
+  socket.on("buyStoreItem", ({ kind, id } = {}) => {
+    const user = getUser(socket);
+    if (!user) return;
+    if (!user.collection) user.collection = { clothes: [], props: [], pets: [] };
+    if (kind === "clothes") {
+      const stock = clothingById(id);
+      if (!stock) {
+        socket.emit("errorMsg", { message: "That look isn't in stock." });
+        return;
+      }
+      if ((user.collection.clothes || []).some((c) => c.catalogId === stock.id)) {
+        socket.emit("errorMsg", { message: "You already own that." });
+        return;
+      }
+      if (user.coins < stock.price) {
+        socket.emit("errorMsg", { message: "Not enough coins." });
+        return;
+      }
+      user.coins -= stock.price;
+      const cid = "c" + Date.now() + Math.floor(Math.random() * 1000);
+      user.collection.clothes.push({ id: cid, catalogId: stock.id, item: { ...stock.item }, label: stock.label });
+      socket.emit("storeBought", { kind: "clothes", id: stock.id, collectionId: cid, coins: user.coins, collection: user.collection });
+      emitProfile(user);
+      return;
+    }
+    if (kind === "pets") {
+      const stock = petById(id);
+      if (!stock) {
+        socket.emit("errorMsg", { message: "That pet isn't in stock." });
+        return;
+      }
+      if ((user.collection.pets || []).some((p) => p.item === stock.item)) {
+        socket.emit("errorMsg", { message: "You already have that pet." });
+        return;
+      }
+      if (user.coins < stock.price) {
+        socket.emit("errorMsg", { message: "Not enough coins." });
+        return;
+      }
+      user.coins -= stock.price;
+      user.collection.pets.push({ item: stock.item, label: stock.label });
+      socket.emit("storeBought", { kind: "pets", id: stock.id, item: stock.item, coins: user.coins, collection: user.collection });
+      emitProfile(user);
+    }
   });
 
 
@@ -1896,6 +2056,7 @@ io.on("connection", (socket) => {
   });
 });
 
+ensurePublicPlaces();
 httpServer.listen(PORT, "0.0.0.0", () => {
   console.log(`MyCube listening on http://localhost:${PORT}`);
 });

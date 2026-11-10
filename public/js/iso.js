@@ -34,20 +34,27 @@
     art_poster: { name: "CUBICS poster", price: 10, w: 1, h: 1, blocks: false, surface: "wall" },
     art_hang: { name: "Hang In There", price: 14, w: 1, h: 1, blocks: false, surface: "wall" },
     art_neon: { name: "my cube neon", price: 30, w: 1, h: 1, blocks: false, surface: "wall" },
+    hoverchair: { name: "Hover Chair", price: 30, w: 1, h: 1, blocks: true },
+    djdeck: { name: "Synth DJ Deck", price: 40, w: 2, h: 1, blocks: true },
+    sodavending: { name: "Cube Cola Vendor", price: 28, w: 1, h: 1, blocks: true },
+    neonsign: { name: "MyCube Neon Sign", price: 22, w: 1, h: 1, blocks: true },
+    capsulecouch: { name: "Capsule Couch", price: 36, w: 2, h: 1, blocks: true },
+    podplant: { name: "Glow Pod Plant", price: 16, w: 1, h: 1, blocks: true },
+    holotv: { name: "Holo TV", price: 32, w: 2, h: 1, blocks: true },
   };
   const WALL_ART = ["art_mona", "art_starry", "art_pop", "art_sunset", "art_cubism", "art_poster", "art_hang", "art_neon"];
 
   const WALLPAPERS = [
-    { id: "paint-cream", name: "Cream", wall: "#f3eadc", wall2: "#e8dcc8", ink: "#fff" },
-    { id: "paint-sage", name: "Sage", wall: "#d7e2d4", wall2: "#c5d4c1", ink: "#fff" },
-    { id: "paint-blush", name: "Blush", wall: "#f0d6d0", wall2: "#e4c4bc", ink: "#fff" },
-    { id: "paint-slate", name: "Slate", wall: "#d5dae3", wall2: "#c4cad6", ink: "#fff" },
+    { id: "paint-cream", name: "Night Metal", wall: "#1c1a24", wall2: "#00f0ff", ink: "#fff" },
+    { id: "paint-sage", name: "Cyan Trim", wall: "#121a1c", wall2: "#00f0ff", ink: "#fff" },
+    { id: "paint-blush", name: "Magenta Trim", wall: "#1a1218", wall2: "#ff2bd6", ink: "#fff" },
+    { id: "paint-slate", name: "Violet Trim", wall: "#14141c", wall2: "#9b5cff", ink: "#fff" },
   ];
 
   const FLOORS = [
-    { id: "wood", name: "Wood plank", colors: ["#d2a06a", "#c89258"] },
-    { id: "tile", name: "Tile", colors: ["#e8e4dc", "#d4cfc4"] },
-    { id: "carpet", name: "Carpet", colors: ["#c9b29a", "#bea68e"] },
+    { id: "wood", name: "Polished Panels", colors: ["#12131a", "#2a3040"] },
+    { id: "tile", name: "Glow Tiles", colors: ["#1a1030", "#00f0ff"] },
+    { id: "carpet", name: "Metal Grate", colors: ["#15181f", "#b6ff3b"] },
   ];
 
   function tileToScreen(tx, ty) {
@@ -163,8 +170,8 @@
   }
 
   function seatCount(type) {
-    if (type === "couch") return 2;
-    if (type === "chair") return 1;
+    if (type === "couch" || type === "capsulecouch") return 2;
+    if (type === "chair" || type === "hoverchair") return 1;
     return 0;
   }
 
