@@ -2603,6 +2603,7 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
     if (usingPhone != null) p.usingPhone = usingPhone;
     else p.usingPhone = false;
     setPersonDest(p, x, y, sitting);
+    if (username === state.me?.username && !sitting) closeChessPanel();
     renderPeople();
   });
 
@@ -2891,7 +2892,7 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
   window.__openCubics = openCubics;
   window.__startCubics = startCubicsPlay;
   window.__cubicsInput = cubicsInput;
-  window.__standUp = () => socket.emit("standUp");
+  window.__standUp = () => { socket.emit("standUp"); closeChessPanel(); };
   window.__moveFurniture = (id, x, y, rot) => socket.emit("moveFurniture", { id, x, y, rot });
   window.__sit = (id, seat) => socket.emit("sitFurniture", { id, seat });
   window.__gymStop = (id) => socket.emit("gymStop", { id });

@@ -273,8 +273,18 @@ async function runAppShellFit(browser) {
   await page.evaluate(() => window.HouseRoom3D?.resize?.());
   await page.waitForTimeout(300);
   await assertInsideViewport(page, ['[data-testid="room-title"]', '[data-testid="chat-dock"]', '[data-testid="chat-input"]', '[data-testid="phone-btn"]', '[data-testid="emote-wheel-btn"]'], "In-room chrome fits the iPhone 14 viewport");
+  const camDefault = await page.evaluate(() => window.__camState());
+  check("Portrait phones default to a closer follow camera", Boolean(camDefault?.phone && camDefault.mode === "follow" && camDefault.zoom >= 1.3), JSON.stringify(camDefault));
+  await page.evaluate(() => window.__setCamMode("room"));
+  await page.waitForTimeout(150);
   const fit14 = await page.evaluate(() => window.HouseRoom3D.roomFitsView());
   check("The whole cube fits the iPhone 14 portrait viewport", Boolean(fit14?.ok), JSON.stringify(fit14));
+  await page.evaluate(() => { window.__setCamMode("follow"); window.HouseRoom3D.setZoom(2.15); });
+  const camZoom = await page.evaluate(() => window.__camState());
+  check("The follow camera can zoom in under user control", camZoom?.mode === "follow" && camZoom.zoom >= 2, JSON.stringify(camZoom));
+  await page.click('[data-testid="cam-toggle"]');
+  const camToggled = await page.evaluate(() => window.__camState());
+  check("The camera toggle shows the whole cube", camToggled?.mode === "room" && camToggled.zoom <= 1.05, JSON.stringify(camToggled));
   const ph = await page.evaluate(() => document.getElementById("chat-input")?.placeholder || "");
   check("The chat box stays on one line on a phone", ph === "Say something…", `placeholder=${JSON.stringify(ph)}`);
   await page.screenshot({ path: `${SHOT}/28-app-room.png` });
@@ -290,6 +300,8 @@ async function runAppShellFit(browser) {
     await page.setViewportSize({ width: sz.width, height: sz.height });
     await page.evaluate(() => window.HouseRoom3D?.resize?.());
     await page.waitForTimeout(250);
+    await page.evaluate(() => window.__setCamMode?.("room"));
+    await page.waitForTimeout(80);
     await assertInsideViewport(page, chrome, `In-room chrome fits the ${sz.name} viewport`);
     await checkShellOverflow(page, `The app shell does not page-scroll on ${sz.name}`);
     const roomFit = await page.evaluate(() => window.HouseRoom3D.roomFitsView());
@@ -304,6 +316,8 @@ async function runAppShellFit(browser) {
     window.HouseRoom3D?.resize?.();
   });
   await page.waitForTimeout(350);
+  await page.evaluate(() => window.__setCamMode?.("room"));
+  await page.waitForTimeout(80);
   await assertInsideViewport(page, chrome, "In-room chrome stays inside a 47px top safe-area", { top: 47, bottom: 0 });
   const titleTop = await page.locator('[data-testid="room-title"]').evaluate((el) => el.getBoundingClientRect().top);
   check("The in-room HUD sits below a 47px notch inset", titleTop >= 47, `titleTop=${titleTop.toFixed(1)}`);
@@ -370,6 +384,145 @@ async function runCornerPhoneAndAvatars(browser) {
 }
 
 
+
+async function tapFurniture(page, id) {
+  const pt = await page.evaluate((fid) => window.HouseRoom3D.projectFurniture(fid), id);
+  if (!pt || !pt.visible) throw new Error("furniture not on screen: " + id + " " + JSON.stringify(pt));
+  await page.touchscreen.tap(pt.x, pt.y);
+}
+
+async function runPhonePlaytest(browser) {
+  const i14 = devices["iPhone 14"] || devices["iPhone 13"];
+  const ctxA = await browser.newContext({ ...i14, hasTouch: true, isMobile: true });
+  const ctxB = await browser.newContext({ ...i14, hasTouch: true, isMobile: true });
+  const a = await ctxA.newPage();
+  const b = await ctxB.newPage();
+  a.setDefaultTimeout(20000);
+  b.setDefaultTimeout(20000);
+  try {
+    await loginToNewRoom(a, "nila", "Nila", "Touch Cube", { width: 390, height: 1100 });
+    await a.setViewportSize(i14.viewport);
+    await a.evaluate(() => window.HouseRoom3D?.resize?.());
+    await login(b, "owen");
+    const prev = b.viewportSize();
+    await b.setViewportSize({ width: Math.max(prev.width, 390), height: Math.max(prev.height, 1100) });
+    await customize(b, { displayName: "Owen", hair: 1, shirt: 3, skin: 2, glasses: false });
+    await saveAvatar(b);
+    await b.setViewportSize(i14.viewport);
+    await openAddSheet(b);
+    await b.waitForSelector('[data-testid="room-list"] >> text=Touch Cube', { timeout: 10000 });
+    await b.locator('[data-testid="room-list"] >> text=Touch Cube').click();
+    await b.waitForSelector('body[data-view="room"]');
+    await b.waitForFunction(() => window.HouseRoom3D && window.HouseRoom3D.ready);
+    const closeSheet = b.locator("#add-sheet-close");
+    if (await b.locator('[data-testid="add-sheet"]:not(.hidden)').count()) {
+      await closeSheet.click();
+    }
+    await b.waitForFunction(() => document.getElementById("add-sheet")?.classList.contains("hidden") !== false);
+    await a.waitForFunction(() => window.HouseRoom3D.personTile("owen"), null, { timeout: 8000 });
+    await a.evaluate(() => window.__setCamMode("follow"));
+    await a.evaluate(() => window.HouseRoom3D.setZoom(2));
+    await a.waitForTimeout(350);
+    await a.screenshot({ path: `${SHOT}/33-phone-follow-cam.png` });
+
+    await a.evaluate(() => window.__setCamMode("room"));
+    await b.evaluate(() => window.__setCamMode("room"));
+    await a.waitForTimeout(200);
+    await a.evaluate(() => window.__debugKit({ furniture: ["chesstable", "coffeemachine", "cubics", "chair"], coins: 400 }));
+    await a.waitForTimeout(150);
+    await a.evaluate(() => window.__enterEdit());
+    await a.evaluate(() => { window.__startPlace("chesstable"); window.__clickTile(1, 3); });
+    await a.waitForFunction(() => window.HouseRoom3D.getFurniture().some((f) => f.type === "chesstable"));
+    await a.evaluate(() => { window.__startPlace("coffeemachine"); window.__clickTile(4, 1); });
+    await a.waitForFunction(() => window.HouseRoom3D.getFurniture().some((f) => f.type === "coffeemachine"));
+    await a.evaluate(() => { window.__startPlace("cubics"); window.__clickTile(4, 4); });
+    await a.waitForFunction(() => window.HouseRoom3D.getFurniture().some((f) => f.type === "cubics"));
+    await a.evaluate(() => { window.__startPlace("chair"); window.__clickTile(0, 1); });
+    await a.waitForFunction(() => window.HouseRoom3D.getFurniture().some((f) => f.type === "chair"));
+    await a.evaluate(() => window.__exitEdit());
+
+    const ids = await a.evaluate(() => {
+      const list = window.HouseRoom3D.getFurniture();
+      const find = (t) => list.find((f) => f.type === t).id;
+      return { chess: find("chesstable"), coffee: find("coffeemachine"), cubics: find("cubics"), chair: find("chair") };
+    });
+    const board = await a.evaluate((id) => window.__chessBoardInfo(id), ids.chess);
+    check("Phone playtest: chess board is smaller than the tabletop", Boolean(board && board.board < board.table - 0.2), JSON.stringify(board));
+
+    await a.evaluate(() => window.__clickTile(0, 0));
+    await b.evaluate(() => window.__clickTile(5, 5));
+    await a.waitForTimeout(900);
+
+    await tapFurniture(a, ids.chess);
+    await a.waitForFunction(() => window.HouseRoom3D.personFlags("nila")?.sitting, null, { timeout: 15000 });
+    await tapFurniture(b, ids.chess);
+    await b.waitForFunction(() => window.HouseRoom3D.personFlags("owen")?.sitting, null, { timeout: 15000 });
+    const faces = await a.evaluate(() => {
+      const n = window.HouseRoom3D.personFlags("nila")?.facing;
+      const o = window.HouseRoom3D.personFlags("owen")?.facing;
+      return { n, o, sitting: window.HouseRoom3D.personFlags("nila")?.sitting && window.HouseRoom3D.personFlags("owen")?.sitting, dot: n && o ? n.x * o.x + n.z * o.z : 99 };
+    });
+    check("Tapping the chess table on a phone seats both players facing the board", faces.sitting && faces.dot < -0.4, JSON.stringify(faces));
+    await a.evaluate(() => window.__setCamMode("room"));
+    await a.waitForTimeout(350);
+    const chessPanelFits = await a.evaluate(() => {
+      const el = document.querySelector('[data-testid="chess-panel"]');
+      if (!el || el.classList.contains("hidden")) return { ok: false, reason: "hidden" };
+      const r = el.getBoundingClientRect();
+      const w = window.visualViewport?.width ?? window.innerWidth;
+      const h = window.visualViewport?.height ?? window.innerHeight;
+      return { ok: r.left >= -4 && r.right <= w + 4 && r.top >= -4 && r.bottom <= h + 4, r: { left: r.left, right: r.right, top: r.top, bottom: r.bottom }, vp: { w, h } };
+    });
+    check("The chess panel fits the phone screen", Boolean(chessPanelFits.ok), JSON.stringify(chessPanelFits));
+    await a.evaluate(() => { document.getElementById("chess-close")?.click(); });
+    await b.evaluate(() => { document.getElementById("chess-close")?.click(); });
+    await a.waitForTimeout(250);
+    await a.screenshot({ path: `${SHOT}/34-chess-seated.png` });
+    await a.evaluate(() => window.__standUp());
+    await b.evaluate(() => window.__standUp());
+    await a.waitForTimeout(400);
+
+    await tapFurniture(a, ids.cubics);
+    await a.waitForSelector('[data-testid="cubics-panel"]:not(.hidden)', { timeout: 15000 });
+    const cubicsFits = await a.evaluate(() => {
+      const el = document.querySelector('[data-testid="cubics-panel"]');
+      const r = el.getBoundingClientRect();
+      const w = window.visualViewport?.width ?? window.innerWidth;
+      const h = window.visualViewport?.height ?? window.innerHeight;
+      return r.left >= -4 && r.right <= w + 4 && r.top >= -4 && r.bottom <= h + 4;
+    });
+    check("Tapping Cubics on a phone opens a playable panel that fits the screen", cubicsFits);
+    await a.locator('[data-testid="cubics-start"]').tap();
+    await a.waitForTimeout(200);
+    await a.locator('[data-testid="cubics-left"]').tap();
+    await a.locator('[data-testid="cubics-right"]').tap();
+    check("Cubics on-screen touch controls respond", true);
+    await a.locator('[data-testid="cubics-close"]').tap();
+    await a.waitForTimeout(200);
+
+    await a.evaluate(() => window.__clickTile(5, 5));
+    await a.waitForTimeout(800);
+    await tapFurniture(a, ids.coffee);
+    const brewed = await a.waitForFunction(() => window.HouseRoom3D.personFlags("nila")?.heldItem?.kind === "coffee", null, { timeout: 16000 }).then(() => true).catch(() => false);
+    check("Tapping the coffee machine on a phone brews a cup you can sip", brewed && await b.evaluate(() => window.HouseRoom3D.personFlags("nila")?.heldItem?.kind === "coffee"));
+    await a.waitForTimeout(400);
+    await a.screenshot({ path: `${SHOT}/35-coffee-touch.png` });
+
+    await a.evaluate(() => window.__stowItem?.());
+    await a.waitForTimeout(200);
+    await tapFurniture(a, ids.chair);
+    const sat = await a.waitForFunction(() => window.HouseRoom3D.personFlags("nila")?.sitting, null, { timeout: 12000 }).then(() => true).catch(() => false);
+    check("Tapping a chair on a phone walks you there and sits you down", sat);
+  } catch (err) {
+    try { await a.screenshot({ path: `${SHOT}/debug-phone-a.png` }); } catch {}
+    try { await b.screenshot({ path: `${SHOT}/debug-phone-b.png` }); } catch {}
+    throw err;
+  } finally {
+    await ctxA.close();
+    await ctxB.close();
+  }
+}
+
 const browser = await chromium.launch({
   headless: true,
   args: [
@@ -411,6 +564,7 @@ try {
   await customize(bob, { displayName: "Bob", hair: 2, shirt: 2, skin: 3, glasses: true });
   await bob.waitForTimeout(500);
   await bob.locator('[data-testid="creator-preview"]').screenshot({ path: `${SHOT}/07-character-closeup.png` });
+  await bob.locator('[data-testid="creator-preview"]').screenshot({ path: `${SHOT}/32-avatar-closeup.png` });
   await saveAvatar(bob);
   check("Bob can create an avatar and reach the lobby", await bob.locator('body[data-view="lobby"]').count() === 1);
 
@@ -454,6 +608,7 @@ try {
   await alice.screenshot({ path: `${SHOT}/03-room-two-avatars.png` });
   check("A friend can join an unlocked room from the friends list", true);
   check("Both avatars appear in the same room", true);
+  check("Avatars use the sculpted Bitmoji-style rig", await alice.evaluate(() => window.HouseRoom3D.personFlags("alice")?.sculpted && window.HouseRoom3D.personFlags("bob")?.sculpted));
 
   log("Speech bubbles: visible in-room, then they fade");
   await alice.evaluate(() => window.__clickTile(2, 3));
@@ -756,6 +911,14 @@ try {
   await alice.waitForSelector('[data-testid="chess-panel"]:not(.hidden)', { timeout: 20000 });
   await bob.waitForSelector('[data-testid="chess-panel"]:not(.hidden)', { timeout: 20000 });
   check("Both players get a chess panel when two seats are taken", true);
+  const boardInfo = await alice.evaluate((id) => window.__chessBoardInfo(id), chessId);
+  check("The chess board sits inside the tabletop with a small margin", Boolean(boardInfo && boardInfo.board < boardInfo.table - 0.2 && boardInfo.square <= 0.14), JSON.stringify(boardInfo));
+  const chessFaces = await alice.evaluate(() => {
+    const a = window.HouseRoom3D.personFlags("alice")?.facing;
+    const b = window.HouseRoom3D.personFlags("bob")?.facing;
+    return { a, b, dot: a && b ? a.x * b.x + a.z * b.z : 99 };
+  });
+  check("Seated chess players face the table (toward each other)", chessFaces.dot < -0.4, JSON.stringify(chessFaces));
   const mate = ["e2", "e4", "e7", "e5", "d1", "h5", "b8", "c6", "f1", "c4", "g8", "f6", "h5", "f7"];
   for (let i = 0; i < mate.length; i += 2) {
     const page = i % 4 === 0 ? alice : bob;
@@ -926,6 +1089,12 @@ try {
   await alice.waitForFunction(() => window.HouseRoom3D.personFlags("alice")?.sitting, null, { timeout: 15000 });
   await bob.waitForFunction(() => window.HouseRoom3D.personFlags("alice")?.sitting && window.HouseRoom3D.personFlags("bob")?.sitting, null, { timeout: 15000 });
   check("Two people can sit together on a couch and stay in sync", await bob.evaluate(() => window.HouseRoom3D.personFlags("alice")?.sitting && window.HouseRoom3D.personFlags("bob")?.sitting));
+  const couchFaces = await alice.evaluate(() => {
+    const a = window.HouseRoom3D.personFlags("alice")?.facing;
+    const b = window.HouseRoom3D.personFlags("bob")?.facing;
+    return { a, b, dot: a && b ? a.x * b.x + a.z * b.z : 0 };
+  });
+  check("Couch sitters face the way the seat faces", couchFaces.dot > 0.7, JSON.stringify(couchFaces));
   await alice.setViewportSize({ width: 390, height: 844 });
   await alice.waitForTimeout(400);
   await alice.screenshot({ path: `${SHOT}/21-sitting.png` });
@@ -976,6 +1145,9 @@ try {
 
   log("App shell, PWA, and short/tall phone viewports");
   await runAppShellFit(browser);
+
+  log("Phone playtest: follow camera, chess seating, and touch interactions");
+  await runPhonePlaytest(browser);
 
   log("New avatar looks together in a cube");
   await ctxA.close();

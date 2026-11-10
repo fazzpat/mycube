@@ -1936,8 +1936,8 @@ export function createRoom3D(container) {
   let switchMesh = null;
   let followName = null;
   let camMode = "follow";
-  let userZoom = 1.55;
-  const FOLLOW_ZOOM_DEFAULT = 1.55;
+  let userZoom = 2;
+  const FOLLOW_ZOOM_DEFAULT = 2;
   let lastTapAt = 0;
   let lastTapX = 0;
   let lastTapY = 0;
@@ -2228,13 +2228,16 @@ export function createRoom3D(container) {
   function projectFurniture(id) {
     const m = findFurnMesh(id);
     if (!m) return null;
-    const v = new THREE.Vector3();
-    m.getWorldPosition(v);
-    v.y += 1.1;
-    v.project(camera);
-    const w = container.clientWidth;
-    const h = container.clientHeight;
-    return { x: (v.x * 0.5 + 0.5) * w, y: (-v.y * 0.5 + 0.5) * h, visible: v.z < 1 };
+    const box = new THREE.Box3().setFromObject(m);
+    box.getCenter(_tmpV1);
+    _tmpV1.y = box.min.y + Math.min(0.7, Math.max(0.2, (box.max.y - box.min.y) * 0.4));
+    _tmpV1.project(camera);
+    const rect = renderer.domElement.getBoundingClientRect();
+    return {
+      x: rect.left + (_tmpV1.x * 0.5 + 0.5) * rect.width,
+      y: rect.top + (-_tmpV1.y * 0.5 + 0.5) * rect.height,
+      visible: _tmpV1.z < 1,
+    };
   }
 
   function applyLights() {
@@ -2892,6 +2895,7 @@ export function createRoom3D(container) {
         actionEmote: m.userData.actionEmote || null,
         walking: Boolean(m.userData.walking),
         usingPhone: Boolean(m.userData.usingPhone),
+        sculpted: Boolean(m.userData.sculpted),
       };
     },
     personTile(name) {
