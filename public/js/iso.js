@@ -23,7 +23,7 @@
     punchbag: { name: "Punching bag", price: 30, w: 1, h: 1, blocks: true },
     benchpress: { name: "Bench press", price: 35, w: 2, h: 1, blocks: true },
     treadmill: { name: "Treadmill", price: 35, w: 1, h: 2, blocks: true },
-    cubics: { name: "Cubics cabinet", price: 40, w: 1, h: 1, blocks: true },
+    cubics: { name: "Arcade cabinet", price: 40, w: 1, h: 1, blocks: true },
     clothescab: { name: "Clothes cabinet", price: 30, w: 1, h: 1, blocks: true },
     coffeemachine: { name: "Coffee machine", price: 25, w: 1, h: 1, blocks: true },
     art_mona: { name: "Mona Cuba", price: 22, w: 1, h: 1, blocks: false, surface: "wall" },
@@ -34,27 +34,28 @@
     art_poster: { name: "CUBICS poster", price: 10, w: 1, h: 1, blocks: false, surface: "wall" },
     art_hang: { name: "Hang In There", price: 14, w: 1, h: 1, blocks: false, surface: "wall" },
     art_neon: { name: "my cube neon", price: 30, w: 1, h: 1, blocks: false, surface: "wall" },
-    hoverchair: { name: "Hover Chair", price: 30, w: 1, h: 1, blocks: true },
-    djdeck: { name: "Synth DJ Deck", price: 40, w: 2, h: 1, blocks: true },
+    hoverchair: { name: "Egg Chair", price: 30, w: 1, h: 1, blocks: true },
+    djdeck: { name: "DJ Deck", price: 40, w: 2, h: 1, blocks: true },
     sodavending: { name: "Cube Cola Vendor", price: 28, w: 1, h: 1, blocks: true },
-    neonsign: { name: "MyCube Neon Sign", price: 22, w: 1, h: 1, blocks: true },
-    capsulecouch: { name: "Capsule Couch", price: 36, w: 2, h: 1, blocks: true },
-    podplant: { name: "Glow Pod Plant", price: 16, w: 1, h: 1, blocks: true },
-    holotv: { name: "Holo TV", price: 32, w: 2, h: 1, blocks: true },
+    neonsign: { name: "Lava Lamp", price: 22, w: 1, h: 1, blocks: true },
+    capsulecouch: { name: "Studio Couch", price: 36, w: 2, h: 1, blocks: true },
+    podplant: { name: "Potted Plant", price: 16, w: 1, h: 1, blocks: true },
+    holotv: { name: "TV", price: 32, w: 2, h: 1, blocks: true },
+    pinball: { name: "Pinball cabinet", price: 38, w: 1, h: 1, blocks: true },
   };
   const WALL_ART = ["art_mona", "art_starry", "art_pop", "art_sunset", "art_cubism", "art_poster", "art_hang", "art_neon"];
 
   const WALLPAPERS = [
-    { id: "paint-cream", name: "Night Metal", wall: "#1c1a24", wall2: "#00f0ff", ink: "#fff" },
-    { id: "paint-sage", name: "Cyan Trim", wall: "#121a1c", wall2: "#00f0ff", ink: "#fff" },
-    { id: "paint-blush", name: "Magenta Trim", wall: "#1a1218", wall2: "#ff2bd6", ink: "#fff" },
-    { id: "paint-slate", name: "Violet Trim", wall: "#14141c", wall2: "#9b5cff", ink: "#fff" },
+    { id: "paint-cream", name: "Grey Tile", wall: "#9aa0aa", wall2: "#6d727a", ink: "#2a2c30" },
+    { id: "paint-sage", name: "Sage Green", wall: "#8a9a86", wall2: "#6a8a4a", ink: "#2a3228" },
+    { id: "paint-blush", name: "Blush Pink", wall: "#c4a8a6", wall2: "#c48a80", ink: "#4a3230" },
+    { id: "paint-slate", name: "Slate Blue", wall: "#8a8e9a", wall2: "#6a7a9a", ink: "#2a2c34" },
   ];
 
   const FLOORS = [
-    { id: "wood", name: "Polished Panels", colors: ["#12131a", "#2a3040"] },
-    { id: "tile", name: "Glow Tiles", colors: ["#1a1030", "#00f0ff"] },
-    { id: "carpet", name: "Metal Grate", colors: ["#15181f", "#b6ff3b"] },
+    { id: "wood", name: "Wood Planks", colors: ["#8a5a32", "#c4a070"] },
+    { id: "tile", name: "Grey Tile", colors: ["#b4b8c0", "#6d727a"] },
+    { id: "carpet", name: "Pattern Rug", colors: ["#9a2030", "#e8c878"] },
   ];
 
   function tileToScreen(tx, ty) {

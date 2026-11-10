@@ -552,8 +552,9 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
         layer.appendChild(nameEl);
       }
       nameEl.textContent = displayOf(p);
+      const footY = pos.footY != null ? pos.footY : pos.y + 40;
       let nx = Math.min(Math.max(pos.x, 48), W - 48);
-      let ny = Math.min(Math.max(pos.y + 14, 28), H - 22);
+      let ny = Math.min(Math.max(footY + 4, 28), H - 22);
       nameEl.style.left = nx + "px";
       nameEl.style.top = ny + "px";
       seen.add("n:" + p.username);
@@ -578,7 +579,7 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
               const fading = b.until - now < 900;
               const color = (p.avatar && p.avatar.shirt) || "#9b5cff";
               const shout = b.shout ? " shout" : "";
-              return `<div class="speech-bubble${shout}${fading ? " fade" : ""}"><span class="bubble-name" style="background:${color}">${escapeHtml(displayOf(p))}</span>${escapeHtml(b.text)}<i class="bubble-tail" aria-hidden="true"></i></div>`;
+              return `<div class="speech-bubble${shout}${fading ? " fade" : ""}"><span class="bubble-name" style="background:${color}">${escapeHtml(displayOf(p))}</span><span class="bubble-text">${escapeHtml(b.text)}</span><i class="bubble-tail" aria-hidden="true"></i></div>`;
             })
             .join("");
         } else {
@@ -587,13 +588,13 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
           });
         }
         let bx = pos.x;
-        let by = ny - 10;
+        let by = pos.y - 14;
         stack.style.left = bx + "px";
         stack.style.top = by + "px";
         const w = stack.offsetWidth || 120;
         const hgt = stack.offsetHeight || 40;
         bx = Math.min(Math.max(bx, PAD + w / 2), W - PAD - w / 2);
-        by = Math.min(Math.max(by, PAD + hgt), H - PAD);
+        by = Math.min(Math.max(by, PAD + 8), H - PAD);
         stack.style.left = bx + "px";
         stack.style.top = by + "px";
         seen.add("b:" + p.username);
@@ -737,6 +738,7 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
           p.walking = true;
           p.dirX = dx;
           p.dirZ = dy;
+          p.facing = { x: dx, z: dy };
           changed = true;
         }
       }
@@ -1294,7 +1296,7 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
   function paintStorePanel() {
     const kind = state.storeKind;
     const title = $("#store-panel-title");
-    if (title) title.textContent = kind === "pets" ? "BYTE PETS" : "NEON THREADS";
+    if (title) title.textContent = kind === "pets" ? "Pawz" : "Cube Threads";
     const grid = $("#store-grid");
     if (!grid) return;
     const coins = state.me?.coins ?? 0;
@@ -1302,7 +1304,7 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
       .map((s) => {
         const owned = ownsStoreItem(kind, s);
         const sel = state.storeSel === s.id ? " selected" : "";
-        return `<button type="button" class="store-item${sel}" data-testid="store-item-${s.id}" data-store-id="${s.id}"><span>${escapeHtml(s.label)}${owned ? " · owned" : ""}</span><span class="price">${owned ? "✓" : s.price + "c"}</span></button>`;
+        return `<button type="button" class="store-item${sel}" data-testid="store-item-${s.id}" data-store-id="${s.id}"><canvas class="store-thumb" width="28" height="28" data-thumb-id="${s.id}"></canvas><span class="meta">${escapeHtml(s.label)}${owned ? " · owned" : ""}</span><span class="price">${owned ? "✓" : s.price + "c"}</span></button>`;
       })
       .join("");
     grid.querySelectorAll("[data-store-id]").forEach((b) => {
@@ -1311,6 +1313,21 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
         paintStorePanel();
         paintStorePreview();
       });
+    });
+    grid.querySelectorAll("canvas.store-thumb").forEach((c) => {
+      const stock = storeStock(kind).find((s) => s.id === c.dataset.thumbId);
+      if (!stock) return;
+      if (typeof window.__paintStoreThumb === "function") {
+        const ok = window.__paintStoreThumb(c, kind, stock.item || stock, state.me?.avatar || {});
+        if (ok === false && kind === "pets") {
+          const ctx = c.getContext("2d");
+          ctx.imageSmoothingEnabled = false;
+          ctx.fillStyle = "#efe6d4";
+          ctx.fillRect(0, 0, 28, 28);
+          ctx.fillStyle = "#3a6a8a";
+          ctx.beginPath(); ctx.arc(14, 14, 8, 0, Math.PI * 2); ctx.fill();
+        }
+      }
     });
     const buy = $("#store-buy");
     const stock = storeStock(kind).find((s) => s.id === state.storeSel);
@@ -1333,6 +1350,15 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
   $("#voice-speak")?.addEventListener("click", () => setVoice("speak"));
   $("#voice-shout")?.addEventListener("click", () => setVoice("shout"));
   $("#store-close")?.addEventListener("click", closeStorePanel);
+  $("#store-tryon")?.addEventListener("click", () => {
+    paintStorePreview();
+    const kind = state.storeKind;
+    const stock = storeStock(kind).find((s) => s.id === state.storeSel);
+    if (!stock || kind === "pets") return;
+    const me = state.people.get(state.me?.username);
+    if (me) me.avatar = { ...(me.avatar || {}), ...(stock.item || {}) };
+    renderPeople();
+  });
   $("#store-buy")?.addEventListener("click", () => {
     if (!state.storeKind || !state.storeSel) return;
     socket.emit("buyStoreItem", { kind: state.storeKind, id: state.storeSel });
@@ -1668,7 +1694,7 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
     const chat = document.getElementById("chat-input");
     if (chat) {
       const narrow = (window.visualViewport?.width || window.innerWidth) <= 520;
-      const next = narrow ? "Say something…" : "Say something — it vanishes in a few seconds";
+      const next = narrow ? "Say…" : "Say something — it vanishes in a few seconds";
       if (chat.placeholder !== next) chat.placeholder = next;
     }
     if (state.view === "room") state.room3d?.resize();
@@ -1875,12 +1901,15 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
       return;
     }
     if (app === "leave") {
-      closePhone();
-      socket.emit("leaveRoom");
+      HIDE($("#phone-home"));
+      document.querySelectorAll(".phone-app-screen").forEach((el) => HIDE(el));
+      SHOW($("#phone-screen-leave"));
+      state.phoneApp = "leave";
+      setPhoneExpanded(true);
       return;
     }
     if (app === "clothes-store" || app === "pets-store") {
-      const id = app === "clothes-store" ? "place-neon-threads" : "place-byte-pets";
+      const id = app === "clothes-store" ? "place-cube-threads" : "place-pawz";
       closePhone();
       if (state.room?.id === id) openStorePanel(state.room.shop);
       else tryJoin(id);
@@ -1999,7 +2028,7 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
     if (!body) return;
     const pets = state.me?.collection?.pets || [];
     if (!pets.length) {
-      body.innerHTML = `<p class="phone-empty">Visit BYTE PETS in the Mall (or the phone app) to adopt a pet, then bring them into cubes with you.</p>`;
+      body.innerHTML = `<p class="phone-empty">Visit Pawz in the Mall (or the phone app) to adopt a pet, then bring them into cubes with you.</p>`;
       return;
     }
     body.innerHTML =
@@ -2509,6 +2538,10 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
       toast("You can't walk there.");
       return;
     }
+    if (me) {
+      const dx = tx - me.x, dy = ty - me.y;
+      if (dx || dy) me.facing = { x: dx, z: dy };
+    }
     if (phoneOpen()) closePhone();
     socket.emit("move", { x: tx, y: ty });
   }
@@ -2786,6 +2819,16 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
     p.bubbles = (p.bubbles || []).filter((b) => Date.now() < b.until);
     p.bubbles.push({ text, until, id: until + "-" + p.bubbles.length, shout: Boolean(shout) });
     if (p.bubbles.length > 4) p.bubbles.shift();
+    const others = [...state.people.values()].filter((o) => o.username !== p.username);
+    if (others.length) {
+      let best = others[0], bestD = Infinity;
+      for (const o of others) {
+        const d = Math.hypot((o.x ?? 0) - (p.x ?? 0), (o.y ?? 0) - (p.y ?? 0));
+        if (d < bestD) { best = o; bestD = d; }
+      }
+      p.facing = { x: (best.x ?? 0) - (p.x ?? 0), z: (best.y ?? 0) - (p.y ?? 0) };
+      if (bestD < 5) best.facing = { x: (p.x ?? 0) - (best.x ?? 0), z: (p.y ?? 0) - (best.y ?? 0) };
+    }
     renderPeople();
   });
 
@@ -2913,7 +2956,15 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
     state.room.uses = state.room.uses || {};
     if (use) state.room.uses[id] = use;
     else delete state.room.uses[id];
+    for (const p of state.people.values()) {
+      if (use && use.type === "punchbag" && use.user === p.username) {
+        p.boxing = { bagId: id, move: use.move || null, combo: use.combo || 0, auto: Boolean(use.auto), lastHitAt: use.lastHitAt || 0 };
+      } else if ((!use || use.user !== p.username) && p.boxing && p.boxing.bagId === id) {
+        p.boxing = null;
+      }
+    }
     state.room3d?.setUses(state.room.uses);
+    state.room3d?.syncPeople?.([...state.people.values()]);
     const me = state.me?.username;
     if (use && use.type === "fridge" && use.open && use.user === me) showFridgePicker(id);
     if ((!use || !use.open) && state.fridgeId === id) hideFridgePicker();

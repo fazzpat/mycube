@@ -61,7 +61,7 @@ const FURNITURE_CATALOG = {
   punchbag: { name: "Punching bag", price: 30, w: 1, h: 1, blocks: true },
   benchpress: { name: "Bench press", price: 35, w: 2, h: 1, blocks: true },
   treadmill: { name: "Treadmill", price: 35, w: 1, h: 2, blocks: true },
-  cubics: { name: "Cubics cabinet", price: 40, w: 1, h: 1, blocks: true },
+  cubics: { name: "Arcade cabinet", price: 40, w: 1, h: 1, blocks: true },
   clothescab: { name: "Clothes cabinet", price: 30, w: 1, h: 1, blocks: true },
   coffeemachine: { name: "Coffee machine", price: 25, w: 1, h: 1, blocks: true },
   art_mona: { name: "Mona Cuba", price: 22, w: 1, h: 1, blocks: false, surface: "wall" },
@@ -72,13 +72,14 @@ const FURNITURE_CATALOG = {
   art_poster: { name: "CUBICS poster", price: 10, w: 1, h: 1, blocks: false, surface: "wall" },
   art_hang: { name: "Hang In There", price: 14, w: 1, h: 1, blocks: false, surface: "wall" },
   art_neon: { name: "my cube neon", price: 30, w: 1, h: 1, blocks: false, surface: "wall" },
-  hoverchair: { name: "Hover Chair", price: 30, w: 1, h: 1, blocks: true },
-  djdeck: { name: "Synth DJ Deck", price: 40, w: 2, h: 1, blocks: true },
+  hoverchair: { name: "Egg Chair", price: 30, w: 1, h: 1, blocks: true },
+  djdeck: { name: "DJ Deck", price: 40, w: 2, h: 1, blocks: true },
   sodavending: { name: "Cube Cola Vendor", price: 28, w: 1, h: 1, blocks: true },
-  neonsign: { name: "MyCube Neon Sign", price: 22, w: 1, h: 1, blocks: true },
-  capsulecouch: { name: "Capsule Couch", price: 36, w: 2, h: 1, blocks: true },
-  podplant: { name: "Glow Pod Plant", price: 16, w: 1, h: 1, blocks: true },
-  holotv: { name: "Holo TV", price: 32, w: 2, h: 1, blocks: true },
+  neonsign: { name: "Lava Lamp", price: 22, w: 1, h: 1, blocks: true },
+  capsulecouch: { name: "Studio Couch", price: 36, w: 2, h: 1, blocks: true },
+  podplant: { name: "Potted Plant", price: 16, w: 1, h: 1, blocks: true },
+  holotv: { name: "TV", price: 32, w: 2, h: 1, blocks: true },
+  pinball: { name: "Pinball cabinet", price: 38, w: 1, h: 1, blocks: true },
 };
 const WALL_ART_TYPES = new Set(["art_mona","art_starry","art_pop","art_sunset","art_cubism","art_poster","art_hang","art_neon"]);
 const WALLPAPERS = ["paint-cream", "paint-sage", "paint-blush", "paint-slate"];
@@ -1802,6 +1803,8 @@ io.on("connection", (socket) => {
     else use.combo = 1;
     use.move = kind;
     use.lastHitAt = now;
+    use.hit = now;
+    use.swing = now;
     user.boxing = { bagId: id, move: kind, combo: use.combo, auto: Boolean(use.auto), lastHitAt: now };
     emitRoom(room, "useUpdated", { id, use });
     emitPerson(user);

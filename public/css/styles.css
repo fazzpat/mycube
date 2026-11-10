@@ -564,7 +564,8 @@ input:focus { border-color: var(--coral); }
   position: absolute;
   transform: translate(-50%, -100%);
 }
-.bubble-layer .person-name { transform: translate(-50%, 8px); }
+.bubble-layer { --iso-zoom: 1; }
+.bubble-layer .person-name { transform: translate(-50%, 0); }
 .bubble-layer .speech-stack .speech-bubble {
   position: relative;
   left: auto;
@@ -1324,7 +1325,7 @@ body.phone-open .phone-fab { visibility: hidden; }
 .edit-inventory {
   position: absolute;
   left: 8px;
-  bottom: calc(var(--dock-h) + 10px);
+  bottom: calc(var(--dock-h) + 36px);
   width: min(210px, 46vw);
   max-height: min(280px, 34vh);
   background: #fff8f2ee;
@@ -1523,8 +1524,9 @@ body.phone-open .phone-fab { visibility: hidden; }
   :root, .room-view { --dock-h: 96px; }
   .edit-inventory {
     width: min(168px, 44vw);
-    max-height: min(240px, 28vh);
+    max-height: min(220px, 26vh);
     left: 6px;
+    bottom: calc(var(--dock-h) + 40px);
   }
   .chess-panel { max-height: min(520px, calc(100dvh - var(--dock-h) - 64px)); }
 }
@@ -1790,7 +1792,7 @@ input, textarea, select {
 .place-card strong { font-family: "VT323", monospace; font-size: 20px; letter-spacing: 0.08em; }
 .place-card span { color: var(--cyber-muted); font-size: 12px; }
 
-.room-view { background: #05010d !important; }
+.room-view { background: #000 !important; }
 .room-view .topbar {
   background: transparent;
   border-bottom: 0;
@@ -1807,7 +1809,7 @@ input, textarea, select {
 }
 .stage-wrap { padding: 0; }
 .room-stage, .room3d-root {
-  background: transparent;
+  background: #000;
   border-radius: 0;
   min-height: 0;
 }
@@ -2011,4 +2013,294 @@ input, textarea, select {
   background: var(--cyber-panel);
   color: var(--cyber-ink);
   box-shadow: 0 0 0 1px var(--cyber-purp);
+}
+
+
+/* ===== House interior / MyCoke-inspired UI (original art) ===== */
+.room-plaque {
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0,0,0,.85), 0 0 8px rgba(0,0,0,.45);
+  font-family: "Nunito", "Trebuchet MS", sans-serif;
+}
+.room-plaque .room-name { font-size: 18px; font-weight: 800; letter-spacing: 0.01em; }
+.room-plaque .item-sub { color: rgba(255,255,255,.92); font-size: 13px; }
+.mycube-badge { color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.85); }
+
+.dock {
+  background: linear-gradient(180deg, #e2c8a0 0%, #c9a678 55%, #b89460 100%);
+  box-shadow: 0 -2px 0 #8a6a44, inset 0 1px 0 #f4e6cc, 0 0 16px rgba(0,240,255,.14);
+  gap: 8px;
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+.dock textarea {
+  background: #f7efe2;
+  color: #2a1c16;
+  border-radius: 18px;
+  box-shadow: inset 0 1px 0 #fff, 0 0 0 1px #8a6a44, 0 0 0 3px rgba(0,240,255,.12);
+  font-family: "Nunito", sans-serif;
+  font-weight: 700;
+}
+.emote-btn {
+  width: 42px; height: 42px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #f0e0c4, #c4a07a);
+  box-shadow: inset 0 2px 0 #fff4, inset 0 -2px 0 #8a6a4488, 0 2px 0 #8a6a44, 0 0 8px rgba(0,240,255,.12);
+  border: 0;
+}
+.voice-toggle { gap: 2px; }
+.voice-opt {
+  font-family: "Nunito", sans-serif;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border: 0;
+  background: #d4b48a;
+  color: #4a3020;
+  box-shadow: inset 0 1px 0 #f4e6cc, 0 1px 0 #8a6a44;
+  cursor: pointer;
+  border-radius: 6px;
+}
+.voice-opt.on {
+  color: #fff;
+  background: #3a6a8a;
+  box-shadow: 0 0 8px rgba(0,240,255,.35), inset 0 1px 0 #9adfff66;
+}
+#chat-send {
+  background: #c45a3a;
+  color: #fff;
+  box-shadow: 0 2px 0 #7a3020, 0 0 8px rgba(0,240,255,.15);
+  border-radius: 16px;
+  font-weight: 800;
+}
+
+.speech-stack {
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: center;
+  gap: 4px;
+  transform: translate(-50%, -100%) scale(var(--iso-zoom, 1));
+  transform-origin: bottom center;
+}
+.speech-bubble {
+  display: flex;
+  align-items: stretch;
+  background: #f4efe4;
+  color: #1a1020;
+  border-radius: 4px 12px 12px 4px;
+  box-shadow: 0 0 0 2px #1a1020, 0 3px 0 rgba(0,0,0,.25);
+  font-family: "Nunito", sans-serif;
+  font-weight: 700;
+  padding: 0;
+  position: relative;
+  overflow: visible;
+}
+.speech-bubble .bubble-name {
+  display: flex;
+  align-items: center;
+  margin: 0;
+  padding: 4px 8px;
+  border-radius: 3px 0 0 3px;
+  color: #fff;
+  font-family: "Nunito", sans-serif;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.speech-bubble .bubble-text { padding: 4px 10px 6px; }
+.speech-bubble.shout { box-shadow: 0 0 0 2px #c4182d, 0 0 10px rgba(196,24,45,.35); }
+
+body[data-view="room"] #toasts {
+  top: calc(var(--safe-top, 0px) + 118px);
+  right: auto;
+  left: calc(12px + var(--safe-left, 0px));
+  width: min(220px, calc(100% - 88px));
+  z-index: 42;
+}
+body[data-view="room"] .toast {
+  padding: 6px 10px;
+  font-size: 12px;
+  border-radius: 8px;
+  font-weight: 600;
+}
+
+.store-panel {
+  max-height: min(420px, calc(var(--app-h, 100%) - var(--dock-h, 76px) - 72px));
+  background: #f4efe4ee;
+  color: #1a1020;
+  box-shadow: 0 0 0 1px #8a6a44, 0 0 16px rgba(0,240,255,.12);
+  border-radius: 10px;
+  font-family: "Nunito", sans-serif;
+}
+.store-panel-head, .store-panel-foot { box-shadow: 0 1px 0 #c4a878; }
+.store-preview {
+  width: 88px;
+  min-height: 120px;
+  flex: 0 0 88px;
+  background: #efe6d4;
+  box-shadow: inset 0 0 0 1px #c4a878;
+  background-image: none;
+}
+.store-item {
+  align-items: center;
+  background: #fff8f0;
+  color: #1a1020;
+  box-shadow: 0 0 0 1px #d4c0a0;
+  padding: 5px 8px;
+  font-size: 13px;
+  border-radius: 8px;
+}
+.store-item.selected { box-shadow: 0 0 0 2px #c45a3a; color: #1a1020; }
+.store-item .price { color: #2a7a4a; font-weight: 800; }
+.store-thumb {
+  width: 28px; height: 28px;
+  image-rendering: pixelated;
+  flex: 0 0 28px;
+  background: #efe6d4;
+  box-shadow: inset 0 0 0 1px #c4a878;
+  border-radius: 4px;
+}
+.store-item .meta { flex: 1; text-align: left; }
+#store-tryon {
+  background: #3a6a8a;
+  color: #fff;
+  box-shadow: 0 2px 0 #1a3a50, 0 0 8px rgba(0,240,255,.2);
+}
+@media (max-width: 520px) {
+  .store-panel {
+    max-height: min(46vh, calc(var(--app-h) - var(--dock-h) - 64px));
+    width: min(100% - 12px, 420px);
+  }
+  .store-preview { width: 72px; min-height: 108px; flex-basis: 72px; }
+  .voice-opt { font-size: 10px; padding: 2px 5px; }
+}
+
+/* ===== 2000s web-game UI (overrides leftover cyber theme) ===== */
+:root {
+  --ui-ink: #2a1c16;
+  --ui-panel: #f4efe4;
+  --ui-bevel-light: #fff8ee;
+  --ui-bevel-dark: #8a6a44;
+  --ui-wood: #8a5a32;
+  --ui-tan: #c4a878;
+  --ui-font: Verdana, Tahoma, "Trebuchet MS", "Nunito", sans-serif;
+  --cyber-bg: #c8b89a;
+  --cyber-panel: #f4efe4;
+  --cyber-cyan: #8a5a32;
+  --cyber-mag: #c43a4a;
+  --cyber-purp: #6b4a32;
+  --cyber-acid: #2a7a4a;
+  --cyber-ink: #2a1c16;
+  --cyber-font: Verdana, Tahoma, "Trebuchet MS", "Nunito", sans-serif;
+}
+html, body, .app {
+  background: #c8b89a;
+  color: var(--ui-ink);
+  font-family: var(--ui-font);
+  text-shadow: none;
+}
+.room-view,
+.room-stage,
+.room3d-root,
+#room-stage,
+.iso-room {
+  background: #000 !important;
+  color: #fff;
+}
+.lobby-view,
+.lobby-view .phone-shell,
+.auth-view,
+.creator-view {
+  background: #c8b89a !important;
+  background-image: none !important;
+  color: var(--ui-ink);
+  font-family: var(--ui-font);
+}
+h1, h2, h3, .logo, .mycube-badge, .place-card strong, .room-title, .coin-chip,
+.panel-title, .phone-app-label, #store-panel-title, .auth-title, .creator-title {
+  font-family: Verdana, Tahoma, "Trebuchet MS", sans-serif !important;
+  letter-spacing: 0;
+  text-shadow: none !important;
+  color: var(--ui-ink);
+}
+.btn, button, .chip, .dock-btn, .voice-opt, .place-card, .room-card,
+.panel, .sheet, .modal, .phone-shell, .phone-screen, .store-panel,
+.toast, input, select, textarea {
+  font-family: var(--ui-font) !important;
+  text-shadow: none !important;
+}
+.btn, button.btn, .primary, [type="submit"] {
+  background: #efe6d4;
+  color: var(--ui-ink);
+  border: 1px solid #8a6a44;
+  box-shadow: inset 1px 1px 0 #fff8ee, inset -1px -1px 0 #8a6a44, 0 1px 0 #5a3a20;
+  border-radius: 3px;
+}
+.btn:hover, button.btn:hover { background: #f8f0e0; }
+.btn.primary, .primary, [data-testid="create-room"], [data-testid="login-submit"] {
+  background: #c43a4a;
+  color: #fff;
+  border-color: #7a1820;
+  box-shadow: inset 1px 1px 0 #f26a72, inset -1px -1px 0 #7a1820, 0 1px 0 #5a1018;
+}
+.place-card, .room-card, .panel, .sheet, .modal, .store-panel, .phone-shell, .phone-screen {
+  background: #f4efe4;
+  color: var(--ui-ink);
+  border: 2px solid #8a6a44;
+  box-shadow: inset 1px 1px 0 #fff8ee, inset -1px -1px 0 #6a4a28, 2px 2px 0 #5a3a20;
+  border-radius: 4px;
+}
+.place-card:hover, .room-card:hover {
+  box-shadow: inset 1px 1px 0 #fff8ee, inset -1px -1px 0 #6a4a28, 2px 2px 0 #5a3a20, 0 0 0 2px #c4a878;
+}
+.coin-chip, .mycube-badge, .room-plaque, [data-testid="room-plaque"] {
+  background: #fff !important;
+  color: #1a1020 !important;
+  border: 1px solid #c4a878;
+  box-shadow: 1px 1px 0 #8a6a44;
+  text-shadow: none !important;
+}
+.cam-btn, .camera-btn, [data-testid="camera-toggle"] {
+  background: #efe6d4 !important;
+  color: #2a1c16 !important;
+  border: 1px solid #8a6a44 !important;
+  box-shadow: inset 1px 1px 0 #fff8ee, 1px 1px 0 #5a3a20 !important;
+  text-shadow: none !important;
+}
+input, select, textarea, .chat-input, [data-testid="chat-input"] {
+  background: #fff8ee;
+  color: #2a1c16;
+  border: 1px solid #8a6a44;
+  box-shadow: inset 1px 1px 0 #c4b090;
+  font-family: var(--ui-font) !important;
+}
+.phone-app {
+  background: #efe6d4;
+  color: #2a1c16;
+  border: 1px solid #c4a878;
+  box-shadow: inset 1px 1px 0 #fff8ee;
+  border-radius: 6px;
+}
+.phone-app-label { color: #2a1c16 !important; font-size: 10px; }
+.store-preview {
+  background: #efe6d4 !important;
+  box-shadow: inset 1px 1px 0 #c4a878, inset -1px -1px 0 #fff8ee !important;
+  background-image: none !important;
+}
+#store-tryon, [data-testid="store-tryon"] {
+  background: #3a6a8a;
+  color: #fff;
+  box-shadow: inset 1px 1px 0 #8ab4c8, 0 2px 0 #1a3a50;
+}
+#store-tryon { box-shadow: inset 1px 1px 0 #8ab4c8, 0 2px 0 #1a3a50; }
+.dock, .bottom-bar, .chat-dock {
+  font-family: var(--ui-font);
+}
+/* kill scanlines / glow leftovers */
+.scanlines, .crt, .store-preview::after, .phone-shell::after, .lobby-view::after {
+  display: none !important;
+  background: none !important;
+  box-shadow: none !important;
 }

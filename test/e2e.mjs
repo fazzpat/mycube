@@ -371,7 +371,7 @@ async function runAppShellFit(browser) {
   check("The camera toggle shows the whole cube", camToggled?.mode === "room" && camToggled.zoom <= 1.05, JSON.stringify(camToggled));
   await assertNoHudOverlap(page, PHONE_HUD, "The camera button stays clear of the room title after toggling");
   const ph = await page.evaluate(() => document.getElementById("chat-input")?.placeholder || "");
-  check("The chat box stays on one line on a phone", ph === "Say something…", `placeholder=${JSON.stringify(ph)}`);
+  check("The chat box stays on one line on a phone", ph === "Say…", `placeholder=${JSON.stringify(ph)}`);
   await page.screenshot({ path: `${SHOT}/28-app-room.png` });
 
   const sizes = [
@@ -432,15 +432,15 @@ async function runStoresAndCyberShots(browser) {
   await page.evaluate(() => window.__leaveRoom?.());
   await page.waitForSelector('body[data-view="lobby"]', { timeout: 15000 });
   await page.waitForSelector('[data-testid="places-list"]');
-  const mallHasClothes = await page.locator('[data-testid="place-place-neon-threads"]').count();
-  const mallHasPets = await page.locator('[data-testid="place-place-byte-pets"]').count();
-  check("The lobby Mall lists NEON THREADS and BYTE PETS", mallHasClothes === 1 && mallHasPets === 1);
+  const mallHasClothes = await page.locator('[data-testid="place-place-cube-threads"]').count();
+  const mallHasPets = await page.locator('[data-testid="place-place-pawz"]').count();
+  check("The lobby Mall lists Cube Threads and Pawz", mallHasClothes === 1 && mallHasPets === 1);
 
-  await page.locator('[data-testid="place-place-neon-threads"]').click();
+  await page.locator('[data-testid="place-place-cube-threads"]').click();
   await page.waitForSelector('body[data-view="room"]');
   await page.waitForFunction(() => window.HouseRoom3D && window.HouseRoom3D.ready);
-  await waitForText(page, '[data-testid="room-title"]', "NEON THREADS");
-  check("A player can walk into the NEON THREADS clothing store", true);
+  await waitForText(page, '[data-testid="room-title"]', "Cube Threads");
+  check("A player can walk into the Cube Threads clothing store", true);
   await page.evaluate(() => window.__debugKit({ coins: 200 }));
   await page.waitForTimeout(200);
   await page.evaluate(() => window.__openStore("clothes", "nt-tee"));
@@ -448,7 +448,7 @@ async function runStoresAndCyberShots(browser) {
   await page.locator('[data-testid="store-item-nt-tee"]').click();
   await page.waitForTimeout(200);
   const previewOn = await page.evaluate(() => Boolean(document.querySelector('[data-testid="store-preview"] canvas, [data-testid="store-preview"] *')));
-  check("NEON THREADS lets you try on a look before buying", previewOn && await page.locator('[data-testid="store-item-nt-tee"]').count() === 1);
+  check("Cube Threads lets you try on a look before buying", previewOn && await page.locator('[data-testid="store-item-nt-tee"]').count() === 1);
   await page.locator('[data-testid="store-buy"]').click();
   await page.waitForFunction(() => (window.__storeState()?.collection?.clothes || []).some((c) => c.catalogId === "nt-tee"), null, { timeout: 8000 });
   check("Buying clothes spends coins and adds the item to the wardrobe", await page.evaluate(() => (window.__storeState()?.collection?.clothes || []).some((c) => c.catalogId === "nt-tee")));
@@ -457,22 +457,24 @@ async function runStoresAndCyberShots(browser) {
 
   await page.evaluate(() => window.__leaveRoom?.());
   await page.waitForSelector('body[data-view="lobby"]', { timeout: 15000 });
-  await page.locator('[data-testid="place-place-byte-pets"]').click();
+  await page.locator('[data-testid="place-place-pawz"]').click();
   await page.waitForSelector('body[data-view="room"]');
   await page.waitForFunction(() => window.HouseRoom3D && window.HouseRoom3D.ready);
-  await waitForText(page, '[data-testid="room-title"]', "BYTE PETS");
-  check("A player can walk into the BYTE PETS pet store", true);
-  await page.evaluate(() => window.__openStore("pets", "bp-robocat"));
+  await waitForText(page, '[data-testid="room-title"]', "Pawz");
+  check("A player can walk into the Pawz pet store", true);
+  await page.evaluate(() => window.__openStore("pets", "bp-fox"));
   await page.waitForSelector('[data-testid="store-panel"]:not(.hidden)');
-  await page.locator('[data-testid="store-item-bp-robocat"]').click();
+  await page.locator('[data-testid="store-item-bp-fox"]').click();
   await page.locator('[data-testid="store-buy"]').click();
-  await page.waitForFunction(() => (window.__storeState()?.collection?.pets || []).some((p) => p.item === "robocat"), null, { timeout: 8000 });
-  check("Buying a pet adds it to the player's pet collection", await page.evaluate(() => (window.__storeState()?.collection?.pets || []).some((p) => p.item === "robocat")));
+  await page.waitForFunction(() => (window.__storeState()?.collection?.pets || []).some((p) => p.item === "fox"), null, { timeout: 8000 });
+  check("Buying a pet adds it to the player's pet collection", await page.evaluate(() => (window.__storeState()?.collection?.pets || []).some((p) => p.item === "fox")));
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: `${SHOT}/41-pet-store.png` });
   await page.evaluate(() => window.__closeStore?.() || document.getElementById("store-close")?.click());
   await page.evaluate(() => {
     const pets = (window.__storeState()?.collection?.pets || []);
-    const got = pets.find((p) => p.item === "robocat");
-    if (got) window.__equipPet ? window.__equipPet("robocat") : null;
+    const got = pets.find((p) => p.item === "fox");
+    if (got) window.__equipPet ? window.__equipPet("fox") : null;
   });
   // equip via socket hook if needed
   await page.evaluate(() => {
@@ -482,9 +484,8 @@ async function runStoresAndCyberShots(browser) {
     }
   });
   await page.waitForTimeout(300);
-  await page.screenshot({ path: `${SHOT}/41-pet-store.png` });
 
-  // Desktop cyber room shot with a few avatars chatting
+  // Desktop room shot with a few avatars chatting
   await page.evaluate(() => window.__leaveRoom?.());
   await page.waitForSelector('body[data-view="lobby"]', { timeout: 15000 });
   await ctx.close();
@@ -502,30 +503,42 @@ async function runStoresAndCyberShots(browser) {
     const pg = await c.newPage();
     pg.setDefaultTimeout(20000);
     if (i === 0) {
-      await loginToNewRoom(pg, names[i].u, names[i].d, "Neon Lounge");
-      await pg.evaluate(() => window.__debugKit({ furniture: ["capsulecouch", "holotv", "djdeck", "sodavending", "podplant", "hoverchair", "lamp"], coins: 400 }));
+      await loginToNewRoom(pg, names[i].u, names[i].d, "Lounge Cube");
+      await pg.evaluate(() => window.__debugKit({ furniture: ["capsulecouch", "couch", "holotv", "djdeck", "sodavending", "podplant", "hoverchair", "lamp", "cubics", "pinball", "rug", "art_poster", "art_hang", "art_sunset", "art_neon"], coins: 400 }));
       await pg.waitForTimeout(200);
-      await pg.evaluate(() => {
-        window.__startPlace?.("capsulecouch"); window.__clickTile(1, 2);
-      });
+      await pg.evaluate(() => { window.__startPlace?.("rug"); window.__clickTile(2, 2); });
       await pg.waitForTimeout(80);
-      await pg.evaluate(() => { window.__startPlace?.("holotv"); window.__clickTile(1, 0); });
+      await pg.evaluate(() => { window.__startPlace?.("capsulecouch"); window.__clickTile(1, 2); });
       await pg.waitForTimeout(80);
       await pg.evaluate(() => { window.__startPlace?.("djdeck"); window.__clickTile(4, 1); });
       await pg.waitForTimeout(80);
       await pg.evaluate(() => { window.__startPlace?.("sodavending"); window.__clickTile(5, 0); });
       await pg.waitForTimeout(80);
+      await pg.evaluate(() => { window.__startPlace?.("cubics"); window.__clickTile(5, 3); });
+      await pg.waitForTimeout(80);
+      await pg.evaluate(() => { window.__startPlace?.("pinball"); window.__clickTile(5, 4); });
+      await pg.waitForTimeout(80);
       await pg.evaluate(() => { window.__startPlace?.("podplant"); window.__clickTile(0, 4); });
       await pg.waitForTimeout(80);
       await pg.evaluate(() => { window.__startPlace?.("hoverchair"); window.__clickTile(3, 4); });
+      await pg.waitForTimeout(80);
+      await pg.evaluate(() => { window.__startPlace?.("art_poster"); window.__clickWall("back", 0); });
+      await pg.waitForTimeout(80);
+      await pg.evaluate(() => { window.__startPlace?.("art_hang"); window.__clickWall("left", 0); });
+      await pg.waitForTimeout(80);
+      await pg.evaluate(() => { window.__startPlace?.("art_sunset"); window.__clickWall("left", 1); });
+      await pg.waitForTimeout(80);
+      await pg.evaluate(() => { window.__startPlace?.("art_neon"); window.__clickWall("back", 2); });
+      await pg.waitForTimeout(80);
+      await pg.evaluate(() => window.__exitEdit?.());
     } else {
       await login(pg, names[i].u);
       await pg.setViewportSize({ width: 390, height: 1100 });
       await customize(pg, { displayName: names[i].d, hair: i, shirt: i, skin: i % 5, glasses: i === 2 });
       await saveAvatar(pg);
       await openAddSheet(pg);
-      await pg.waitForSelector('[data-testid="room-list"] >> text=Neon Lounge', { timeout: 10000 });
-      await pg.locator('[data-testid="room-list"] >> text=Neon Lounge').click();
+      await pg.waitForSelector('[data-testid="room-list"] >> text=Lounge Cube', { timeout: 10000 });
+      await pg.locator('[data-testid="room-list"] >> text=Lounge Cube').click();
       await pg.waitForSelector('body[data-view="room"]');
     }
     pages.push({ c, pg, u: names[i].u });
@@ -547,13 +560,30 @@ async function runStoresAndCyberShots(browser) {
   await pages[0].pg.screenshot({ path: `${SHOT}/37-retro-room.png` });
 
   await pages[0].pg.setViewportSize({ width: 390, height: 844 });
-  await pages[0].pg.evaluate(() => window.HouseRoom3D?.resize?.());
+  await pages[0].pg.evaluate(() => {
+    window.HouseRoom3D?.resize?.();
+    window.__setCamMode?.("follow");
+    window.HouseRoom3D?.setZoom?.(2);
+  });
   await pages[0].pg.waitForTimeout(400);
   await pages[0].pg.screenshot({ path: `${SHOT}/38-retro-phone.png` });
   await pages[0].pg.setViewportSize({ width: 1280, height: 800 });
 
-  // variety already saved as 36; also save 39 from a close crop of avatars if possible
-  await pages[0].pg.screenshot({ path: `${SHOT}/39-retro-avatars.png` });
+  await pages[0].pg.evaluate(() => {
+    const old = document.getElementById("avatar-sheet-shot");
+    if (old) old.remove();
+    const c = document.createElement("canvas");
+    c.id = "avatar-sheet-shot";
+    c.style.cssText = "position:fixed;inset:0;z-index:99999;background:#f4efe4;image-rendering:pixelated;";
+    document.body.appendChild(c);
+    window.__paintAvatarSheet(c, null, 3);
+    c.style.width = c.width + "px";
+    c.style.height = c.height + "px";
+  });
+  await pages[0].pg.setViewportSize({ width: 1280, height: 900 });
+  const sheet = pages[0].pg.locator("#avatar-sheet-shot");
+  await sheet.screenshot({ path: `${SHOT}/39-retro-avatars.png` });
+  await pages[0].pg.evaluate(() => document.getElementById("avatar-sheet-shot")?.remove());
 
   for (const x of pages) await x.c.close();
   await desk.close();
@@ -561,10 +591,10 @@ async function runStoresAndCyberShots(browser) {
 
 async function runCornerPhoneAndAvatars(browser) {
   const looks = [
-    { user: "nova", name: "Nova", hair: 1, shirt: 4, skin: 0, glasses: true },
-    { user: "rex", name: "Rex", hair: 4, shirt: 6, skin: 4, glasses: false },
-    { user: "lina", name: "Lina", hair: 5, shirt: 2, skin: 2, glasses: false },
-    { user: "mo", name: "Mo", hair: 0, shirt: 7, skin: 5, glasses: true },
+    { user: "nola", name: "Nola", hair: 1, shirt: 4, skin: 0, glasses: true },
+    { user: "riley", name: "Riley", hair: 4, shirt: 6, skin: 4, glasses: false },
+    { user: "lana", name: "Lana", hair: 5, shirt: 2, skin: 2, glasses: false },
+    { user: "maxx", name: "Maxx", hair: 0, shirt: 7, skin: 5, glasses: true },
   ];
   const ctxs = [];
   const pages = [];
@@ -593,8 +623,8 @@ async function runCornerPhoneAndAvatars(browser) {
       await pages[i].evaluate(({ x, y }) => window.__clickTile(x, y), { x: tiles[i][0], y: tiles[i][1] });
     }
     await pages[0].waitForFunction(() => {
-      const names = ["nova", "rex", "lina", "mo"];
-      const dest = { nova: [1, 2], rex: [4, 2], lina: [1, 5], mo: [4, 5] };
+      const names = ["nola", "riley", "lana", "maxx"];
+      const dest = { nola: [1, 2], riley: [4, 2], lana: [1, 5], maxx: [4, 5] };
       return names.every((n) => {
         const p = window.HouseRoom3D.personTile(n);
         const d = dest[n];
@@ -602,7 +632,7 @@ async function runCornerPhoneAndAvatars(browser) {
       });
     }, null, { timeout: 12000 }).catch(() => {});
     await pages[0].waitForTimeout(400);
-    check("Four varied Bitmoji-style avatars can share a cube", await pages[0].evaluate(() => window.HouseRoom3D && ["nova", "rex", "lina", "mo"].every((n) => window.HouseRoom3D.personTile(n))));
+    check("Four varied Bitmoji-style avatars can share a cube", await pages[0].evaluate(() => window.HouseRoom3D && ["nola", "riley", "lana", "maxx"].every((n) => window.HouseRoom3D.personTile(n))));
     await pages[0].screenshot({ path: `${SHOT}/31-new-avatars.png` });
   } finally {
     for (const ctx of ctxs) await ctx.close();
@@ -1446,7 +1476,7 @@ try {
   log("Phone playtest: follow camera, chess seating, and touch interactions");
   await runPhonePlaytest(browser);
 
-  log("Cyber stores and restyle screenshots");
+  log("Stores and restyle screenshots");
   await runStoresAndCyberShots(browser);
 
   log("New avatar looks together in a cube");
