@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
   <title>MyCube</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -145,10 +145,54 @@
         </span>
         <span class="phone-fab-badge hidden" data-testid="phone-badge">1</span>
       </button>
-      <div class="dock">
+      <div id="edit-inventory" class="edit-inventory hidden" data-testid="edit-inventory">
+        <div class="edit-inv-head">
+          <strong>Inventory</strong>
+          <button type="button" class="btn tiny ghost" id="edit-inv-toggle" data-testid="edit-inv-toggle" aria-label="Collapse inventory">▾</button>
+          <button type="button" class="btn small sage" id="edit-done" data-testid="edit-done">Done</button>
+        </div>
+        <div class="edit-inv-body" id="edit-inv-body" data-testid="edit-inv-body">
+          <div id="edit-inv-items" class="edit-inv-items" data-testid="edit-inv-items"></div>
+          <div id="edit-styles" class="edit-styles"></div>
+          <div class="edit-place-tools hidden" id="edit-place-tools" data-testid="edit-place-tools">
+            <button type="button" class="btn small" id="rotate-place" data-testid="rotate-place">Rotate</button>
+            <button type="button" class="btn small sage hidden" id="confirm-place" data-testid="confirm-place">✓</button>
+          </div>
+        </div>
+      </div>
+      <div id="furn-actions" class="furn-actions hidden" data-testid="furn-actions">
+        <button type="button" class="btn small" data-testid="furn-rotate" id="furn-rotate">Rotate</button>
+        <button type="button" class="btn small" data-testid="furn-move" id="furn-move">Move</button>
+        <button type="button" class="btn small" data-testid="furn-pickup" id="furn-pickup">Pick Up</button>
+      </div>
+      <div id="activity-chip" class="activity-chip hidden" data-testid="activity-chip"></div>
+      <div id="fridge-picker" class="fridge-picker hidden" data-testid="fridge-picker">
+        <div class="fridge-picker-title">Grab a snack</div>
+        <div class="fridge-picker-row">
+          <button type="button" class="btn" data-fridge="sandwich" data-testid="fridge-sandwich">🥪 Sandwich</button>
+          <button type="button" class="btn" data-fridge="soda" data-testid="fridge-soda">🥤 Soda</button>
+          <button type="button" class="btn" data-fridge="water" data-testid="fridge-water">💧 Water</button>
+        </div>
+        <button type="button" class="btn secondary small" id="fridge-close" data-testid="fridge-close">Close</button>
+      </div>
+      <div id="chess-panel" class="chess-panel hidden" data-testid="chess-panel">
+        <div class="chess-top">
+          <div id="chess-status" class="chess-status" data-testid="chess-status">Chess</div>
+          <button type="button" class="btn tiny ghost" id="chess-close" data-testid="chess-close">✕</button>
+        </div>
+        <div id="chess-captured" class="chess-captured" data-testid="chess-captured"></div>
+        <div id="chess-board" class="chess-board" data-testid="chess-board"></div>
+        <div id="chess-result" class="chess-result hidden" data-testid="chess-result"></div>
+        <div class="chess-actions">
+          <button type="button" class="btn small" id="chess-resign" data-testid="chess-resign">Resign</button>
+          <button type="button" class="btn small sage hidden" id="chess-rematch" data-testid="chess-rematch">Rematch</button>
+          <button type="button" class="btn small secondary" id="chess-stand" data-testid="chess-stand">Stand up</button>
+        </div>
+      </div>
+      <div class="dock" id="chat-dock" data-testid="chat-dock">
         <button class="emote-btn" data-testid="emote-eat" id="emote-eat" type="button" title="Eat">🥪</button>
         <button class="emote-btn" data-testid="emote-drink" id="emote-drink" type="button" title="Drink">🥤</button>
-        <input id="chat-input" data-testid="chat-input" type="text" maxlength="80" placeholder="Say something — it vanishes in a few seconds" autocomplete="off" />
+        <textarea id="chat-input" data-testid="chat-input" maxlength="80" rows="1" placeholder="Say something — it vanishes in a few seconds" autocomplete="off"></textarea>
         <button class="btn small" data-testid="chat-send" id="chat-send" type="button">Say</button>
       </div>
     </section>

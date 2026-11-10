@@ -1,4 +1,5 @@
 import { createRoom3D, createAvatarPreview } from "./room3d.js";
+import { Chess } from "/vendor/chess.js";
 
 (() => {
   const socket = io({ transports: ["websocket", "polling"] });
@@ -25,6 +26,19 @@ import { createRoom3D, createAvatarPreview } from "./room3d.js";
     facing: new Map(),
     creatorReturn: null,
     phoneApp: null,
+    editMode: false,
+    placeRot: 0,
+    selectedFurnId: null,
+    movingId: null,
+    pendingArrive: null,
+    chessId: null,
+    chessSel: null,
+    fridgeId: null,
+    activityId: null,
+    lastBoxing: new Map(),
+    lastHits: new Map(),
+    boxAutoTimer: null,
+    gymAutoTimer: null,
   };
 
   function setView(name) {
@@ -383,6 +397,13 @@ import { createRoom3D, createAvatarPreview } from "./room3d.js";
       bubbles: existing.bubbles || [],
       heldProp: p.heldProp ?? existing.heldProp ?? null,
       activePet: p.activePet ?? existing.activePet ?? null,
+      heldItem: p.heldItem ?? existing.heldItem ?? null,
+      boxing: p.boxing ?? existing.boxing ?? null,
+      gym: p.gym ?? existing.gym ?? null,
+      facing: p.facing ?? existing.facing ?? null,
+      stationId: p.stationId ?? existing.stationId ?? null,
+      dirX: existing.dirX,
+      dirZ: existing.dirZ,
     };
   }
 
@@ -407,8 +428,10 @@ import { createRoom3D, createAvatarPreview } from "./room3d.js";
     state.room3d = createRoom3D(el);
     state.room3d.onTileClick(handleTileClick);
     state.room3d.onTileHover((tx, ty) => updatePlaceHighlight(tx, ty));
-    state.room3d.onFurnitureClick((id, type) => {
-      if (type === "couch" && !state.pendingPlace) socket.emit("sit", { furnitureId: id });
+    state.room3d.onFurnitureClick(handleFurnitureClick);
+    state.room3d.onSwitchClick(() => {
+      const on = !(state.room?.lightsOn !== false);
+      socket.emit("setLights", { on });
     });
     return state.room3d;
   }
@@ -431,6 +454,14 @@ import { createRoom3D, createAvatarPreview } from "./room3d.js";
     r3.setGridSize(room.size || 6);
     r3.setStyle(room.wallpaper || "paint-cream", room.floorStyle || "wood");
     r3.setFurniture(room.furniture || []);
+    r3.setLights(room.lightsOn !== false);
+    r3.setUses(room.uses || {});
+    r3.setChessMap(room.chess || {});
+    r3.setTvs(room.tvs || {});
+    state.room.lightsOn = room.lightsOn !== false;
+    state.room.uses = room.uses || {};
+    state.room.chess = room.chess || {};
+    state.room.tvs = room.tvs || {};
     setView("room");
     r3.resize();
     renderPeople();
@@ -528,6 +559,64 @@ import { createRoom3D, createAvatarPreview } from "./room3d.js";
         em.style.top = (pos.y - 4) + "px";
         seen.add("e:" + p.username);
       }
+
+      if (p.typingPreview && p.username === state.me?.username && !active.length) {
+        let typ = layer.querySelector(`[data-testid="typing-${cssEscape(p.username)}"]`);
+        if (!typ) {
+          typ = document.createElement("div");
+          typ.className = "speech-stack";
+          typ.dataset.testid = "typing-" + p.username;
+          layer.appendChild(typ);
+        }
+        typ.innerHTML = `<div class="speech-bubble typing-bubble">${escapeHtml(p.typingPreview)}<i class="bubble-tail" aria-hidden="true"></i></div>`;
+        typ.style.left = Math.min(Math.max(pos.x, 48), W - 48) + "px";
+        typ.style.top = (ny - 10) + "px";
+        seen.add("t:" + p.username);
+      }
+
+      if (p.boxing && p.boxing.combo > 0) {
+        let combo = layer.querySelector(`[data-testid="combo-${cssEscape(p.username)}"]`);
+        if (!combo) {
+          combo = document.createElement("div");
+          combo.className = "combo-float";
+          combo.dataset.testid = "combo-" + p.username;
+          layer.appendChild(combo);
+        }
+        combo.textContent = p.boxing.combo + " HIT" + (p.boxing.combo > 1 ? "S" : "");
+        combo.style.left = nx + "px";
+        combo.style.top = (pos.y - 18) + "px";
+        seen.add("c:" + p.username);
+      }
+
+      const prevBox = state.lastBoxing.get(p.username);
+      const nowBox = Boolean(p.boxing);
+      if (prevBox !== nowBox) {
+        const poof = document.createElement("div");
+        poof.className = "poof-float";
+        poof.style.left = nx + "px";
+        poof.style.top = (pos.y + 8) + "px";
+        layer.appendChild(poof);
+        setTimeout(() => poof.remove(), 450);
+        state.lastBoxing.set(p.username, nowBox);
+      }
+    }
+    // impact flashes on bags
+    for (const [id, use] of Object.entries(state.room?.uses || {})) {
+      if (use?.type !== "punchbag" || !use.lastHitAt) continue;
+      const last = state.lastHits.get(id) || 0;
+      if (use.lastHitAt <= last) continue;
+      state.lastHits.set(id, use.lastHitAt);
+      const mesh = state.room3d.findFurnMesh?.(id);
+      if (!mesh) continue;
+      const v = state.room3d.projectFurniture(id);
+      if (!v) continue;
+      const pow = document.createElement("div");
+      pow.className = "pow-float";
+      pow.textContent = use.move === "uppercut" ? "POW!" : (use.move === "hook" ? "WHAM" : "★");
+      pow.style.left = v.x + "px";
+      pow.style.top = (v.y - 20) + "px";
+      layer.appendChild(pow);
+      setTimeout(() => pow.remove(), 400);
     }
     layer.querySelectorAll(".speech-stack").forEach((el) => {
       const name = el.dataset.testid.replace("bubble-", "");
@@ -539,6 +628,14 @@ import { createRoom3D, createAvatarPreview } from "./room3d.js";
     });
     layer.querySelectorAll("[data-name]").forEach((el) => {
       if (!state.people.has(el.dataset.name)) el.remove();
+    });
+    layer.querySelectorAll(".combo-float").forEach((el) => {
+      const name = el.dataset.testid.replace("combo-", "");
+      if (!seen.has("c:" + name)) el.remove();
+    });
+    layer.querySelectorAll("[data-testid^='typing-']").forEach((el) => {
+      const name = el.dataset.testid.replace("typing-", "");
+      if (!seen.has("t:" + name)) el.remove();
     });
   }
 
@@ -570,7 +667,16 @@ import { createRoom3D, createAvatarPreview } from "./room3d.js";
           p.x = next.x;
           p.y = next.y;
           p.path.shift();
-          if (!p.path.length) p.walking = false;
+          if (!p.path.length) {
+            p.walking = false;
+            if (p.username === state.me?.username && state.pendingArrive) {
+              const job = state.pendingArrive;
+              if (Math.hypot((job.x - p.x), (job.y - p.y)) < 0.85) {
+                state.pendingArrive = null;
+                setTimeout(() => job.fn(), 30);
+              }
+            }
+          }
           changed = true;
         } else {
           p.x += (dx / dist) * speed * dt;
@@ -589,6 +695,8 @@ import { createRoom3D, createAvatarPreview } from "./room3d.js";
       }
     }
     if (changed) renderPeople();
+    else if (state.view === "room") paintOverlays();
+    updateFurnActionPos();
   }
   raf = requestAnimationFrame(tick);
 
@@ -631,12 +739,15 @@ import { createRoom3D, createAvatarPreview } from "./room3d.js";
 
   function startPlace(type) {
     state.pendingPlace = type;
+    state.movingId = null;
+    state.placeRot = state.placeRot || 0;
     const banner = $("#place-banner");
     banner.innerHTML = `Tap a tile to place your ${escapeHtml(labelFor(type))} <button class="btn small secondary" id="cancel-place" type="button">Cancel</button>`;
     SHOW(banner);
     $("#floor").classList.add("placing");
     state.room3d?.setPlacing(type);
     closePhone();
+    if (state.editMode) paintEditInventory();
     $("#cancel-place").addEventListener("click", (e) => {
       e.stopPropagation();
       cancelPlace();
@@ -645,19 +756,488 @@ import { createRoom3D, createAvatarPreview } from "./room3d.js";
 
   function cancelPlace() {
     state.pendingPlace = null;
+    state.movingId = null;
     HIDE($("#place-banner"));
     $("#floor").classList.remove("placing");
-    state.room3d?.setPlacing(null);
+    if (!state.editMode) state.room3d?.setPlacing(null);
     state.room3d?.setGhost(null);
+    const tools = $("#edit-place-tools");
+    if (tools) HIDE(tools);
   }
 
   function updatePlaceHighlight(tx, ty) {
-    if (!state.pendingPlace) {
+    const type = state.pendingPlace || (state.movingId && (state.room?.furniture || []).find((f) => f.id === state.movingId)?.type);
+    if (!type) {
       state.room3d?.setGhost(null);
+      const chk = $("#confirm-place");
+      if (chk) HIDE(chk);
       return;
     }
-    const ok = HouseIso.canPlace(state.room?.furniture || [], state.pendingPlace, tx, ty, state.room?.size || 6);
-    state.room3d?.setGhost(state.pendingPlace, tx, ty, ok);
+    const ignore = state.movingId || undefined;
+    const ok = HouseIso.canPlace(state.room?.furniture || [], type, tx, ty, state.room?.size || 6, state.placeRot, ignore);
+    state.room3d?.setGhost(type, tx, ty, ok, state.placeRot);
+    const chk = $("#confirm-place");
+    if (chk) {
+      if (ok) SHOW(chk);
+      else HIDE(chk);
+    }
+    const tools = $("#edit-place-tools");
+    if (tools && (state.pendingPlace || state.movingId)) SHOW(tools);
+  }
+
+  function enterEditMode() {
+    if (!isOwner()) {
+      toast("Only the cube owner can decorate.");
+      return;
+    }
+    state.editMode = true;
+    document.body.classList.add("edit-mode");
+    SHOW($("#edit-inventory"));
+    $("#edit-inventory")?.classList.remove("collapsed");
+    paintEditInventory();
+    state.room3d?.setPlacing("edit");
+    closePhone();
+  }
+
+  function exitEditMode() {
+    state.editMode = false;
+    document.body.classList.remove("edit-mode");
+    HIDE($("#edit-inventory"));
+    hideFurnActions();
+    cancelPlace();
+    state.selectedFurnId = null;
+    state.movingId = null;
+    state.room3d?.highlightFurniture(null);
+    state.room3d?.setPlacing(null);
+  }
+
+  function paintEditInventory() {
+    const box = $("#edit-inv-items");
+    if (!box) return;
+    const counts = {};
+    for (const t of state.me?.inventory || []) counts[t] = (counts[t] || 0) + 1;
+    const types = Object.keys(counts);
+    box.innerHTML = types.length
+      ? types
+          .map((typ) => {
+            const sel = state.pendingPlace === typ && !state.movingId ? " selected" : "";
+            return `<button type="button" class="edit-inv-item${sel}" data-testid="edit-item-${typ}" data-place="${typ}">
+              ${furnitureSVG(typ)}
+              <span>${escapeHtml(labelFor(typ))}</span>
+              <span class="count" data-testid="edit-count-${typ}">${counts[typ]}</span>
+            </button>`;
+          })
+          .join("")
+      : `<span class="empty">Pocket's empty. Pick something up or buy from the shop.</span>`;
+    box.querySelectorAll("[data-place]").forEach((b) => {
+      b.addEventListener("click", () => {
+        state.movingId = null;
+        state.selectedFurnId = null;
+        hideFurnActions();
+        startPlace(b.dataset.place);
+      });
+    });
+    const styles = $("#edit-styles");
+    if (styles) {
+      styles.innerHTML = `
+        <h4>Wallpaper</h4>
+        <div class="style-row">${HouseIso.WALLPAPERS.map(
+          (w) =>
+            `<button type="button" class="style-swatch${state.room?.wallpaper === w.id ? " selected" : ""}" data-wallpaper="${w.id}" style="background:${w.wall};color:#fff">${w.name}</button>`
+        ).join("")}</div>
+        <h4>Floor</h4>
+        <div class="style-row">${HouseIso.FLOORS.map(
+          (f) =>
+            `<button type="button" class="style-swatch${state.room?.floorStyle === f.id ? " selected" : ""}" data-floor="${f.id}">${f.name}</button>`
+        ).join("")}</div>`;
+      styles.querySelectorAll("[data-wallpaper]").forEach((b) =>
+        b.addEventListener("click", () => socket.emit("setRoomStyle", { wallpaper: b.dataset.wallpaper }))
+      );
+      styles.querySelectorAll("[data-floor]").forEach((b) =>
+        b.addEventListener("click", () => socket.emit("setRoomStyle", { floorStyle: b.dataset.floor }))
+      );
+    }
+    const tools = $("#edit-place-tools");
+    if (tools) {
+      if (state.pendingPlace || state.movingId) SHOW(tools);
+      else HIDE(tools);
+    }
+  }
+
+  function currentPlaceType() {
+    if (state.pendingPlace) return state.pendingPlace;
+    if (state.movingId) {
+      const f = (state.room?.furniture || []).find((x) => x.id === state.movingId);
+      return f?.type || null;
+    }
+    return null;
+  }
+
+  function rotatePending(dir = 1) {
+    if (state.pendingPlace || state.movingId) {
+      state.placeRot = ((state.placeRot || 0) + dir + 4) % 4;
+      const g = state.room3d?.getGhost?.();
+      if (g) updatePlaceHighlight(g.tx, g.ty);
+      paintEditInventory();
+      return;
+    }
+    if (state.selectedFurnId && state.editMode) {
+      const f = (state.room?.furniture || []).find((x) => x.id === state.selectedFurnId);
+      if (!f) return;
+      const rot = ((f.rot || 0) + dir + 4) % 4;
+      socket.emit("moveFurniture", { id: f.id, x: f.x, y: f.y, rot });
+    }
+  }
+
+  function confirmGhostPlace() {
+    const g = state.room3d?.getGhost?.();
+    if (!g || !g.ok) return;
+    handleTileClick(g.tx, g.ty);
+  }
+
+  function hideFurnActions() {
+    HIDE($("#furn-actions"));
+  }
+
+  function showFurnActions(id) {
+    state.selectedFurnId = id;
+    state.room3d?.highlightFurniture(id);
+    SHOW($("#furn-actions"));
+    updateFurnActionPos();
+  }
+
+  function updateFurnActionPos() {
+    const bar = $("#furn-actions");
+    if (!bar || bar.classList.contains("hidden") || !state.selectedFurnId) return;
+    const pos = state.room3d?.projectFurniture(state.selectedFurnId);
+    if (!pos || !pos.visible) return;
+    bar.style.left = pos.x + "px";
+    bar.style.top = pos.y + "px";
+  }
+
+  function inBoundsTile(x, y, size) {
+    return x >= 0 && y >= 0 && x < size && y < size;
+  }
+
+  function approachFurniture(furn, then) {
+    const me = state.people.get(state.me?.username);
+    if (!me) return;
+    const size = state.room?.size || 6;
+    const tiles = HouseIso.tilesFor(furn.type, furn.x, furn.y, furn.rot);
+    const occ = new Set(tiles.map((t) => t.x + "," + t.y));
+    const blocked = blockedNow();
+    const cands = [];
+    for (const t of tiles) {
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const x = t.x + dx, y = t.y + dy;
+        if (!inBoundsTile(x, y, size) || occ.has(x + "," + y) || blocked.has(x + "," + y)) continue;
+        cands.push({ x, y, d: Math.hypot(x - me.x, y - me.y) });
+      }
+    }
+    cands.sort((a, b) => a.d - b.d);
+    const dest = cands[0];
+    if (!dest) {
+      then();
+      return;
+    }
+    if (Math.hypot(dest.x - me.x, dest.y - me.y) < 0.55) {
+      then();
+      return;
+    }
+    const path = HouseIso.pathfind({ x: me.x, y: me.y }, { x: dest.x, y: dest.y }, blocked, size);
+    if (!path) {
+      toast("You can't reach that.");
+      return;
+    }
+    state.pendingArrive = { x: dest.x, y: dest.y, fn: then };
+    socket.emit("move", { x: dest.x, y: dest.y });
+  }
+
+  function handleFurnitureClick(id, type, extra = {}) {
+    if (state.editMode || state.pendingPlace || state.movingId) {
+      if (!state.editMode) return;
+      if (state.pendingPlace) return;
+      const f = (state.room?.furniture || []).find((x) => x.id === id);
+      if (!f) return;
+      showFurnActions(id);
+      return;
+    }
+    const furn = (state.room?.furniture || []).find((x) => x.id === id);
+    if (!furn) return;
+    if (type === "couch") {
+      approachFurniture(furn, () => socket.emit("sit", { furnitureId: id }));
+      return;
+    }
+    if (type === "tv") {
+      socket.emit("toggleTv", { id });
+      return;
+    }
+    if (type === "chesstable") {
+      const game = state.room?.chess?.[id];
+      const me = state.me?.username;
+      if (game && (game.white === me || game.black === me || (game.seats && (game.seats[0] === me || game.seats[1] === me)))) {
+        openChessPanel(id);
+        return;
+      }
+      const seat = extra.seat === 1 ? 1 : (extra.seat === 0 ? 0 : pickFreeChessSeat(game));
+      approachFurniture(furn, () => socket.emit("sitFurniture", { id, seat }));
+      return;
+    }
+    if (type === "fridge") {
+      approachFurniture(furn, () => socket.emit("openFridge", { id }));
+      return;
+    }
+    if (type === "punchbag") {
+      approachFurniture(furn, () => socket.emit("usePunchbag", { id }));
+      return;
+    }
+    if (type === "benchpress" || type === "treadmill") {
+      approachFurniture(furn, () => socket.emit("useGym", { id }));
+    }
+  }
+
+  function pickFreeChessSeat(game) {
+    if (!game) return 0;
+    if (!game.seats?.[0]) return 0;
+    if (!game.seats?.[1]) return 1;
+    return 0;
+  }
+
+  function refreshActivityUI() {
+    const me = state.people.get(state.me?.username);
+    const chip = $("#activity-chip");
+    if (!chip) return;
+    let key = "none";
+    if (me?.boxing) key = "box:" + me.boxing.bagId + ":" + (me.boxing.auto ? "1" : "0");
+    else if (me?.gym) key = "gym:" + me.gym.id + ":" + me.gym.type;
+    else if (me?.heldItem) key = "hold:" + me.heldItem.kind;
+    if (chip.dataset.key === key && key !== "none") {
+      const sub = chip.querySelector(".item-sub");
+      if (sub && me?.gym) {
+        const label = me.gym.type === "treadmill" ? "Running" : "Bench";
+        sub.textContent = label + " · " + (me.gym.reps || 0);
+      }
+      const combo = chip.querySelector(".combo-label");
+      if (combo && me?.boxing) combo.textContent = (me.boxing.combo || 0) + " hits";
+      return;
+    }
+    chip.dataset.key = key;
+    if (me?.boxing) {
+      const id = me.boxing.bagId;
+      state.activityId = id;
+      chip.innerHTML = `
+        <button class="btn small" data-box="jab" data-testid="box-jab">Jab</button>
+        <button class="btn small" data-box="hook" data-testid="box-hook">Hook</button>
+        <button class="btn small" data-box="uppercut" data-testid="box-uppercut">Uppercut</button>
+        <button class="btn small ${me.boxing.auto ? "sage" : ""}" data-testid="box-auto" id="box-auto">Auto</button>
+        <button class="btn small secondary" data-testid="box-done" id="box-done">Done</button>`;
+      SHOW(chip);
+      chip.querySelectorAll("[data-box]").forEach((b) =>
+        b.addEventListener("click", () => socket.emit("boxHit", { id, move: b.dataset.box }))
+      );
+      chip.querySelector("#box-auto")?.addEventListener("click", () => {
+        const on = !me.boxing.auto;
+        socket.emit("boxAuto", { id, on });
+        setBoxAuto(on, id);
+      });
+      chip.querySelector("#box-done")?.addEventListener("click", () => {
+        setBoxAuto(false, id);
+        socket.emit("boxStop", { id });
+      });
+      if (me.boxing.auto) setBoxAuto(true, id);
+      HIDE($("#fridge-picker"));
+      return;
+    }
+    setBoxAuto(false);
+    if (me?.gym) {
+      const id = me.gym.id;
+      state.activityId = id;
+      const label = me.gym.type === "treadmill" ? "Running" : "Bench";
+      chip.innerHTML = `
+        <span class="item-sub">${label} · ${me.gym.reps || 0}</span>
+        ${me.gym.type === "benchpress" ? `<button class="btn small" data-testid="gym-rep" id="gym-rep">Lift</button>` : ""}
+        <button class="btn small secondary" data-testid="gym-done" id="gym-done">Done</button>`;
+      SHOW(chip);
+      chip.querySelector("#gym-rep")?.addEventListener("click", () => socket.emit("gymRep", { id }));
+      chip.querySelector("#gym-done")?.addEventListener("click", () => {
+        clearInterval(state.gymAutoTimer);
+        state.gymAutoTimer = null;
+        socket.emit("gymStop", { id });
+      });
+      if (me.gym.type === "benchpress" && !state.gymAutoTimer) {
+        state.gymAutoTimer = setInterval(() => socket.emit("gymRep", { id }), 900);
+      }
+      return;
+    }
+    clearInterval(state.gymAutoTimer);
+    state.gymAutoTimer = null;
+    if (me?.heldItem) {
+      chip.innerHTML = `<span class="item-sub">Holding ${me.heldItem.kind}</span><button class="btn small secondary" data-testid="stow-item" id="stow-item">Done</button>`;
+      SHOW(chip);
+      chip.querySelector("#stow-item")?.addEventListener("click", () => socket.emit("stowItem"));
+      return;
+    }
+    HIDE(chip);
+  }
+
+  function setBoxAuto(on, id) {
+    if (state.boxAutoTimer) {
+      clearInterval(state.boxAutoTimer);
+      state.boxAutoTimer = null;
+    }
+    if (!on || !id) return;
+    let i = 0;
+    const cycle = ["jab", "hook", "jab", "uppercut"];
+    state.boxAutoTimer = setInterval(() => {
+      const mv = cycle[i++ % cycle.length];
+      socket.emit("boxHit", { id, move: mv });
+    }, 420);
+  }
+
+  function showFridgePicker(id) {
+    state.fridgeId = id;
+    SHOW($("#fridge-picker"));
+  }
+  function hideFridgePicker() {
+    HIDE($("#fridge-picker"));
+    state.fridgeId = null;
+  }
+
+  const PIECE_UNI = {
+    p: "♟", r: "♜", n: "♞", b: "♝", q: "♛", k: "♚",
+    P: "♙", R: "♖", N: "♘", B: "♗", Q: "♕", K: "♔",
+  };
+
+  function openChessPanel(id) {
+    state.chessId = id;
+    SHOW($("#chess-panel"));
+    paintChessPanel();
+  }
+  function closeChessPanel() {
+    HIDE($("#chess-panel"));
+    state.chessId = null;
+    state.chessSel = null;
+  }
+
+  function paintChessPanel() {
+    const id = state.chessId;
+    const game = id && state.room?.chess?.[id];
+    if (!game) return;
+    const me = state.me?.username;
+    const isWhite = game.white === me;
+    const isBlack = game.black === me;
+    const isPlayer = isWhite || isBlack;
+    const myTurn = !game.result && ((game.turn === "w" && isWhite) || (game.turn === "b" && isBlack));
+    const status = $("#chess-status");
+    if (status) {
+      if (game.result) status.textContent = game.result === "checkmate" ? `Checkmate · ${game.winner} wins` : game.result === "resign" ? `${game.winner} wins` : "Draw";
+      else if (!game.white || !game.black) status.textContent = "Waiting for an opponent…";
+      else status.textContent = `${game.turn === "w" ? "White" : "Black"} to move${game.check ? " · check" : ""}`;
+    }
+    const cap = $("#chess-captured");
+    if (cap) {
+      const w = (game.captured?.w || []).map((c) => PIECE_UNI[c.toUpperCase()] || c).join(" ");
+      const b = (game.captured?.b || []).map((c) => PIECE_UNI[c] || c).join(" ");
+      cap.textContent = (w ? "White took " + w + "  " : "") + (b ? "Black took " + b : "");
+    }
+    const result = $("#chess-result");
+    if (result) {
+      if (game.result) {
+        result.textContent = game.checkmate || game.result === "checkmate"
+          ? `Checkmate! ${game.winner} wins`
+          : game.result === "stalemate"
+            ? "Stalemate"
+            : game.result === "resign"
+              ? `${game.winner} wins by resignation`
+              : "Draw";
+        SHOW(result);
+        if (isPlayer) SHOW($("#chess-rematch"));
+      } else {
+        HIDE(result);
+        HIDE($("#chess-rematch"));
+      }
+    }
+    const boardEl = $("#chess-board");
+    if (!boardEl) return;
+    let engine = null;
+    try { engine = new Chess(game.fen); } catch { engine = new Chess(); }
+    const flip = isBlack;
+    const legal = new Set();
+    if (myTurn && state.chessSel) {
+      engine.moves({ square: state.chessSel, verbose: true }).forEach((m) => legal.add(m.to));
+    }
+    const last = game.lastMove || {};
+    const files = "abcdefgh";
+    const ranks = [8, 7, 6, 5, 4, 3, 2, 1];
+    const orderFiles = flip ? files.split("").reverse() : files.split("");
+    const orderRanks = flip ? ranks.slice().reverse() : ranks;
+    let html = "";
+    for (const r of orderRanks) {
+      for (const f of orderFiles) {
+        const sq = f + r;
+        const fileIdx = files.indexOf(f);
+        const dark = (fileIdx + r) % 2 === 0;
+        const piece = engine.get(sq);
+        const ch = piece ? (piece.color === "w" ? piece.type.toUpperCase() : piece.type) : "";
+        const cls = [
+          "chess-sq",
+          dark ? "dark" : "light",
+          state.chessSel === sq ? "sel" : "",
+          legal.has(sq) ? "legal" : "",
+          last.from === sq || last.to === sq ? "last" : "",
+        ].filter(Boolean).join(" ");
+        html += `<button type="button" class="${cls}" data-square="${sq}" data-testid="chess-sq-${sq}">${ch ? PIECE_UNI[ch] : ""}</button>`;
+      }
+    }
+    boardEl.innerHTML = html;
+    boardEl.querySelectorAll("[data-square]").forEach((b) => {
+      b.addEventListener("click", () => onChessSquare(b.dataset.square, engine, myTurn, isPlayer, isWhite, isBlack));
+    });
+  }
+
+  function onChessSquare(sq, engine, myTurn, isPlayer, isWhite, isBlack) {
+    if (!isPlayer || !myTurn) {
+      // spectators / waiting: still allow select highlight locally? keep read-only
+      return;
+    }
+    const piece = engine.get(sq);
+    if (state.chessSel) {
+      const moves = engine.moves({ square: state.chessSel, verbose: true }).filter((m) => m.to === sq);
+      if (moves.length) {
+        socket.emit("chessMove", { id: state.chessId, from: state.chessSel, to: sq });
+        state.chessSel = null;
+        paintChessPanel();
+        return;
+      }
+    }
+    if (piece && ((piece.color === "w" && isWhite) || (piece.color === "b" && isBlack))) {
+      state.chessSel = sq;
+      paintChessPanel();
+    } else {
+      state.chessSel = null;
+      paintChessPanel();
+    }
+  }
+
+  function syncKeyboardInset() {
+    const vv = window.visualViewport;
+    let inset = 0;
+    if (vv) inset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+    document.documentElement.style.setProperty("--kb-inset", inset + "px");
+    document.querySelector(".room-view")?.style.setProperty("--kb-inset", inset + "px");
+  }
+
+  function autosizeChat() {
+    const el = $("#chat-input");
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = Math.min(96, Math.max(44, el.scrollHeight)) + "px";
+    const me = state.people.get(state.me?.username);
+    if (me) {
+      const val = el.value.trim();
+      me.typingPreview = val || null;
+      paintOverlays();
+    }
   }
 
 
@@ -855,7 +1435,12 @@ import { createRoom3D, createAvatarPreview } from "./room3d.js";
     if (!screen) return;
     SHOW(screen);
     state.phoneApp = app;
-    if (app === "edit") paintEditRoom();
+    if (app === "edit") {
+      closePhone();
+      enterEditMode();
+      return;
+    }
+    if (app === "edit-legacy") paintEditRoom();
     if (app === "shop") paintShop();
     if (app === "invite") {
       const input = $("#invite-name");
@@ -1164,6 +1749,19 @@ import { createRoom3D, createAvatarPreview } from "./room3d.js";
       if (state.phoneApp && state.phoneApp !== "home") showPhoneHome();
       else closePhone();
     }
+    if (e.key === "Escape" && state.editMode) {
+      if (state.pendingPlace || state.movingId) cancelPlace();
+      else if (state.selectedFurnId) {
+        state.selectedFurnId = null;
+        hideFurnActions();
+        state.room3d?.highlightFurniture(null);
+      }
+    }
+    if ((e.key === "r" || e.key === "R") && state.view === "room") {
+      const tag = (e.target && e.target.tagName) || "";
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      rotatePending(1);
+    }
   });
   const phoneDevice = $("#phone-device");
   let swipeStart = null;
@@ -1188,19 +1786,48 @@ import { createRoom3D, createAvatarPreview } from "./room3d.js";
     if (!text.trim()) return;
     socket.emit("say", { text });
     $("#chat-input").value = "";
+    autosizeChat();
   }
   $("#chat-send").addEventListener("click", sendChat);
   $("#chat-input").addEventListener("keydown", (e) => {
-    if (e.key === "Enter") sendChat();
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendChat();
+    }
   });
+  $("#chat-input").addEventListener("input", autosizeChat);
+  $("#chat-input").addEventListener("focus", () => setTimeout(syncKeyboardInset, 50));
+  $("#chat-input").addEventListener("blur", () => setTimeout(syncKeyboardInset, 50));
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", syncKeyboardInset);
+    window.visualViewport.addEventListener("scroll", syncKeyboardInset);
+  }
+  window.addEventListener("resize", syncKeyboardInset);
+  syncKeyboardInset();
 
   function handleTileClick(tx, ty) {
     if (state.pendingPlace) {
-      if (!HouseIso.canPlace(state.room?.furniture || [], state.pendingPlace, tx, ty, state.room?.size || 6)) {
+      if (!HouseIso.canPlace(state.room?.furniture || [], state.pendingPlace, tx, ty, state.room?.size || 6, state.placeRot)) {
         toast("That doesn't fit on those tiles.");
         return;
       }
-      socket.emit("placeFurniture", { type: state.pendingPlace, x: tx, y: ty });
+      socket.emit("placeFurniture", { type: state.pendingPlace, x: tx, y: ty, rot: state.placeRot });
+      return;
+    }
+    if (state.movingId) {
+      const f = (state.room?.furniture || []).find((x) => x.id === state.movingId);
+      if (!f) { cancelPlace(); return; }
+      if (!HouseIso.canPlace(state.room?.furniture || [], f.type, tx, ty, state.room?.size || 6, state.placeRot, f.id)) {
+        toast("That doesn't fit on those tiles.");
+        return;
+      }
+      socket.emit("moveFurniture", { id: f.id, x: tx, y: ty, rot: state.placeRot });
+      return;
+    }
+    if (state.editMode) {
+      state.selectedFurnId = null;
+      hideFurnActions();
+      state.room3d?.highlightFurniture(null);
       return;
     }
     const me = state.people.get(state.me?.username);
@@ -1227,6 +1854,58 @@ import { createRoom3D, createAvatarPreview } from "./room3d.js";
     socket.emit("inviteUser", { username: $("#invite-name").value.trim() });
     showPhoneHome();
   });
+
+  $("#edit-done")?.addEventListener("click", exitEditMode);
+  $("#edit-inv-toggle")?.addEventListener("click", () => {
+    $("#edit-inventory")?.classList.toggle("collapsed");
+  });
+  $("#rotate-place")?.addEventListener("click", () => rotatePending(1));
+  $("#confirm-place")?.addEventListener("click", confirmGhostPlace);
+  $("#furn-rotate")?.addEventListener("click", () => rotatePending(1));
+  $("#furn-move")?.addEventListener("click", () => {
+    const f = (state.room?.furniture || []).find((x) => x.id === state.selectedFurnId);
+    if (!f) return;
+    hideFurnActions();
+    state.movingId = f.id;
+    state.pendingPlace = null;
+    state.placeRot = f.rot || 0;
+    state.room3d?.setPlacing(f.type);
+    SHOW($("#place-banner"));
+    $("#place-banner").innerHTML = `Move your ${escapeHtml(labelFor(f.type))} <button class="btn small secondary" id="cancel-place" type="button">Cancel</button>`;
+    $("#cancel-place")?.addEventListener("click", (e) => { e.stopPropagation(); cancelPlace(); });
+    updatePlaceHighlight(f.x, f.y);
+    paintEditInventory();
+  });
+  $("#furn-pickup")?.addEventListener("click", () => {
+    if (!state.selectedFurnId) return;
+    socket.emit("pickupFurniture", { id: state.selectedFurnId });
+    hideFurnActions();
+    state.selectedFurnId = null;
+    state.room3d?.highlightFurniture(null);
+  });
+  $("#fridge-close")?.addEventListener("click", () => {
+    if (state.fridgeId) socket.emit("closeFridge", { id: state.fridgeId });
+    hideFridgePicker();
+  });
+  document.querySelectorAll("[data-fridge]").forEach((b) => {
+    b.addEventListener("click", () => {
+      if (!state.fridgeId) return;
+      socket.emit("fridgeTake", { id: state.fridgeId, item: b.dataset.fridge });
+      hideFridgePicker();
+    });
+  });
+  $("#chess-close")?.addEventListener("click", closeChessPanel);
+  $("#chess-resign")?.addEventListener("click", () => {
+    if (state.chessId) socket.emit("chessResign", { id: state.chessId });
+  });
+  $("#chess-rematch")?.addEventListener("click", () => {
+    if (state.chessId) socket.emit("chessRematch", { id: state.chessId });
+  });
+  $("#chess-stand")?.addEventListener("click", () => {
+    socket.emit("standUp");
+    closeChessPanel();
+  });
+
 
   /* ---------- socket ---------- */
   socket.on("loggedIn", ({ user, rooms }) => {
@@ -1255,8 +1934,15 @@ import { createRoom3D, createAvatarPreview } from "./room3d.js";
       self.heldProp = user.heldProp;
       self.activePet = user.activePet;
       self.avatar = user.avatar;
+      self.heldItem = user.heldItem;
+      self.boxing = user.boxing;
+      self.gym = user.gym;
+      self.facing = user.facing;
+      self.stationId = user.stationId;
       renderPeople();
     }
+    if (state.editMode) paintEditInventory();
+    refreshActivityUI();
     if (state.view === "creator") {
       returnFromCreator();
     } else if (state.view === "lobby") {
@@ -1299,6 +1985,11 @@ import { createRoom3D, createAvatarPreview } from "./room3d.js";
     const layer = document.getElementById("bubble-layer");
     if (layer) layer.innerHTML = "";
     cancelPlace();
+    exitEditMode();
+    closeChessPanel();
+    hideFridgePicker();
+    HIDE($("#activity-chip"));
+    setBoxAuto(false);
     paintLobby();
     setView("lobby");
   });
@@ -1330,13 +2021,21 @@ import { createRoom3D, createAvatarPreview } from "./room3d.js";
       cur.avatar = person.avatar;
       cur.heldProp = person.heldProp;
       cur.activePet = person.activePet;
+      cur.heldItem = person.heldItem;
+      cur.boxing = person.boxing;
+      cur.gym = person.gym;
+      cur.facing = person.facing;
+      cur.stationId = person.stationId;
+      if (person.sitting != null) cur.sitting = person.sitting;
       renderPeople();
     }
+    if (person.username === state.me?.username) refreshActivityUI();
   });
 
-  socket.on("userMoved", ({ username, x, y, sitting }) => {
+  socket.on("userMoved", ({ username, x, y, sitting, facing }) => {
     const p = state.people.get(username);
     if (!p) return;
+    if (facing) p.facing = facing;
     setPersonDest(p, x, y, sitting);
     renderPeople();
   });
@@ -1367,6 +2066,81 @@ import { createRoom3D, createAvatarPreview } from "./room3d.js";
       addFurnitureEl(piece);
     }
     cancelPlace();
+    if (state.editMode) paintEditInventory();
+  });
+
+  socket.on("furnitureUpdated", (piece) => {
+    if (!state.room) return;
+    const idx = state.room.furniture.findIndex((f) => f.id === piece.id);
+    if (idx >= 0) state.room.furniture[idx] = piece;
+    else state.room.furniture.push(piece);
+    renderFloorStatic();
+    if (state.movingId === piece.id) {
+      cancelPlace();
+      state.selectedFurnId = piece.id;
+      showFurnActions(piece.id);
+    } else if (state.selectedFurnId === piece.id) {
+      state.room3d?.highlightFurniture(piece.id);
+      updateFurnActionPos();
+    }
+  });
+
+  socket.on("furnitureRemoved", ({ id }) => {
+    if (!state.room) return;
+    state.room.furniture = (state.room.furniture || []).filter((f) => f.id !== id);
+    if (state.room.uses) delete state.room.uses[id];
+    if (state.room.chess) delete state.room.chess[id];
+    if (state.room.tvs) delete state.room.tvs[id];
+    renderFloorStatic();
+    state.room3d?.setUses(state.room.uses || {});
+    state.room3d?.setChessMap(state.room.chess || {});
+    state.room3d?.setTvs(state.room.tvs || {});
+    if (state.selectedFurnId === id) {
+      state.selectedFurnId = null;
+      hideFurnActions();
+    }
+    if (state.chessId === id) closeChessPanel();
+    if (state.editMode) paintEditInventory();
+  });
+
+  socket.on("lightsUpdated", ({ on }) => {
+    if (!state.room) return;
+    state.room.lightsOn = on;
+    state.room3d?.setLights(on);
+  });
+
+  socket.on("tvUpdated", ({ id, tv }) => {
+    if (!state.room) return;
+    state.room.tvs = state.room.tvs || {};
+    if (tv) state.room.tvs[id] = tv;
+    else delete state.room.tvs[id];
+    state.room3d?.setTvs(state.room.tvs);
+  });
+
+  socket.on("useUpdated", ({ id, use }) => {
+    if (!state.room) return;
+    state.room.uses = state.room.uses || {};
+    if (use) state.room.uses[id] = use;
+    else delete state.room.uses[id];
+    state.room3d?.setUses(state.room.uses);
+    const me = state.me?.username;
+    if (use && use.type === "fridge" && use.open && use.user === me) showFridgePicker(id);
+    if ((!use || !use.open) && state.fridgeId === id) hideFridgePicker();
+    refreshActivityUI();
+    paintOverlays();
+  });
+
+  socket.on("chessUpdated", ({ id, game }) => {
+    if (!state.room) return;
+    state.room.chess = state.room.chess || {};
+    if (game) state.room.chess[id] = game;
+    else delete state.room.chess[id];
+    state.room3d?.setChessMap(state.room.chess);
+    const me = state.me?.username;
+    const seated = game && (game.white === me || game.black === me || game.seats?.[0] === me || game.seats?.[1] === me);
+    if (seated && game.white && game.black) openChessPanel(id);
+    else if (state.chessId === id) paintChessPanel();
+    // spectators who already opened it stay updated
   });
 
   socket.on("roomResized", ({ size }) => {
@@ -1454,6 +2228,14 @@ import { createRoom3D, createAvatarPreview } from "./room3d.js";
   socket.on("storePurchase", ({ label, coins, price }) => {
     toast(`${label}: +${coins} coins (${price} prototype)`);
   });
+
+  window.__debugKit = (kit) => socket.emit("debugKit", kit);
+  window.__clickFurniture = (id, type, extra) => handleFurnitureClick(id, type, extra || {});
+  window.__enterEdit = enterEditMode;
+  window.__exitEdit = exitEditMode;
+  window.__startPlace = startPlace;
+  window.__highlightTile = (x, y) => updatePlaceHighlight(x, y);
+  window.__rotatePending = () => rotatePending(1);
 
   paintLoginPreview();
   setView("login");

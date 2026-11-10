@@ -3,6 +3,7 @@ import { createServer } from "http";
 import { Server } from "socket.io";
 import path from "path";
 import { fileURLToPath } from "url";
+import { Chess } from "chess.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT) || 3000;
@@ -32,6 +33,10 @@ const FURNITURE_CATALOG = {
   kitchenette: { name: "Kitchenette", price: 32, w: 2, h: 1, blocks: true },
   chair: { name: "Chair", price: 12, w: 1, h: 1, blocks: true },
   bookshelf: { name: "Bookshelf", price: 28, w: 2, h: 1, blocks: true },
+  chesstable: { name: "Chess table", price: 45, w: 2, h: 2, blocks: true },
+  punchbag: { name: "Punching bag", price: 30, w: 1, h: 1, blocks: true },
+  benchpress: { name: "Bench press", price: 35, w: 2, h: 1, blocks: true },
+  treadmill: { name: "Treadmill", price: 35, w: 1, h: 2, blocks: true },
 };
 const WALLPAPERS = ["paint-cream", "paint-sage", "paint-blush", "paint-slate"];
 const FLOORS = ["wood", "tile", "carpet"];
@@ -96,12 +101,22 @@ function inBounds(x, y, size) {
   return Number.isInteger(x) && Number.isInteger(y) && x >= 0 && y >= 0 && x < n && y < n;
 }
 
-function tilesFor(type, x, y) {
+function normalizeRot(rot) {
+  return ((Number(rot) || 0) % 4 + 4) % 4;
+}
+
+function dimsOf(type, rot) {
   const item = FURNITURE_CATALOG[type];
-  if (!item) return [];
+  if (!item) return { w: 1, h: 1 };
+  const r = normalizeRot(rot);
+  return r % 2 === 1 ? { w: item.h, h: item.w } : { w: item.w, h: item.h };
+}
+
+function tilesFor(type, x, y, rot) {
+  const { w, h } = dimsOf(type, rot);
   const out = [];
-  for (let dy = 0; dy < item.h; dy++) {
-    for (let dx = 0; dx < item.w; dx++) out.push({ x: x + dx, y: y + dy });
+  for (let dy = 0; dy < h; dy++) {
+    for (let dx = 0; dx < w; dx++) out.push({ x: x + dx, y: y + dy });
   }
   return out;
 }
@@ -111,25 +126,26 @@ function blockedSet(room) {
   for (const f of room.furniture) {
     const item = FURNITURE_CATALOG[f.type];
     if (!item?.blocks) continue;
-    for (const t of tilesFor(f.type, f.x, f.y)) set.add(`${t.x},${t.y}`);
+    for (const t of tilesFor(f.type, f.x, f.y, f.rot)) set.add(`${t.x},${t.y}`);
   }
   return set;
 }
 
-function occupiedSet(room) {
+function occupiedSet(room, ignoreId) {
   const set = new Set();
   for (const f of room.furniture) {
-    for (const t of tilesFor(f.type, f.x, f.y)) set.add(`${t.x},${t.y}`);
+    if (ignoreId && f.id === ignoreId) continue;
+    for (const t of tilesFor(f.type, f.x, f.y, f.rot)) set.add(`${t.x},${t.y}`);
   }
   return set;
 }
 
-function canPlaceOn(room, type, x, y) {
+function canPlaceOn(room, type, x, y, rot, ignoreId) {
   const item = FURNITURE_CATALOG[type];
   if (!item) return false;
-  const tiles = tilesFor(type, x, y);
+  const tiles = tilesFor(type, x, y, rot);
   if (!tiles.length || tiles.some((t) => !inBounds(t.x, t.y, roomSize(room)))) return false;
-  const used = occupiedSet(room);
+  const used = occupiedSet(room, ignoreId);
   return tiles.every((t) => !used.has(`${t.x},${t.y}`));
 }
 
@@ -228,6 +244,11 @@ function snapshotPerson(u) {
     emote: u.emote,
     heldProp: u.heldProp || null,
     activePet: u.activePet || null,
+    heldItem: u.heldItem || null,
+    boxing: u.boxing || null,
+    gym: u.gym || null,
+    facing: u.facing || null,
+    stationId: u.stationId || null,
   };
 }
 
@@ -241,6 +262,10 @@ function roomState(room) {
     furniture: room.furniture,
     wallpaper: room.wallpaper,
     floorStyle: room.floorStyle,
+    lightsOn: room.lightsOn !== false,
+    tvs: room.tvs || {},
+    chess: publicChessMap(room),
+    uses: room.uses || {},
     grid: roomSize(room),
     size: roomSize(room),
     occupants: room.occupants.slice(),
@@ -338,6 +363,148 @@ function notifyFriendWatchers(subject) {
   }
 }
 
+
+function ensureRoomExtras(room) {
+  if (!room.tvs) room.tvs = {};
+  if (!room.chess) room.chess = {};
+  if (!room.uses) room.uses = {};
+  if (room.lightsOn === undefined) room.lightsOn = true;
+  return room;
+}
+
+function publicChess(game) {
+  if (!game) return null;
+  const fen = game.engine ? game.engine.fen() : game.fen;
+  const engine = game.engine || (fen ? new Chess(fen) : null);
+  return {
+    fen,
+    white: game.white || null,
+    black: game.black || null,
+    seats: game.seats || { 0: null, 1: null },
+    result: game.result || null,
+    winner: game.winner || null,
+    lastMove: game.lastMove || null,
+    turn: engine ? engine.turn() : "w",
+    check: engine ? engine.isCheck() : false,
+    checkmate: engine ? engine.isCheckmate() : false,
+    stalemate: engine ? engine.isStalemate() : false,
+    captured: game.captured || { w: [], b: [] },
+    legal: null,
+  };
+}
+
+function publicChessMap(room) {
+  const out = {};
+  for (const [id, g] of Object.entries(room.chess || {})) {
+    out[id] = publicChess(g);
+  }
+  return out;
+}
+
+function emitRoom(room, event, payload) {
+  io.to(room.id).emit(event, payload);
+}
+
+function emitPerson(user) {
+  emitProfile(user);
+  if (user.roomId) io.to(user.roomId).emit("userUpdated", snapshotPerson(user));
+}
+
+function clearHeldTimer(user) {
+  if (user._heldTimer) {
+    clearTimeout(user._heldTimer);
+    user._heldTimer = null;
+  }
+}
+
+function clearUserActivities(user, room, { forfeit = true } = {}) {
+  if (!user) return;
+  const stationId = user.stationId;
+  if (room && stationId) {
+    const use = room.uses?.[stationId];
+    const furn = room.furniture.find((f) => f.id === stationId);
+    if (furn?.type === "chesstable" && room.chess?.[stationId]) {
+      const game = room.chess[stationId];
+      if (forfeit && !game.result && (game.white === user.username || game.black === user.username) && game.white && game.black) {
+        const winner = game.white === user.username ? game.black : game.white;
+        game.result = "forfeit";
+        game.winner = winner;
+        emitRoom(room, "chessUpdated", { id: stationId, game: publicChess(game) });
+      }
+      if (game.seats) {
+        if (game.seats[0] === user.username) game.seats[0] = null;
+        if (game.seats[1] === user.username) game.seats[1] = null;
+      }
+      if (game.white === user.username) game.white = null;
+      if (game.black === user.username) game.black = null;
+      emitRoom(room, "chessUpdated", { id: stationId, game: publicChess(game) });
+    }
+    if (use && use.user === user.username) {
+      delete room.uses[stationId];
+      emitRoom(room, "useUpdated", { id: stationId, use: null });
+    }
+  }
+  user.stationId = null;
+  user.sitting = false;
+  if (user.boxing) user.boxing = null;
+  if (user.gym) user.gym = null;
+}
+
+function capturedFromHistory(engine) {
+  const cap = { w: [], b: [] };
+  for (const m of engine.history({ verbose: true })) {
+    if (m.captured) {
+      const taker = m.color;
+      cap[taker].push(m.captured);
+    }
+  }
+  return cap;
+}
+
+function requireOwner(socket, user) {
+  if (!user?.roomId) return null;
+  const room = rooms.get(user.roomId);
+  if (!room || room.owner.toLowerCase() !== user.username.toLowerCase()) {
+    socket.emit("errorMsg", { message: "Only the cube owner can decorate this room." });
+    return null;
+  }
+  return room;
+}
+
+
+function seatWorld(furn, seatNum) {
+  const { w, h } = dimsOf(furn.type, furn.rot);
+  const rot = normalizeRot(furn.rot);
+  // seat 0 at the "front" of the table, seat 1 at the back, in tile coords
+  let sx = furn.x + (w - 1) / 2;
+  let sy = furn.y + (h - 1) / 2;
+  const off = 0.85;
+  if (rot === 0) sy = seatNum === 0 ? furn.y + h - 0.15 : furn.y + 0.15;
+  else if (rot === 2) sy = seatNum === 0 ? furn.y + 0.15 : furn.y + h - 0.15;
+  else if (rot === 1) sx = seatNum === 0 ? furn.x + 0.15 : furn.x + w - 0.15;
+  else sx = seatNum === 0 ? furn.x + w - 0.15 : furn.x + 0.15;
+  return { x: sx, y: sy };
+}
+
+function startHeldItem(user, kind) {
+  const durations = { sandwich: 7500, soda: 6500, water: 6000 };
+  clearHeldTimer(user);
+  if (user.heldProp) {
+    user.stowedProp = user.heldProp;
+    user.heldProp = null;
+  }
+  user.heldItem = { kind, startedAt: Date.now() };
+  user._heldTimer = setTimeout(() => {
+    user.heldItem = null;
+    user._heldTimer = null;
+    if (user.stowedProp) {
+      user.heldProp = user.stowedProp;
+      user.stowedProp = null;
+    }
+    emitPerson(user);
+  }, durations[kind] || 6000);
+}
+
 function emitProfile(user) {
   if (user.socketId) io.to(user.socketId).emit("profile", publicUser(user));
 }
@@ -346,9 +513,12 @@ function leaveRoom(user) {
   if (!user?.roomId) return;
   const prevId = user.roomId;
   const room = rooms.get(prevId);
+  if (room) clearUserActivities(user, room, { forfeit: true });
   user.roomId = null;
   user.sitting = false;
   user.emote = null;
+  user.heldItem = null;
+  clearHeldTimer(user);
   if (room) {
     room.occupants = room.occupants.filter(
       (n) => n.toLowerCase() !== user.username.toLowerCase()
@@ -567,6 +737,10 @@ io.on("connection", (socket) => {
       size: START_SIZE,
       wallpaper: "paint-cream",
       floorStyle: "wood",
+      lightsOn: true,
+      tvs: {},
+      chess: {},
+      uses: {},
       invites: new Set(),
     };
     rooms.set(room.id, room);
@@ -614,6 +788,9 @@ io.on("connection", (socket) => {
     const ty = Math.round(Number(y));
     if (!room || !inBounds(tx, ty, roomSize(room))) return;
     if (blockedSet(room).has(`${tx},${ty}`)) return;
+    const dx = tx - (user.x ?? tx);
+    const dy = ty - (user.y ?? ty);
+    if (dx || dy) user.facing = { x: dx, z: dy };
     user.x = tx;
     user.y = ty;
     user.sitting = false;
@@ -622,6 +799,7 @@ io.on("connection", (socket) => {
       x: user.x,
       y: user.y,
       sitting: false,
+      facing: user.facing || null,
     });
   });
 
@@ -659,7 +837,9 @@ io.on("connection", (socket) => {
     if (!user?.roomId) return;
     if (type !== "eat" && type !== "drink") return;
     user.emote = type;
+    startHeldItem(user, type === "eat" ? "sandwich" : "soda");
     io.to(user.roomId).emit("userEmote", { username: user.username, type });
+    emitPerson(user);
     const stamp = type;
     setTimeout(() => {
       if (user.emote === stamp) {
@@ -712,14 +892,10 @@ io.on("connection", (socket) => {
     socket.emit("bought", { type, name: item.name, coins: user.coins });
   });
 
-  socket.on("placeFurniture", ({ type, x, y } = {}) => {
+  socket.on("placeFurniture", ({ type, x, y, rot } = {}) => {
     const user = getUser(socket);
-    if (!user?.roomId) return;
-    const room = rooms.get(user.roomId);
-    if (!room || room.owner.toLowerCase() !== user.username.toLowerCase()) {
-      socket.emit("errorMsg", { message: "Only the room owner can place furniture." });
-      return;
-    }
+    const room = requireOwner(socket, user);
+    if (!room) return;
     const idx = user.inventory.indexOf(type);
     if (idx === -1) {
       socket.emit("errorMsg", { message: "Buy that item first." });
@@ -728,15 +904,59 @@ io.on("connection", (socket) => {
     if (!FURNITURE_CATALOG[type]) return;
     const tx = Math.round(Number(x));
     const ty = Math.round(Number(y));
-    if (!canPlaceOn(room, type, tx, ty)) {
+    const r = normalizeRot(rot);
+    if (!canPlaceOn(room, type, tx, ty, r)) {
       socket.emit("errorMsg", { message: "That doesn't fit on those tiles." });
       return;
     }
     user.inventory.splice(idx, 1);
-    const piece = { id: "f" + furnSeq++, type, x: tx, y: ty };
+    const piece = { id: "f" + furnSeq++, type, x: tx, y: ty, rot: r };
     room.furniture.push(piece);
     emitProfile(user);
     io.to(room.id).emit("furniturePlaced", piece);
+  });
+
+  socket.on("moveFurniture", ({ id, x, y, rot } = {}) => {
+    const user = getUser(socket);
+    const room = requireOwner(socket, user);
+    if (!room) return;
+    const piece = room.furniture.find((f) => f.id === id);
+    if (!piece) return;
+    const tx = Math.round(Number(x));
+    const ty = Math.round(Number(y));
+    const r = normalizeRot(rot ?? piece.rot);
+    if (!canPlaceOn(room, piece.type, tx, ty, r, piece.id)) {
+      socket.emit("errorMsg", { message: "That doesn't fit on those tiles." });
+      return;
+    }
+    piece.x = tx;
+    piece.y = ty;
+    piece.rot = r;
+    io.to(room.id).emit("furnitureUpdated", piece);
+  });
+
+  socket.on("pickupFurniture", ({ id } = {}) => {
+    const user = getUser(socket);
+    const room = requireOwner(socket, user);
+    if (!room) return;
+    const idx = room.furniture.findIndex((f) => f.id === id);
+    if (idx === -1) return;
+    const piece = room.furniture[idx];
+    // kick anyone using it
+    for (const u of users.values()) {
+      if (u.stationId === id && u.roomId === room.id) {
+        clearUserActivities(u, room, { forfeit: true });
+        u.sitting = false;
+        emitPerson(u);
+      }
+    }
+    if (room.chess?.[id]) delete room.chess[id];
+    if (room.tvs?.[id]) delete room.tvs[id];
+    if (room.uses?.[id]) delete room.uses[id];
+    room.furniture.splice(idx, 1);
+    user.inventory.push(piece.type);
+    emitProfile(user);
+    io.to(room.id).emit("furnitureRemoved", { id, type: piece.type });
   });
 
   socket.on("upgradeCube", () => {
@@ -892,6 +1112,370 @@ io.on("connection", (socket) => {
     user.avatar = sanitizeAvatar({ ...user.avatar, ...(item.item || {}) });
     emitProfile(user);
     if (user.roomId) io.to(user.roomId).emit("userUpdated", snapshotPerson(user));
+  });
+
+
+  socket.on("setLights", ({ on } = {}) => {
+    const user = getUser(socket);
+    if (!user?.roomId) return;
+    const room = rooms.get(user.roomId);
+    if (!room) return;
+    ensureRoomExtras(room);
+    room.lightsOn = Boolean(on);
+    io.to(room.id).emit("lightsUpdated", { on: room.lightsOn });
+  });
+
+  socket.on("toggleTv", ({ id } = {}) => {
+    const user = getUser(socket);
+    if (!user?.roomId) return;
+    const room = rooms.get(user.roomId);
+    const furn = room?.furniture.find((f) => f.id === id && f.type === "tv");
+    if (!furn) return;
+    ensureRoomExtras(room);
+    const cur = room.tvs[id] || { on: false, channel: 0 };
+    cur.on = !cur.on;
+    room.tvs[id] = cur;
+    io.to(room.id).emit("tvUpdated", { id, tv: cur });
+  });
+
+  socket.on("standUp", () => {
+    const user = getUser(socket);
+    if (!user?.roomId) return;
+    const room = rooms.get(user.roomId);
+    clearUserActivities(user, room, { forfeit: true });
+    user.sitting = false;
+    emitPerson(user);
+  });
+
+  socket.on("sitFurniture", ({ id, seat } = {}) => {
+    const user = getUser(socket);
+    if (!user?.roomId) return;
+    const room = rooms.get(user.roomId);
+    const furn = room?.furniture.find((f) => f.id === id);
+    if (!furn) return;
+    ensureRoomExtras(room);
+    if (furn.type === "couch") {
+      clearUserActivities(user, room, { forfeit: true });
+      user.x = furn.x;
+      user.y = furn.y;
+      user.sitting = true;
+      user.stationId = id;
+      emitPerson(user);
+      io.to(room.id).emit("userMoved", { username: user.username, x: user.x, y: user.y, sitting: true, facing: user.facing || null });
+      return;
+    }
+    if (furn.type === "chesstable") {
+      let game = room.chess[id];
+      if (!game) {
+        game = { engine: new Chess(), seats: { 0: null, 1: null }, white: null, black: null, result: null, winner: null, lastMove: null, captured: { w: [], b: [] } };
+        room.chess[id] = game;
+      }
+      const seatNum = seat === 1 ? 1 : 0;
+      if (game.seats[seatNum] && game.seats[seatNum] !== user.username) {
+        socket.emit("errorMsg", { message: "That stool is taken." });
+        return;
+      }
+      // already sitting on the other stool
+      if (game.seats[0] === user.username) game.seats[0] = null;
+      if (game.seats[1] === user.username) game.seats[1] = null;
+      clearUserActivities(user, room, { forfeit: false });
+      game.seats[seatNum] = user.username;
+      if (!game.white && !game.black) {
+        game.white = user.username;
+      } else if (!game.result && !game.black && game.white !== user.username && !game.black) {
+        game.black = user.username;
+      } else if (!game.result && !game.white && game.black !== user.username) {
+        game.white = user.username;
+      }
+      user.stationId = id;
+      user.sitting = true;
+      const { w, h } = dimsOf(furn.type, furn.rot);
+      // seat 0 toward +h, seat 1 toward -h relative to rotation
+      const stools = seatWorld(furn, seatNum);
+      user.x = stools.x;
+      user.y = stools.y;
+      emitPerson(user);
+      io.to(room.id).emit("userMoved", { username: user.username, x: user.x, y: user.y, sitting: true, facing: user.facing || null });
+      emitRoom(room, "chessUpdated", { id, game: publicChess(game) });
+    }
+  });
+
+  socket.on("chessMove", ({ id, from, to, promotion } = {}) => {
+    const user = getUser(socket);
+    if (!user?.roomId) return;
+    const room = rooms.get(user.roomId);
+    const game = room?.chess?.[id];
+    if (!game || game.result) return;
+    if (!game.engine) game.engine = new Chess(game.fen);
+    const turn = game.engine.turn();
+    const expected = turn === "w" ? game.white : game.black;
+    if (expected !== user.username) {
+      socket.emit("errorMsg", { message: "It's not your turn." });
+      return;
+    }
+    const move = { from, to };
+    if (promotion) move.promotion = String(promotion).slice(0, 1);
+    else {
+      // auto-queen if a pawn is promoting and no piece was chosen
+      const legal = game.engine.moves({ square: from, verbose: true }).filter((m) => m.to === to);
+      if (legal.length && legal.every((m) => m.promotion)) move.promotion = "q";
+    }
+    let result;
+    try {
+      result = game.engine.move(move);
+    } catch {
+      result = null;
+    }
+    if (!result) {
+      socket.emit("errorMsg", { message: "That move isn't legal." });
+      return;
+    }
+    game.lastMove = { from: result.from, to: result.to, san: result.san, promotion: result.promotion || null };
+    game.captured = capturedFromHistory(game.engine);
+    game.fen = game.engine.fen();
+    if (game.engine.isCheckmate()) {
+      game.result = "checkmate";
+      game.winner = user.username;
+    } else if (game.engine.isStalemate()) {
+      game.result = "stalemate";
+      game.winner = null;
+    } else if (game.engine.isDraw()) {
+      game.result = "draw";
+      game.winner = null;
+    }
+    emitRoom(room, "chessUpdated", { id, game: publicChess(game) });
+  });
+
+  socket.on("chessResign", ({ id } = {}) => {
+    const user = getUser(socket);
+    if (!user?.roomId) return;
+    const room = rooms.get(user.roomId);
+    const game = room?.chess?.[id];
+    if (!game || game.result) return;
+    if (user.username !== game.white && user.username !== game.black) return;
+    game.result = "resign";
+    game.winner = user.username === game.white ? game.black : game.white;
+    emitRoom(room, "chessUpdated", { id, game: publicChess(game) });
+  });
+
+  socket.on("chessRematch", ({ id } = {}) => {
+    const user = getUser(socket);
+    if (!user?.roomId) return;
+    const room = rooms.get(user.roomId);
+    const game = room?.chess?.[id];
+    if (!game) return;
+    if (user.username !== game.white && user.username !== game.black) return;
+    const nw = game.black;
+    const nb = game.white;
+    game.engine = new Chess();
+    game.fen = game.engine.fen();
+    game.white = nw;
+    game.black = nb;
+    game.result = null;
+    game.winner = null;
+    game.lastMove = null;
+    game.captured = { w: [], b: [] };
+    emitRoom(room, "chessUpdated", { id, game: publicChess(game) });
+  });
+
+  socket.on("openFridge", ({ id } = {}) => {
+    const user = getUser(socket);
+    if (!user?.roomId) return;
+    const room = rooms.get(user.roomId);
+    const furn = room?.furniture.find((f) => f.id === id && f.type === "fridge");
+    if (!furn) return;
+    ensureRoomExtras(room);
+    if (room.uses[id] && room.uses[id].user !== user.username) {
+      socket.emit("errorMsg", { message: "Someone else is at the fridge." });
+      return;
+    }
+    clearUserActivities(user, room, { forfeit: true });
+    room.uses[id] = { type: "fridge", user: user.username, open: true };
+    user.stationId = id;
+    emitRoom(room, "useUpdated", { id, use: room.uses[id] });
+    emitPerson(user);
+  });
+
+  socket.on("closeFridge", ({ id } = {}) => {
+    const user = getUser(socket);
+    if (!user?.roomId) return;
+    const room = rooms.get(user.roomId);
+    if (room?.uses?.[id]?.user === user.username) {
+      delete room.uses[id];
+      if (user.stationId === id) user.stationId = null;
+      emitRoom(room, "useUpdated", { id, use: null });
+      emitPerson(user);
+    }
+  });
+
+  socket.on("fridgeTake", ({ id, item } = {}) => {
+    const user = getUser(socket);
+    if (!user?.roomId) return;
+    const room = rooms.get(user.roomId);
+    const furn = room?.furniture.find((f) => f.id === id && f.type === "fridge");
+    if (!furn) return;
+    if (!["sandwich", "soda", "water"].includes(item)) return;
+    startHeldItem(user, item);
+    if (room?.uses?.[id]?.user === user.username) {
+      delete room.uses[id];
+      emitRoom(room, "useUpdated", { id, use: null });
+    }
+    if (user.stationId === id) user.stationId = null;
+    emitPerson(user);
+  });
+
+  socket.on("stowItem", () => {
+    const user = getUser(socket);
+    if (!user) return;
+    clearHeldTimer(user);
+    user.heldItem = null;
+    if (user.stowedProp) {
+      user.heldProp = user.stowedProp;
+      user.stowedProp = null;
+    }
+    emitPerson(user);
+  });
+
+  socket.on("usePunchbag", ({ id } = {}) => {
+    const user = getUser(socket);
+    if (!user?.roomId) return;
+    const room = rooms.get(user.roomId);
+    const furn = room?.furniture.find((f) => f.id === id && f.type === "punchbag");
+    if (!furn) return;
+    ensureRoomExtras(room);
+    if (room.uses[id] && room.uses[id].user !== user.username) {
+      socket.emit("errorMsg", { message: "That bag is taken." });
+      return;
+    }
+    clearUserActivities(user, room, { forfeit: true });
+    if (user.heldItem) {
+      clearHeldTimer(user);
+      user.heldItem = null;
+    }
+    if (user.heldProp) {
+      user.stowedProp = user.heldProp;
+      user.heldProp = null;
+    }
+    room.uses[id] = { type: "punchbag", user: user.username, combo: 0, move: null, lastHitAt: 0, auto: false };
+    user.stationId = id;
+    user.boxing = { bagId: id, move: null, combo: 0, auto: false, lastHitAt: 0 };
+    emitRoom(room, "useUpdated", { id, use: room.uses[id] });
+    emitPerson(user);
+  });
+
+  socket.on("boxHit", ({ id, move } = {}) => {
+    const user = getUser(socket);
+    if (!user?.roomId) return;
+    const room = rooms.get(user.roomId);
+    const use = room?.uses?.[id];
+    if (!use || use.type !== "punchbag" || use.user !== user.username) return;
+    const kind = ["jab", "hook", "uppercut"].includes(move) ? move : "jab";
+    const now = Date.now();
+    if (now - (use.lastHitAt || 0) < 180) return;
+    if (now - (use.lastHitAt || 0) < 1400) use.combo = (use.combo || 0) + 1;
+    else use.combo = 1;
+    use.move = kind;
+    use.lastHitAt = now;
+    user.boxing = { bagId: id, move: kind, combo: use.combo, auto: Boolean(use.auto), lastHitAt: now };
+    emitRoom(room, "useUpdated", { id, use });
+    emitPerson(user);
+  });
+
+  socket.on("boxAuto", ({ id, on } = {}) => {
+    const user = getUser(socket);
+    if (!user?.roomId) return;
+    const room = rooms.get(user.roomId);
+    const use = room?.uses?.[id];
+    if (!use || use.user !== user.username) return;
+    use.auto = Boolean(on);
+    if (user.boxing) user.boxing.auto = use.auto;
+    emitRoom(room, "useUpdated", { id, use });
+    emitPerson(user);
+  });
+
+  socket.on("boxStop", ({ id } = {}) => {
+    const user = getUser(socket);
+    if (!user?.roomId) return;
+    const room = rooms.get(user.roomId);
+    if (room?.uses?.[id]?.user === user.username) {
+      delete room.uses[id];
+      emitRoom(room, "useUpdated", { id, use: null });
+    }
+    user.boxing = null;
+    if (user.stationId === id) user.stationId = null;
+    if (user.stowedProp) {
+      user.heldProp = user.stowedProp;
+      user.stowedProp = null;
+    }
+    emitPerson(user);
+  });
+
+  socket.on("useGym", ({ id } = {}) => {
+    const user = getUser(socket);
+    if (!user?.roomId) return;
+    const room = rooms.get(user.roomId);
+    const furn = room?.furniture.find((f) => f.id === id && (f.type === "benchpress" || f.type === "treadmill"));
+    if (!furn) return;
+    ensureRoomExtras(room);
+    if (room.uses[id] && room.uses[id].user !== user.username) {
+      socket.emit("errorMsg", { message: "That machine is taken." });
+      return;
+    }
+    clearUserActivities(user, room, { forfeit: true });
+    room.uses[id] = { type: furn.type, user: user.username, reps: 0, startedAt: Date.now(), lastRepAt: 0 };
+    user.stationId = id;
+    user.gym = { id, type: furn.type, reps: 0, startedAt: Date.now(), lastRepAt: 0 };
+    if (furn.type === "benchpress") user.sitting = true;
+    emitRoom(room, "useUpdated", { id, use: room.uses[id] });
+    emitPerson(user);
+  });
+
+  socket.on("gymRep", ({ id } = {}) => {
+    const user = getUser(socket);
+    if (!user?.roomId) return;
+    const room = rooms.get(user.roomId);
+    const use = room?.uses?.[id];
+    if (!use || use.user !== user.username) return;
+    const now = Date.now();
+    if (now - (use.lastRepAt || 0) < 400) return;
+    use.reps = (use.reps || 0) + 1;
+    use.lastRepAt = now;
+    user.gym = { ...(user.gym || {}), reps: use.reps, lastRepAt: now };
+    emitRoom(room, "useUpdated", { id, use });
+    emitPerson(user);
+  });
+
+  socket.on("gymStop", ({ id } = {}) => {
+    const user = getUser(socket);
+    if (!user?.roomId) return;
+    const room = rooms.get(user.roomId);
+    if (room?.uses?.[id]?.user === user.username) {
+      delete room.uses[id];
+      emitRoom(room, "useUpdated", { id, use: null });
+    }
+    user.gym = null;
+    user.sitting = false;
+    if (user.stationId === id) user.stationId = null;
+    emitPerson(user);
+  });
+
+  socket.on("debugKit", (kit = {}) => {
+    const user = getUser(socket);
+    if (!user) return;
+    if (typeof kit.coins === "number") user.coins = Math.max(0, Math.round(kit.coins));
+    if (kit.pet) {
+      user.collection = user.collection || emptyCollection();
+      if (!user.collection.pets.some((p) => p.item === kit.pet)) {
+        user.collection.pets.push({ id: "debug-" + kit.pet, item: kit.pet, label: kit.pet[0].toUpperCase() + kit.pet.slice(1) });
+      }
+      user.activePet = kit.pet;
+    }
+    if (Array.isArray(kit.furniture)) {
+      for (const typ of kit.furniture) {
+        if (FURNITURE_CATALOG[typ]) user.inventory.push(typ);
+      }
+    }
+    emitPerson(user);
   });
 
   socket.on("disconnect", () => {

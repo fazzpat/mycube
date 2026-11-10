@@ -420,6 +420,12 @@ input:focus { border-color: var(--coral); }
 
 /* ===== Room (isometric cube) ===== */
 .room-view { background: linear-gradient(180deg, #5b8def 0%, #c77dff 48%, #ff8fab 100%); }
+.room-view {
+  height: 100dvh;
+  max-height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+}
 .room-view .topbar {
   background: rgba(42, 28, 70, 0.88);
   border-bottom-color: #6a4d9a;
@@ -441,7 +447,7 @@ input:focus { border-color: var(--coral); }
   flex: 1;
   width: 100%;
   height: 100%;
-  min-height: 360px;
+  min-height: 0;
   border-radius: 24px 24px 0 0;
   overflow: hidden;
   display: flex;
@@ -647,7 +653,21 @@ input:focus { border-color: var(--coral); }
   padding: 12px;
   background: #3b1f66;
 }
-.dock input { flex: 1; }
+.dock input, .dock textarea { flex: 1; }
+.dock textarea {
+  resize: none;
+  font: inherit;
+  font-size: 16px;
+  line-height: 1.25;
+  min-height: 44px;
+  max-height: 96px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 14px;
+  background: #fff8f2;
+  color: #2a1c16;
+  box-shadow: inset 0 0 0 2px #2a1c4a22;
+}
 .emote-btn {
   width: 48px; height: 48px;
   border: 0;
@@ -732,7 +752,7 @@ input:focus { border-color: var(--coral); }
 @media (max-width: 780px) {
   .creator-grid { grid-template-columns: 1fr; }
   .wrap { width: calc(100% - 20px); }
-  .room-stage { min-height: 320px; }
+  .room-stage { min-height: 0; }
   .topbar { padding: 10px 12px; }
 }
 
@@ -1192,4 +1212,223 @@ body.phone-open .phone-fab { visibility: hidden; }
   :root, .room-view { --dock-h: 80px; }
   .phone-app-icon { width: 58px; height: 58px; border-radius: 16px; }
   .phone-fab { width: 52px; height: 52px; right: 10px; }
+}
+
+
+/* ===== Keyboard-aware chat dock ===== */
+.room-view { --kb-inset: 0px; }
+#chat-dock {
+  position: relative;
+  z-index: 40;
+  margin-bottom: var(--kb-inset, 0px);
+  align-items: flex-end;
+}
+
+/* ===== Edit mode inventory ===== */
+.edit-inventory {
+  position: absolute;
+  left: 8px;
+  bottom: calc(var(--dock-h) + 10px + env(safe-area-inset-bottom, 0px));
+  width: min(210px, 46vw);
+  max-height: min(280px, 34vh);
+  background: #fff8f2ee;
+  border-radius: 16px;
+  box-shadow: 0 6px 0 #2a1c4a22, 0 10px 24px rgba(20,10,40,.25);
+  z-index: 32;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  pointer-events: auto;
+}
+.edit-inventory.hidden { display: none !important; }
+.edit-inventory.collapsed { max-height: 52px; }
+.edit-inventory.collapsed .edit-inv-body { display: none; }
+.edit-inv-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 8px 6px;
+}
+.edit-inv-head strong { flex: 1; font-size: 13px; }
+.btn.tiny { padding: 2px 8px; font-size: 13px; min-height: 28px; border-radius: 10px; }
+.edit-inv-body { padding: 0 8px 10px; overflow: auto; flex: 1; }
+.edit-inv-items {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+.edit-inv-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 2px;
+  border: 0;
+  background: #efe6d8;
+  border-radius: 12px;
+  box-shadow: 0 3px 0 #cbbba8;
+  font-size: 10px;
+  font-weight: 800;
+  color: #2a1c16;
+}
+.edit-inv-item.selected { outline: 3px solid #3ecf8e; background: #e4ffe8; }
+.edit-inv-item .count {
+  background: #2a1c4a;
+  color: #fff;
+  border-radius: 999px;
+  padding: 0 6px;
+  font-size: 10px;
+}
+.edit-inv-item .furn-svg { width: 36px; height: 28px; }
+.edit-styles { margin-top: 8px; }
+.edit-styles h4 { margin: 6px 0 4px; font-size: 11px; }
+.edit-styles .style-row { display: flex; flex-wrap: wrap; gap: 4px; }
+.edit-styles .style-swatch { font-size: 10px; padding: 4px 6px; border-radius: 8px; }
+.edit-place-tools { display: flex; gap: 6px; margin-top: 8px; }
+.edit-place-tools.hidden { display: none !important; }
+
+.furn-actions {
+  position: absolute;
+  z-index: 33;
+  transform: translate(-50%, -110%);
+  display: flex;
+  gap: 6px;
+  padding: 6px;
+  background: #2a1c4aee;
+  border-radius: 14px;
+  box-shadow: 0 6px 16px rgba(0,0,0,.3);
+}
+.furn-actions.hidden { display: none !important; }
+.furn-actions .btn { font-size: 12px; padding: 6px 8px; }
+
+.activity-chip {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--dock-h) + 10px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  z-index: 34;
+  display: flex;
+  gap: 6px;
+  padding: 6px 8px;
+  background: #fff8f2ee;
+  border-radius: 999px;
+  box-shadow: 0 4px 0 #2a1c4a22, 0 8px 18px rgba(0,0,0,.2);
+}
+.activity-chip.hidden { display: none !important; }
+.activity-chip .btn { border-radius: 999px; font-size: 13px; }
+
+.fridge-picker {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--dock-h) + 64px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  z-index: 35;
+  width: min(340px, calc(100% - 16px));
+  background: #fff8f2;
+  border-radius: 18px;
+  padding: 12px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.28);
+  text-align: center;
+}
+.fridge-picker.hidden { display: none !important; }
+.fridge-picker-title { font-weight: 800; margin-bottom: 8px; }
+.fridge-picker-row { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
+.fridge-picker-row .btn { width: 100%; font-size: 16px; padding: 12px; }
+
+.chess-panel {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--dock-h) + 8px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  z-index: 36;
+  width: min(380px, calc(100% - 12px));
+  max-height: min(540px, calc(100dvh - var(--dock-h) - 70px));
+  overflow: auto;
+  background: #fff8f2;
+  border-radius: 16px;
+  padding: 8px 8px 10px;
+  box-shadow: 0 10px 28px rgba(0,0,0,.3);
+}
+.chess-panel.hidden { display: none !important; }
+.chess-top { display: flex; align-items: center; gap: 8px; }
+.chess-status { flex: 1; font-weight: 800; font-size: 13px; }
+.chess-captured { min-height: 18px; font-size: 16px; letter-spacing: 1px; }
+.chess-board {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  width: min(360px, 100%);
+  aspect-ratio: 1;
+  margin: 6px auto;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 0 0 2px #2a1c16;
+}
+.chess-sq {
+  border: 0;
+  padding: 0;
+  font-size: clamp(14px, 4.2vw, 22px);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+.chess-sq.light { background: #f3eadc; }
+.chess-sq.dark { background: #8b5a2b; color: #fff8f2; }
+.chess-sq.sel { outline: 3px solid #f4c15d; outline-offset: -3px; }
+.chess-sq.legal { box-shadow: inset 0 0 0 3px #3ecf8e; }
+.chess-sq.last { box-shadow: inset 0 0 0 3px #ef476f88; }
+.chess-result {
+  text-align: center;
+  font-weight: 800;
+  background: #2a1c4a;
+  color: #fff8f2;
+  border-radius: 10px;
+  padding: 8px;
+  margin: 6px 0;
+}
+.chess-result.hidden { display: none !important; }
+.chess-actions { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; }
+
+.combo-float {
+  position: absolute;
+  transform: translate(-50%, -130%);
+  font-weight: 800;
+  color: #fff8f2;
+  text-shadow: 0 2px 0 #c44536, 0 0 8px #c44536;
+  pointer-events: none;
+  z-index: 20;
+  font-size: 18px;
+}
+.pow-float {
+  position: absolute;
+  transform: translate(-50%, -50%) scale(1);
+  font-weight: 800;
+  color: #f4c15d;
+  text-shadow: 0 2px 0 #2a1c16;
+  pointer-events: none;
+  z-index: 21;
+  animation: powpop 0.35s ease-out;
+}
+@keyframes powpop { from { transform: translate(-50%, -50%) scale(.4); opacity: 1; } to { transform: translate(-50%, -80%) scale(1.3); opacity: 0; } }
+.poof-float {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 22;
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #fff 0%, #ffd6a8 40%, transparent 70%);
+  animation: poof 0.4s ease-out forwards;
+}
+@keyframes poof { from { transform: translate(-50%,-50%) scale(.2); opacity: 1; } to { transform: translate(-50%,-50%) scale(2.2); opacity: 0; } }
+
+.typing-bubble { opacity: .85; font-style: italic; }
+
+@media (max-width: 430px) {
+  :root, .room-view { --dock-h: 96px; }
+  .edit-inventory {
+    width: min(168px, 44vw);
+    max-height: min(240px, 28vh);
+    left: 6px;
+  }
+  .chess-panel { max-height: min(520px, calc(100dvh - var(--dock-h) - 64px)); }
 }

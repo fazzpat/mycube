@@ -19,6 +19,10 @@
     kitchenette: { name: "Kitchenette", price: 32, w: 2, h: 1, blocks: true },
     chair: { name: "Chair", price: 12, w: 1, h: 1, blocks: true },
     bookshelf: { name: "Bookshelf", price: 28, w: 2, h: 1, blocks: true },
+    chesstable: { name: "Chess table", price: 45, w: 2, h: 2, blocks: true },
+    punchbag: { name: "Punching bag", price: 30, w: 1, h: 1, blocks: true },
+    benchpress: { name: "Bench press", price: 35, w: 2, h: 1, blocks: true },
+    treadmill: { name: "Treadmill", price: 35, w: 1, h: 2, blocks: true },
   };
 
   const WALLPAPERS = [
@@ -55,12 +59,22 @@
     return tileToScreen(x + w / 2, y + h / 2);
   }
 
-  function tilesFor(type, x, y) {
+  function normalizeRot(rot) {
+    return ((Number(rot) || 0) % 4 + 4) % 4;
+  }
+
+  function dims(type, rot) {
     const item = CATALOG[type];
-    if (!item) return [];
+    if (!item) return { w: 1, h: 1 };
+    const r = normalizeRot(rot);
+    return r % 2 === 1 ? { w: item.h, h: item.w } : { w: item.w, h: item.h };
+  }
+
+  function tilesFor(type, x, y, rot) {
+    const { w, h } = dims(type, rot);
     const out = [];
-    for (let dy = 0; dy < item.h; dy++) {
-      for (let dx = 0; dx < item.w; dx++) out.push({ x: x + dx, y: y + dy });
+    for (let dy = 0; dy < h; dy++) {
+      for (let dx = 0; dx < w; dx++) out.push({ x: x + dx, y: y + dy });
     }
     return out;
   }
@@ -75,25 +89,26 @@
     (furniture || []).forEach((f) => {
       const item = CATALOG[f.type];
       if (!item || !item.blocks) return;
-      tilesFor(f.type, f.x, f.y).forEach((t) => set.add(t.x + "," + t.y));
+      tilesFor(f.type, f.x, f.y, f.rot).forEach((t) => set.add(t.x + "," + t.y));
     });
     return set;
   }
 
-  function occupiedSet(furniture) {
+  function occupiedSet(furniture, ignoreId) {
     const set = new Set();
     (furniture || []).forEach((f) => {
-      tilesFor(f.type, f.x, f.y).forEach((t) => set.add(t.x + "," + t.y));
+      if (ignoreId && f.id === ignoreId) return;
+      tilesFor(f.type, f.x, f.y, f.rot).forEach((t) => set.add(t.x + "," + t.y));
     });
     return set;
   }
 
-  function canPlace(furniture, type, x, y, size) {
+  function canPlace(furniture, type, x, y, size, rot, ignoreId) {
     const item = CATALOG[type];
     if (!item) return false;
-    const tiles = tilesFor(type, x, y);
-    if (tiles.some((t) => !inBounds(t.x, t.y, size))) return false;
-    const used = occupiedSet(furniture);
+    const tiles = tilesFor(type, x, y, rot);
+    if (!tiles.length || tiles.some((t) => !inBounds(t.x, t.y, size))) return false;
+    const used = occupiedSet(furniture, ignoreId);
     return tiles.every((t) => !used.has(t.x + "," + t.y));
   }
 
@@ -253,6 +268,10 @@
       kitchenette: `<svg class="furn-svg" width="90" height="56" viewBox="0 0 90 56"><rect x="6" y="20" width="78" height="28" fill="#d8c6a8" stroke="${ink}" stroke-width="2"/><rect x="6" y="16" width="78" height="8" fill="#8a8f96" stroke="${ink}" stroke-width="2"/></svg>`,
       chair: `<svg class="furn-svg" width="56" height="70" viewBox="0 0 56 70"><rect x="10" y="28" width="36" height="10" fill="#c4a06a" stroke="${ink}" stroke-width="2"/><rect x="10" y="8" width="36" height="20" fill="#b08958" stroke="${ink}" stroke-width="2"/><rect x="12" y="38" width="6" height="22" fill="#6b4a2b"/><rect x="38" y="38" width="6" height="22" fill="#6b4a2b"/></svg>`,
       bookshelf: `<svg class="furn-svg" width="90" height="76" viewBox="0 0 90 76"><rect x="8" y="6" width="74" height="64" fill="#8b5a2b" stroke="${ink}" stroke-width="2"/><rect x="14" y="16" width="10" height="18" fill="#6c5cff"/><rect x="28" y="16" width="10" height="18" fill="#e05656"/><rect x="42" y="16" width="10" height="18" fill="#3a8f5a"/></svg>`,
+      chesstable: `<svg class="furn-svg" width="90" height="70" viewBox="0 0 90 70"><rect x="10" y="22" width="70" height="36" rx="4" fill="#8b5a2b" stroke="${ink}" stroke-width="2"/><rect x="22" y="10" width="46" height="46" fill="#f3eadc" stroke="${ink}" stroke-width="2"/><path d="M22 10h11.5v11.5H22zM45 10h11.5v11.5H45zM33.5 21.5H45V33H33.5zM56.5 21.5H68V33H56.5zM22 33h11.5v11.5H22zM45 33h11.5v11.5H45z" fill="#3d2c29"/></svg>`,
+      punchbag: `<svg class="furn-svg" width="56" height="80" viewBox="0 0 56 80"><line x1="28" y1="4" x2="28" y2="16" stroke="${ink}" stroke-width="3"/><rect x="14" y="16" width="28" height="52" rx="12" fill="#c44536" stroke="${ink}" stroke-width="2"/><rect x="16" y="28" width="24" height="8" fill="#eee3d6"/></svg>`,
+      benchpress: `<svg class="furn-svg" width="90" height="56" viewBox="0 0 90 56"><rect x="16" y="28" width="58" height="10" rx="2" fill="#d8c6a8" stroke="${ink}" stroke-width="2"/><rect x="12" y="14" width="8" height="28" fill="#6b6f78"/><rect x="70" y="14" width="8" height="28" fill="#6b6f78"/><rect x="8" y="12" width="74" height="6" rx="2" fill="#2a2a2e"/></svg>`,
+      treadmill: `<svg class="furn-svg" width="70" height="70" viewBox="0 0 70 70"><rect x="16" y="36" width="40" height="18" rx="3" fill="#3d342c" stroke="${ink}" stroke-width="2"/><rect x="20" y="8" width="8" height="32" fill="#6b6f78"/><rect x="18" y="6" width="28" height="8" fill="#2a2a2e"/></svg>`,
     };
     if (icons[type]) return icons[type];
     return `<svg class="furn-svg" width="136" height="78" viewBox="0 0 136 78">
@@ -265,7 +284,7 @@
   global.HouseIso = {
     GRID, TW, TH, WALL_H, CATALOG, WALLPAPERS, FLOORS,
     tileToScreen, tileCenter, footprintCenter, sceneMetrics,
-    tilesFor, inBounds, blockedSet, occupiedSet, canPlace, pathfind,
+    tilesFor, dims, normalizeRot, inBounds, blockedSet, occupiedSet, canPlace, pathfind,
     roomSVG, furnitureSVG,
   };
 })(window);

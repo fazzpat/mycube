@@ -18,3 +18,8 @@ copy of any commercial character.
 Other third-party code:
 - three (MIT) — locally vendored in public/vendor/
 - express, socket.io, Playwright — see package.json / npm licenses
+
+- chess.js (BSD-2-Clause) — Jeff Hlywa, vendored in public/vendor/chess.js
+  and used on the server for live chess move validation. Copyright (c) 2025,
+  Jeff Hlywa (jhlywa@gmail.com). See the BSD-2-Clause notice in
+  public/vendor/chess.js / the chess.js package LICENSE.

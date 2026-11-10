@@ -40,6 +40,12 @@ function furnSize(type) {
   return item ? [item.w, item.h] : [1, 1];
 }
 
+function furnDims(type, rot) {
+  const [w, h] = furnSize(type);
+  const r = ((Number(rot) || 0) % 4 + 4) % 4;
+  return r % 2 === 1 ? [h, w] : [w, h];
+}
+
 function std(color, extras = {}) {
   return new THREE.MeshStandardMaterial({
     color,
@@ -144,6 +150,93 @@ function applySquash(rig, up) {
 function applyCharacterPose(ud, t, walking, sitting) {
   if (!ud?.rig) return;
   const phase = ud.phase || 0;
+  if (ud.boxing) {
+    const tHit = Math.max(0, (Date.now() - (ud.boxing.lastHitAt || 0)) / 1000);
+    const bounce = Math.abs(Math.sin(t * 8 + phase));
+    ud.rig.position.y = 0.07 + bounce * 0.07;
+    ud.rig.rotation.z = Math.sin(t * 8 + phase) * 0.05;
+    ud.rig.scale.set(1, 1, 1);
+    if (ud.leftLeg) ud.leftLeg.rotation.x = 0.35;
+    if (ud.rightLeg) ud.rightLeg.rotation.x = -0.2;
+    if (ud.leftArm) { ud.leftArm.rotation.x = -1.15; ud.leftArm.rotation.y = 0.35; }
+    if (ud.rightArm) { ud.rightArm.rotation.x = -1.15; ud.rightArm.rotation.y = -0.35; }
+    if (tHit < 0.32 && ud.rightArm) {
+      const k = Math.sin((tHit / 0.32) * Math.PI);
+      const mv = ud.boxing.move;
+      if (mv === "hook") {
+        ud.rightArm.rotation.y = -0.35 + k * 1.35;
+        ud.rightArm.rotation.x = -1.15 + k * 0.3;
+      } else if (mv === "uppercut") {
+        ud.rightArm.rotation.x = -1.15 + k * 1.55;
+        ud.rightArm.rotation.y = -0.15;
+      } else {
+        ud.rightArm.rotation.x = -1.15 - k * 0.85;
+        ud.rightArm.rotation.z = k * 0.2;
+      }
+    }
+    return;
+  }
+  if (ud.gym?.type === "treadmill") {
+    const s = Math.sin(t * 11 + phase);
+    ud.rig.position.y = Math.abs(s) * 0.1;
+    ud.rig.rotation.z = s * 0.06;
+    applySquash(ud.rig, Math.abs(s));
+    if (ud.leftLeg) ud.leftLeg.rotation.x = s * 1.05;
+    if (ud.rightLeg) ud.rightLeg.rotation.x = -s * 1.05;
+    if (ud.leftArm) ud.leftArm.rotation.x = -s * 0.7;
+    if (ud.rightArm) ud.rightArm.rotation.x = s * 0.7;
+    return;
+  }
+  if (ud.gym?.type === "benchpress") {
+    const tRep = Math.max(0, (Date.now() - (ud.gym.lastRepAt || 0)) / 1000);
+    const k = tRep < 0.5 ? Math.sin((tRep / 0.5) * Math.PI) : 0;
+    ud.rig.position.y = -0.22;
+    ud.rig.rotation.z = 0;
+    ud.rig.scale.set(1, 1, 1);
+    if (ud.leftLeg) ud.leftLeg.rotation.x = -1.2;
+    if (ud.rightLeg) ud.rightLeg.rotation.x = -1.2;
+    if (ud.leftArm) ud.leftArm.rotation.x = -2.2 + k * 1.4;
+    if (ud.rightArm) ud.rightArm.rotation.x = -2.2 + k * 1.4;
+    return;
+  }
+  if (ud.heldItem && ud.rightArm) {
+    const dur = ud.heldItem.kind === "sandwich" ? 7500 : ud.heldItem.kind === "soda" ? 6500 : 6000;
+    const elapsed = Math.max(0, Date.now() - (ud.heldItem.startedAt || 0));
+    const cycle = (elapsed % 1600) / 1600;
+    const sip = Math.sin(Math.min(1, cycle * 1.4) * Math.PI) * (cycle < 0.7 ? 1 : 0);
+    if (walking) {
+      const s = Math.sin(t * 9.4 + phase);
+      ud.rig.position.y = Math.abs(s) * 0.13;
+      ud.rig.rotation.z = s * 0.09;
+      applySquash(ud.rig, Math.abs(s));
+      if (ud.leftLeg) ud.leftLeg.rotation.x = s * 0.95;
+      if (ud.rightLeg) ud.rightLeg.rotation.x = -s * 0.95;
+      if (ud.leftArm) ud.leftArm.rotation.x = -s * 0.6;
+    } else if (sitting) {
+      ud.rig.position.y = -0.16;
+      ud.rig.rotation.z = 0;
+      ud.rig.scale.set(1, 1, 1);
+      if (ud.leftLeg) ud.leftLeg.rotation.x = -1.15;
+      if (ud.rightLeg) ud.rightLeg.rotation.x = -1.15;
+      if (ud.leftArm) ud.leftArm.rotation.x = 0.18;
+    } else {
+      const wave = Math.sin(t * 2.8 + phase);
+      ud.rig.position.y = Math.abs(wave) * 0.08;
+      ud.rig.rotation.z = wave * 0.05;
+      ud.rig.scale.set(1, 1, 1);
+      if (ud.leftLeg) ud.leftLeg.rotation.x = wave * 0.12;
+      if (ud.rightLeg) ud.rightLeg.rotation.x = -wave * 0.12;
+      if (ud.leftArm) ud.leftArm.rotation.x = 0.15;
+    }
+    ud.rightArm.rotation.x = -0.5 - sip * 1.3;
+    ud.rightArm.rotation.y = -0.15;
+    if (ud.heldFood) {
+      const bites = Math.min(4, Math.floor(elapsed / (dur / 4)));
+      if (ud.heldItem.kind === "sandwich") ud.heldFood.scale.setScalar(Math.max(0.2, 1 - bites * 0.22));
+      if (ud.heldItem.kind === "soda" && elapsed > dur - 800) ud.heldFood.scale.set(1, Math.max(0.3, 1 - (elapsed - (dur - 800)) / 800), 1);
+    }
+    return;
+  }
   if (sitting) {
     ud.rig.position.y = -0.16;
     ud.rig.rotation.z = 0;
@@ -347,42 +440,154 @@ function buildProp(kind) {
   return g;
 }
 
-function buildPetMesh(kind) {
+function buildHeldItem(kind) {
   const g = new THREE.Group();
+  if (kind === "sandwich") {
+    const loaf = mesh(new THREE.BoxGeometry(0.11, 0.07, 0.11), "#e6c27a");
+    const filling = mesh(new THREE.BoxGeometry(0.1, 0.025, 0.1), "#7bc47f");
+    filling.position.y = 0.01;
+    const top = mesh(new THREE.BoxGeometry(0.11, 0.03, 0.11), "#d9a85c");
+    top.position.y = 0.04;
+    g.add(loaf, filling, top);
+  } else if (kind === "soda") {
+    const can = mesh(new THREE.CylinderGeometry(0.032, 0.032, 0.1, 12), "#ff3b4e");
+    const top = mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.01, 12), "#d0d4da");
+    top.position.y = 0.055;
+    const tab = mesh(new THREE.BoxGeometry(0.02, 0.004, 0.012), "#c5c9ce");
+    tab.position.set(0, 0.062, 0.008);
+    g.add(can, top, tab);
+  } else {
+    const bottle = mesh(new THREE.CylinderGeometry(0.028, 0.032, 0.12, 12), "#cfefff");
+    bottle.material.transparent = true;
+    bottle.material.opacity = 0.55;
+    const cap = mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.02, 10), "#3d7cff");
+    cap.position.y = 0.07;
+    const water = mesh(new THREE.CylinderGeometry(0.024, 0.028, 0.08, 12), "#7ec8ff");
+    water.position.y = -0.01;
+    g.add(water, bottle, cap);
+  }
+  return g;
+}
+
+function buildGlove() {
+  const g = new THREE.Group();
+  const puff = mesh(new THREE.SphereGeometry(0.09, 12, 10), "#e23c3c");
+  puff.scale.set(1.15, 0.85, 1.25);
+  const cuff = mesh(new THREE.CylinderGeometry(0.05, 0.055, 0.05, 10), "#f4f0ea");
+  cuff.position.y = -0.07;
+  g.add(puff, cuff);
+  return g;
+}
+
+function buildPetMesh(kind) {
+  const root = new THREE.Group();
+  const rig = new THREE.Group();
+  root.add(rig);
   const colors = { cat: "#e8c07a", dog: "#c68642", bunny: "#f3e6da" };
   const col = colors[kind] || colors.cat;
   const body = mesh(new THREE.SphereGeometry(kind === "dog" ? 0.16 : 0.13, 12, 10), col);
-  body.position.y = kind === "dog" ? 0.2 : 0.18;
-  body.scale.set(1.15, 0.85, 1.35);
-  const head = mesh(new THREE.SphereGeometry(0.11, 12, 10), col);
-  head.position.set(0, kind === "dog" ? 0.32 : 0.3, 0.14);
+  body.position.y = kind === "dog" ? 0.22 : 0.2;
+  body.scale.set(1.15, 0.85, 1.4);
+  const head = new THREE.Group();
+  head.position.set(0, kind === "dog" ? 0.34 : 0.32, 0.14);
+  const skull = mesh(new THREE.SphereGeometry(0.11, 12, 10), col);
+  head.add(skull);
   const earGeo = kind === "bunny"
     ? new THREE.CapsuleGeometry(0.025, 0.16, 4, 8)
     : new THREE.ConeGeometry(0.04, kind === "dog" ? 0.08 : 0.1, 8);
   const e1 = mesh(earGeo, shade(col, -15));
   const e2 = e1.clone();
   if (kind === "bunny") {
-    e1.position.set(-0.05, 0.48, 0.12);
-    e2.position.set(0.05, 0.48, 0.12);
+    e1.position.set(-0.05, 0.2, 0);
+    e2.position.set(0.05, 0.2, 0);
   } else if (kind === "dog") {
-    e1.position.set(-0.07, 0.38, 0.12);
-    e2.position.set(0.07, 0.38, 0.12);
+    e1.position.set(-0.07, 0.08, 0);
+    e2.position.set(0.07, 0.08, 0);
     e1.rotation.z = 0.6;
     e2.rotation.z = -0.6;
   } else {
-    e1.position.set(-0.06, 0.4, 0.14);
-    e2.position.set(0.06, 0.4, 0.14);
+    e1.position.set(-0.06, 0.1, 0.02);
+    e2.position.set(0.06, 0.1, 0.02);
   }
+  head.add(e1, e2);
+  const eyeL = mesh(new THREE.SphereGeometry(0.018, 8, 8), "#2a160c");
+  const eyeR = eyeL.clone();
+  eyeL.position.set(-0.04, 0.02, 0.09);
+  eyeR.position.set(0.04, 0.02, 0.09);
+  head.add(eyeL, eyeR);
+  const nose = mesh(new THREE.SphereGeometry(0.02, 6, 6), "#ff8fab");
+  nose.position.set(0, -0.02, 0.1);
+  head.add(nose);
   const tail = mesh(
     kind === "bunny" ? new THREE.SphereGeometry(0.045, 8, 8) : new THREE.SphereGeometry(0.04, 8, 8),
     kind === "bunny" ? "#fff" : shade(col, -20)
   );
   tail.position.set(0, 0.22, -0.18);
-  const nose = mesh(new THREE.SphereGeometry(0.02, 6, 6), "#ff8fab");
-  nose.position.set(0, 0.28, 0.24);
-  g.add(body, head, e1, e2, tail, nose);
-  return g;
+  const mkLeg = (x, z) => {
+    const leg = new THREE.Group();
+    leg.position.set(x, 0.12, z);
+    const bone = mesh(new THREE.CapsuleGeometry(0.03, 0.08, 4, 8), shade(col, -10));
+    bone.position.y = -0.06;
+    leg.add(bone);
+    return leg;
+  };
+  const fl = mkLeg(-0.07, 0.08);
+  const fr = mkLeg(0.07, 0.08);
+  const bl = mkLeg(-0.07, -0.08);
+  const br = mkLeg(0.07, -0.08);
+  rig.add(body, head, tail, fl, fr, bl, br);
+  root.userData = {
+    kind, rig, body, head, tail, ears: [e1, e2], eyes: [eyeL, eyeR],
+    legs: [fl, fr, bl, br], sitting: false, phase: (kind || "cat").length,
+  };
+  return root;
 }
+
+function applyPetPose(ud, t, walking, sitting) {
+  if (!ud?.rig) return;
+  const phase = ud.phase || 0;
+  const [fl, fr, bl, br] = ud.legs || [];
+  if (sitting) {
+    ud.rig.position.y = -0.02;
+    if (ud.body) {
+      ud.body.rotation.x = 0.55;
+      ud.body.position.y = (ud.kind === "dog" ? 0.16 : 0.14);
+      ud.body.scale.set(1.25, 0.8, 1.2);
+    }
+    if (ud.head) ud.head.position.y = (ud.kind === "dog" ? 0.26 : 0.24);
+    if (bl) { bl.rotation.x = 1.15; bl.position.y = 0.07; }
+    if (br) { br.rotation.x = 1.15; br.position.y = 0.07; }
+    if (fl) { fl.rotation.x = 0.35; fl.position.y = 0.08; }
+    if (fr) { fr.rotation.x = 0.35; fr.position.y = 0.08; }
+    if (ud.tail) ud.tail.rotation.y = Math.sin(t * 8 + phase) * 0.55;
+    if (ud.ears) {
+      const twitch = Math.sin(t * 3.2 + phase);
+      const pulse = (Math.sin(t * 1.7 + phase * 2) > 0.85) ? 0.25 : 0;
+      ud.ears[0].rotation.z = (ud.kind === "dog" ? 0.6 : 0) - twitch * 0.12 - pulse;
+      ud.ears[1].rotation.z = (ud.kind === "dog" ? -0.6 : 0) + twitch * 0.12 + pulse;
+    }
+    if (ud.eyes) {
+      const blink = ((Math.floor(t * 2 + phase * 3) % 11) === 0);
+      ud.eyes.forEach((e) => e.scale.set(1, blink ? 0.12 : 1, 1));
+    }
+    return;
+  }
+  if (ud.body) {
+    ud.body.rotation.x = 0;
+    ud.body.position.y = ud.kind === "dog" ? 0.22 : 0.2;
+    ud.body.scale.set(1.15, 0.85, 1.4);
+  }
+  if (ud.head) ud.head.position.y = ud.kind === "dog" ? 0.34 : 0.32;
+  ud.rig.position.y = walking ? Math.abs(Math.sin(t * 10)) * 0.03 : 0;
+  const s = walking ? Math.sin(t * 10 + phase) * 0.7 : Math.sin(t * 2.2 + phase) * 0.08;
+  if (fl) { fl.rotation.x = s; fl.position.y = 0.12; }
+  if (br) { br.rotation.x = s; br.position.y = 0.12; }
+  if (fr) { fr.rotation.x = -s; fr.position.y = 0.12; }
+  if (bl) { bl.rotation.x = -s; bl.position.y = 0.12; }
+  if (ud.tail) ud.tail.rotation.y = Math.sin(t * (walking ? 10 : 3) + phase) * (walking ? 0.4 : 0.2);
+  if (ud.eyes) ud.eyes.forEach((e) => e.scale.set(1, 1, 1));
+}
+
 
 export function buildAvatarMesh(avatar = {}) {
   const skin = saturate(avatar.skin || "#f1c27d", 0.08);
@@ -517,7 +722,20 @@ export function buildAvatarMesh(avatar = {}) {
   handR.position.y = handY;
   leftArm.add(handL);
   rightArm.add(handR);
-  if (avatar.prop) {
+  if (avatar.boxing) {
+    const gL = buildGlove();
+    const gR = buildGlove();
+    gL.position.set(0, handY - 0.02, 0.04);
+    gR.position.set(0, handY - 0.02, 0.04);
+    leftArm.add(gL);
+    rightArm.add(gR);
+  } else if (avatar.heldItem) {
+    const food = buildHeldItem(avatar.heldItem.kind);
+    food.position.set(0.04, handY - 0.02, 0.1);
+    rightArm.add(food);
+    // stored later on userData via group
+    group.userData._heldFoodTmp = food;
+  } else if (avatar.prop) {
     const prop = buildProp(avatar.prop);
     prop.scale.setScalar(1.2);
     prop.position.set(0.04, handY - 0.02, 0.1);
@@ -637,6 +855,7 @@ export function buildAvatarMesh(avatar = {}) {
     head,
     shadow,
     phase: 0,
+    heldFood: group.userData._heldFoodTmp || null,
   };
   return group;
 }
@@ -725,19 +944,53 @@ export function buildFurnitureMesh(type, ghost = false, ok = true) {
   } else if (type === "tv") {
     const stand = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.4, 0.5), paint("#3d342c"));
     stand.position.y = 0.22;
-    const screen = new THREE.Mesh(new THREE.BoxGeometry(1.35, 0.78, 0.08), paint("#1a1c22"));
-    screen.position.set(0, 0.85, 0);
-    const bezel = new THREE.Mesh(new THREE.BoxGeometry(1.42, 0.84, 0.06), paint("#111"));
-    bezel.position.set(0, 0.85, -0.01);
+    const bezel = new THREE.Mesh(new THREE.BoxGeometry(1.42, 0.84, 0.08), paint("#111"));
+    bezel.position.set(0, 0.85, 0);
+    const screenMat = ghost ? paint("#1a1c22") : new THREE.MeshStandardMaterial({ color: "#151820", emissive: "#102040", emissiveIntensity: 0.15, roughness: 0.3 });
+    const screen = new THREE.Mesh(new THREE.BoxGeometry(1.28, 0.7, 0.04), screenMat);
+    screen.position.set(0, 0.85, 0.05);
     add(stand); add(bezel); add(screen);
+    g.userData.screen = screen;
   } else if (type === "fridge") {
-    const body = new THREE.Mesh(new THREE.BoxGeometry(0.82, 1.55, 0.7), paint("#ece7df"));
-    body.position.y = 0.78;
+    const cab = new THREE.Mesh(new THREE.BoxGeometry(0.78, 1.55, 0.7), paint("#e8e2d8"));
+    cab.position.y = 0.78;
+    add(cab);
+    // interior
+    const inner = new THREE.Mesh(new THREE.BoxGeometry(0.62, 1.35, 0.5), paint("#f7f3ea"));
+    inner.position.set(0.02, 0.78, 0.02);
+    add(inner);
+    const glow = new THREE.PointLight(0xfff2c8, 0, 1.8);
+    glow.position.set(0, 1.0, 0.15);
+    g.add(glow);
+    g.userData.fridgeLight = glow;
+    const shelf = (y) => {
+      const s = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.03, 0.46), paint("#d9d3c8"));
+      s.position.set(0.02, y, 0.02);
+      add(s);
+    };
+    shelf(0.45); shelf(0.85); shelf(1.2);
+    const sandwich = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.08, 0.16), paint("#e6c27a"));
+    sandwich.position.set(-0.12, 0.92, 0.05);
+    const can = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.14, 10), paint("#ff3b4e"));
+    can.position.set(0.14, 0.94, 0.08);
+    const bottle = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.045, 0.18, 10), paint("#9bd7ff"));
+    bottle.position.set(0.02, 0.56, 0.08);
+    add(sandwich); add(can); add(bottle);
+    const door = new THREE.Group();
+    door.position.set(0.39, 0.78, 0.36);
+    const doorMesh = new THREE.Mesh(new THREE.BoxGeometry(0.08, 1.55, 0.72), paint("#ece7df"));
+    doorMesh.position.set(0, 0, -0.36);
+    door.add(doorMesh);
     const handle = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.28, 0.04), paint("#b0a89c"));
-    handle.position.set(0.36, 0.95, 0.36);
-    const line = new THREE.Mesh(new THREE.BoxGeometry(0.84, 0.02, 0.72), paint("#d5cfc4"));
-    line.position.y = 0.95;
-    add(body); add(handle); add(line);
+    handle.position.set(0.07, 0.17, -0.08);
+    door.add(handle);
+    [[ -0.02, 0.35, -0.2, "#7c5cff"], [ -0.02, 0.15, -0.5, "#ff7a59"], [ -0.02, -0.2, -0.3, "#f4c15d"]].forEach(([x,y,z,c]) => {
+      const mag = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.1, 0.1), paint(c));
+      mag.position.set(x, y, z);
+      door.add(mag);
+    });
+    g.add(door);
+    g.userData.door = door;
   } else if (type === "kitchenette") {
     const counter = new THREE.Mesh(new THREE.BoxGeometry(1.85, 0.72, 0.7), paint("#d8c6a8"));
     counter.position.y = 0.38;
@@ -771,6 +1024,100 @@ export function buildFurnitureMesh(type, ghost = false, ok = true) {
       book.position.set(-0.6 + i * 0.28, 0.56, 0);
       add(book);
     });
+  } else if (type === "chesstable") {
+    const top = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.1, 1.7), paint("#8b5a2b"));
+    top.position.y = 0.7;
+    add(top);
+    [[-0.7, 0.35, -0.7], [0.7, 0.35, -0.7], [-0.7, 0.35, 0.7], [0.7, 0.35, 0.7]].forEach((p) => {
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.7, 0.1), paint("#6b4220"));
+      leg.position.set(...p);
+      add(leg);
+    });
+    const boardRoot = new THREE.Group();
+    boardRoot.position.y = 0.76;
+    for (let r = 0; r < 8; r++) {
+      for (let c = 0; c < 8; c++) {
+        const light = (r + c) % 2 === 0;
+        const sq = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.02, 0.18), paint(light ? "#f3eadc" : "#3d2c29"));
+        sq.position.set((c - 3.5) * 0.18, 0, (r - 3.5) * 0.18);
+        boardRoot.add(sq);
+      }
+    }
+    g.add(boardRoot);
+    const mkStool = (z, seat) => {
+      const st = new THREE.Group();
+      const pad = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.07, 12), paint("#c4a06a"));
+      pad.position.y = 0.42;
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.4, 8), paint("#6b4220"));
+      pole.position.y = 0.2;
+      st.add(pad, pole);
+      st.position.set(0, 0, z);
+      st.userData.seat = seat;
+      g.add(st);
+      return st;
+    };
+    mkStool(1.05, 0);
+    mkStool(-1.05, 1);
+    const pieces = new THREE.Group();
+    pieces.position.y = 0.78;
+    g.add(pieces);
+    g.userData.pieces = pieces;
+    g.userData.stools = [1.05, -1.05];
+  } else if (type === "punchbag") {
+    const hook = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 8), paint("#4a4038"));
+    hook.position.y = 2.35;
+    add(hook);
+    const chain = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.25, 8), paint("#c5c9ce"));
+    chain.position.y = 2.22;
+    add(chain);
+    const pivot = new THREE.Group();
+    pivot.position.y = 2.08;
+    const bag = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.22, 1.15, 14), paint("#c44536"));
+    bag.position.y = -0.7;
+    const stripe = new THREE.Mesh(new THREE.CylinderGeometry(0.205, 0.225, 0.12, 14), paint("#eee3d6"));
+    stripe.position.y = -0.55;
+    pivot.add(bag, stripe);
+    g.add(pivot);
+    g.userData.pivot = pivot;
+    g.userData.bag = bag;
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.26, 0.08, 12), paint("#3d342c"));
+    base.position.y = 0.04;
+    add(base);
+  } else if (type === "benchpress") {
+    const pad = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.12, 1.5), paint("#d8c6a8"));
+    pad.position.set(0, 0.38, 0);
+    add(pad);
+    const standL = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.9, 0.08), paint("#6b6f78"));
+    const standR = standL.clone();
+    standL.position.set(-0.45, 0.55, -0.55);
+    standR.position.set(0.45, 0.55, -0.55);
+    add(standL); add(standR);
+    const bar = new THREE.Group();
+    const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.7, 10), paint("#c5c9ce"));
+    rod.rotation.z = Math.PI / 2;
+    const w1 = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.08, 12), paint("#2a2a2e"));
+    const w2 = w1.clone();
+    w1.rotation.z = Math.PI / 2; w2.rotation.z = Math.PI / 2;
+    w1.position.x = -0.75; w2.position.x = 0.75;
+    bar.add(rod, w1, w2);
+    bar.position.set(0, 0.95, -0.55);
+    g.add(bar);
+    g.userData.bar = bar;
+  } else if (type === "treadmill") {
+    const base = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.12, 1.5), paint("#3d342c"));
+    base.position.y = 0.1;
+    add(base);
+    const beltMat = ghost ? paint("#2a2a2e") : new THREE.MeshStandardMaterial({ color: "#2a2a2e", roughness: 0.8 });
+    const belt = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.04, 1.25), beltMat);
+    belt.position.y = 0.17;
+    add(belt);
+    g.userData.belt = belt;
+    const post = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.85, 0.08), paint("#6b6f78"));
+    post.position.set(0, 0.55, -0.65);
+    add(post);
+    const console = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.08, 0.22), paint("#2a2a2e"));
+    console.position.set(0, 1.0, -0.62);
+    add(console);
   } else {
     const seat = new THREE.Mesh(new THREE.BoxGeometry(1.85, 0.28, 0.72), paint("#6d7c8a"));
     seat.position.y = 0.28;
@@ -856,8 +1203,10 @@ export function createRoom3D(container) {
   const scene = new THREE.Scene();
   scene.fog = new THREE.Fog(0xc5b7a8, 22, 36);
 
-  scene.add(new THREE.HemisphereLight(0xffe6c9, 0x8a9aaa, 0.7));
-  scene.add(new THREE.AmbientLight(0xfff6e8, 0.28));
+  const hemi = new THREE.HemisphereLight(0xffe6c9, 0x8a9aaa, 0.7);
+  const ambient = new THREE.AmbientLight(0xfff6e8, 0.28);
+  scene.add(hemi);
+  scene.add(ambient);
   const sun = new THREE.DirectionalLight(0xffe4c4, 0.95);
   sun.position.set(5.5, 10, 4.5);
   sun.castShadow = true;
@@ -892,25 +1241,37 @@ export function createRoom3D(container) {
   const tilesGroup = new THREE.Group();
   const wallsGroup = new THREE.Group();
   const furnitureGroup = new THREE.Group();
+  const ghostGroup = new THREE.Group();
   const peopleGroup = new THREE.Group();
   const petsGroup = new THREE.Group();
   const gridGroup = new THREE.Group();
-  scene.add(tilesGroup, wallsGroup, furnitureGroup, peopleGroup, petsGroup, gridGroup);
+  const fxGroup = new THREE.Group();
+  scene.add(tilesGroup, wallsGroup, furnitureGroup, ghostGroup, peopleGroup, petsGroup, gridGroup, fxGroup);
 
   let ghost = null;
+  let ghostState = null;
   const peopleMeshes = new Map();
   const petMeshes = new Map();
   const tileMeshes = [];
   let hoverMesh = null;
+  let selectedMesh = null;
+  let highlight = null;
   let gridSize = 6;
   let wallpaper = "paint-cream";
   let floorStyle = "wood";
   let onTileClick = null;
   let onTileHover = null;
   let onFurnitureClick = null;
+  let onSwitchClick = null;
   let placing = null;
   let furnitureList = [];
   let hovering = false;
+  let lightsOn = true;
+  let uses = {};
+  let chessMap = {};
+  let tvs = {};
+  let windowLightRef = null;
+  let switchMesh = null;
 
   function resize() {
     const w = container.clientWidth || 800;
@@ -1019,15 +1380,25 @@ export function createRoom3D(container) {
     const mullion = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.95, 0.05), frame);
     mullion.position.copy(pane.position);
     wallsGroup.add(win, pane, mullion);
-    const windowLight = new THREE.PointLight(0xffe0b0, 0.85, 7);
+    const windowLight = new THREE.PointLight(0xffe0b0, lightsOn ? 0.85 : 0.35, 7);
     windowLight.position.set(gridSize * 0.18, 1.9, -gridSize / 2 + 0.8);
     wallsGroup.add(windowLight);
+    windowLightRef = windowLight;
 
     const door = new THREE.Mesh(new THREE.BoxGeometry(0.08, 2.05, 0.85), std("#8a5a36"));
     door.position.set(-gridSize / 2 + 0.07, 1.05, gridSize * 0.22);
     const knob = new THREE.Mesh(new THREE.SphereGeometry(0.04, 8, 8), std("#e6c35c", { metalness: 0.7, roughness: 0.3 }));
     knob.position.set(-gridSize / 2 + 0.13, 1.05, gridSize * 0.22 + 0.3);
     wallsGroup.add(door, knob);
+
+    const plate = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.28, 0.18), std("#efe8dc"));
+    plate.position.set(-gridSize / 2 + 0.08, 1.35, gridSize * 0.22 - 0.7);
+    const sw = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.1, 0.07), std(lightsOn ? "#f4c15d" : "#6b6f78"));
+    sw.position.set(-gridSize / 2 + 0.12, 1.35, gridSize * 0.22 - 0.7);
+    sw.userData.lightSwitch = true;
+    plate.userData.lightSwitch = true;
+    wallsGroup.add(plate, sw);
+    switchMesh = sw;
   }
 
   function setStyle(nextPaper, nextFloor) {
@@ -1048,30 +1419,183 @@ export function createRoom3D(container) {
   function setFurniture(list) {
     furnitureList = list || [];
     furnitureGroup.clear();
+    selectedMesh = null;
     furnitureList.forEach((f) => addFurniture(f, true));
+    refreshInteractives();
+    if (highlight) highlight.visible = false;
   }
 
   function addFurniture(f, skipPush) {
     if (!skipPush && !furnitureList.some((x) => x.id === f.id)) furnitureList.push(f);
-    const [w, h] = furnSize(f.type);
+    const [w, h] = furnDims(f.type, f.rot);
     const m = buildFurnitureMesh(f.type, false);
     const c = footprintCenter(f.x, f.y, w, h, gridSize);
     m.position.set(c.x, 0, c.z);
-    m.userData = { furnitureId: f.id, type: f.type };
+    m.rotation.y = (normalizeRotSafe(f.rot) * Math.PI) / 2;
+    m.userData.furnitureId = f.id;
+    m.userData.type = f.type;
+    m.userData.rot = f.rot || 0;
     furnitureGroup.add(m);
+    // tag stool children
+    m.traverse((ch) => {
+      if (ch.userData && ch.userData.seat != null) {
+        ch.userData.furnitureId = f.id;
+        ch.userData.type = f.type;
+      }
+    });
+    return m;
   }
 
-  function setGhost(type, tx, ty, ok) {
-    if (ghost) {
-      furnitureGroup.remove(ghost);
-      ghost = null;
-    }
-    if (!type) return;
-    const [w, h] = furnSize(type);
+  function normalizeRotSafe(rot) {
+    return ((Number(rot) || 0) % 4 + 4) % 4;
+  }
+
+  function setGhost(type, tx, ty, ok, rot) {
+    ghostGroup.clear();
+    ghost = null;
+    ghostState = null;
+    if (!type || tx == null || ty == null) return;
+    const r = normalizeRotSafe(rot);
+    const [w, h] = furnDims(type, r);
     ghost = buildFurnitureMesh(type, true, ok);
     const c = footprintCenter(tx, ty, w, h, gridSize);
     ghost.position.set(c.x, 0.02, c.z);
-    furnitureGroup.add(ghost);
+    ghost.rotation.y = (r * Math.PI) / 2;
+    ghostGroup.add(ghost);
+    ghostState = { type, tx, ty, ok: Boolean(ok), rot: r };
+  }
+
+  function getGhost() { return ghostState ? { ...ghostState } : null; }
+
+  function findFurnMesh(id) {
+    return furnitureGroup.children.find((c) => c.userData.furnitureId === id) || null;
+  }
+
+  function highlightFurniture(id) {
+    if (highlight) {
+      highlight.parent && highlight.parent.remove(highlight);
+      highlight = null;
+    }
+    selectedMesh = id ? findFurnMesh(id) : null;
+    if (!selectedMesh) return;
+    const box = new THREE.Box3().setFromObject(selectedMesh);
+    const size = new THREE.Vector3();
+    const center = new THREE.Vector3();
+    box.getSize(size);
+    box.getCenter(center);
+    highlight = new THREE.Mesh(
+      new THREE.BoxGeometry(Math.max(0.4, size.x + 0.12), Math.max(0.2, size.y + 0.12), Math.max(0.4, size.z + 0.12)),
+      new THREE.MeshBasicMaterial({ color: 0xffe08a, transparent: true, opacity: 0.22, depthWrite: false })
+    );
+    highlight.position.copy(center);
+    highlight.position.y = size.y / 2 + 0.02;
+    scene.add(highlight);
+  }
+
+  function projectFurniture(id) {
+    const m = findFurnMesh(id);
+    if (!m) return null;
+    const v = new THREE.Vector3();
+    m.getWorldPosition(v);
+    v.y += 1.1;
+    v.project(camera);
+    const w = container.clientWidth;
+    const h = container.clientHeight;
+    return { x: (v.x * 0.5 + 0.5) * w, y: (-v.y * 0.5 + 0.5) * h, visible: v.z < 1 };
+  }
+
+  function applyLights() {
+    const on = lightsOn;
+    hemi.intensity = on ? 0.7 : 0.18;
+    ambient.intensity = on ? 0.28 : 0.06;
+    sun.intensity = on ? 0.95 : 0.12;
+    rim.intensity = on ? 0.55 : 0.12;
+    if (windowLightRef) windowLightRef.intensity = on ? 0.85 : 0.4;
+    renderer.setClearColor(on ? 0xb7c4d6 : 0x1a1630, 1);
+    if (switchMesh) switchMesh.material.color.set(on ? "#f4c15d" : "#6b6f78");
+  }
+
+  function setLights(on) {
+    lightsOn = on !== false;
+    applyLights();
+    refreshInteractives();
+  }
+
+  function setUses(next) { uses = next || {}; refreshInteractives(); }
+  function setChessMap(next) { chessMap = next || {}; refreshInteractives(); }
+  function setTvs(next) { tvs = next || {}; refreshInteractives(); }
+
+  function layoutChessPieces(root, fen) {
+    if (!root) return;
+    while (root.children.length) root.remove(root.children[0]);
+    if (!fen) return;
+    const board = fen.split(" ")[0].split("/");
+    const letter = (ch) => ch.toLowerCase();
+    const isWhite = (ch) => ch === ch.toUpperCase();
+    for (let r = 0; r < 8; r++) {
+      let c = 0;
+      for (const ch of board[r] || "") {
+        if (/[1-8]/.test(ch)) { c += Number(ch); continue; }
+        const color = isWhite(ch) ? "#f4efe6" : "#2a2a2e";
+        const kind = letter(ch);
+        let piece;
+        if (kind === "p") piece = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, 0.1, 8), std(color));
+        else if (kind === "r") piece = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.14, 0.08), std(color));
+        else if (kind === "n") piece = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.14, 8), std(color));
+        else if (kind === "b") piece = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.16, 6), std(color));
+        else if (kind === "q") piece = new THREE.Mesh(new THREE.SphereGeometry(0.055, 10, 8), std(color));
+        else piece = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.18, 10), std(color));
+        piece.position.set((c - 3.5) * 0.18, 0.07, (7 - r - 3.5) * 0.18);
+        piece.castShadow = true;
+        root.add(piece);
+        c += 1;
+      }
+    }
+  }
+
+  function refreshInteractives() {
+    furnitureGroup.children.forEach((m) => {
+      const id = m.userData.furnitureId;
+      const type = m.userData.type;
+      const use = uses[id];
+      if (m.userData.door) m.userData.door.rotation.y = use && use.type === "fridge" && use.open ? -2.1 : 0;
+      if (m.userData.fridgeLight) m.userData.fridgeLight.intensity = (use && use.open) ? (lightsOn ? 0.45 : 1.1) : 0;
+      if (m.userData.screen) {
+        const on = Boolean(tvs[id]?.on);
+        m.userData.screen.userData.tvOn = on;
+        if (m.userData.screen.material && m.userData.screen.material.emissive) {
+          m.userData.screen.material.emissiveIntensity = on ? 1.2 : 0.1;
+        }
+      }
+      if (m.userData.pieces) layoutChessPieces(m.userData.pieces, chessMap[id]?.fen);
+    });
+  }
+
+  function petSitWorld(ownerMesh) {
+    const yaw = ownerMesh.rotation.y;
+    const fwdX = Math.sin(yaw), fwdZ = Math.cos(yaw);
+    const rightX = Math.cos(yaw), rightZ = -Math.sin(yaw);
+    const candidates = [];
+    for (const side of [1, -1, 0]) {
+      for (const fwd of [0.16, 0.02, 0.3, -0.12]) {
+        candidates.push([
+          ownerMesh.position.x + rightX * 0.38 * (side || 1) + fwdX * fwd,
+          ownerMesh.position.z + rightZ * 0.38 * (side || 1) + fwdZ * fwd,
+        ]);
+        if (side === 0) break;
+      }
+    }
+    const blocked = (globalThis.HouseIso?.blockedSet(furnitureList) || new Set());
+    const ok = (x, z) => {
+      const tx = Math.round(x + gridSize / 2 - 0.5);
+      const ty = Math.round(z + gridSize / 2 - 0.5);
+      if (tx < 0 || ty < 0 || tx >= gridSize || ty >= gridSize) return false;
+      return !blocked.has(tx + "," + ty);
+    };
+    for (const [x, z] of candidates) {
+      if (ok(x, z)) return new THREE.Vector3(x, 0, z);
+    }
+    return new THREE.Vector3(ownerMesh.position.x + rightX * 0.3, 0, ownerMesh.position.z + rightZ * 0.3);
   }
 
   function syncPeople(people) {
@@ -1079,8 +1603,13 @@ export function createRoom3D(container) {
     for (const p of people) {
       seen.add(p.username);
       let m = peopleMeshes.get(p.username);
-      const av = { ...(p.avatar || {}), prop: p.heldProp || p.avatar?.prop || null };
-      const sig = JSON.stringify(av) + "|" + (p.activePet || "");
+      const av = {
+        ...(p.avatar || {}),
+        prop: p.heldProp || p.avatar?.prop || null,
+        heldItem: p.heldItem || null,
+        boxing: p.boxing || null,
+      };
+      const sig = JSON.stringify(av) + "|" + (p.activePet || "") + "|" + (p.gym?.type || "");
       if (!m || m.userData.sig !== sig) {
         if (m) peopleGroup.remove(m);
         m = buildAvatarMesh(av);
@@ -1094,22 +1623,38 @@ export function createRoom3D(container) {
       m.userData.sitting = Boolean(p.sitting);
       m.userData.phase = m.userData.phase || (p.username.length % 5);
       m.userData.activePet = p.activePet || null;
+      m.userData.heldItem = p.heldItem || null;
+      m.userData.boxing = p.boxing || null;
+      m.userData.gym = p.gym || null;
       if (p.walking && (p.dirX != null || p.dirZ != null)) {
         m.rotation.y = Math.atan2(p.dirX || 0, p.dirZ || 1);
-      } else {
-        m.rotation.y = Math.atan2(camera.position.x - m.position.x, camera.position.z - m.position.z);
+        m.userData.facing = { x: p.dirX || 0, z: p.dirZ || 1 };
+      } else if (p.facing && (p.facing.x != null || p.facing.z != null)) {
+        m.rotation.y = Math.atan2(p.facing.x || 0, p.facing.z || 1);
+        m.userData.facing = p.facing;
       }
+      // otherwise keep last rotation so every viewer sees the same facing
       if (p.activePet) {
         let pet = petMeshes.get(p.username);
         if (!pet || pet.userData.kind !== p.activePet) {
           if (pet) petsGroup.remove(pet);
           pet = buildPetMesh(p.activePet);
           pet.userData.kind = p.activePet;
+          pet.userData.phase = (p.username.length % 7);
           petMeshes.set(p.username, pet);
           petsGroup.add(pet);
           pet.position.set(pos.x - 0.45, 0, pos.z - 0.35);
         }
-        pet.userData.target = new THREE.Vector3(pos.x - Math.sin(m.rotation.y) * 0.5, 0, pos.z - Math.cos(m.rotation.y) * 0.5);
+        const walking = Boolean(p.walking);
+        pet.userData.wantSit = !walking && !p.sitting;
+        if (walking) {
+          pet.userData.target = new THREE.Vector3(pos.x - Math.sin(m.rotation.y) * 0.5, 0, pos.z - Math.cos(m.rotation.y) * 0.5);
+          pet.userData.sitReady = false;
+        } else {
+          pet.userData.target = petSitWorld(m);
+        }
+        pet.userData.ownerYaw = m.rotation.y;
+        pet.userData.ownerPos = pos.clone();
       }
     }
     for (const [name, m] of peopleMeshes) {
@@ -1172,12 +1717,26 @@ export function createRoom3D(container) {
     const moved = Math.hypot(e.clientX - downPt.x, e.clientY - downPt.y);
     downPt = null;
     if (moved > 7) return;
+    const swHit = pick(e, wallsGroup.children);
+    if (swHit) {
+      let obj = swHit.object;
+      while (obj && !obj.userData.lightSwitch) obj = obj.parent;
+      if (obj?.userData.lightSwitch) {
+        onSwitchClick?.();
+        return;
+      }
+    }
     const furnHit = pick(e, furnitureGroup.children);
-    if (furnHit && !placing) {
+    if (furnHit) {
       let obj = furnHit.object;
-      while (obj && !obj.userData.furnitureId) obj = obj.parent;
+      let seat = null;
+      while (obj && !obj.userData.furnitureId) {
+        if (obj.userData && obj.userData.seat != null) seat = obj.userData.seat;
+        obj = obj.parent;
+      }
       if (obj?.userData.furnitureId) {
-        onFurnitureClick?.(obj.userData.furnitureId, obj.userData.type);
+        if (seat == null && obj.userData.seat != null) seat = obj.userData.seat;
+        onFurnitureClick?.(obj.userData.furnitureId, obj.userData.type, { seat });
         return;
       }
     }
@@ -1213,13 +1772,62 @@ export function createRoom3D(container) {
       applyCharacterPose(m.userData, t, m.userData.walking, m.userData.sitting);
     }
     for (const pet of petMeshes.values()) {
-      if (pet.userData.target) {
-        pet.position.lerp(pet.userData.target, 0.08);
-        const d = pet.userData.target.clone().sub(pet.position);
-        if (d.lengthSq() > 0.0004) pet.rotation.y = Math.atan2(d.x, d.z);
+      const ud = pet.userData;
+      if (ud.target) {
+        pet.position.lerp(ud.target, ud.wantSit ? 0.12 : 0.08);
+        const d = ud.target.clone().sub(pet.position);
+        const dist = Math.hypot(d.x, d.z);
+        if (dist > 0.05 && !ud.sitReady) pet.rotation.y = Math.atan2(d.x, d.z);
+        if (ud.wantSit && dist < 0.06) ud.sitReady = true;
+        if (!ud.wantSit) ud.sitReady = false;
       }
-      pet.position.y = Math.abs(Math.sin(t * 6)) * 0.02;
+      const sitting = Boolean(ud.sitReady && ud.wantSit);
+      ud.sitting = sitting;
+      if (sitting) {
+        const yaw = ud.ownerYaw || pet.rotation.y;
+        if (ud.ownerPos) {
+          const toward = Math.atan2(ud.ownerPos.x - pet.position.x, ud.ownerPos.z - pet.position.z);
+          // face mostly with the owner, slightly toward them
+          pet.rotation.y = yaw * 0.75 + toward * 0.25;
+        } else pet.rotation.y = yaw;
+      }
+      applyPetPose(ud, t, !sitting && !ud.wantSit, sitting);
+      if (!sitting) pet.position.y = Math.abs(Math.sin(t * 6)) * 0.02;
+      else pet.position.y = 0;
     }
+    furnitureGroup.children.forEach((m) => {
+      const id = m.userData.furnitureId;
+      const use = uses[id];
+      if (m.userData.pivot && use && use.type === "punchbag" && use.lastHitAt) {
+        const age = (Date.now() - use.lastHitAt) / 1000;
+        const amp = (use.move === "uppercut" ? 0.55 : use.move === "hook" ? 0.4 : 0.28) * Math.exp(-age * 2.2);
+        const dir = use.move === "hook" ? 1 : 0.35;
+        m.userData.pivot.rotation.x = Math.sin(age * 11) * amp;
+        m.userData.pivot.rotation.z = Math.cos(age * 9 + dir) * amp * 0.6;
+        const squash = Math.exp(-age * 10) * 0.2;
+        if (m.userData.bag) m.userData.bag.scale.set(1 + squash, 1 - squash, 1 + squash);
+        m.userData.swinging = age < 1.6 && amp > 0.02;
+      } else if (m.userData.pivot) {
+        m.userData.pivot.rotation.x *= 0.85;
+        m.userData.pivot.rotation.z *= 0.85;
+        if (m.userData.bag) m.userData.bag.scale.set(1, 1, 1);
+        m.userData.swinging = false;
+      }
+      if (m.userData.bar && use && use.type === "benchpress") {
+        const age = (Date.now() - (use.lastRepAt || 0)) / 1000;
+        const k = age < 0.5 ? Math.sin((age / 0.5) * Math.PI) : 0;
+        m.userData.bar.position.y = 0.95 + k * 0.35;
+      }
+      if (m.userData.belt && use && use.type === "treadmill" && m.userData.belt.material) {
+        // visual run pulse
+        m.userData.belt.material.color.setHSL(0, 0, 0.12 + 0.05 * Math.sin(t * 12));
+      }
+      if (m.userData.screen && m.userData.screen.userData.tvOn && m.userData.screen.material?.emissive) {
+        const hue = (t * 0.15 + (id || "").length) % 1;
+        m.userData.screen.material.emissive.setHSL(hue, 0.65, 0.45);
+        m.userData.screen.material.color.setHSL(hue, 0.4, 0.25);
+      }
+    });
     rim.position.copy(camera.position);
     controls.update();
     renderer.render(scene, camera);
@@ -1240,12 +1848,36 @@ export function createRoom3D(container) {
     addFurniture,
     getFurniture() { return furnitureList.slice(); },
     setGhost,
+    getGhost,
+    highlightFurniture,
+    projectFurniture,
+    setLights,
+    lightsOn: () => lightsOn,
+    tvOn(id) { return Boolean(tvs[id]?.on); },
+    fridgeOpen(id) { return Boolean(uses[id]?.open); },
+    setUses,
+    setChessMap,
+    setTvs,
+    findFurnMesh,
+    petSitting(name) { return Boolean(petMeshes.get(name)?.userData.sitting); },
+    bagSwinging(id) { return Boolean(findFurnMesh(id)?.userData.swinging); },
+    personFlags(name) {
+      const m = peopleMeshes.get(name);
+      if (!m) return null;
+      return {
+        boxing: Boolean(m.userData.boxing),
+        heldItem: m.userData.heldItem || null,
+        gym: m.userData.gym || null,
+        facing: m.userData.facing || null,
+      };
+    },
     syncPeople,
     projectHead,
     overlay,
     onTileClick(fn) { onTileClick = fn; },
     onTileHover(fn) { onTileHover = fn; },
     onFurnitureClick(fn) { onFurnitureClick = fn; },
+    onSwitchClick(fn) { onSwitchClick = fn; },
     setZoom(z) {
       camera.zoom = Number(z) || 1;
       camera.updateProjectionMatrix();
@@ -1256,6 +1888,8 @@ export function createRoom3D(container) {
       if (!type) setGhost(null);
     },
     simulateTileClick(tx, ty) { onTileClick?.(tx, ty); },
+    simulateFurnitureClick(id, type, extra) { onFurnitureClick?.(id, type, extra || {}); },
+    simulateSwitchClick() { onSwitchClick?.(); },
     clear() {
       setFurniture([]);
       syncPeople([]);
