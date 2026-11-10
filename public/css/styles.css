@@ -1,5 +1,22 @@
 :root {
   --dock-h: 76px;
+  --sat: 0px;
+  --sab: 0px;
+  --sal: 0px;
+  --sar: 0px;
+  --sat: constant(safe-area-inset-top, 0px);
+  --sab: constant(safe-area-inset-bottom, 0px);
+  --sal: constant(safe-area-inset-left, 0px);
+  --sar: constant(safe-area-inset-right, 0px);
+  --sat: env(safe-area-inset-top, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+  --safe-top: calc(max(var(--sat), 12px) + 12px);
+  --safe-bottom: max(var(--sab), 12px);
+  --safe-left: max(var(--sal), 0px);
+  --safe-right: max(var(--sar), 0px);
+  --app-top: 0px;
   --bg: #fff3e8;
   --bg2: #ffe0c8;
   --ink: #3d2c29;
@@ -32,11 +49,12 @@ html, body {
 }
 body, .app {
   position: fixed;
-  inset: 0;
+  top: var(--app-top, 0px);
+  left: 0;
+  right: 0;
+  bottom: auto;
   width: 100%;
   max-width: 100%;
-  height: 100%;
-  height: 100dvh;
   height: var(--app-h, 100dvh);
   overflow: hidden;
   overscroll-behavior: none;
@@ -82,9 +100,9 @@ input, textarea, [contenteditable] {
   justify-content: space-between;
   gap: 12px;
   padding: 12px 18px;
-  padding-top: calc(12px + env(safe-area-inset-top, 0px));
-  padding-left: calc(18px + env(safe-area-inset-left, 0px));
-  padding-right: calc(18px + env(safe-area-inset-right, 0px));
+  padding-top: var(--safe-top);
+  padding-left: calc(18px + var(--safe-left));
+  padding-right: calc(18px + var(--safe-right));
   background: rgba(255, 250, 245, 0.86);
   backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--line);
@@ -133,7 +151,7 @@ body::before {
   background-size: 40px 70px;
   z-index: 0;
 }
-.app { position: relative; z-index: 1; }
+.app { z-index: 1; }
 
 .coin-chip, .user-chip {
   display: inline-flex;
@@ -160,7 +178,7 @@ body::before {
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
-  padding-bottom: calc(40px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(40px + var(--safe-bottom));
 }
 .card {
   background: var(--card);
@@ -219,10 +237,10 @@ input:focus { border-color: var(--coral); }
   display: grid;
   place-items: center;
   padding: 28px 16px;
-  padding-top: calc(28px + env(safe-area-inset-top, 0px));
-  padding-bottom: calc(28px + env(safe-area-inset-bottom, 0px));
-  padding-left: calc(16px + env(safe-area-inset-left, 0px));
-  padding-right: calc(16px + env(safe-area-inset-right, 0px));
+  padding-top: calc(var(--safe-top) + 16px);
+  padding-bottom: calc(28px + var(--safe-bottom));
+  padding-left: calc(16px + var(--safe-left));
+  padding-right: calc(16px + var(--safe-right));
 }
 .hero-card { width: min(440px, 100%); text-align: center; }
 .hero-card h1 { font-size: 2rem; }
@@ -299,9 +317,9 @@ input:focus { border-color: var(--coral); }
   position: sticky;
   top: 0;
   padding: 14px 16px 10px;
-  padding-top: calc(14px + env(safe-area-inset-top, 0px));
-  padding-left: calc(16px + env(safe-area-inset-left, 0px));
-  padding-right: calc(16px + env(safe-area-inset-right, 0px));
+  padding-top: var(--safe-top);
+  padding-left: calc(16px + var(--safe-left));
+  padding-right: calc(16px + var(--safe-right));
 }
 .lobby-topbar .brand { font-size: 1.12rem; }
 .lobby-tabs {
@@ -332,7 +350,7 @@ input:focus { border-color: var(--coral); }
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
-  padding-bottom: calc(92px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(92px + var(--safe-bottom));
 }
 .contact-list { display: flex; flex-direction: column; }
 .contact-row {
@@ -408,8 +426,8 @@ input:focus { border-color: var(--coral); }
 }
 .fab {
   position: absolute;
-  right: calc(20px + env(safe-area-inset-right, 0px));
-  bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+  right: calc(20px + var(--safe-right));
+  bottom: calc(24px + var(--safe-bottom));
   width: 58px;
   height: 58px;
   border: 0;
@@ -711,8 +729,8 @@ input:focus { border-color: var(--coral); }
   gap: 8px;
   align-items: center;
   padding: 12px;
-  padding-left: calc(12px + env(safe-area-inset-left, 0px));
-  padding-right: calc(12px + env(safe-area-inset-right, 0px));
+  padding-left: calc(12px + var(--safe-left));
+  padding-right: calc(12px + var(--safe-right));
   background: #3b1f66;
   flex: 0 0 auto;
 }
@@ -787,15 +805,15 @@ input:focus { border-color: var(--coral); }
   background: #3d2c2988;
   display: grid; place-items: center;
   z-index: 50;
-  padding: 16px;
+  padding: calc(16px + var(--safe-top)) calc(16px + var(--safe-right)) calc(16px + var(--safe-bottom)) calc(16px + var(--safe-left));
 }
 .modal { width: min(400px, 100%); }
 
 /* Toasts */
 #toasts {
   position: fixed;
-  top: calc(72px + env(safe-area-inset-top, 0px));
-  right: calc(16px + env(safe-area-inset-right, 0px));
+  top: calc(72px + var(--safe-top));
+  right: calc(16px + var(--safe-right));
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -818,9 +836,9 @@ input:focus { border-color: var(--coral); }
   .wrap { width: calc(100% - 20px); }
   .room-stage { min-height: 0; }
   .topbar {
-    padding-top: calc(10px + env(safe-area-inset-top, 0px));
-    padding-left: calc(12px + env(safe-area-inset-left, 0px));
-    padding-right: calc(12px + env(safe-area-inset-right, 0px));
+    padding-top: var(--safe-top);
+    padding-left: calc(12px + var(--safe-left));
+    padding-right: calc(12px + var(--safe-right));
     padding-bottom: 10px;
   }
   .preview-card { position: relative; top: auto; }
@@ -979,8 +997,8 @@ button.coin-chip {
 }
 .phone-fab {
   position: absolute;
-  right: 12px;
-  bottom: calc(var(--dock-h) + 10px + env(safe-area-inset-bottom, 0px));
+  right: calc(12px + var(--safe-right));
+  bottom: calc(var(--dock-h) + 10px);
   width: 56px;
   height: 56px;
   border: 0;
@@ -1017,37 +1035,38 @@ body.phone-open .phone-fab { visibility: hidden; }
 .dock {
   position: relative;
   z-index: 40;
-  padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(12px + var(--safe-bottom));
 }
 
 .phone-overlay {
-  position: fixed;
+  position: absolute;
   left: 0;
   right: 0;
   top: 0;
-  bottom: calc(var(--dock-h) + env(safe-area-inset-bottom, 0px));
+  bottom: var(--dock-h);
   z-index: 35;
   display: flex;
   align-items: flex-end;
-  justify-content: center;
-  padding: 8px 8px 0;
+  justify-content: flex-end;
+  padding: 8px calc(10px + var(--safe-right)) 8px 8px;
   pointer-events: none;
 }
 .phone-overlay.hidden { display: none !important; }
 .phone-backdrop {
   position: absolute;
   inset: 0;
-  background: rgba(18, 10, 36, .45);
+  background: rgba(18, 10, 36, .16);
   pointer-events: auto;
 }
 .phone-device {
   pointer-events: auto;
   position: relative;
   z-index: 1;
-  width: min(360px, calc(100vw - 18px));
-  height: min(680px, calc(100dvh - var(--dock-h) - 18px - env(safe-area-inset-bottom, 0px)));
-  filter: drop-shadow(0 18px 30px rgba(12, 6, 28, .45));
-  animation: phoneUp .32s cubic-bezier(.2, 1.15, .3, 1);
+  width: min(210px, calc(100% - 16px));
+  height: min(348px, calc(var(--app-h, 100dvh) - var(--dock-h) - var(--safe-top) - 16px));
+  max-height: calc(var(--app-h, 100dvh) - var(--dock-h) - 16px);
+  filter: drop-shadow(0 12px 20px rgba(12, 6, 28, .4));
+  animation: phoneUp .28s cubic-bezier(.2, 1.15, .3, 1);
 }
 @keyframes phoneUp {
   from { transform: translateY(18%) scale(.96); opacity: 0; }
@@ -1056,8 +1075,8 @@ body.phone-open .phone-fab { visibility: hidden; }
 .phone-bezel {
   height: 100%;
   background: linear-gradient(180deg, #3b2760 0%, #1c1233 100%);
-  border-radius: 36px;
-  padding: 14px 12px 10px;
+  border-radius: 28px;
+  padding: 10px 8px 6px;
   box-shadow:
     inset 0 2px 0 rgba(255,255,255,.18),
     inset 0 -3px 0 rgba(0,0,0,.35),
@@ -1086,7 +1105,7 @@ body.phone-open .phone-fab { visibility: hidden; }
     radial-gradient(380px 240px at 100% 10%, rgba(196, 160, 255, .65), transparent 50%),
     radial-gradient(300px 260px at 50% 100%, rgba(126, 224, 198, .4), transparent 55%),
     linear-gradient(180deg, #7c5cff 0%, #5b8def 42%, #ff8fab 100%);
-  border-radius: 26px;
+  border-radius: 20px;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -1110,10 +1129,10 @@ body.phone-open .phone-fab { visibility: hidden; }
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px 14px 4px;
+  padding: 6px 8px 2px;
   color: #fff;
   font-weight: 800;
-  font-size: .82rem;
+  font-size: .68rem;
   text-shadow: 0 1px 0 rgba(0,0,0,.2);
 }
 .phone-status-icons { display: flex; align-items: flex-end; gap: 3px; }
@@ -1171,16 +1190,16 @@ body.phone-open .phone-fab { visibility: hidden; }
   text-align: center;
   color: #fff;
   font-weight: 800;
-  font-size: 1.15rem;
+  font-size: .78rem;
   letter-spacing: -.03em;
   text-shadow: 0 2px 0 rgba(40, 20, 80, .25);
-  padding: 4px 0 8px;
+  padding: 0 0 4px;
 }
 .phone-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 14px 8px;
-  padding: 4px 14px 12px;
+  gap: 6px 4px;
+  padding: 2px 6px 6px;
   overflow-y: auto;
   align-content: start;
 }
@@ -1198,16 +1217,16 @@ body.phone-open .phone-fab { visibility: hidden; }
   border-radius: 16px;
 }
 .phone-app-icon {
-  width: 62px;
-  height: 62px;
-  border-radius: 18px;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
   display: grid;
   place-items: center;
   box-shadow: 0 5px 0 rgba(40, 16, 60, .28), inset 0 2px 0 rgba(255,255,255,.35);
 }
 .phone-app:active .phone-app-icon { transform: translateY(2px); box-shadow: 0 3px 0 rgba(40, 16, 60, .28); }
 .phone-app-label {
-  font-size: .72rem;
+  font-size: .58rem;
   font-weight: 800;
   letter-spacing: -.02em;
   text-shadow: 0 1px 2px rgba(20, 10, 40, .45);
@@ -1220,13 +1239,13 @@ body.phone-open .phone-fab { visibility: hidden; }
   position: relative;
   z-index: 1;
   align-self: center;
-  width: 116px;
-  height: 6px;
+  width: 72px;
+  height: 5px;
   border: 0;
   border-radius: 999px;
   background: rgba(255,255,255,.85);
   box-shadow: 0 2px 0 rgba(0,0,0,.2);
-  margin: 6px 0 8px;
+  margin: 4px 0 6px;
   padding: 0;
   flex-shrink: 0;
 }
@@ -1240,7 +1259,7 @@ body.phone-open .phone-fab { visibility: hidden; }
 }
 .phone-app-nav h2 {
   margin: 0;
-  font-size: 1.05rem;
+  font-size: .88rem;
   color: #fff;
   text-shadow: 0 1px 0 rgba(0,0,0,.2);
 }
@@ -1268,7 +1287,7 @@ body.phone-open .phone-fab { visibility: hidden; }
   box-shadow: 0 8px 0 rgba(40, 16, 60, .12);
 }
 .phone-app-body .lede { font-size: .88rem; }
-.phone-app-body .shop-grid { grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); }
+.phone-app-body .shop-grid { grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); }
 .leave-confirm { text-align: center; }
 .leave-door { font-size: 42px; margin: 8px 0 4px; }
 .leave-confirm-btn {
@@ -1281,8 +1300,8 @@ body.phone-open .phone-fab { visibility: hidden; }
 
 @media (max-width: 430px) {
   :root, .room-view { --dock-h: 80px; }
-  .phone-app-icon { width: 58px; height: 58px; border-radius: 16px; }
-  .phone-fab { width: 52px; height: 52px; right: 10px; }
+  .phone-app-icon { width: 40px; height: 40px; border-radius: 11px; }
+  .phone-fab { width: 48px; height: 48px; right: 10px; }
 }
 
 
@@ -1299,7 +1318,7 @@ body.phone-open .phone-fab { visibility: hidden; }
 .edit-inventory {
   position: absolute;
   left: 8px;
-  bottom: calc(var(--dock-h) + 10px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(var(--dock-h) + 10px);
   width: min(210px, 46vw);
   max-height: min(280px, 34vh);
   background: #fff8f2ee;
@@ -1375,7 +1394,7 @@ body.phone-open .phone-fab { visibility: hidden; }
 .activity-chip {
   position: absolute;
   left: 50%;
-  bottom: calc(var(--dock-h) + 10px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(var(--dock-h) + 10px);
   transform: translateX(-50%);
   z-index: 34;
   display: flex;
@@ -1391,7 +1410,7 @@ body.phone-open .phone-fab { visibility: hidden; }
 .fridge-picker {
   position: absolute;
   left: 50%;
-  bottom: calc(var(--dock-h) + 64px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(var(--dock-h) + 64px);
   transform: translateX(-50%);
   z-index: 35;
   width: min(340px, calc(100% - 16px));
@@ -1409,7 +1428,7 @@ body.phone-open .phone-fab { visibility: hidden; }
 .chess-panel {
   position: absolute;
   left: 50%;
-  bottom: calc(var(--dock-h) + 8px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(var(--dock-h) + 8px);
   transform: translateX(-50%);
   z-index: 36;
   width: min(380px, calc(100% - 12px));
@@ -1508,7 +1527,7 @@ body.phone-open .phone-fab { visibility: hidden; }
 .cubics-panel, .wardrobe-panel {
   position: absolute;
   left: 50%;
-  bottom: calc(var(--dock-h) + 8px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(var(--dock-h) + 8px);
   transform: translateX(-50%);
   z-index: 36;
   background: #fff8f2;
@@ -1542,7 +1561,7 @@ body.phone-open .phone-fab { visibility: hidden; }
 .place-actions {
   position: absolute;
   left: 50%;
-  bottom: calc(var(--dock-h) + 12px + env(safe-area-inset-bottom, 0px) + var(--kb-inset, 0px));
+  bottom: calc(var(--dock-h) + 12px + var(--kb-inset, 0px));
   transform: translateX(-50%);
   z-index: 36;
   display: flex;
@@ -1571,7 +1590,7 @@ body.phone-open .phone-fab { visibility: hidden; }
   left: 0;
   right: 0;
   top: 0;
-  bottom: calc(var(--dock-h) + env(safe-area-inset-bottom, 0px) + var(--kb-inset, 0px));
+  bottom: calc(var(--dock-h) + var(--kb-inset, 0px));
   z-index: 44;
   background: transparent;
 }

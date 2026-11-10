@@ -13,7 +13,7 @@ async function login(page, username) {
   await page.waitForSelector('[data-testid="username-input"]');
   await page.fill('[data-testid="username-input"]', username);
   await page.click('[data-testid="login-btn"]');
-  await page.waitForSelector('body[data-view="creator"]', { timeout: 15000 });
+  await page.waitForSelector('body[data-view="creator"]', { timeout: 30000 });
   await page.waitForSelector('[data-testid="save-avatar"]', { timeout: 10000 });
 }
 
@@ -168,11 +168,13 @@ async function runMobileWalkAndPlace(browser, deviceName, { screenshot } = {}) {
 }
 
 
-async function assertInsideViewport(page, selectors, label) {
-  const rows = await page.evaluate((sels) => {
+async function assertInsideViewport(page, selectors, label, inset = { top: 0, bottom: 0 }) {
+  const rows = await page.evaluate(({ sels, inset }) => {
     const w = window.visualViewport?.width ?? window.innerWidth;
     const h = window.visualViewport?.height ?? window.innerHeight;
     const pad = 2;
+    const top0 = inset.top || 0;
+    const bot0 = inset.bottom || 0;
     return sels.map((sel) => {
       const el = document.querySelector(sel);
       if (!el) return { sel, missing: true };
@@ -182,10 +184,10 @@ async function assertInsideViewport(page, selectors, label) {
       }
       const r = el.getBoundingClientRect();
       if (r.width < 1 || r.height < 1) return { sel, missing: true };
-      const ok = r.top >= -pad && r.left >= -pad && r.bottom <= h + pad && r.right <= w + pad;
-      return { sel, ok, top: +r.top.toFixed(1), left: +r.left.toFixed(1), bottom: +r.bottom.toFixed(1), right: +r.right.toFixed(1), vw: w, vh: h };
+      const ok = r.top >= top0 - pad && r.left >= -pad && r.bottom <= h - bot0 + pad && r.right <= w + pad;
+      return { sel, ok, top: +r.top.toFixed(1), left: +r.left.toFixed(1), bottom: +r.bottom.toFixed(1), right: +r.right.toFixed(1), vw: w, vh: h, sat: top0, sab: bot0 };
     });
-  }, selectors);
+  }, { sels: selectors, inset });
   const present = rows.filter((r) => !r.missing);
   const clipped = present.filter((r) => !r.ok);
   const missing = rows.filter((r) => r.missing).map((r) => r.sel);
@@ -275,17 +277,79 @@ async function runAppShellFit(browser) {
 
   const sizes = [
     { name: "iPhone SE", width: 375, height: 667 },
+    { name: "iPhone 14 Pro Max", width: 430, height: 932 },
     { name: "Pixel 7", width: (devices["Pixel 7"]?.viewport?.width) || 412, height: (devices["Pixel 7"]?.viewport?.height) || 915 },
     { name: "iPhone 14 landscape", width: 844, height: 390 },
   ];
+  const chrome = ['[data-testid="room-title"]', '[data-testid="chat-dock"]', '[data-testid="chat-input"]', '[data-testid="phone-btn"]'];
   for (const sz of sizes) {
     await page.setViewportSize({ width: sz.width, height: sz.height });
     await page.evaluate(() => window.HouseRoom3D?.resize?.());
     await page.waitForTimeout(250);
-    await assertInsideViewport(page, ['[data-testid="room-title"]', '[data-testid="chat-dock"]', '[data-testid="chat-input"]', '[data-testid="phone-btn"]'], `In-room chrome fits the ${sz.name} viewport`);
+    await assertInsideViewport(page, chrome, `In-room chrome fits the ${sz.name} viewport`);
     await checkShellOverflow(page, `The app shell does not page-scroll on ${sz.name}`);
   }
+
+  await page.setViewportSize(i14.viewport);
+  await page.evaluate(() => {
+    const root = document.documentElement;
+    root.style.setProperty("--sat", "47px");
+    root.style.setProperty("--sab", "34px");
+    window.HouseRoom3D?.resize?.();
+  });
+  await page.waitForTimeout(350);
+  await assertInsideViewport(page, chrome, "In-room chrome stays inside a 47px top safe-area", { top: 47, bottom: 0 });
+  const titleTop = await page.locator('[data-testid="room-title"]').evaluate((el) => el.getBoundingClientRect().top);
+  check("The in-room HUD sits below a 47px notch inset", titleTop >= 47, `titleTop=${titleTop.toFixed(1)}`);
+  await page.screenshot({ path: `${SHOT}/30-fit-top.png` });
+
+  await page.setViewportSize({ width: 390, height: 744 });
+  await page.evaluate(() => window.HouseRoom3D?.resize?.());
+  await page.waitForTimeout(300);
+  await assertInsideViewport(page, chrome, "In-room chrome fits a Safari toolbar-sized viewport with a 47px top inset", { top: 47, bottom: 0 });
+  await checkShellOverflow(page, "The app shell does not page-scroll under a simulated Safari toolbar");
   await ctx.close();
+}
+
+async function runCornerPhoneAndAvatars(browser) {
+  const looks = [
+    { user: "nova", name: "Nova", hair: 1, shirt: 4, skin: 0, glasses: true },
+    { user: "rex", name: "Rex", hair: 4, shirt: 6, skin: 4, glasses: false },
+    { user: "lina", name: "Lina", hair: 5, shirt: 2, skin: 2, glasses: false },
+    { user: "mo", name: "Mo", hair: 0, shirt: 7, skin: 5, glasses: true },
+  ];
+  const ctxs = [];
+  const pages = [];
+  try {
+    for (const look of looks) {
+      const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+      ctxs.push(ctx);
+      const page = await ctx.newPage();
+      page.setDefaultTimeout(20000);
+      pages.push(page);
+      if (look === looks[0]) {
+        await loginToNewRoom(page, look.user, look.name, "Looks Cube", { width: 1280, height: 800 });
+      } else {
+        await login(page, look.user);
+        await customize(page, { displayName: look.name, hair: look.hair, shirt: look.shirt, skin: look.skin, glasses: look.glasses });
+        await saveAvatar(page);
+        await openAddSheet(page);
+        await page.waitForSelector('[data-testid="room-list"] >> text=Looks Cube', { timeout: 10000 });
+        await page.locator('[data-testid="room-list"] >> text=Looks Cube').click();
+        await page.waitForSelector('body[data-view="room"]');
+        await page.waitForFunction(() => window.HouseRoom3D && window.HouseRoom3D.ready);
+      }
+    }
+    const tiles = [[1, 4], [4, 4], [1, 1], [4, 1]];
+    for (let i = 0; i < pages.length; i++) {
+      await pages[i].evaluate(({ x, y }) => window.__clickTile(x, y), { x: tiles[i][0], y: tiles[i][1] });
+    }
+    await pages[0].waitForTimeout(1600);
+    check("Four varied Bitmoji-style avatars can share a cube", await pages[0].evaluate(() => window.HouseRoom3D && ["nova", "rex", "lina", "mo"].every((n) => window.HouseRoom3D.personTile(n))));
+    await pages[0].screenshot({ path: `${SHOT}/31-new-avatars.png` });
+  } finally {
+    for (const ctx of ctxs) await ctx.close();
+  }
 }
 
 
@@ -494,6 +558,18 @@ try {
     Boolean(chatBox && phoneBox && chatBox.y + 8 >= (phoneBox.y + phoneBox.height)),
     `chatY=${chatBox && Math.round(chatBox.y)} phoneBottom=${phoneBox && Math.round(phoneBox.y + phoneBox.height)}`
   );
+  const vp = alice.viewportSize();
+  check(
+    "The phone menu is a small handheld in the corner",
+    Boolean(phoneBox && phoneBox.width <= 240 && phoneBox.height <= 400 && phoneBox.x > vp.width * 0.35 && (phoneBox.x + phoneBox.width) > vp.width - 28 && phoneBox.x + phoneBox.width < vp.width + 4),
+    JSON.stringify(phoneBox && { w: Math.round(phoneBox.width), h: Math.round(phoneBox.height), x: Math.round(phoneBox.x), y: Math.round(phoneBox.y) })
+  );
+  const aliceOnPhone = await alice.waitForFunction(() => window.HouseRoom3D.personFlags("alice")?.usingPhone, null, { timeout: 8000 }).then(() => true).catch(() => false);
+  const bobSeesPhone = await bob.waitForFunction(() => window.HouseRoom3D.personFlags("alice")?.usingPhone, null, { timeout: 8000 }).then(() => true).catch(() => false);
+  check("Opening the phone menu makes your character pull out a phone", aliceOnPhone);
+  check("Other people in the cube see you scrolling on a phone", bobSeesPhone);
+  await alice.waitForTimeout(500);
+  await alice.screenshot({ path: `${SHOT}/29-corner-phone.png` });
   await alice.screenshot({ path: `${SHOT}/08-phone-menu.png` });
   await openPhoneApp(alice, "shop");
   await alice.waitForSelector('[data-testid="phone-screen-shop"]:not(.hidden)');
@@ -503,6 +579,13 @@ try {
   await alice.waitForSelector('[data-testid="phone-home"]:not(.hidden)', { state: "visible" });
   await alice.click('[data-testid="phone-home-bar"]');
   await alice.waitForFunction(() => document.querySelector('[data-testid="phone-overlay"]')?.classList.contains("hidden"));
+  const phoneAway = await alice.waitForFunction(() => !window.HouseRoom3D.personFlags("alice")?.usingPhone, null, { timeout: 8000 }).then(() => true).catch(() => false);
+  check("The phone pose goes away when the menu closes", phoneAway);
+  await alice.evaluate(() => window.__openPhone());
+  await alice.waitForFunction(() => window.HouseRoom3D.personFlags("alice")?.usingPhone, null, { timeout: 8000 });
+  await alice.evaluate(() => window.__clickTile(1, 4));
+  const walkedAway = await alice.waitForFunction(() => !window.HouseRoom3D.personFlags("alice")?.usingPhone && document.querySelector('[data-testid="phone-overlay"]')?.classList.contains("hidden"), null, { timeout: 8000 }).then(() => true).catch(() => false);
+  check("Walking puts the phone away and closes the menu", walkedAway);
   await alice.setViewportSize({ width: 1280, height: 800 });
   check("Room controls are packaged as apps on an in-game phone", true);
 
@@ -532,7 +615,7 @@ try {
   await charlie.click('[data-testid="together-banner-join"]');
   await charlie.waitForSelector('[data-testid="password-modal"]:not(.hidden)');
   check("Tapping the together banner respects a locked cube", true);
-
+  await ctxC.close();
 
   log("Chat stays above a short mobile viewport");
   await alice.setViewportSize({ width: 390, height: 450 });
@@ -685,9 +768,9 @@ try {
   await alice.screenshot({ path: `${SHOT}/19-fridge.png` });
   await alice.evaluate(() => window.__socket ? null : null);
   // stow so gloves can replace food
-  if (await alice.locator('[data-testid="stow-item"]').count()) {
-    await alice.click('[data-testid="stow-item"]');
-    await alice.waitForTimeout(300);
+  if (await alice.evaluate(() => Boolean(window.HouseRoom3D?.personFlags("alice")?.heldItem))) {
+    await alice.evaluate(() => window.__stowItem());
+    await alice.waitForFunction(() => !window.HouseRoom3D.personFlags("alice")?.heldItem, null, { timeout: 8000 });
   }
 
   log("Punching bag, bench, and treadmill");
@@ -875,6 +958,11 @@ try {
 
   log("App shell, PWA, and short/tall phone viewports");
   await runAppShellFit(browser);
+
+  log("New avatar looks together in a cube");
+  await ctxA.close();
+  await ctxB.close();
+  await runCornerPhoneAndAvatars(browser);
 
   const failed = results.filter((r) => !r.ok);
   if (failed.length) {

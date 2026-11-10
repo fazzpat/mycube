@@ -401,6 +401,7 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
       emote: p.emote ?? existing.emote ?? null,
       actionEmote: p.actionEmote ?? existing.actionEmote ?? null,
       actionEmoteAt: p.actionEmoteAt ?? existing.actionEmoteAt ?? null,
+      usingPhone: p.usingPhone ?? existing.usingPhone ?? false,
       bubble: existing.bubble || null,
       bubbleUntil: existing.bubbleUntil || 0,
       bubbles: existing.bubbles || [],
@@ -1493,10 +1494,18 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
   function syncAppShell() {
     const vv = window.visualViewport;
     const visible = Math.max(1, Math.round((vv && vv.height) || window.innerHeight));
-    document.documentElement.style.setProperty("--app-h", visible + "px");
+    const offsetTop = Math.max(0, Math.round((vv && vv.offsetTop) || 0));
+    const root = document.documentElement;
+    root.style.setProperty("--app-h", visible + "px");
+    root.style.setProperty("--app-top", offsetTop + "px");
     // The shell already tracks the visual viewport, so don't double-apply a keyboard inset.
-    document.documentElement.style.setProperty("--kb-inset", "0px");
+    root.style.setProperty("--kb-inset", "0px");
     document.querySelector(".room-view")?.style.setProperty("--kb-inset", "0px");
+    const dock = document.getElementById("chat-dock");
+    if (dock && state.view === "room") {
+      const h = Math.round(dock.getBoundingClientRect().height);
+      if (h > 0) root.style.setProperty("--dock-h", h + "px");
+    }
     if (state.view === "room") state.room3d?.resize();
   }
   function syncKeyboardInset() {
@@ -1644,10 +1653,12 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
   }
 
   function closePhone() {
+    const wasOpen = phoneOpen();
     HIDE($("#phone-overlay"));
     document.body.classList.remove("phone-open");
     $("#phone-btn")?.setAttribute("aria-expanded", "false");
     state.phoneApp = null;
+    if (wasOpen) socket.emit("usePhone", { on: false });
   }
 
   const OWNER_APPS = new Set(["edit", "shop", "invite", "lock", "upgrade"]);
@@ -1660,11 +1671,13 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
   };
 
   function openPhone(app) {
+    const wasOpen = phoneOpen();
     tickPhoneTime();
     updatePhoneBadge();
     SHOW($("#phone-overlay"));
     document.body.classList.add("phone-open");
     $("#phone-btn")?.setAttribute("aria-expanded", "true");
+    if (!wasOpen) socket.emit("usePhone", { on: true });
     if (app) openPhoneApp(app);
     else showPhoneHome();
   }
@@ -1676,6 +1689,7 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
       SHOW($("#phone-overlay"));
       document.body.classList.add("phone-open");
       $("#phone-btn")?.setAttribute("aria-expanded", "true");
+      socket.emit("usePhone", { on: true });
     }
     if (OWNER_APPS.has(app) && !isOwner()) {
       const title = APP_TITLES[app] || "App";
@@ -2311,6 +2325,7 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
       toast("You can't walk there.");
       return;
     }
+    if (phoneOpen()) closePhone();
     socket.emit("move", { x: tx, y: ty });
   }
 
@@ -2539,16 +2554,26 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
       cur.facing = person.facing;
       cur.stationId = person.stationId;
       if (person.sitting != null) cur.sitting = person.sitting;
+      if (person.usingPhone != null) cur.usingPhone = person.usingPhone;
       renderPeople();
     }
     if (person.username === state.me?.username) refreshActivityUI();
   });
 
-  socket.on("userMoved", ({ username, x, y, sitting, facing }) => {
+  socket.on("userMoved", ({ username, x, y, sitting, facing, usingPhone }) => {
     const p = state.people.get(username);
     if (!p) return;
     if (facing) p.facing = facing;
+    if (usingPhone != null) p.usingPhone = usingPhone;
+    else p.usingPhone = false;
     setPersonDest(p, x, y, sitting);
+    renderPeople();
+  });
+
+  socket.on("userPhone", ({ username, on }) => {
+    const p = state.people.get(username);
+    if (!p) return;
+    p.usingPhone = Boolean(on);
     renderPeople();
   });
 
@@ -2822,6 +2847,8 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
     }
     handleWallClick(wall, slot);
   };
+  window.__openPhone = () => openPhone();
+  window.__closePhone = () => closePhone();
   window.__openEmoteWheel = openEmoteWheel;
   window.__closeEmoteWheel = closeEmoteWheel;
   window.__playEmote = playActionEmote;

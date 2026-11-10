@@ -279,6 +279,7 @@ function snapshotPerson(u) {
     emote: u.emote,
     actionEmote: u.actionEmote || null,
     actionEmoteAt: u.actionEmoteAt || null,
+    usingPhone: Boolean(u.usingPhone),
     heldProp: u.heldProp || null,
     activePet: u.activePet || null,
     heldItem: u.heldItem || null,
@@ -655,6 +656,10 @@ function clearUserActivities(user, room, { forfeit = true } = {}) {
   user.seat = null;
   if (user.boxing) user.boxing = null;
   if (user.gym) user.gym = null;
+  if (user.usingPhone) {
+    user.usingPhone = false;
+    if (user.roomId) io.to(user.roomId).emit("userPhone", { username: user.username, on: false });
+  }
   clearActionEmote(user, true);
 }
 
@@ -1017,12 +1022,17 @@ io.on("connection", (socket) => {
     user.y = ty;
     user.sitting = false;
     if (ACTION_EMOTES.has(user.actionEmote)) clearActionEmote(user, true);
+    if (user.usingPhone) {
+      user.usingPhone = false;
+      io.to(user.roomId).emit("userPhone", { username: user.username, on: false });
+    }
     io.to(user.roomId).emit("userMoved", {
       username: user.username,
       x: user.x,
       y: user.y,
       sitting: false,
       facing: user.facing || null,
+      usingPhone: false,
     });
   });
 
@@ -1045,6 +1055,16 @@ io.on("connection", (socket) => {
       text,
       at: Date.now(),
     });
+  });
+
+  socket.on("usePhone", ({ on } = {}) => {
+    const user = getUser(socket);
+    if (!user?.roomId) return;
+    const next = Boolean(on);
+    if (Boolean(user.usingPhone) === next) return;
+    user.usingPhone = next;
+    if (next && ACTION_EMOTES.has(user.actionEmote)) clearActionEmote(user, true);
+    io.to(user.roomId).emit("userPhone", { username: user.username, on: next });
   });
 
   socket.on("emote", ({ type } = {}) => {
