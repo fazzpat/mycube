@@ -689,14 +689,19 @@ function seatWorld(furn, seatNum) {
   const { w, h } = dimsOf(furn.type, furn.rot);
   const rot = normalizeRot(furn.rot);
   // seat 0 at the "front" of the table, seat 1 at the back, in tile coords
-  let sx = furn.x + (w - 1) / 2;
-  let sy = furn.y + (h - 1) / 2;
+  const cx = furn.x + (w - 1) / 2;
+  const cy = furn.y + (h - 1) / 2;
+  let sx = cx;
+  let sy = cy;
   const off = 0.85;
   if (rot === 0) sy = seatNum === 0 ? furn.y + h - 0.15 : furn.y + 0.15;
   else if (rot === 2) sy = seatNum === 0 ? furn.y + 0.15 : furn.y + h - 0.15;
   else if (rot === 1) sx = seatNum === 0 ? furn.x + 0.15 : furn.x + w - 0.15;
   else sx = seatNum === 0 ? furn.x + w - 0.15 : furn.x + 0.15;
-  return { x: sx, y: sy };
+  const fx = cx - sx;
+  const fz = cy - sy;
+  const len = Math.hypot(fx, fz) || 1;
+  return { x: sx, y: sy, facing: { x: fx / len, z: fz / len } };
 }
 
 function startHeldItem(user, kind) {
@@ -1454,8 +1459,9 @@ io.on("connection", (socket) => {
       const stools = seatWorld(furn, seatNum);
       user.x = stools.x;
       user.y = stools.y;
+      user.facing = stools.facing;
       emitPerson(user);
-      io.to(room.id).emit("userMoved", { username: user.username, x: user.x, y: user.y, sitting: true, facing: user.facing || null });
+      io.to(room.id).emit("userMoved", { username: user.username, x: user.x, y: user.y, sitting: true, facing: user.facing });
       emitRoom(room, "chessUpdated", { id, game: publicChess(game) });
     }
   });
@@ -1785,6 +1791,7 @@ io.on("connection", (socket) => {
       socket.emit("errorMsg", { message: "The coffee machine is busy." });
       return;
     }
+    if (room.uses[id] && room.uses[id].user === user.username) return;
     clearUserActivities(user, room, { forfeit: true });
     clearBrewTimer(user);
     room.uses[id] = { type: "coffeemachine", user: user.username, phase: "brew", startedAt: Date.now() };
