@@ -6,6 +6,20 @@ import { drawWallArt } from "./wallart.js";
 
 const WALL_H = 3.15;
 
+function isPhoneView() {
+  if (typeof window === "undefined") return false;
+  const narrow = window.innerWidth <= 820;
+  const coarse = Boolean(window.matchMedia?.("(pointer: coarse)")?.matches || window.matchMedia?.("(hover: none)")?.matches);
+  const touch = (navigator.maxTouchPoints || 0) > 0;
+  return narrow && (coarse || touch);
+}
+
+function capPixelRatio() {
+  const dpr = window.devicePixelRatio || 1;
+  return Math.min(dpr, isPhoneView() ? 1.5 : 2);
+}
+
+
 const WALL_COLORS = {
   "paint-cream": "#f3eadc",
   "paint-sage": "#d7e2d4",
@@ -1533,17 +1547,20 @@ export function buildFurnitureMesh(type, ghost = false, ok = true) {
       leg.position.set(...p);
       add(leg);
     });
+    const sq = 0.125;
     const boardRoot = new THREE.Group();
     boardRoot.position.y = 0.76;
     for (let r = 0; r < 8; r++) {
       for (let c = 0; c < 8; c++) {
         const light = (r + c) % 2 === 0;
-        const sq = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.02, 0.18), paint(light ? "#f3eadc" : "#3d2c29"));
-        sq.position.set((c - 3.5) * 0.18, 0, (r - 3.5) * 0.18);
-        boardRoot.add(sq);
+        const cell = new THREE.Mesh(new THREE.BoxGeometry(sq, 0.02, sq), paint(light ? "#f3eadc" : "#3d2c29"));
+        cell.position.set((c - 3.5) * sq, 0, (r - 3.5) * sq);
+        boardRoot.add(cell);
       }
     }
     g.add(boardRoot);
+    g.userData.boardSquare = sq;
+    g.userData.tableSize = 1.7;
     const mkStool = (z, seat) => {
       const st = new THREE.Group();
       const pad = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.07, 12), paint("#c4a06a"));
@@ -1702,12 +1719,36 @@ export function buildFurnitureMesh(type, ghost = false, ok = true) {
     seat.position.y = 0.28;
     add(seat);
   }
+  if (!ghost) addFurnitureHitbox(g, type);
   return g;
+}
+
+const INTERACTIVE_TYPES = new Set([
+  "couch", "chair", "tv", "chesstable", "fridge", "punchbag",
+  "benchpress", "treadmill", "cubics", "clothescab", "coffeemachine",
+]);
+
+function addFurnitureHitbox(g, type) {
+  if (!INTERACTIVE_TYPES.has(type)) return;
+  const [fw, fh] = furnSize(type);
+  const hx = Math.max(fw * 0.98, type === "coffeemachine" ? 0.95 : 0.75);
+  const hz = Math.max(fh * 0.98, type === "coffeemachine" ? 0.95 : 0.75);
+  const hy = type === "coffeemachine" ? 1.25
+    : (type === "cubics" || type === "clothescab" || type === "fridge" || type === "tv") ? 1.85
+    : type === "punchbag" ? 2.2
+    : 1.15;
+  const box = new THREE.Mesh(
+    geo("hit:" + type, () => new THREE.BoxGeometry(hx, hy, hz)),
+    new THREE.MeshBasicMaterial({ visible: false, transparent: true, opacity: 0, depthWrite: false })
+  );
+  box.position.y = hy / 2;
+  box.userData.hitbox = true;
+  g.add(box);
 }
 
 export function createAvatarPreview(container) {
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setPixelRatio(capPixelRatio());
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.shadowMap.enabled = true;
   container.innerHTML = "";
@@ -1768,8 +1809,8 @@ export function createAvatarPreview(container) {
 }
 
 export function createRoom3D(container) {
-  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  const renderer = new THREE.WebGLRenderer({ antialias: !isPhoneView(), alpha: false });
+  renderer.setPixelRatio(capPixelRatio());
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.18;
@@ -1793,7 +1834,7 @@ export function createRoom3D(container) {
   const sun = new THREE.DirectionalLight(0xfff0dc, 1.05);
   sun.position.set(5.5, 10, 4.5);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(1024, 1024);
+  sun.shadow.mapSize.set(isPhoneView() ? 512 : 1024, isPhoneView() ? 512 : 1024);
   sun.shadow.camera.near = 1;
   sun.shadow.camera.far = 28;
   sun.shadow.camera.left = sun.shadow.camera.bottom = -9;
@@ -1816,13 +1857,12 @@ export function createRoom3D(container) {
       [-half, WALL_H, -half], [half, WALL_H, -half], [-half, WALL_H, half],
       [half, 1.9, half], [-half, 1.9, half], [half, 1.9, -half],
     ];
-    const v = new THREE.Vector3();
     let maxX = 0;
     let maxY = 0;
     for (const [x, y, z] of pts) {
-      v.set(x, y, z).applyMatrix4(inv);
-      maxX = Math.max(maxX, Math.abs(v.x));
-      maxY = Math.max(maxY, Math.abs(v.y));
+      _tmpV1.set(x, y, z).applyMatrix4(inv);
+      maxX = Math.max(maxX, Math.abs(_tmpV1.x));
+      maxY = Math.max(maxY, Math.abs(_tmpV1.y));
     }
     return { halfW: maxX + 0.45, halfH: maxY + 0.45 };
   }
@@ -1840,6 +1880,9 @@ export function createRoom3D(container) {
   controls.touches.ONE = -1;
   controls.touches.TWO = THREE.TOUCH.DOLLY_ROTATE;
   renderer.domElement.style.touchAction = "none";
+  controls.addEventListener("change", () => {
+    if (isPhoneView() && camMode === "follow") userZoom = camera.zoom;
+  });
 
   const fill = new THREE.DirectionalLight(0xffe8d8, 0.85);
   fill.position.set(-4, 5.5, 7);
@@ -1891,10 +1934,59 @@ export function createRoom3D(container) {
   let onWallHover = null;
   let windowLightRef = null;
   let switchMesh = null;
+  let followName = null;
+  let camMode = "follow";
+  let userZoom = 1.55;
+  const FOLLOW_ZOOM_DEFAULT = 1.55;
+  let lastTapAt = 0;
+  let lastTapX = 0;
+  let lastTapY = 0;
+  let tapLock = false;
+
+
+  function applyCameraFraming() {
+    const phone = isPhoneView();
+    if (!phone) {
+      controls.enableRotate = true;
+      return;
+    }
+    controls.enableRotate = camMode !== "follow";
+    if (camMode === "room") {
+      controls.target.set(0, 0.45, 0);
+      camera.position.set(9.5, 9.2, 9.5);
+      if (Math.abs(camera.zoom - 1) > 1e-4) {
+        camera.zoom = 1;
+        camera.updateProjectionMatrix();
+      } else camera.zoom = 1;
+      return;
+    }
+    const m = followName ? peopleMeshes.get(followName) : null;
+    const tx = m ? m.position.x : 0;
+    const ty = 0.72;
+    const tz = m ? m.position.z : 0;
+    controls.target.set(tx, ty, tz);
+    camera.position.set(tx + 9.5, ty + 8.75, tz + 9.5);
+    if (Math.abs(camera.zoom - userZoom) > 1e-4) {
+      camera.zoom = userZoom;
+      camera.updateProjectionMatrix();
+    } else camera.zoom = userZoom;
+  }
+
+  function setCamMode(mode) {
+    camMode = mode === "room" ? "room" : "follow";
+    if (camMode === "follow" && isPhoneView() && userZoom < 1.15) userZoom = FOLLOW_ZOOM_DEFAULT;
+    applyCameraFraming();
+    return camMode;
+  }
+
+  function toggleCamMode() {
+    return setCamMode(camMode === "follow" ? "room" : "follow");
+  }
 
   function resize() {
     const w = container.clientWidth || 800;
     const h = container.clientHeight || 500;
+    renderer.setPixelRatio(capPixelRatio());
     renderer.setSize(w, h, false);
     const a = Math.max(0.15, w / Math.max(1, h));
     const need = measureRoomViewExtents();
@@ -1902,18 +1994,26 @@ export function createRoom3D(container) {
     // Desktop framing (never zoom in tighter than this).
     let halfW = Math.max(need.halfW, (base * a) / 2);
     let halfH = Math.max(need.halfH, base / 2);
-    // Keep the camera aspect and make sure the whole cube stays in frame.
+    // Keep the camera aspect and make sure the whole cube stays in frame at zoom 1.
     if (halfW / halfH < a) halfW = halfH * a;
     else halfH = halfW / a;
     camera.left = -halfW;
     camera.right = halfW;
     camera.top = halfH;
     camera.bottom = -halfH;
-    camera.zoom = 1;
-    camera.updateProjectionMatrix();
     const fitZoom = Math.min(halfW / need.halfW, halfH / need.halfH);
-    controls.minZoom = 0.7;
-    controls.maxZoom = Math.max(1, Math.min(1.85, fitZoom));
+    if (isPhoneView()) {
+      controls.minZoom = 0.9;
+      controls.maxZoom = 2.6;
+      if (camMode === "room") camera.zoom = 1;
+      else camera.zoom = userZoom || FOLLOW_ZOOM_DEFAULT;
+    } else {
+      camera.zoom = 1;
+      controls.minZoom = 0.7;
+      controls.maxZoom = Math.max(1, Math.min(1.85, fitZoom));
+    }
+    camera.updateProjectionMatrix();
+    applyCameraFraming();
   }
 
   function showGrid(on) {
@@ -2268,10 +2368,11 @@ export function createRoom3D(container) {
 
   function setArcade(next) { arcade = next || {}; refreshInteractives(); }
 
-  function layoutChessPieces(root, fen) {
+  function layoutChessPieces(root, fen, square = 0.125) {
     if (!root) return;
     while (root.children.length) root.remove(root.children[0]);
     if (!fen) return;
+    const k = square / 0.18;
     const board = fen.split(" ")[0].split("/");
     const letter = (ch) => ch.toLowerCase();
     const isWhite = (ch) => ch === ch.toUpperCase();
@@ -2282,13 +2383,13 @@ export function createRoom3D(container) {
         const color = isWhite(ch) ? "#f4efe6" : "#2a2a2e";
         const kind = letter(ch);
         let piece;
-        if (kind === "p") piece = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, 0.1, 8), std(color));
-        else if (kind === "r") piece = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.14, 0.08), std(color));
-        else if (kind === "n") piece = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.14, 8), std(color));
-        else if (kind === "b") piece = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.16, 6), std(color));
-        else if (kind === "q") piece = new THREE.Mesh(new THREE.SphereGeometry(0.055, 10, 8), std(color));
-        else piece = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.18, 10), std(color));
-        piece.position.set((c - 3.5) * 0.18, 0.07, (7 - r - 3.5) * 0.18);
+        if (kind === "p") piece = new THREE.Mesh(new THREE.CylinderGeometry(0.045 * k, 0.05 * k, 0.1 * k, 8), std(color));
+        else if (kind === "r") piece = new THREE.Mesh(new THREE.BoxGeometry(0.08 * k, 0.14 * k, 0.08 * k), std(color));
+        else if (kind === "n") piece = new THREE.Mesh(new THREE.ConeGeometry(0.05 * k, 0.14 * k, 8), std(color));
+        else if (kind === "b") piece = new THREE.Mesh(new THREE.ConeGeometry(0.045 * k, 0.16 * k, 6), std(color));
+        else if (kind === "q") piece = new THREE.Mesh(new THREE.SphereGeometry(0.055 * k, 10, 8), std(color));
+        else piece = new THREE.Mesh(new THREE.CylinderGeometry(0.05 * k, 0.06 * k, 0.18 * k, 10), std(color));
+        piece.position.set((c - 3.5) * square, 0.07 * k, (7 - r - 3.5) * square);
         piece.castShadow = true;
         root.add(piece);
         c += 1;
@@ -2310,7 +2411,7 @@ export function createRoom3D(container) {
           m.userData.screen.material.emissiveIntensity = on ? 1.2 : 0.1;
         }
       }
-      if (m.userData.pieces) layoutChessPieces(m.userData.pieces, chessMap[id]?.fen);
+      if (m.userData.pieces) layoutChessPieces(m.userData.pieces, chessMap[id]?.fen, m.userData.boardSquare || 0.125);
     });
   }
 
@@ -2441,9 +2542,14 @@ export function createRoom3D(container) {
   const pointer = new THREE.Vector2();
 
   function pick(event, list) {
+    const ev = event && event.clientX != null ? event : pointerPos(event);
+    if (!ev || ev.x == null && ev.clientX == null) return null;
+    const x = ev.clientX != null ? ev.clientX : ev.x;
+    const y = ev.clientY != null ? ev.clientY : ev.y;
     const rect = renderer.domElement.getBoundingClientRect();
-    pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-    pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    if (!rect.width || !rect.height) return null;
+    pointer.x = ((x - rect.left) / rect.width) * 2 - 1;
+    pointer.y = -((y - rect.top) / rect.height) * 2 + 1;
     raycaster.setFromCamera(pointer, camera);
     return raycaster.intersectObjects(list, true)[0] || null;
   }
@@ -2470,10 +2576,8 @@ export function createRoom3D(container) {
     pointer.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
     pointer.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
     raycaster.setFromCamera(pointer, camera);
-    const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
-    const pt = new THREE.Vector3();
-    if (!raycaster.ray.intersectPlane(plane, pt)) return null;
-    return tileFromPoint(pt);
+    if (!raycaster.ray.intersectPlane(_floorPlane, _tmpV1)) return null;
+    return tileFromPoint(_tmpV1);
   }
 
   let downPt = null;
@@ -2531,25 +2635,56 @@ export function createRoom3D(container) {
       }
     }
     const tile = tileFromEvent(e);
-    if (tile) onTileClick?.(tile.tx, tile.ty);
+    if (tile) {
+      const furn = furnitureAtTile(tile.tx, tile.ty);
+      if (furn && INTERACTIVE_TYPES.has(furn.type) && !placing) {
+        onFurnitureClick?.(furn.id, furn.type, {});
+        return;
+      }
+      const p = pointerPos(e);
+      if (p && isPhoneView() && !placing && lastTapAt && (performance.now() - lastTapAt) < 320 && Math.hypot(p.x - lastTapX, p.y - lastTapY) < 28) {
+        lastTapAt = 0;
+        toggleCamMode();
+        return "cam";
+      }
+      onTileClick?.(tile.tx, tile.ty);
+    }
+  }
+
+  function furnitureAtTile(tx, ty) {
+    for (const f of furnitureList) {
+      const [w, h] = furnDims(f.type, f.rot);
+      if (tx >= f.x && tx < f.x + w && ty >= f.y && ty < f.y + h) return f;
+    }
+    return null;
+  }
+  function finishTap(e) {
+    if (!downPt || tapLock) return;
+    if (e && e.pointerId != null && downPt.id != null && e.pointerId !== downPt.id && e.type !== "touchend") return;
+    const p = pointerPos(e);
+    const moved = p ? Math.hypot(p.x - downPt.x, p.y - downPt.y) : 0;
+    const slop = slopFor(downPt.type);
+    const start = downPt;
+    downPt = null;
+    if (moved > slop) return;
+    tapLock = true;
+    const result = handleTap(e || { clientX: start.x, clientY: start.y });
+    if (p && result !== "cam") {
+      lastTapAt = performance.now();
+      lastTapX = p.x;
+      lastTapY = p.y;
+    }
+    setTimeout(() => { tapLock = false; }, 40);
   }
   renderer.domElement.addEventListener("pointerdown", (e) => {
     const p = pointerPos(e);
     if (!p) return;
     downPt = { x: p.x, y: p.y, id: e.pointerId, type: e.pointerType || "touch" };
   });
-  renderer.domElement.addEventListener("pointerup", (e) => {
-    if (!downPt) return;
-    if (e.pointerId != null && downPt.id != null && e.pointerId !== downPt.id) return;
-    const p = pointerPos(e);
-    const moved = p ? Math.hypot(p.x - downPt.x, p.y - downPt.y) : 0;
-    const slop = slopFor(downPt.type);
-    downPt = null;
-    if (moved > slop) return;
-    handleTap(e);
-  });
+  renderer.domElement.addEventListener("pointerup", (e) => finishTap(e));
+  renderer.domElement.addEventListener("touchend", (e) => finishTap(e), { passive: true });
   renderer.domElement.addEventListener("pointercancel", () => {
-    downPt = null;
+    // Keep downPt so a following touchend can still count as a tap on iOS.
   });
   renderer.domElement.addEventListener("pointermove", (e) => {
     const tile = tileFromEvent(e);
@@ -2618,9 +2753,9 @@ export function createRoom3D(container) {
       const ud = pet.userData;
       if (ud.target) {
         pet.position.lerp(ud.target, ud.wantSit ? 0.12 : 0.08);
-        const d = ud.target.clone().sub(pet.position);
-        const dist = Math.hypot(d.x, d.z);
-        if (dist > 0.05 && !ud.sitReady) pet.rotation.y = Math.atan2(d.x, d.z);
+        _tmpV1.copy(ud.target).sub(pet.position);
+        const dist = Math.hypot(_tmpV1.x, _tmpV1.z);
+        if (dist > 0.05 && !ud.sitReady) pet.rotation.y = Math.atan2(_tmpV1.x, _tmpV1.z);
         if (ud.wantSit && dist < 0.06) ud.sitReady = true;
         if (!ud.wantSit) ud.sitReady = false;
       }
@@ -2704,6 +2839,7 @@ export function createRoom3D(container) {
     if (Math.floor(t * 8) !== Math.floor((t - 1 / 60) * 8)) refreshArt();
     rim.position.copy(camera.position);
     controls.update();
+    applyCameraFraming();
     renderer.render(scene, camera);
   }
 
@@ -2787,9 +2923,32 @@ export function createRoom3D(container) {
     onWallClick(fn) { onWallClick = fn; },
     onWallHover(fn) { onWallHover = fn; },
     simulateWallClick(wall, slot) { onWallClick?.(wall, slot); },
+    setFollowName(name) { followName = name || null; },
+    setCamMode,
+    toggleCamMode,
+    camState() {
+      return {
+        mode: isPhoneView() ? camMode : "room",
+        zoom: camera.zoom,
+        phone: isPhoneView(),
+        follow: followName,
+        target: { x: controls.target.x, y: controls.target.y, z: controls.target.z },
+      };
+    },
+    chessBoardInfo(id) {
+      const m = findFurnMesh(id);
+      if (!m || m.userData.type !== "chesstable") return null;
+      const sq = m.userData.boardSquare || 0.125;
+      return { square: sq, board: sq * 8, table: m.userData.tableSize || 1.7 };
+    },
     setZoom(z) {
-      camera.zoom = Number(z) || 1;
+      const next = Number(z) || 1;
+      camera.zoom = next;
+      userZoom = next;
       camera.updateProjectionMatrix();
+    },
+    tapAt(x, y) {
+      handleTap({ clientX: x, clientY: y });
     },
     roomFitsView() {
       const canvas = renderer.domElement;
@@ -2800,15 +2959,14 @@ export function createRoom3D(container) {
         [-half, 0, -half], [half, 0, -half], [-half, 0, half], [half, 0, half],
         [-half, WALL_H, -half], [half, WALL_H, -half], [-half, WALL_H, half],
       ];
-      const v = new THREE.Vector3();
       const pad = 3;
       const clipped = [];
       for (const p of pts) {
-        v.set(p[0], p[1], p[2]).project(camera);
-        const x = rect.left + (v.x * 0.5 + 0.5) * rect.width;
-        const y = rect.top + (-v.y * 0.5 + 0.5) * rect.height;
+        _tmpV1.set(p[0], p[1], p[2]).project(camera);
+        const x = rect.left + (_tmpV1.x * 0.5 + 0.5) * rect.width;
+        const y = rect.top + (-_tmpV1.y * 0.5 + 0.5) * rect.height;
         const ok = x >= rect.left - pad && x <= rect.right + pad && y >= rect.top - pad && y <= rect.bottom + pad;
-        if (!ok) clipped.push({ x, y, nx: v.x, ny: v.y });
+        if (!ok) clipped.push({ x, y, nx: _tmpV1.x, ny: _tmpV1.y });
       }
       return { ok: clipped.length === 0, clipped, rect: { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height } };
     },

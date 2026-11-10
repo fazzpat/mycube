@@ -379,7 +379,10 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
   }
 
   window.addEventListener("resize", () => {
-    if (state.view === "room") state.room3d?.resize();
+    if (state.view === "room") {
+      state.room3d?.resize();
+      syncCamToggle();
+    }
   });
 
   function furnitureSVG(type) {
@@ -481,8 +484,10 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
     state.room.seats = room.seats || {};
     state.room.arcade = room.arcade || {};
     setView("room");
+    r3.setFollowName(state.me?.username || null);
     r3.resize();
     renderPeople();
+    syncCamToggle();
   }
 
   function renderFloorStatic() {
@@ -1264,7 +1269,10 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
       return;
     }
     if (type === "coffeemachine") {
-      approachFurniture(furn, () => socket.emit("useCoffee", { id }));
+      approachFurniture(furn, () => {
+        socket.emit("useCoffee", { id });
+        toast("Brewing a cup…");
+      });
     }
   }
 
@@ -1488,6 +1496,17 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
     } else {
       state.chessSel = null;
       paintChessPanel();
+    }
+  }
+
+  function syncCamToggle() {
+    const view = document.querySelector(".room-view");
+    const btn = document.getElementById("cam-toggle");
+    const st = state.room3d?.camState?.() || {};
+    view?.classList.toggle("phone-cam", Boolean(st.phone));
+    if (btn) {
+      btn.textContent = st.mode === "room" ? "Follow me" : "Whole cube";
+      btn.setAttribute("aria-pressed", st.mode === "room" ? "true" : "false");
     }
   }
 
@@ -2426,6 +2445,10 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
   });
   $("#cubics-close")?.addEventListener("click", closeCubics);
   $("#cubics-start")?.addEventListener("click", startCubicsPlay);
+  $("#cam-toggle")?.addEventListener("click", () => {
+    state.room3d?.toggleCamMode();
+    syncCamToggle();
+  });
   document.querySelectorAll("[data-cubic]").forEach((b) => {
     b.addEventListener("click", () => cubicsInput(b.dataset.cubic));
   });
@@ -2875,6 +2898,12 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
   window.__stowItem = () => socket.emit("stowItem");
   window.__openWardrobe = (id) => openWardrobe(id);
   window.__useCoffee = (id) => socket.emit("useCoffee", { id });
+  window.__toggleCam = () => { const m = state.room3d?.toggleCamMode(); syncCamToggle(); return m; };
+  window.__setCamMode = (mode) => { const m = state.room3d?.setCamMode(mode); syncCamToggle(); return m; };
+  window.__camState = () => state.room3d?.camState?.() || null;
+  window.__tapAt = (x, y) => state.room3d?.tapAt?.(x, y);
+  window.__chessBoardInfo = (id) => state.room3d?.chessBoardInfo?.(id) || null;
+
   window.__usePunchbag = (id) => socket.emit("usePunchbag", { id });
 
   if ("serviceWorker" in navigator) {

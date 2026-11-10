@@ -1674,3 +1674,40 @@ body.phone-open .phone-fab { visibility: hidden; }
   .emote-slot .emote-ico { font-size: 24px; }
   .dock .emote-btn { width: 44px; height: 44px; font-size: 20px; flex: 0 0 auto; }
 }
+
+/* ===== Phone follow camera toggle ===== */
+.cam-toggle {
+  position: absolute;
+  top: var(--safe-top, 12px);
+  left: max(8px, var(--sal, 0px));
+  z-index: 28;
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 16px;
+  background: #2a1c4aee;
+  color: #fff8f2;
+  font-weight: 800;
+  font-size: 12px;
+  box-shadow: 0 4px 12px rgba(0,0,0,.25);
+  display: none;
+}
+.room-view.phone-cam .cam-toggle { display: inline-flex; align-items: center; }
+@media (min-width: 821px) {
+  .cam-toggle { display: none !important; }
+}
+
+.cubics-controls .btn {
+  min-width: 48px;
+  min-height: 44px;
+  font-size: 16px;
+}
+@media (max-width: 430px) {
+  .chess-panel, .cubics-panel, .wardrobe-panel, .fridge-picker {
+    max-height: min(540px, calc(var(--app-h) - var(--dock-h) - 16px));
+    width: min(100%, calc(100% - 12px));
+    overflow: auto;
+  }
+  .chess-board { width: min(320px, calc(100vw - 28px)); }
+  #cubics-canvas { width: min(200px, calc(100vw - 48px)); height: auto; aspect-ratio: 256 / 320; }
+}
