@@ -464,6 +464,7 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
     if (state.room3d) return state.room3d;
     const el = $("#floor");
     state.room3d = createRoom3D(el);
+    window.HouseRoom3D = state.room3d;
     state.room3d.onTileClick(handleTileClick);
     state.room3d.onTileHover((tx, ty) => updatePlaceHighlight(tx, ty));
     state.room3d.onFurnitureClick(handleFurnitureClick);

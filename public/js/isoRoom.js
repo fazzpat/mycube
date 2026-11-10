@@ -1407,7 +1407,7 @@ export function createRoom3D(container) {
   resize();
   requestAnimationFrame(render);
 
-  return {
+  const api = {
     ready: true,
     overlay,
     resize,
@@ -1539,6 +1539,8 @@ export function createRoom3D(container) {
     },
     dispose() { alive = false; container.innerHTML = ""; },
   };
+  window.HouseRoom3D = api;
+  return api;
 }
 
 export default { createRoom3D, createAvatarPreview };
