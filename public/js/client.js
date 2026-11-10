@@ -510,6 +510,7 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
     state.room.wallArt = room.wallArt || [];
     state.room.seats = room.seats || {};
     state.room.arcade = room.arcade || {};
+    hideAddSheet();
     setView("room");
     r3.setFollowName(state.me?.username || null);
     r3.resize();

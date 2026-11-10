@@ -1048,7 +1048,12 @@ export function createRoom3D(container) {
   function applyCamera() {
     if (!isPhoneView() || camMode === "room") {
       fitRoomCamera();
-      if (!isPhoneView()) zoom = 1;
+      if (!isPhoneView()) {
+        const b = roomWorldBounds();
+        const sx = Math.floor(viewW / (b.w + 32));
+        const sy = Math.floor(viewH / (b.h + 40));
+        zoom = Math.max(1, Math.min(3, Math.min(sx, sy) || 1));
+      }
     } else {
       followCamera();
     }
