@@ -1,0 +1,20 @@
+MyCube character assets
+=======================
+
+No third-party character model is bundled.
+
+A CC0 glTF path was preferred (Quaternius Ultimate Animated Character Pack
+on OpenGameArt; Kenney animated character kits). Those packs ship as FBX,
+OBJ, or Blend files. This environment has no Blender, assimp, or
+gltf-pipeline available to convert them, and Kenney.nl blocked automated
+downloads (HTTP 403). Shipping an unconverted 48MB FBX pack would not work
+with the Three.js AnimationMixer + per-part recolor workflow used here.
+
+Characters are therefore original procedural meshes built at runtime in
+public/js/room3d.js (chunky stylized proportions, MeshToonMaterial, inverted-
+hull outlines, expressive faces). They are an original look and are not a
+copy of any commercial character.
+
+Other third-party code:
+- three (MIT) — locally vendored in public/vendor/
+- express, socket.io, Playwright — see package.json / npm licenses

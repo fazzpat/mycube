@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>MyCube</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/css/styles.css" />
+  <script type="importmap">
+  { "imports": { "three": "/vendor/three.module.js" } }
+  </script>
+</head>
+<body>
+  <div class="app" id="app">
+    <!-- LOGIN -->
+    <section id="view-login" class="view">
+      <div class="center-stage">
+        <div class="card hero-card">
+          <div class="brand" style="justify-content:center;margin-bottom:8px">
+            <div class="brand-mark cube-logo" aria-hidden="true"><svg viewBox="0 0 32 32" width="28" height="28"><path d="M16 3 L29 10.5 L16 18 L3 10.5 Z" fill="#d4c4ff"/><path d="M3 10.5 L16 18 L16 30 L3 22.5 Z" fill="#7c5cff"/><path d="M16 18 L29 10.5 L29 22.5 L16 30 Z" fill="#4e35c9"/></svg></div> MyCube
+          </div>
+          <h1>Just another contact list.</h1>
+          <p class="lede">An alternative to texting and group chats. Tap a friend to jump into their cube and hang out live — bubbles appear over your heads, then they’re gone.</p>
+          <div class="preview-row" id="login-preview"></div>
+          <form id="login-form">
+            <div class="field" style="text-align:left">
+              <label for="username-input">Pick a username</label>
+              <input id="username-input" data-testid="username-input" type="text" maxlength="16" autocomplete="username" placeholder="e.g. maple" required />
+            </div>
+            <button class="btn" data-testid="login-btn" type="submit">Continue</button>
+          </form>
+        </div>
+      </div>
+    </section>
+
+    <!-- CREATOR -->
+    <section id="view-creator" class="view hidden">
+      <header class="topbar">
+        <div class="brand"><div class="brand-mark cube-logo" aria-hidden="true"><svg viewBox="0 0 32 32" width="28" height="28"><path d="M16 3 L29 10.5 L16 18 L3 10.5 Z" fill="#d4c4ff"/><path d="M3 10.5 L16 18 L16 30 L3 22.5 Z" fill="#7c5cff"/><path d="M16 18 L29 10.5 L29 22.5 L16 30 Z" fill="#4e35c9"/></svg></div> MyCube</div>
+        <div class="user-chip" id="creator-user"></div>
+      </header>
+      <div class="wrap">
+        <h1>Create your character</h1>
+        <p class="lede">Stylized, a little hip, and all yours. You can change this later.</p>
+        <div class="creator-grid">
+          <div class="card preview-card">
+            <div class="preview-stage" id="creator-preview" data-testid="creator-preview"></div>
+            <div class="field" style="text-align:left">
+              <label for="display-name">Character name</label>
+              <input id="display-name" data-testid="display-name" type="text" maxlength="16" placeholder="Shown under your avatar" />
+            </div>
+            <button class="btn" data-testid="save-avatar" id="save-avatar" type="button">Looks good!</button>
+          </div>
+          <div class="card">
+            <h3>Skin tone</h3>
+            <div class="swatch-row" id="skin-choices"></div>
+            <h3 style="margin-top:18px">Hair style</h3>
+            <div class="swatch-row" id="hair-choices"></div>
+            <h3 style="margin-top:18px">Hair color</h3>
+            <div class="swatch-row" id="hair-color-choices"></div>
+            <h3 style="margin-top:18px">Top</h3>
+            <div class="swatch-row" id="top-choices"></div>
+            <h3 style="margin-top:18px">Top color</h3>
+            <div class="swatch-row" id="shirt-choices"></div>
+            <h3 style="margin-top:18px">Bottom</h3>
+            <div class="swatch-row" id="bottom-choices"></div>
+            <h3 style="margin-top:18px">Bottom color</h3>
+            <div class="swatch-row" id="bottom-color-choices"></div>
+            <h3 style="margin-top:18px">Shoes</h3>
+            <div class="swatch-row" id="shoes-choices"></div>
+            <h3 style="margin-top:18px">Accessory</h3>
+            <div class="swatch-row" id="accessory-choices"></div>
+            <div id="headphone-color-field" class="hidden">
+              <h3 style="margin-top:18px">Headphone color</h3>
+              <div class="swatch-row" id="headphone-color-choices"></div>
+            </div>
+            <label class="check-row" style="margin-top:18px">
+              <input type="checkbox" id="glasses-toggle" data-testid="glasses-toggle" />
+              Sunglasses
+            </label>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- LOBBY -->
+    <section id="view-lobby" class="view lobby-view hidden">
+      <div class="phone-shell">
+        <header class="topbar lobby-topbar">
+          <div class="brand"><div class="brand-mark cube-logo" aria-hidden="true"><svg viewBox="0 0 32 32" width="28" height="28"><path d="M16 3 L29 10.5 L16 18 L3 10.5 Z" fill="#d4c4ff"/><path d="M3 10.5 L16 18 L16 30 L3 22.5 Z" fill="#7c5cff"/><path d="M16 18 L29 10.5 L29 22.5 L16 30 Z" fill="#4e35c9"/></svg></div> MyCube</div>
+          <div class="topbar-right">
+            <button class="rewards-btn" data-testid="rewards-btn" id="rewards-btn" type="button" aria-label="Coins and rewards">
+              🎁 <span data-testid="coin-balance">🪙 <span id="lobby-coins">50</span></span>
+            </button>
+            <button class="btn ghost small" data-testid="edit-avatar" id="edit-avatar" type="button">You</button>
+            <div class="user-chip" id="lobby-user"></div>
+          </div>
+        </header>
+        <div class="search-wrap">
+          <label class="visually-hidden" for="friend-search">Search friends</label>
+          <input id="friend-search" data-testid="friend-search" type="search" placeholder="Search friends" autocomplete="off" />
+        </div>
+        <div id="together-banner" class="together-banner hidden" data-testid="together-banner">
+          <button type="button" id="together-banner-btn" data-testid="together-banner-join">
+            <span class="together-banner-copy" id="together-banner-text" data-testid="together-banner-text"></span>
+            <span class="together-join">Join</span>
+          </button>
+        </div>
+        <div id="tab-friends-panel" class="lobby-panel" data-testid="friends-panel">
+          <div class="contact-list" id="friend-list" data-testid="friend-list"></div>
+        </div>
+        <button class="fab" data-testid="add-menu-btn" id="add-menu-btn" type="button" aria-label="Add a friend or start a cube">+</button>
+      </div>
+    </section>
+
+    <!-- ROOM -->
+    <section id="view-room" class="view room-view hidden">
+      <header class="topbar">
+        <div style="display:flex;align-items:center;gap:10px">
+          <button class="btn secondary small" data-testid="leave-room" id="leave-room" type="button">Leave</button>
+          <div>
+            <div class="room-name" id="room-title" data-testid="room-title">Cube</div>
+            <div class="item-sub" id="room-meta" style="color:#f3d2c0"></div>
+          </div>
+        </div>
+        <div class="topbar-right">
+          <div class="coin-chip" data-testid="room-coins">🪙 <span id="room-coins">50</span></div>
+          <button class="btn small lilac hidden" data-testid="invite-btn" id="invite-btn" type="button">Invite</button>
+          <button class="btn small hidden" data-testid="shop-btn" id="shop-btn" type="button">Shop</button>
+        </div>
+      </header>
+      <div class="stage-wrap">
+        <div class="room-stage">
+          <div id="place-banner" class="place-banner hidden"></div>
+          <div class="room3d-root" id="floor" data-testid="floor"></div>
+        </div>
+      </div>
+      <div class="dock">
+        <button class="emote-btn" data-testid="emote-eat" id="emote-eat" type="button" title="Eat">🥪</button>
+        <button class="emote-btn" data-testid="emote-drink" id="emote-drink" type="button" title="Drink">🥤</button>
+        <input id="chat-input" data-testid="chat-input" type="text" maxlength="80" placeholder="Say something — it vanishes in a few seconds" autocomplete="off" />
+        <button class="btn small" data-testid="chat-send" id="chat-send" type="button">Say</button>
+      </div>
+    </section>
+  </div>
+
+  <div id="toasts"></div>
+
+  <div id="password-modal" class="modal-backdrop hidden" data-testid="password-modal">
+    <div class="card modal">
+      <h2>This cube is locked</h2>
+      <p class="lede" id="password-modal-copy">Enter the password to come in.</p>
+      <form id="password-form">
+        <div class="field">
+          <label for="join-password">Password</label>
+          <input id="join-password" data-testid="password-input" type="password" />
+        </div>
+        <div class="inline">
+          <button class="btn" data-testid="password-submit" type="submit">Join</button>
+          <button class="btn secondary" data-testid="password-cancel" id="password-cancel" type="button">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="invite-modal" class="modal-backdrop hidden" data-testid="invite-modal">
+    <div class="card modal">
+      <h2>Invite someone</h2>
+      <p class="lede">They can walk into this locked cube without the password.</p>
+      <form id="invite-form">
+        <div class="field">
+          <label for="invite-name">Username</label>
+          <input id="invite-name" data-testid="invite-name" type="text" maxlength="16" />
+        </div>
+        <div class="inline">
+          <button class="btn" data-testid="invite-submit" type="submit">Send invite</button>
+          <button class="btn secondary" id="invite-cancel" type="button">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+
+  <div id="add-sheet" class="hidden" data-testid="add-sheet">
+    <div class="drawer-backdrop" id="add-sheet-backdrop"></div>
+    <div class="drawer">
+      <div class="section-head">
+        <h2>New</h2>
+        <button class="btn secondary small" id="add-sheet-close" type="button">Close</button>
+      </div>
+      <form class="inline" id="add-friend-form" style="margin-bottom:18px">
+        <input id="friend-name" data-testid="friend-name" type="text" maxlength="16" placeholder="Add a friend by username" />
+        <button class="btn small" data-testid="add-friend-btn" type="submit">Add</button>
+      </form>
+      <form class="create-form" id="create-room-form" style="margin-top:0">
+        <h3>Start a cube</h3>
+        <div class="field">
+          <label for="room-name">Name</label>
+          <input id="room-name" data-testid="room-name" type="text" maxlength="28" placeholder="Sunny loft" required />
+        </div>
+        <label class="check-row">
+          <input type="checkbox" id="room-locked" data-testid="room-locked" />
+          Lock with a password
+        </label>
+        <div class="field hidden" id="password-field">
+          <label for="room-password">Password</label>
+          <input id="room-password" data-testid="room-password" type="text" maxlength="24" placeholder="something friends can type" />
+        </div>
+        <button class="btn sage" data-testid="create-room-btn" type="submit">Start the cube</button>
+      </form>
+      <div class="public-cubes" id="public-cubes">
+        <h3>Public cubes</h3>
+        <p class="item-sub" style="margin:0 0 10px">If you don’t see a friend there, you can still drop into an open cube.</p>
+        <div class="contact-list room-contact-list" id="room-list" data-testid="room-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="shop-drawer" class="hidden">
+    <div class="drawer-backdrop" id="shop-backdrop"></div>
+    <div class="drawer">
+      <div class="section-head">
+        <h2>Furniture shop</h2>
+        <button class="btn secondary small" id="shop-close" type="button">Close</button>
+      </div>
+      <p class="lede">Spend your coins, then tap an item you own and click the floor to place it. Only you can decorate your cube.</p>
+      <div class="inv-row" id="inventory-row"></div>
+      <div class="shop-grid" id="shop-grid"></div>
+    </div>
+  </div>
+
+
+  <div id="rewards-sheet" class="hidden" data-testid="rewards-sheet">
+    <div class="drawer-backdrop" id="rewards-backdrop"></div>
+    <div class="drawer rewards-drawer">
+      <div class="section-head">
+        <h2>Rewards</h2>
+        <button class="btn secondary small" id="rewards-close" type="button">Close</button>
+      </div>
+      <p class="lede" id="rewards-balance">Your coins buy furniture and cube upgrades.</p>
+      <div class="rewards-actions">
+        <button class="btn small" type="button" data-testid="watch-ad-btn" id="watch-ad-btn">Watch ad · +15 coins</button>
+        <button class="btn small sage" type="button" data-testid="open-spin-btn" id="open-spin-btn">Daily spin</button>
+      </div>
+      <h3>Coin store</h3>
+      <p class="item-sub">Prototype checkout — real purchases would use Apple In-App Purchase.</p>
+      <div id="coin-packs" class="pack-row"></div>
+      <h3 style="margin-top:18px">Your stuff</h3>
+      <div id="collection-list" class="collection-list"></div>
+    </div>
+  </div>
+
+  <div id="spin-modal" class="modal-backdrop hidden" data-testid="spin-modal">
+    <div class="card modal spin-card">
+      <h2>Daily spin</h2>
+      <p class="lede">One free spin a day. Watch an ad for another.</p>
+      <div class="wheel-wrap" data-testid="spin-wheel">
+        <div class="wheel" id="spin-wheel-visual"></div>
+        <div class="wheel-pointer">▼</div>
+      </div>
+      <div class="inline" style="margin:12px 0">
+        <button class="btn" type="button" data-testid="spin-btn" id="spin-btn">Spin</button>
+        <button class="btn secondary" type="button" data-testid="spin-ad-btn" id="spin-ad-btn">Watch ad for a spin</button>
+      </div>
+      <div id="spin-result" class="item-sub" data-testid="spin-result"></div>
+      <h3>Odds</h3>
+      <ul id="spin-odds" class="odds-list" data-testid="spin-odds"></ul>
+      <button class="btn secondary small" type="button" id="spin-close">Close</button>
+    </div>
+  </div>
+
+  <div id="ad-overlay" class="modal-backdrop hidden" data-testid="ad-overlay">
+    <div class="card modal ad-card">
+      <h2>Simulated ad</h2>
+      <p class="lede" id="ad-copy">Thanks for supporting MyCube.</p>
+      <div class="ad-timer" id="ad-timer">5</div>
+      <div class="ad-fake">✨ A beautiful cube-shaped soda ✨</div>
+    </div>
+  </div>
+
+  <div id="buy-confirm" class="modal-backdrop hidden" data-testid="buy-confirm">
+    <div class="card modal">
+      <h2>Confirm purchase</h2>
+      <p class="lede" id="buy-confirm-copy">This is a prototype purchase.</p>
+      <div class="inline">
+        <button class="btn" type="button" data-testid="buy-confirm-yes" id="buy-confirm-yes">Get coins</button>
+        <button class="btn secondary" type="button" id="buy-confirm-no">Cancel</button>
+      </div>
+    </div>
+  </div>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/avatar.js"></script>
+  <script src="/js/iso.js"></script>
+  <script type="module" src="/js/client.js"></script>
+</body>
+</html>

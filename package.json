@@ -1,0 +1,19 @@
+{
+  "name": "mycube",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "MyCube — 3D hangout cubes with disappearing speech bubbles",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test/e2e.mjs"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "socket.io": "^4.8.1",
+    "three": "^0.187.0"
+  },
+  "devDependencies": {
+    "playwright": "^1.49.1"
+  }
+}
