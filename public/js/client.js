@@ -1,5 +1,6 @@
 import { createRoom3D, createAvatarPreview } from "./room3d.js";
 import { Chess } from "/vendor/chess.js";
+import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, snapshot as cubicsSnap, drawCubics, jokeAt } from "./cubics.js";
 
 (() => {
   const socket = io({ transports: ["websocket", "polling"] });
@@ -39,6 +40,12 @@ import { Chess } from "/vendor/chess.js";
     lastHits: new Map(),
     boxAutoTimer: null,
     gymAutoTimer: null,
+    cubicsId: null,
+    cubicsGame: null,
+    cubicsTimer: null,
+    wardId: null,
+    wardPreview: null,
+    movingWallId: null,
   };
 
   function setView(name) {
@@ -433,6 +440,8 @@ import { Chess } from "/vendor/chess.js";
       const on = !(state.room?.lightsOn !== false);
       socket.emit("setLights", { on });
     });
+    state.room3d.onWallHover((wall, slot) => updateWallHighlight(wall, slot));
+    state.room3d.onWallClick((wall, slot) => handleWallClick(wall, slot));
     return state.room3d;
   }
 
@@ -458,10 +467,16 @@ import { Chess } from "/vendor/chess.js";
     r3.setUses(room.uses || {});
     r3.setChessMap(room.chess || {});
     r3.setTvs(room.tvs || {});
+    r3.setWallArt(room.wallArt || []);
+    r3.setArcade(room.arcade || {});
+    r3.setServerTime(room.serverTime || Date.now());
     state.room.lightsOn = room.lightsOn !== false;
     state.room.uses = room.uses || {};
     state.room.chess = room.chess || {};
     state.room.tvs = room.tvs || {};
+    state.room.wallArt = room.wallArt || [];
+    state.room.seats = room.seats || {};
+    state.room.arcade = room.arcade || {};
     setView("room");
     r3.resize();
     renderPeople();
@@ -761,11 +776,17 @@ import { Chess } from "/vendor/chess.js";
     $("#floor").classList.remove("placing");
     if (!state.editMode) state.room3d?.setPlacing(null);
     state.room3d?.setGhost(null);
+    state.room3d?.setWallGhost(null);
+    state.movingWallId = null;
     const tools = $("#edit-place-tools");
     if (tools) HIDE(tools);
   }
 
   function updatePlaceHighlight(tx, ty) {
+    if (pendingWallType()) {
+      state.room3d?.setGhost(null);
+      return;
+    }
     const type = state.pendingPlace || (state.movingId && (state.room?.furniture || []).find((f) => f.id === state.movingId)?.type);
     if (!type) {
       state.room3d?.setGhost(null);
@@ -783,6 +804,173 @@ import { Chess } from "/vendor/chess.js";
     }
     const tools = $("#edit-place-tools");
     if (tools && (state.pendingPlace || state.movingId)) SHOW(tools);
+  }
+
+
+  function pendingWallType() {
+    if (state.pendingPlace && HouseIso.isWallArt(state.pendingPlace)) return state.pendingPlace;
+    if (state.movingWallId) {
+      const a = (state.room?.wallArt || []).find((x) => x.id === state.movingWallId);
+      return a?.type || null;
+    }
+    return null;
+  }
+
+  function updateWallHighlight(wall, slot) {
+    const type = pendingWallType();
+    if (!type) {
+      state.room3d?.setWallGhost(null);
+      return;
+    }
+    const ok = HouseIso.canPlaceWall(type, wall, slot, state.room?.size || 6)
+      && !HouseIso.wallOccupied(state.room?.wallArt || [], wall, slot, state.movingWallId);
+    state.room3d?.setWallGhost(type, wall, slot, ok);
+    const chk = $("#confirm-place");
+    if (chk) {
+      if (ok) SHOW(chk);
+      else HIDE(chk);
+    }
+    const tools = $("#edit-place-tools");
+    if (tools) SHOW(tools);
+  }
+
+  function handleWallClick(wall, slot) {
+    const type = pendingWallType();
+    if (!type) return;
+    const ignore = state.movingWallId;
+    const ok = HouseIso.canPlaceWall(type, wall, slot, state.room?.size || 6)
+      && !HouseIso.wallOccupied(state.room?.wallArt || [], wall, slot, ignore);
+    if (!ok) {
+      toast("That wall space is taken or blocked.");
+      return;
+    }
+    if (state.movingWallId) {
+      socket.emit("moveWallArt", { id: state.movingWallId, wall, slot });
+      return;
+    }
+    socket.emit("placeWallArt", { type, wall, slot });
+  }
+
+  function openCubics(id) {
+    state.cubicsId = id;
+    SHOW($("#cubics-panel"));
+    paintCubicsScores();
+    paintCubicsCanvas();
+  }
+  function closeCubics() {
+    if (state.cubicsGame && !state.cubicsGame.over && state.cubicsId) {
+      socket.emit("cubicsEnd", { id: state.cubicsId, score: state.cubicsGame.score || 0 });
+    }
+    stopCubicsLoop();
+    state.cubicsGame = null;
+    state.cubicsId = null;
+    HIDE($("#cubics-panel"));
+  }
+  function paintCubicsScores() {
+    const el = $("#cubics-scores");
+    if (!el || !state.cubicsId) return;
+    const scores = state.room?.arcade?.[state.cubicsId]?.scores || [];
+    el.innerHTML = scores.length
+      ? "<ol>" + scores.map((s, i) => `<li data-testid="cubics-score-${i}">${escapeHtml(s.name)} — ${s.score}</li>`).join("") + "</ol>"
+      : "<div class='item-sub'>No high scores yet.</div>";
+  }
+  function paintCubicsCanvas() {
+    const c = $("#cubics-canvas");
+    if (!c) return;
+    const ctx = c.getContext("2d");
+    drawCubics(ctx, c.width, c.height, state.cubicsGame, Date.now() / 1000, state.room?.arcade?.[state.cubicsId]?.scores || []);
+    const score = $("#cubics-score");
+    if (score) score.textContent = String(state.cubicsGame?.score || 0);
+    const joke = $("#cubics-joke");
+    if (joke) joke.textContent = state.cubicsGame?.joke || jokeAt(0);
+  }
+  function stopCubicsLoop() {
+    if (state.cubicsTimer) { cancelAnimationFrame(state.cubicsTimer); state.cubicsTimer = null; }
+  }
+  function runCubicsLoop(last) {
+    if (!state.cubicsGame || state.cubicsGame.over) { stopCubicsLoop(); paintCubicsCanvas(); return; }
+    state.cubicsTimer = requestAnimationFrame((now) => {
+      const dt = Math.min(40, now - (last || now));
+      cubicsTick(state.cubicsGame, dt);
+      paintCubicsCanvas();
+      if (Math.floor(now / 120) !== Math.floor((last || 0) / 120)) {
+        socket.emit("cubicsState", { id: state.cubicsId, state: cubicsSnap(state.cubicsGame) });
+      }
+      if (state.cubicsGame.over) {
+        socket.emit("cubicsEnd", { id: state.cubicsId, score: state.cubicsGame.score || 0 });
+        stopCubicsLoop();
+        paintCubicsScores();
+        return;
+      }
+      runCubicsLoop(now);
+    });
+  }
+  function startCubicsPlay() {
+    if (!state.cubicsId) return;
+    socket.emit("cubicsStart", { id: state.cubicsId });
+    state.cubicsGame = startGame();
+    socket.emit("cubicsState", { id: state.cubicsId, state: cubicsSnap(state.cubicsGame) });
+    paintCubicsCanvas();
+    stopCubicsLoop();
+    runCubicsLoop(performance.now());
+  }
+  function cubicsInput(kind) {
+    if (!state.cubicsGame || state.cubicsGame.over) return;
+    if (kind === "left") cubicsMove(state.cubicsGame, -1);
+    if (kind === "right") cubicsMove(state.cubicsGame, 1);
+    if (kind === "down") softDrop(state.cubicsGame);
+    if (kind === "drop") hardDrop(state.cubicsGame);
+    paintCubicsCanvas();
+    socket.emit("cubicsState", { id: state.cubicsId, state: cubicsSnap(state.cubicsGame) });
+  }
+
+  function openWardrobe(id) {
+    state.wardId = id;
+    state.draft = { ...HearthAvatar.defaults(), ...(state.me?.avatar || {}) };
+    SHOW($("#wardrobe-panel"));
+    paintWardrobe();
+  }
+  function closeWardrobe() {
+    HIDE($("#wardrobe-panel"));
+    state.wardId = null;
+  }
+  function paintWardrobe() {
+    const box = $("#ward-preview");
+    if (box) {
+      if (!state.wardPreview) state.wardPreview = createAvatarPreview(box);
+      state.wardPreview.setAvatar(state.draft);
+    }
+    const root = $("#ward-controls");
+    if (!root) return;
+    const swatch = (list, key, label, asColor) => {
+      const row = document.createElement("div");
+      row.innerHTML = `<h4>${label}</h4>`;
+      const wrap = document.createElement("div");
+      wrap.className = "swatch-row";
+      list.forEach((val, i) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = asColor ? "swatch" : "choice";
+        if (asColor) b.style.background = val;
+        else b.textContent = val;
+        b.dataset.testid = `ward-${key}-${i}`;
+        if (state.draft[key] === val) b.classList.add("selected");
+        b.addEventListener("click", () => { state.draft[key] = val; paintWardrobe(); });
+        wrap.appendChild(b);
+      });
+      row.appendChild(wrap);
+      return row;
+    };
+    root.innerHTML = "";
+    root.appendChild(swatch(HearthAvatar.SKINS, "skin", "Skin", true));
+    root.appendChild(swatch(HearthAvatar.HAIR_STYLES, "hair", "Hair", false));
+    root.appendChild(swatch(HearthAvatar.HAIR_COLORS, "hairColor", "Hair color", true));
+    root.appendChild(swatch(HearthAvatar.SHIRTS, "shirt", "Shirt", true));
+    root.appendChild(swatch(HearthAvatar.TOPS, "top", "Top", false));
+    root.appendChild(swatch(HearthAvatar.BOTTOMS, "bottom", "Bottoms", false));
+    root.appendChild(swatch(HearthAvatar.BOTTOM_COLORS, "bottomColor", "Bottom color", true));
+    root.appendChild(swatch(HearthAvatar.SHOES, "shoes", "Shoes", false));
+    root.appendChild(swatch(HearthAvatar.ACCESSORIES, "accessory", "Accessory", false));
   }
 
   function enterEditMode() {
@@ -954,6 +1142,15 @@ import { Chess } from "/vendor/chess.js";
   }
 
   function handleFurnitureClick(id, type, extra = {}) {
+    if (extra?.wallArt || HouseIso.isWallArt(type)) {
+      if (!state.editMode) return;
+      if (state.pendingPlace) return;
+      state.selectedFurnId = id;
+      state.room3d?.highlightFurniture(id);
+      SHOW($("#furn-actions"));
+      updateFurnActionPos();
+      return;
+    }
     if (state.editMode || state.pendingPlace || state.movingId) {
       if (!state.editMode) return;
       if (state.pendingPlace) return;
@@ -964,8 +1161,8 @@ import { Chess } from "/vendor/chess.js";
     }
     const furn = (state.room?.furniture || []).find((x) => x.id === id);
     if (!furn) return;
-    if (type === "couch") {
-      approachFurniture(furn, () => socket.emit("sit", { furnitureId: id }));
+    if (type === "couch" || type === "chair") {
+      approachFurniture(furn, () => socket.emit("sitFurniture", { id, seat: extra.seat }));
       return;
     }
     if (type === "tv") {
@@ -993,6 +1190,21 @@ import { Chess } from "/vendor/chess.js";
     }
     if (type === "benchpress" || type === "treadmill") {
       approachFurniture(furn, () => socket.emit("useGym", { id }));
+      return;
+    }
+    if (type === "cubics") {
+      approachFurniture(furn, () => openCubics(id));
+      return;
+    }
+    if (type === "clothescab") {
+      approachFurniture(furn, () => {
+        socket.emit("useWardrobe", { id });
+        openWardrobe(id);
+      });
+      return;
+    }
+    if (type === "coffeemachine") {
+      approachFurniture(furn, () => socket.emit("useCoffee", { id }));
     }
   }
 
@@ -1824,6 +2036,7 @@ import { Chess } from "/vendor/chess.js";
       socket.emit("moveFurniture", { id: f.id, x: tx, y: ty, rot: state.placeRot });
       return;
     }
+    if (pendingWallType()) return;
     if (state.editMode) {
       state.selectedFurnId = null;
       hideFurnActions();
@@ -1831,6 +2044,10 @@ import { Chess } from "/vendor/chess.js";
       return;
     }
     const me = state.people.get(state.me?.username);
+    if (me?.sitting) {
+      socket.emit("standUp");
+      me.sitting = false;
+    }
     const path = HouseIso.pathfind({ x: me?.x ?? tx, y: me?.y ?? ty }, { x: tx, y: ty }, blockedNow(), state.room?.size || 6);
     if (!path) {
       toast("You can't walk there.");
@@ -1863,6 +2080,17 @@ import { Chess } from "/vendor/chess.js";
   $("#confirm-place")?.addEventListener("click", confirmGhostPlace);
   $("#furn-rotate")?.addEventListener("click", () => rotatePending(1));
   $("#furn-move")?.addEventListener("click", () => {
+    const art = (state.room?.wallArt || []).find((x) => x.id === state.selectedFurnId);
+    if (art) {
+      hideFurnActions();
+      state.movingWallId = art.id;
+      state.pendingPlace = null;
+      updateWallHighlight(art.wall, art.slot);
+      SHOW($("#place-banner"));
+      $("#place-banner").innerHTML = `Move your ${escapeHtml(labelFor(art.type))} <button class="btn small secondary" id="cancel-place" type="button">Cancel</button>`;
+      $("#cancel-place")?.addEventListener("click", (e) => { e.stopPropagation(); cancelPlace(); state.movingWallId = null; state.room3d?.setWallGhost(null); });
+      return;
+    }
     const f = (state.room?.furniture || []).find((x) => x.id === state.selectedFurnId);
     if (!f) return;
     hideFurnActions();
@@ -1878,7 +2106,9 @@ import { Chess } from "/vendor/chess.js";
   });
   $("#furn-pickup")?.addEventListener("click", () => {
     if (!state.selectedFurnId) return;
-    socket.emit("pickupFurniture", { id: state.selectedFurnId });
+    const art = (state.room?.wallArt || []).find((x) => x.id === state.selectedFurnId);
+    if (art) socket.emit("pickupWallArt", { id: state.selectedFurnId });
+    else socket.emit("pickupFurniture", { id: state.selectedFurnId });
     hideFurnActions();
     state.selectedFurnId = null;
     state.room3d?.highlightFurniture(null);
@@ -1905,6 +2135,25 @@ import { Chess } from "/vendor/chess.js";
     socket.emit("standUp");
     closeChessPanel();
   });
+  $("#cubics-close")?.addEventListener("click", closeCubics);
+  $("#cubics-start")?.addEventListener("click", startCubicsPlay);
+  document.querySelectorAll("[data-cubic]").forEach((b) => {
+    b.addEventListener("click", () => cubicsInput(b.dataset.cubic));
+  });
+  document.addEventListener("keydown", (e) => {
+    if (!$("#cubics-panel") || $("#cubics-panel").classList.contains("hidden")) return;
+    const tag = (e.target && e.target.tagName) || "";
+    if (tag === "INPUT" || tag === "TEXTAREA") return;
+    if (e.key === "ArrowLeft") { e.preventDefault(); cubicsInput("left"); }
+    if (e.key === "ArrowRight") { e.preventDefault(); cubicsInput("right"); }
+    if (e.key === "ArrowDown") { e.preventDefault(); cubicsInput("down"); }
+    if (e.key === " " || e.key === "ArrowUp") { e.preventDefault(); cubicsInput("drop"); }
+  });
+  $("#ward-save")?.addEventListener("click", () => {
+    socket.emit("updateAvatar", { ...state.draft });
+    closeWardrobe();
+  });
+  $("#ward-cancel")?.addEventListener("click", closeWardrobe);
 
 
   /* ---------- socket ---------- */
@@ -1987,6 +2236,8 @@ import { Chess } from "/vendor/chess.js";
     cancelPlace();
     exitEditMode();
     closeChessPanel();
+    closeCubics();
+    closeWardrobe();
     hideFridgePicker();
     HIDE($("#activity-chip"));
     setBoxAuto(false);
@@ -2109,12 +2360,62 @@ import { Chess } from "/vendor/chess.js";
     state.room3d?.setLights(on);
   });
 
-  socket.on("tvUpdated", ({ id, tv }) => {
+  socket.on("tvUpdated", ({ id, tv, serverTime }) => {
     if (!state.room) return;
     state.room.tvs = state.room.tvs || {};
     if (tv) state.room.tvs[id] = tv;
     else delete state.room.tvs[id];
     state.room3d?.setTvs(state.room.tvs);
+    if (serverTime) state.room3d?.setServerTime(serverTime);
+  });
+
+  socket.on("seatsUpdated", ({ seats }) => {
+    if (!state.room) return;
+    state.room.seats = seats || {};
+  });
+
+  socket.on("wallArtPlaced", (piece) => {
+    if (!state.room) return;
+    state.room.wallArt = state.room.wallArt || [];
+    if (!state.room.wallArt.some((a) => a.id === piece.id)) state.room.wallArt.push(piece);
+    state.room3d?.setWallArt(state.room.wallArt);
+    cancelPlace();
+    state.movingWallId = null;
+    state.room3d?.setWallGhost(null);
+    if (state.editMode) paintEditInventory();
+  });
+  socket.on("wallArtUpdated", (piece) => {
+    if (!state.room) return;
+    const i = (state.room.wallArt || []).findIndex((a) => a.id === piece.id);
+    if (i >= 0) state.room.wallArt[i] = piece;
+    else (state.room.wallArt = state.room.wallArt || []).push(piece);
+    state.room3d?.setWallArt(state.room.wallArt);
+    state.movingWallId = null;
+    cancelPlace();
+    state.room3d?.setWallGhost(null);
+  });
+  socket.on("wallArtRemoved", ({ id }) => {
+    if (!state.room) return;
+    state.room.wallArt = (state.room.wallArt || []).filter((a) => a.id !== id);
+    state.room3d?.setWallArt(state.room.wallArt);
+    if (state.selectedFurnId === id) {
+      state.selectedFurnId = null;
+      hideFurnActions();
+    }
+    if (state.editMode) paintEditInventory();
+  });
+
+  socket.on("arcadeUpdated", ({ id, arcade }) => {
+    if (!state.room) return;
+    state.room.arcade = state.room.arcade || {};
+    if (arcade) state.room.arcade[id] = arcade;
+    else delete state.room.arcade[id];
+    state.room3d?.setArcade(state.room.arcade);
+    if (state.cubicsId === id) paintCubicsScores();
+  });
+
+  socket.on("wardrobeOpen", ({ id }) => {
+    if (id) openWardrobe(id);
   });
 
   socket.on("useUpdated", ({ id, use }) => {
@@ -2236,6 +2537,18 @@ import { Chess } from "/vendor/chess.js";
   window.__startPlace = startPlace;
   window.__highlightTile = (x, y) => updatePlaceHighlight(x, y);
   window.__rotatePending = () => rotatePending(1);
+  window.__clickWall = (wall, slot) => handleWallClick(wall, slot);
+  window.__openCubics = openCubics;
+  window.__startCubics = startCubicsPlay;
+  window.__cubicsInput = cubicsInput;
+  window.__standUp = () => socket.emit("standUp");
+  window.__moveFurniture = (id, x, y, rot) => socket.emit("moveFurniture", { id, x, y, rot });
+  window.__sit = (id, seat) => socket.emit("sitFurniture", { id, seat });
+  window.__gymStop = (id) => socket.emit("gymStop", { id });
+  window.__stowItem = () => socket.emit("stowItem");
+  window.__openWardrobe = (id) => openWardrobe(id);
+  window.__useCoffee = (id) => socket.emit("useCoffee", { id });
+  window.__usePunchbag = (id) => socket.emit("usePunchbag", { id });
 
   paintLoginPreview();
   setView("login");

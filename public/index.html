@@ -189,6 +189,36 @@
           <button type="button" class="btn small secondary" id="chess-stand" data-testid="chess-stand">Stand up</button>
         </div>
       </div>
+      <div id="cubics-panel" class="cubics-panel hidden" data-testid="cubics-panel">
+        <div class="cubics-top">
+          <strong>CUBICS</strong>
+          <span id="cubics-score" data-testid="cubics-score">0</span>
+          <button type="button" class="btn tiny ghost" id="cubics-close" data-testid="cubics-close">✕</button>
+        </div>
+        <canvas id="cubics-canvas" data-testid="cubics-canvas" width="256" height="320"></canvas>
+        <div id="cubics-joke" class="cubics-joke" data-testid="cubics-joke"></div>
+        <div class="cubics-controls">
+          <button type="button" class="btn small" data-cubic="left" data-testid="cubics-left">◀</button>
+          <button type="button" class="btn small" data-cubic="down" data-testid="cubics-down">▼</button>
+          <button type="button" class="btn small" data-cubic="right" data-testid="cubics-right">▶</button>
+          <button type="button" class="btn small sage" data-cubic="drop" data-testid="cubics-drop">Drop</button>
+        </div>
+        <button type="button" class="btn sage" id="cubics-start" data-testid="cubics-start">Play</button>
+        <div id="cubics-scores" class="cubics-scores" data-testid="cubics-scores"></div>
+      </div>
+      <div id="wardrobe-panel" class="wardrobe-panel hidden" data-testid="wardrobe-panel">
+        <div class="ward-top">
+          <strong>Clothes cabinet</strong>
+        </div>
+        <div class="ward-body">
+          <div id="ward-preview" class="ward-preview" data-testid="ward-preview"></div>
+          <div id="ward-controls" class="ward-controls" data-testid="ward-controls"></div>
+        </div>
+        <div class="ward-actions">
+          <button type="button" class="btn sage" id="ward-save" data-testid="ward-save">Save</button>
+          <button type="button" class="btn secondary" id="ward-cancel" data-testid="ward-cancel">Cancel</button>
+        </div>
+      </div>
       <div class="dock" id="chat-dock" data-testid="chat-dock">
         <button class="emote-btn" data-testid="emote-eat" id="emote-eat" type="button" title="Eat">🥪</button>
         <button class="emote-btn" data-testid="emote-drink" id="emote-drink" type="button" title="Drink">🥤</button>

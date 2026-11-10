@@ -37,7 +37,19 @@ const FURNITURE_CATALOG = {
   punchbag: { name: "Punching bag", price: 30, w: 1, h: 1, blocks: true },
   benchpress: { name: "Bench press", price: 35, w: 2, h: 1, blocks: true },
   treadmill: { name: "Treadmill", price: 35, w: 1, h: 2, blocks: true },
+  cubics: { name: "Cubics cabinet", price: 40, w: 1, h: 1, blocks: true },
+  clothescab: { name: "Clothes cabinet", price: 30, w: 1, h: 1, blocks: true },
+  coffeemachine: { name: "Coffee machine", price: 25, w: 1, h: 1, blocks: true },
+  art_mona: { name: "Mona Cuba", price: 22, w: 1, h: 1, blocks: false, surface: "wall" },
+  art_starry: { name: "Starry Cube Night", price: 28, w: 1, h: 1, blocks: false, surface: "wall" },
+  art_pop: { name: "Pop-art cubes", price: 18, w: 1, h: 1, blocks: false, surface: "wall" },
+  art_sunset: { name: "Cube sunset", price: 16, w: 1, h: 1, blocks: false, surface: "wall" },
+  art_cubism: { name: "Cubism", price: 24, w: 1, h: 1, blocks: false, surface: "wall" },
+  art_poster: { name: "CUBICS poster", price: 10, w: 1, h: 1, blocks: false, surface: "wall" },
+  art_hang: { name: "Hang In There", price: 14, w: 1, h: 1, blocks: false, surface: "wall" },
+  art_neon: { name: "my cube neon", price: 30, w: 1, h: 1, blocks: false, surface: "wall" },
 };
+const WALL_ART_TYPES = new Set(["art_mona","art_starry","art_pop","art_sunset","art_cubism","art_poster","art_hang","art_neon"]);
 const WALLPAPERS = ["paint-cream", "paint-sage", "paint-blush", "paint-slate"];
 const FLOORS = ["wood", "tile", "carpet"];
 const START_COINS = 50;
@@ -142,7 +154,7 @@ function occupiedSet(room, ignoreId) {
 
 function canPlaceOn(room, type, x, y, rot, ignoreId) {
   const item = FURNITURE_CATALOG[type];
-  if (!item) return false;
+  if (!item || item.surface === "wall") return false;
   const tiles = tilesFor(type, x, y, rot);
   if (!tiles.length || tiles.some((t) => !inBounds(t.x, t.y, roomSize(room)))) return false;
   const used = occupiedSet(room, ignoreId);
@@ -249,6 +261,7 @@ function snapshotPerson(u) {
     gym: u.gym || null,
     facing: u.facing || null,
     stationId: u.stationId || null,
+    seat: u.seat ?? null,
   };
 }
 
@@ -266,6 +279,10 @@ function roomState(room) {
     tvs: room.tvs || {},
     chess: publicChessMap(room),
     uses: room.uses || {},
+    wallArt: room.wallArt || [],
+    seats: publicSeats(room),
+    arcade: publicArcade(room),
+    serverTime: Date.now(),
     grid: roomSize(room),
     size: roomSize(room),
     occupants: room.occupants.slice(),
@@ -364,10 +381,162 @@ function notifyFriendWatchers(subject) {
 }
 
 
+
+function isWallArt(type) {
+  return WALL_ART_TYPES.has(type) || FURNITURE_CATALOG[type]?.surface === "wall";
+}
+
+function reservedWallSlots(size) {
+  const n = size || START_SIZE;
+  const back = new Set();
+  const left = new Set();
+  const winX = n * 0.18;
+  const doorZ = n * 0.22;
+  const swZ = doorZ - 0.7;
+  for (let s = 0; s < n; s++) {
+    const cx = s + 0.5 - n / 2;
+    const cz = s + 0.5 - n / 2;
+    if (Math.abs(cx - winX) < 1.05) back.add(s);
+    if (Math.abs(cz - doorZ) < 0.55) left.add(s);
+    if (Math.abs(cz - swZ) < 0.38) left.add(s);
+  }
+  return { back, left };
+}
+
+function canPlaceWallOn(room, type, wall, slot, ignoreId) {
+  if (!isWallArt(type)) return false;
+  if (wall !== "back" && wall !== "left") return false;
+  const n = roomSize(room);
+  const s = Math.round(Number(slot));
+  if (s < 0 || s >= n) return false;
+  if (reservedWallSlots(n)[wall].has(s)) return false;
+  return !(room.wallArt || []).some((a) => a.wall === wall && a.slot === s && a.id !== ignoreId);
+}
+
+function seatCountOf(type) {
+  if (type === "couch") return 2;
+  if (type === "chair") return 1;
+  return 0;
+}
+
+function seatPoseOf(furn, seatNum) {
+  const n = seatCountOf(furn.type) || 1;
+  const r = normalizeRot(furn.rot);
+  const { w, h } = dimsOf(furn.type, r);
+  const cx = furn.x + (w - 1) / 2;
+  const cy = furn.y + (h - 1) / 2;
+  const t = n === 1 ? 0 : (seatNum / (n - 1) - 0.5);
+  const along = (r % 2 === 0 ? w : h) * 0.42;
+  const localX = t * along;
+  const localY = 0.08;
+  if (r === 0) return { x: cx + localX, y: cy + localY, facing: { x: 0, z: 1 } };
+  if (r === 1) return { x: cx + localY, y: cy - localX, facing: { x: 1, z: 0 } };
+  if (r === 2) return { x: cx - localX, y: cy - localY, facing: { x: 0, z: -1 } };
+  return { x: cx - localY, y: cy + localX, facing: { x: -1, z: 0 } };
+}
+
+function sittersOn(room, id) {
+  const out = [];
+  for (const u of users.values()) {
+    if (u.roomId === room.id && u.stationId === id && u.sitting) out.push(u);
+  }
+  return out;
+}
+
+function publicSeats(room) {
+  const out = {};
+  for (const f of room.furniture || []) {
+    const n = seatCountOf(f.type);
+    if (!n) continue;
+    const map = {};
+    for (let i = 0; i < n; i++) map[i] = null;
+    for (const u of sittersOn(room, f.id)) {
+      const s = u.seat ?? 0;
+      map[s] = u.username;
+    }
+    out[f.id] = map;
+  }
+  return out;
+}
+
+function publicArcade(room) {
+  const out = {};
+  for (const [id, a] of Object.entries(room.arcade || {})) {
+    out[id] = {
+      user: a.user || null,
+      state: a.state || null,
+      scores: (a.scores || []).slice(0, 5),
+    };
+  }
+  return out;
+}
+
+function emitSeats(room) {
+  emitRoom(room, "seatsUpdated", { seats: publicSeats(room) });
+}
+
+
+function trySit(user, room, furn, seat, socket) {
+  ensureRoomExtras(room);
+  const n = seatCountOf(furn.type);
+  if (!n) return false;
+  if (!room.seats[furn.id]) room.seats[furn.id] = {};
+  const taken = sittersOn(room, furn.id);
+  const occupied = new Set(taken.map((u) => u.seat ?? 0));
+  const holderOf = (i) => taken.find((u) => (u.seat ?? 0) === i);
+  let seatNum = seat == null || seat === "" ? -1 : Number(seat);
+  if (Number.isFinite(seatNum) && seatNum >= 0 && seatNum < n) {
+    const holder = holderOf(seatNum);
+    if (holder && holder.username !== user.username) {
+      socket?.emit("errorMsg", { message: "Seat taken" });
+      return false;
+    }
+  } else {
+    seatNum = -1;
+    for (let i = 0; i < n; i++) {
+      if (!occupied.has(i) || holderOf(i)?.username === user.username) {
+        seatNum = i;
+        break;
+      }
+    }
+  }
+  if (seatNum < 0) {
+    socket?.emit("errorMsg", { message: "Seat taken" });
+    return false;
+  }
+  clearUserActivities(user, room, { forfeit: true });
+  if (!room.seats[furn.id]) room.seats[furn.id] = {};
+  room.seats[furn.id][seatNum] = user.username;
+  const pose = seatPoseOf(furn, seatNum);
+  user.x = pose.x;
+  user.y = pose.y;
+  user.facing = pose.facing;
+  user.sitting = true;
+  user.stationId = furn.id;
+  user.seat = seatNum;
+  emitPerson(user);
+  io.to(room.id).emit("userMoved", { username: user.username, x: user.x, y: user.y, sitting: true, facing: user.facing });
+  emitSeats(room);
+  return true;
+}
+
+function furnitureInUse(room, id) {
+  if (sittersOn(room, id).length) return "Someone is sitting there.";
+  const use = room.uses?.[id];
+  if (use) return "Someone is using that.";
+  if (room.arcade?.[id]?.user) return "Someone is playing Cubics.";
+  const game = room.chess?.[id];
+  if (game && (game.seats?.[0] || game.seats?.[1])) return "Someone is sitting there.";
+  return null;
+}
+
 function ensureRoomExtras(room) {
   if (!room.tvs) room.tvs = {};
   if (!room.chess) room.chess = {};
   if (!room.uses) room.uses = {};
+  if (!room.wallArt) room.wallArt = [];
+  if (!room.seats) room.seats = {};
+  if (!room.arcade) room.arcade = {};
   if (room.lightsOn === undefined) room.lightsOn = true;
   return room;
 }
@@ -443,9 +612,22 @@ function clearUserActivities(user, room, { forfeit = true } = {}) {
       delete room.uses[stationId];
       emitRoom(room, "useUpdated", { id: stationId, use: null });
     }
+    if (room.seats?.[stationId]) {
+      for (const k of Object.keys(room.seats[stationId])) {
+        if (room.seats[stationId][k] === user.username) room.seats[stationId][k] = null;
+      }
+      emitSeats(room);
+    }
+    if (room.arcade?.[stationId]?.user === user.username) {
+      room.arcade[stationId].user = null;
+      room.arcade[stationId].state = null;
+      emitRoom(room, "arcadeUpdated", { id: stationId, arcade: publicArcade(room)[stationId] });
+    }
   }
+  clearBrewTimer(user);
   user.stationId = null;
   user.sitting = false;
+  user.seat = null;
   if (user.boxing) user.boxing = null;
   if (user.gym) user.gym = null;
 }
@@ -487,14 +669,15 @@ function seatWorld(furn, seatNum) {
 }
 
 function startHeldItem(user, kind) {
-  const durations = { sandwich: 7500, soda: 6500, water: 6000 };
+  const durations = { sandwich: 7500, soda: 6500, water: 6000, coffee: 10800 };
   clearHeldTimer(user);
   if (user.heldProp) {
     user.stowedProp = user.heldProp;
     user.heldProp = null;
   }
-  user.heldItem = { kind, startedAt: Date.now() };
+  user.heldItem = { kind, startedAt: Date.now(), sips: kind === "coffee" ? 6 : undefined };
   user._heldTimer = setTimeout(() => {
+    const was = user.heldItem?.kind;
     user.heldItem = null;
     user._heldTimer = null;
     if (user.stowedProp) {
@@ -502,7 +685,17 @@ function startHeldItem(user, kind) {
       user.stowedProp = null;
     }
     emitPerson(user);
+    if (was === "coffee" && user.roomId) {
+      io.to(user.roomId).emit("userSaid", { username: user.username, text: "ahh", at: Date.now() });
+    }
   }, durations[kind] || 6000);
+}
+
+function clearBrewTimer(user) {
+  if (user?._brewTimer) {
+    clearTimeout(user._brewTimer);
+    user._brewTimer = null;
+  }
 }
 
 function emitProfile(user) {
@@ -741,6 +934,9 @@ io.on("connection", (socket) => {
       tvs: {},
       chess: {},
       uses: {},
+      wallArt: [],
+      seats: {},
+      arcade: {},
       invites: new Set(),
     };
     rooms.set(room.id, room);
@@ -803,21 +999,13 @@ io.on("connection", (socket) => {
     });
   });
 
-  socket.on("sit", ({ furnitureId } = {}) => {
+  socket.on("sit", ({ furnitureId, seat } = {}) => {
     const user = getUser(socket);
     if (!user?.roomId) return;
     const room = rooms.get(user.roomId);
-    const furn = room?.furniture.find((f) => f.id === furnitureId && f.type === "couch");
-    if (!furn) return;
-    user.x = furn.x;
-    user.y = furn.y;
-    user.sitting = true;
-    io.to(user.roomId).emit("userMoved", {
-      username: user.username,
-      x: user.x,
-      y: user.y,
-      sitting: true,
-    });
+    const furn = room?.furniture.find((f) => f.id === furnitureId);
+    if (!furn || !seatCountOf(furn.type)) return;
+    trySit(user, room, furn, seat, socket);
   });
 
   socket.on("say", ({ text } = {}) => {
@@ -922,6 +1110,11 @@ io.on("connection", (socket) => {
     if (!room) return;
     const piece = room.furniture.find((f) => f.id === id);
     if (!piece) return;
+    const busy = furnitureInUse(room, id);
+    if (busy) {
+      socket.emit("errorMsg", { message: busy });
+      return;
+    }
     const tx = Math.round(Number(x));
     const ty = Math.round(Number(y));
     const r = normalizeRot(rot ?? piece.rot);
@@ -942,6 +1135,11 @@ io.on("connection", (socket) => {
     const idx = room.furniture.findIndex((f) => f.id === id);
     if (idx === -1) return;
     const piece = room.furniture[idx];
+    const busy = furnitureInUse(room, id);
+    if (busy) {
+      socket.emit("errorMsg", { message: busy });
+      return;
+    }
     // kick anyone using it
     for (const u of users.values()) {
       if (u.stationId === id && u.roomId === room.id) {
@@ -1135,7 +1333,7 @@ io.on("connection", (socket) => {
     const cur = room.tvs[id] || { on: false, channel: 0 };
     cur.on = !cur.on;
     room.tvs[id] = cur;
-    io.to(room.id).emit("tvUpdated", { id, tv: cur });
+    io.to(room.id).emit("tvUpdated", { id, tv: cur, serverTime: Date.now() });
   });
 
   socket.on("standUp", () => {
@@ -1154,14 +1352,8 @@ io.on("connection", (socket) => {
     const furn = room?.furniture.find((f) => f.id === id);
     if (!furn) return;
     ensureRoomExtras(room);
-    if (furn.type === "couch") {
-      clearUserActivities(user, room, { forfeit: true });
-      user.x = furn.x;
-      user.y = furn.y;
-      user.sitting = true;
-      user.stationId = id;
-      emitPerson(user);
-      io.to(room.id).emit("userMoved", { username: user.username, x: user.x, y: user.y, sitting: true, facing: user.facing || null });
+    if (seatCountOf(furn.type)) {
+      trySit(user, room, furn, seat, socket);
       return;
     }
     if (furn.type === "chesstable") {
@@ -1456,6 +1648,147 @@ io.on("connection", (socket) => {
     user.gym = null;
     user.sitting = false;
     if (user.stationId === id) user.stationId = null;
+    emitPerson(user);
+  });
+
+
+  socket.on("placeWallArt", ({ type, wall, slot } = {}) => {
+    const user = getUser(socket);
+    const room = requireOwner(socket, user);
+    if (!room) return;
+    ensureRoomExtras(room);
+    if (!isWallArt(type)) return;
+    const idx = user.inventory.indexOf(type);
+    if (idx === -1) {
+      socket.emit("errorMsg", { message: "Buy that item first." });
+      return;
+    }
+    const s = Math.round(Number(slot));
+    if (!canPlaceWallOn(room, type, wall, s)) {
+      socket.emit("errorMsg", { message: "That wall space is taken or blocked." });
+      return;
+    }
+    user.inventory.splice(idx, 1);
+    const piece = { id: "w" + furnSeq++, type, wall, slot: s };
+    room.wallArt.push(piece);
+    emitProfile(user);
+    emitRoom(room, "wallArtPlaced", piece);
+  });
+
+  socket.on("moveWallArt", ({ id, wall, slot } = {}) => {
+    const user = getUser(socket);
+    const room = requireOwner(socket, user);
+    if (!room) return;
+    ensureRoomExtras(room);
+    const piece = room.wallArt.find((a) => a.id === id);
+    if (!piece) return;
+    const s = Math.round(Number(slot));
+    if (!canPlaceWallOn(room, piece.type, wall, s, piece.id)) {
+      socket.emit("errorMsg", { message: "That wall space is taken or blocked." });
+      return;
+    }
+    piece.wall = wall;
+    piece.slot = s;
+    emitRoom(room, "wallArtUpdated", piece);
+  });
+
+  socket.on("pickupWallArt", ({ id } = {}) => {
+    const user = getUser(socket);
+    const room = requireOwner(socket, user);
+    if (!room) return;
+    ensureRoomExtras(room);
+    const idx = room.wallArt.findIndex((a) => a.id === id);
+    if (idx === -1) return;
+    const piece = room.wallArt[idx];
+    room.wallArt.splice(idx, 1);
+    user.inventory.push(piece.type);
+    emitProfile(user);
+    emitRoom(room, "wallArtRemoved", { id, type: piece.type });
+  });
+
+  socket.on("useCoffee", ({ id } = {}) => {
+    const user = getUser(socket);
+    if (!user?.roomId) return;
+    const room = rooms.get(user.roomId);
+    const furn = room?.furniture.find((f) => f.id === id && f.type === "coffeemachine");
+    if (!furn) return;
+    ensureRoomExtras(room);
+    if (room.uses[id] && room.uses[id].user !== user.username) {
+      socket.emit("errorMsg", { message: "The coffee machine is busy." });
+      return;
+    }
+    clearUserActivities(user, room, { forfeit: true });
+    clearBrewTimer(user);
+    room.uses[id] = { type: "coffeemachine", user: user.username, phase: "brew", startedAt: Date.now() };
+    user.stationId = id;
+    emitRoom(room, "useUpdated", { id, use: room.uses[id] });
+    emitPerson(user);
+    user._brewTimer = setTimeout(() => {
+      user._brewTimer = null;
+      if (room.uses[id]?.user === user.username) {
+        delete room.uses[id];
+        emitRoom(room, "useUpdated", { id, use: null });
+      }
+      if (user.stationId === id) user.stationId = null;
+      startHeldItem(user, "coffee");
+      emitPerson(user);
+    }, 3000);
+  });
+
+  socket.on("useWardrobe", ({ id } = {}) => {
+    const user = getUser(socket);
+    if (!user?.roomId) return;
+    const room = rooms.get(user.roomId);
+    const furn = room?.furniture.find((f) => f.id === id && f.type === "clothescab");
+    if (!furn) return;
+    socket.emit("wardrobeOpen", { id });
+  });
+
+  socket.on("cubicsStart", ({ id } = {}) => {
+    const user = getUser(socket);
+    if (!user?.roomId) return;
+    const room = rooms.get(user.roomId);
+    const furn = room?.furniture.find((f) => f.id === id && f.type === "cubics");
+    if (!furn) return;
+    ensureRoomExtras(room);
+    if (!room.arcade[id]) room.arcade[id] = { user: null, state: null, scores: [] };
+    if (room.arcade[id].user && room.arcade[id].user !== user.username) {
+      socket.emit("errorMsg", { message: "Someone is already playing." });
+      return;
+    }
+    clearUserActivities(user, room, { forfeit: true });
+    room.arcade[id].user = user.username;
+    room.arcade[id].state = { score: 0, over: false };
+    user.stationId = id;
+    emitRoom(room, "arcadeUpdated", { id, arcade: publicArcade(room)[id] });
+    emitPerson(user);
+  });
+
+  socket.on("cubicsState", ({ id, state } = {}) => {
+    const user = getUser(socket);
+    if (!user?.roomId) return;
+    const room = rooms.get(user.roomId);
+    const cab = room?.arcade?.[id];
+    if (!cab || cab.user !== user.username) return;
+    cab.state = state || null;
+    emitRoom(room, "arcadeUpdated", { id, arcade: publicArcade(room)[id] });
+  });
+
+  socket.on("cubicsEnd", ({ id, score } = {}) => {
+    const user = getUser(socket);
+    if (!user?.roomId) return;
+    const room = rooms.get(user.roomId);
+    const cab = room?.arcade?.[id];
+    if (!cab || cab.user !== user.username) return;
+    const s = Math.max(0, Math.min(999999, Math.round(Number(score) || 0)));
+    cab.scores = cab.scores || [];
+    cab.scores.push({ name: user.username, score: s, at: Date.now() });
+    cab.scores.sort((a, b) => b.score - a.score || a.at - b.at);
+    cab.scores = cab.scores.slice(0, 5);
+    cab.user = null;
+    cab.state = { ...(cab.state || {}), over: true, score: s };
+    if (user.stationId === id) user.stationId = null;
+    emitRoom(room, "arcadeUpdated", { id, arcade: publicArcade(room)[id] });
     emitPerson(user);
   });
 

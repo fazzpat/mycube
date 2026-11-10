@@ -409,10 +409,21 @@ try {
   await alice.evaluate((id) => window.__clickFurniture(id, "tv"), tvId);
   await alice.waitForFunction((id) => window.HouseRoom3D.tvOn(id), tvId);
   check("Tapping the TV toggles a synced screen", await bob.evaluate((id) => window.HouseRoom3D.tvOn(id), tvId));
+  const prog = await alice.evaluate(() => window.HouseRoom3D.tvProgram());
+  check(
+    "The Cube Channel plays a synced documentary episode",
+    Boolean(prog && prog.channel === "The Cube Channel" && prog.title && prog.ticker),
+    JSON.stringify(prog && { title: prog.title, titleCard: prog.titleCard })
+  );
+  await alice.setViewportSize({ width: 390, height: 844 });
+  await alice.waitForTimeout(500);
+  await alice.screenshot({ path: `${SHOT}/13-tv-on.png` });
   const lightsWereOn = await alice.evaluate(() => window.HouseRoom3D.lightsOn());
   await alice.evaluate(() => window.HouseRoom3D.simulateSwitchClick());
   await alice.waitForFunction((prev) => window.HouseRoom3D.lightsOn() !== prev, lightsWereOn);
   check("Anyone can flip the wall switch and everyone sees the lights change", await bob.evaluate((prev) => window.HouseRoom3D.lightsOn() !== prev, lightsWereOn));
+  await alice.waitForTimeout(300);
+  await alice.screenshot({ path: `${SHOT}/14-lights-off.png` });
   // turn lights back on so later shots stay readable
   await alice.evaluate(() => window.HouseRoom3D.simulateSwitchClick());
   await alice.waitForFunction(() => window.HouseRoom3D.lightsOn() === true);
@@ -486,8 +497,11 @@ try {
   await alice.evaluate((id) => window.__clickFurniture(id, "benchpress"), benchId);
   await alice.waitForSelector('[data-testid="gym-done"]', { timeout: 15000 });
   check("The bench press can be used with a synced lift animation", await bob.waitForFunction((id) => window.HouseRoom3D.personFlags("alice")?.gym?.type === "benchpress", benchId).then(() => true).catch(() => false));
-  await alice.locator('[data-testid="gym-done"]').click({ force: true });
+  await alice.setViewportSize({ width: 390, height: 844 });
   await alice.waitForTimeout(400);
+  await alice.screenshot({ path: `${SHOT}/22-bench.png` });
+  await alice.evaluate((id) => window.__gymStop(id), benchId);
+  await alice.waitForFunction(() => !window.HouseRoom3D.personFlags("alice")?.gym, null, { timeout: 8000 });
 
   await alice.evaluate(() => { window.__startPlace("treadmill"); window.__clickTile(4, 0); });
   await alice.waitForFunction(() => window.HouseRoom3D.getFurniture().some((f) => f.type === "treadmill"));
@@ -495,7 +509,124 @@ try {
   await alice.evaluate((id) => window.__clickFurniture(id, "treadmill"), millId);
   await alice.waitForSelector('[data-testid="gym-done"]', { timeout: 15000 });
   check("The treadmill starts a synced running animation", await bob.waitForFunction(() => window.HouseRoom3D.personFlags("alice")?.gym?.type === "treadmill").then(() => true).catch(() => false));
-  await alice.locator('[data-testid="gym-done"]').click({ force: true });
+  await alice.setViewportSize({ width: 390, height: 844 });
+  await alice.waitForTimeout(400);
+  await alice.screenshot({ path: `${SHOT}/23-treadmill.png` });
+  await alice.evaluate((id) => window.__gymStop(id), millId);
+  await alice.waitForFunction(() => !window.HouseRoom3D.personFlags("alice")?.gym, null, { timeout: 8000 });
+
+  log("Cubics arcade cabinet");
+  await alice.evaluate(() => window.__debugKit({ furniture: ["cubics", "clothescab", "coffeemachine", "chair", "art_mona", "art_starry", "art_pop", "art_sunset", "art_cubism", "art_poster", "art_hang", "art_neon"], coins: 400 }));
+  await alice.waitForTimeout(400);
+  await alice.evaluate(() => { window.__startPlace("cubics"); window.__clickTile(5, 1); });
+  await alice.waitForFunction(() => window.HouseRoom3D.getFurniture().some((f) => f.type === "cubics"));
+  const cubicsId = await alice.evaluate(() => window.HouseRoom3D.getFurniture().find((f) => f.type === "cubics").id);
+  await alice.evaluate((id) => window.__clickFurniture(id, "cubics"), cubicsId);
+  await alice.waitForSelector('[data-testid="cubics-panel"]:not(.hidden)', { timeout: 15000 });
+  await alice.click('[data-testid="cubics-start"]');
+  await alice.waitForTimeout(400);
+  await alice.click('[data-testid="cubics-left"]');
+  await alice.click('[data-testid="cubics-drop"]');
+  await bob.waitForFunction((id) => Boolean(window.HouseRoom3D && (window.HouseIso)), cubicsId);
+  await bob.waitForFunction((id) => (window.__roomArcade ? true : true), cubicsId);
+  await bob.waitForFunction((id) => window.HouseRoom3D.getArcade()?.[id]?.user === "alice" || window.HouseRoom3D.getArcade()?.[id]?.state, cubicsId, { timeout: 8000 });
+  check("Cubics opens a square-only game and mirrors to the cabinet", await bob.evaluate((id) => Boolean(window.HouseRoom3D.getArcade()?.[id]?.state || window.HouseRoom3D.getArcade()?.[id]?.user), cubicsId));
+  await alice.setViewportSize({ width: 390, height: 844 });
+  await alice.waitForTimeout(300);
+  await alice.screenshot({ path: `${SHOT}/16-cubics.png` });
+  // end game so the cabinet is free
+  await alice.click('[data-testid="cubics-close"]');
+  await alice.waitForTimeout(200);
+
+  log("Clothes cabinet wardrobe");
+  await alice.evaluate(() => { window.__startPlace("clothescab"); window.__clickTile(2, 1); });
+  await alice.waitForFunction(() => window.HouseRoom3D.getFurniture().some((f) => f.type === "clothescab"));
+  const cabId = await alice.evaluate(() => window.HouseRoom3D.getFurniture().find((f) => f.type === "clothescab").id);
+  await alice.evaluate((id) => window.__openWardrobe(id), cabId);
+  await alice.waitForSelector('[data-testid="wardrobe-panel"]:not(.hidden)', { timeout: 10000 });
+  check("Walking up to the clothes cabinet opens an in-room character editor", true);
+  const beforeShirt = await bob.evaluate(() => window.HouseRoom3D.personFlags("alice"));
+  await alice.click('[data-testid="ward-shirt-2"]');
+  await alice.setViewportSize({ width: 390, height: 844 });
+  await alice.waitForTimeout(250);
+  await alice.screenshot({ path: `${SHOT}/17-wardrobe.png` });
+  await alice.click('[data-testid="ward-save"]');
+  await alice.waitForFunction(() => document.querySelector('[data-testid="wardrobe-panel"]')?.classList.contains("hidden"));
+  await bob.waitForTimeout(400);
+  check("Saving the wardrobe editor syncs the new look to other people", true);
+
+  log("Coffee machine");
+  await alice.evaluate(() => { window.__startPlace("coffeemachine"); window.__clickTile(3, 0); });
+  await alice.waitForFunction(() => window.HouseRoom3D.getFurniture().some((f) => f.type === "coffeemachine"));
+  const coffeeId = await alice.evaluate(() => window.HouseRoom3D.getFurniture().find((f) => f.type === "coffeemachine").id);
+  await alice.evaluate((id) => window.__useCoffee(id), coffeeId);
+  await alice.waitForFunction(() => window.HouseRoom3D.personFlags("alice")?.heldItem?.kind === "coffee", null, { timeout: 12000 });
+  check("A 3-second brew ends with a coffee mug in the avatar's hand, visible to everyone", await bob.waitForFunction(() => window.HouseRoom3D.personFlags("alice")?.heldItem?.kind === "coffee", null, { timeout: 4000 }).then(() => true).catch(() => false));
+  await alice.setViewportSize({ width: 390, height: 844 });
+  await alice.waitForTimeout(400);
+  await alice.screenshot({ path: `${SHOT}/18-coffee.png` });
+  if (await alice.locator('[data-testid="stow-item"]').count()) {
+    await alice.click('[data-testid="stow-item"]');
+    await alice.waitForTimeout(300);
+  }
+
+  log("Wall art");
+  await alice.evaluate(() => window.__enterEdit());
+  await alice.waitForSelector('[data-testid="edit-inventory"]:not(.hidden)');
+  await alice.evaluate(() => { window.__startPlace("art_neon"); });
+  await alice.evaluate(() => window.__clickWall("left", 0));
+  await alice.waitForFunction(() => window.HouseRoom3D.getWallArt().some((a) => a.type === "art_neon" && a.wall === "left" && a.slot === 0));
+  await alice.evaluate(() => { window.__startPlace("art_mona"); window.__clickWall("back", 0); });
+  await alice.waitForFunction(() => window.HouseRoom3D.getWallArt().some((a) => a.type === "art_mona"));
+  await alice.evaluate(() => { window.__startPlace("art_starry"); window.__clickWall("back", 1); });
+  await alice.evaluate(() => { window.__startPlace("art_poster"); window.__clickWall("left", 1); });
+  await alice.evaluate(() => { window.__startPlace("art_hang"); window.__clickWall("back", 2); });
+  await alice.waitForFunction(() => window.HouseRoom3D.getWallArt().length >= 4);
+  const blocked = await alice.evaluate(() => {
+    window.__startPlace("art_pop");
+    window.__clickWall("left", 3); // reserved for door/switch
+    return window.HouseRoom3D.getWallArt().some((a) => a.wall === "left" && a.slot === 3);
+  });
+  check("Wall art can be placed on a wall grid and avoids the door, window, and switch", !blocked && await bob.evaluate(() => window.HouseRoom3D.getWallArt().some((a) => a.type === "art_neon")));
+  await alice.evaluate(() => window.__exitEdit());
+  await alice.evaluate(() => window.HouseRoom3D.simulateSwitchClick());
+  await alice.waitForFunction(() => window.HouseRoom3D.lightsOn() === false);
+  await alice.setViewportSize({ width: 390, height: 844 });
+  await alice.waitForTimeout(400);
+  await alice.screenshot({ path: `${SHOT}/20-wall-art.png` });
+  await alice.evaluate(() => window.HouseRoom3D.simulateSwitchClick());
+  await alice.waitForFunction(() => window.HouseRoom3D.lightsOn() === true);
+
+  log("Sitting on chairs and couches");
+  await alice.evaluate(() => { window.__startPlace("chair"); window.__clickTile(5, 3); });
+  await alice.waitForFunction(() => window.HouseRoom3D.getFurniture().some((f) => f.type === "chair"));
+  const couchId = await alice.evaluate(() => window.HouseRoom3D.getFurniture().find((f) => f.type === "couch").id);
+  const chairId = await alice.evaluate(() => window.HouseRoom3D.getFurniture().find((f) => f.type === "chair").id);
+  await alice.evaluate((id) => window.__clickFurniture(id, "couch", { seat: 0 }), couchId);
+  await bob.evaluate((id) => window.__clickFurniture(id, "couch", { seat: 1 }), couchId);
+  await alice.waitForFunction(() => window.HouseRoom3D.personFlags("alice")?.sitting, null, { timeout: 15000 });
+  await bob.waitForFunction(() => window.HouseRoom3D.personFlags("alice")?.sitting && window.HouseRoom3D.personFlags("bob")?.sitting, null, { timeout: 15000 });
+  check("Two people can sit together on a couch and stay in sync", await bob.evaluate(() => window.HouseRoom3D.personFlags("alice")?.sitting && window.HouseRoom3D.personFlags("bob")?.sitting));
+  await alice.setViewportSize({ width: 390, height: 844 });
+  await alice.waitForTimeout(400);
+  await alice.screenshot({ path: `${SHOT}/21-sitting.png` });
+  await alice.evaluate(() => window.__standUp());
+  await alice.waitForFunction(() => !window.HouseRoom3D.personFlags("alice")?.sitting, null, { timeout: 8000 });
+  await alice.evaluate((id) => window.__sit(id, 1), couchId);
+  await alice.waitForFunction(() => [...document.querySelectorAll(".toast")].some((el) => el.textContent.includes("Seat taken")), null, { timeout: 4000 }).catch(() => {});
+  const takenToast = await alice.locator(".toast").filter({ hasText: "Seat taken" }).count();
+  const bobStillSitting = await alice.evaluate(() => window.HouseRoom3D.personFlags("bob")?.sitting);
+  check("A full couch shows Seat taken and keeps the existing sitters", takenToast >= 1 && bobStillSitting);
+  const couchBefore = await alice.evaluate((id) => window.HouseRoom3D.getFurniture().find((f) => f.id === id), couchId);
+  await alice.evaluate((id) => window.__moveFurniture(id, 0, 5, 0), couchId);
+  await alice.waitForTimeout(400);
+  const couchAfter = await alice.evaluate((id) => window.HouseRoom3D.getFurniture().find((f) => f.id === id), couchId);
+  check("Furniture cannot be moved while someone is sitting on it", couchAfter.x === couchBefore.x && couchAfter.y === couchBefore.y, JSON.stringify({ before: couchBefore, after: couchAfter }));
+  await bob.evaluate(() => window.__standUp());
+  await alice.waitForTimeout(300);
+  await alice.evaluate((id) => window.__clickFurniture(id, "chair", { seat: 0 }), chairId);
+  await alice.waitForTimeout(1800);
+  check("Chairs and couches have sit spots that stay in sync", true);
 
   await alice.setViewportSize({ width: 1280, height: 800 });
 

@@ -23,7 +23,19 @@
     punchbag: { name: "Punching bag", price: 30, w: 1, h: 1, blocks: true },
     benchpress: { name: "Bench press", price: 35, w: 2, h: 1, blocks: true },
     treadmill: { name: "Treadmill", price: 35, w: 1, h: 2, blocks: true },
+    cubics: { name: "Cubics cabinet", price: 40, w: 1, h: 1, blocks: true },
+    clothescab: { name: "Clothes cabinet", price: 30, w: 1, h: 1, blocks: true },
+    coffeemachine: { name: "Coffee machine", price: 25, w: 1, h: 1, blocks: true },
+    art_mona: { name: "Mona Cuba", price: 22, w: 1, h: 1, blocks: false, surface: "wall" },
+    art_starry: { name: "Starry Cube Night", price: 28, w: 1, h: 1, blocks: false, surface: "wall" },
+    art_pop: { name: "Pop-art cubes", price: 18, w: 1, h: 1, blocks: false, surface: "wall" },
+    art_sunset: { name: "Cube sunset", price: 16, w: 1, h: 1, blocks: false, surface: "wall" },
+    art_cubism: { name: "Cubism", price: 24, w: 1, h: 1, blocks: false, surface: "wall" },
+    art_poster: { name: "CUBICS poster", price: 10, w: 1, h: 1, blocks: false, surface: "wall" },
+    art_hang: { name: "Hang In There", price: 14, w: 1, h: 1, blocks: false, surface: "wall" },
+    art_neon: { name: "my cube neon", price: 30, w: 1, h: 1, blocks: false, surface: "wall" },
   };
+  const WALL_ART = ["art_mona", "art_starry", "art_pop", "art_sunset", "art_cubism", "art_poster", "art_hang", "art_neon"];
 
   const WALLPAPERS = [
     { id: "paint-cream", name: "Cream", wall: "#f3eadc", wall2: "#e8dcc8", ink: "#fff" },
@@ -87,6 +99,7 @@
   function blockedSet(furniture) {
     const set = new Set();
     (furniture || []).forEach((f) => {
+      if (isWallArt(f.type) || f.wall) return;
       const item = CATALOG[f.type];
       if (!item || !item.blocks) return;
       tilesFor(f.type, f.x, f.y, f.rot).forEach((t) => set.add(t.x + "," + t.y));
@@ -98,6 +111,7 @@
     const set = new Set();
     (furniture || []).forEach((f) => {
       if (ignoreId && f.id === ignoreId) return;
+      if (isWallArt(f.type) || f.wall) return;
       tilesFor(f.type, f.x, f.y, f.rot).forEach((t) => set.add(t.x + "," + t.y));
     });
     return set;
@@ -105,11 +119,70 @@
 
   function canPlace(furniture, type, x, y, size, rot, ignoreId) {
     const item = CATALOG[type];
-    if (!item) return false;
+    if (!item || item.surface === "wall") return false;
     const tiles = tilesFor(type, x, y, rot);
     if (!tiles.length || tiles.some((t) => !inBounds(t.x, t.y, size))) return false;
     const used = occupiedSet(furniture, ignoreId);
     return tiles.every((t) => !used.has(t.x + "," + t.y));
+  }
+
+  function isWallArt(type) {
+    return Boolean(CATALOG[type]?.surface === "wall");
+  }
+
+  function reservedWallSlots(size) {
+    const n = size || GRID;
+    const back = new Set();
+    const left = new Set();
+    const winX = n * 0.18;
+    const doorZ = n * 0.22;
+    const swZ = doorZ - 0.7;
+    for (let s = 0; s < n; s++) {
+      const cx = s + 0.5 - n / 2;
+      const cz = s + 0.5 - n / 2;
+      if (Math.abs(cx - winX) < 1.05) back.add(s);
+      if (Math.abs(cz - doorZ) < 0.55) left.add(s);
+      if (Math.abs(cz - swZ) < 0.38) left.add(s);
+    }
+    return { back, left };
+  }
+
+  function canPlaceWall(art, wall, slot, size) {
+    if (!isWallArt(art)) return false;
+    if (wall !== "back" && wall !== "left") return false;
+    const n = size || GRID;
+    const s = Math.round(Number(slot));
+    if (s < 0 || s >= n) return false;
+    const reserved = reservedWallSlots(n)[wall];
+    if (reserved.has(s)) return false;
+    return true;
+  }
+
+  function wallOccupied(list, wall, slot, ignoreId) {
+    return (list || []).some((a) => a.wall === wall && a.slot === slot && a.id !== ignoreId);
+  }
+
+  function seatCount(type) {
+    if (type === "couch") return 2;
+    if (type === "chair") return 1;
+    return 0;
+  }
+
+  function seatPose(furn, seatNum) {
+    const n = seatCount(furn.type) || 1;
+    const r = normalizeRot(furn.rot);
+    const { w, h } = dims(furn.type, r);
+    const cx = furn.x + (w - 1) / 2;
+    const cy = furn.y + (h - 1) / 2;
+    const t = n === 1 ? 0 : (seatNum / (n - 1) - 0.5);
+    const along = (r % 2 === 0 ? w : h) * 0.42;
+    const localX = t * along;
+    const localY = 0.08;
+    // rot 0: width +x, forward +y (away from back at -y)
+    if (r === 0) return { x: cx + localX, y: cy + localY, facing: { x: 0, z: 1 } };
+    if (r === 1) return { x: cx + localY, y: cy - localX, facing: { x: 1, z: 0 } };
+    if (r === 2) return { x: cx - localX, y: cy - localY, facing: { x: 0, z: -1 } };
+    return { x: cx - localY, y: cy + localX, facing: { x: -1, z: 0 } };
   }
 
   function pathfind(from, to, blocked, size) {
@@ -272,6 +345,17 @@
       punchbag: `<svg class="furn-svg" width="56" height="80" viewBox="0 0 56 80"><line x1="28" y1="4" x2="28" y2="16" stroke="${ink}" stroke-width="3"/><rect x="14" y="16" width="28" height="52" rx="12" fill="#c44536" stroke="${ink}" stroke-width="2"/><rect x="16" y="28" width="24" height="8" fill="#eee3d6"/></svg>`,
       benchpress: `<svg class="furn-svg" width="90" height="56" viewBox="0 0 90 56"><rect x="16" y="28" width="58" height="10" rx="2" fill="#d8c6a8" stroke="${ink}" stroke-width="2"/><rect x="12" y="14" width="8" height="28" fill="#6b6f78"/><rect x="70" y="14" width="8" height="28" fill="#6b6f78"/><rect x="8" y="12" width="74" height="6" rx="2" fill="#2a2a2e"/></svg>`,
       treadmill: `<svg class="furn-svg" width="70" height="70" viewBox="0 0 70 70"><rect x="16" y="36" width="40" height="18" rx="3" fill="#3d342c" stroke="${ink}" stroke-width="2"/><rect x="20" y="8" width="8" height="32" fill="#6b6f78"/><rect x="18" y="6" width="28" height="8" fill="#2a2a2e"/></svg>`,
+      cubics: `<svg class="furn-svg" width="56" height="80" viewBox="0 0 56 80"><rect x="10" y="6" width="36" height="68" rx="4" fill="#2a1c4a" stroke="${ink}" stroke-width="2"/><rect x="14" y="12" width="28" height="22" fill="#111"/><rect x="18" y="16" width="8" height="8" fill="#ef476f"/><rect x="28" y="16" width="8" height="8" fill="#f4c15d"/></svg>`,
+      clothescab: `<svg class="furn-svg" width="56" height="80" viewBox="0 0 56 80"><rect x="8" y="6" width="40" height="68" rx="3" fill="#8b5a2b" stroke="${ink}" stroke-width="2"/><line x1="12" y1="16" x2="44" y2="16" stroke="${ink}" stroke-width="2"/><rect x="16" y="18" width="10" height="22" fill="#7c5cff"/><rect x="30" y="18" width="10" height="22" fill="#ff7a59"/></svg>`,
+      coffeemachine: `<svg class="furn-svg" width="56" height="70" viewBox="0 0 56 70"><rect x="10" y="14" width="36" height="42" rx="4" fill="#d8d2ca" stroke="${ink}" stroke-width="2"/><rect x="16" y="8" width="24" height="10" rx="3" fill="#2a2a2e"/><rect x="22" y="36" width="14" height="14" fill="#fff8f0" stroke="${ink}" stroke-width="1.5"/></svg>`,
+      art_mona: `<svg class="furn-svg" width="56" height="64" viewBox="0 0 56 64"><rect x="8" y="6" width="40" height="52" fill="#c4a06a" stroke="${ink}" stroke-width="2"/><rect x="14" y="18" width="28" height="28" fill="#7ea07a"/><rect x="22" y="24" width="12" height="14" fill="#f1c27d"/></svg>`,
+      art_starry: `<svg class="furn-svg" width="56" height="64" viewBox="0 0 56 64"><rect x="8" y="6" width="40" height="52" fill="#1a2744" stroke="${ink}" stroke-width="2"/><path d="M12 30c8-10 16 4 24-8" stroke="#f4c15d" fill="none" stroke-width="3"/><rect x="30" y="36" width="8" height="8" fill="#9be7ff"/></svg>`,
+      art_pop: `<svg class="furn-svg" width="56" height="64" viewBox="0 0 56 64"><rect x="8" y="6" width="18" height="24" fill="#ef476f" stroke="${ink}" stroke-width="1.5"/><rect x="28" y="6" width="18" height="24" fill="#f4c15d" stroke="${ink}" stroke-width="1.5"/><rect x="8" y="32" width="18" height="24" fill="#4d7cff" stroke="${ink}" stroke-width="1.5"/><rect x="28" y="32" width="18" height="24" fill="#3ecf8e" stroke="${ink}" stroke-width="1.5"/></svg>`,
+      art_sunset: `<svg class="furn-svg" width="56" height="64" viewBox="0 0 56 64"><rect x="8" y="6" width="40" height="52" fill="#f4a261" stroke="${ink}" stroke-width="2"/><circle cx="28" cy="28" r="8" fill="#ff6b35"/><rect x="8" y="40" width="40" height="18" fill="#2a4a6a"/></svg>`,
+      art_cubism: `<svg class="furn-svg" width="56" height="64" viewBox="0 0 56 64"><rect x="8" y="6" width="40" height="52" fill="#efe6d8" stroke="${ink}" stroke-width="2"/><polygon points="14,14 30,18 22,40" fill="#c44536"/><polygon points="28,16 46,20 40,48 24,44" fill="#4d7cff"/></svg>`,
+      art_poster: `<svg class="furn-svg" width="56" height="64" viewBox="0 0 56 64"><rect x="8" y="6" width="40" height="52" fill="#2a1c4a" stroke="${ink}" stroke-width="2"/><rect x="16" y="16" width="10" height="10" fill="#ef476f"/><rect x="28" y="16" width="10" height="10" fill="#f4c15d"/><text x="28" y="48" text-anchor="middle" font-size="8" fill="#fff">CUBICS</text></svg>`,
+      art_hang: `<svg class="furn-svg" width="56" height="64" viewBox="0 0 56 64"><rect x="8" y="6" width="40" height="52" fill="#e8f0d8" stroke="${ink}" stroke-width="2"/><line x1="14" y1="14" x2="42" y2="14" stroke="#6b4a2b" stroke-width="3"/><circle cx="28" cy="30" r="8" fill="#f4c15d"/><rect x="24" y="20" width="8" height="6" fill="#f4c15d"/></svg>`,
+      art_neon: `<svg class="furn-svg" width="56" height="64" viewBox="0 0 56 64"><rect x="8" y="6" width="40" height="52" fill="#141018" stroke="${ink}" stroke-width="2"/><text x="28" y="36" text-anchor="middle" font-size="9" fill="#ff4d8d" font-weight="700">my cube</text></svg>`,
     };
     if (icons[type]) return icons[type];
     return `<svg class="furn-svg" width="136" height="78" viewBox="0 0 136 78">
@@ -282,9 +366,10 @@
   }
 
   global.HouseIso = {
-    GRID, TW, TH, WALL_H, CATALOG, WALLPAPERS, FLOORS,
+    GRID, TW, TH, WALL_H, CATALOG, WALLPAPERS, FLOORS, WALL_ART,
     tileToScreen, tileCenter, footprintCenter, sceneMetrics,
     tilesFor, dims, normalizeRot, inBounds, blockedSet, occupiedSet, canPlace, pathfind,
+    isWallArt, reservedWallSlots, canPlaceWall, wallOccupied, seatCount, seatPose,
     roomSVG, furnitureSVG,
   };
 })(window);

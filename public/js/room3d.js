@@ -1,5 +1,8 @@
 import * as THREE from "three";
 import { OrbitControls } from "../vendor/OrbitControls.js";
+import { drawCubeChannel, programAt } from "./cubechannel.js";
+import { drawCubics } from "./cubics.js";
+import { drawWallArt } from "./wallart.js";
 
 const WALL_H = 3.15;
 
@@ -200,9 +203,10 @@ function applyCharacterPose(ud, t, walking, sitting) {
     return;
   }
   if (ud.heldItem && ud.rightArm) {
-    const dur = ud.heldItem.kind === "sandwich" ? 7500 : ud.heldItem.kind === "soda" ? 6500 : 6000;
+    const dur = ud.heldItem.kind === "sandwich" ? 7500 : ud.heldItem.kind === "soda" ? 6500 : ud.heldItem.kind === "coffee" ? 10800 : 6000;
     const elapsed = Math.max(0, Date.now() - (ud.heldItem.startedAt || 0));
-    const cycle = (elapsed % 1600) / 1600;
+    const cycleMs = ud.heldItem.kind === "coffee" ? 1800 : 1600;
+    const cycle = (elapsed % cycleMs) / cycleMs;
     const sip = Math.sin(Math.min(1, cycle * 1.4) * Math.PI) * (cycle < 0.7 ? 1 : 0);
     if (walking) {
       const s = Math.sin(t * 9.4 + phase);
@@ -456,6 +460,14 @@ function buildHeldItem(kind) {
     const tab = mesh(new THREE.BoxGeometry(0.02, 0.004, 0.012), "#c5c9ce");
     tab.position.set(0, 0.062, 0.008);
     g.add(can, top, tab);
+  } else if (kind === "coffee") {
+    const cup = mesh(new THREE.CylinderGeometry(0.04, 0.035, 0.07, 12), "#fff8f0");
+    const coffee = mesh(new THREE.CylinderGeometry(0.032, 0.032, 0.02, 10), "#3d2314");
+    coffee.position.y = 0.028;
+    const handle = mesh(new THREE.TorusGeometry(0.025, 0.006, 6, 10, Math.PI), "#fff8f0");
+    handle.rotation.y = Math.PI / 2;
+    handle.position.x = 0.04;
+    g.add(cup, coffee, handle);
   } else {
     const bottle = mesh(new THREE.CylinderGeometry(0.028, 0.032, 0.12, 12), "#cfefff");
     bottle.material.transparent = true;
@@ -929,6 +941,12 @@ export function buildFurnitureMesh(type, ghost = false, ok = true) {
     a1.position.set(-0.86, 0.36, 0);
     a2.position.set(0.86, 0.36, 0);
     add(seat); add(back); add(a1); add(a2);
+    [-0.42, 0.42].forEach((x, i) => {
+      const hit = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.4, 0.7), new THREE.MeshBasicMaterial({ visible: false }));
+      hit.position.set(x, 0.4, 0.05);
+      hit.userData.seat = i;
+      g.add(hit);
+    });
   } else if (type === "bed") {
     const frame = new THREE.Mesh(new THREE.BoxGeometry(1.85, 0.22, 2.75), paint("#d7c4a3"));
     frame.position.y = 0.22;
@@ -946,7 +964,23 @@ export function buildFurnitureMesh(type, ghost = false, ok = true) {
     stand.position.y = 0.22;
     const bezel = new THREE.Mesh(new THREE.BoxGeometry(1.42, 0.84, 0.08), paint("#111"));
     bezel.position.set(0, 0.85, 0);
-    const screenMat = ghost ? paint("#1a1c22") : new THREE.MeshStandardMaterial({ color: "#151820", emissive: "#102040", emissiveIntensity: 0.15, roughness: 0.3 });
+    let screenMat;
+    if (ghost) screenMat = paint("#1a1c22");
+    else {
+      const canvas = document.createElement("canvas");
+      canvas.width = 512; canvas.height = 288;
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#151820";
+      ctx.fillRect(0, 0, 512, 288);
+      const tex = new THREE.CanvasTexture(canvas);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      screenMat = new THREE.MeshStandardMaterial({
+        map: tex, emissive: "#ffffff", emissiveMap: tex, emissiveIntensity: 0.15, roughness: 0.35,
+      });
+      g.userData.tvCanvas = canvas;
+      g.userData.tvCtx = ctx;
+      g.userData.tvTex = tex;
+    }
     const screen = new THREE.Mesh(new THREE.BoxGeometry(1.28, 0.7, 0.04), screenMat);
     screen.position.set(0, 0.85, 0.05);
     add(stand); add(bezel); add(screen);
@@ -1010,6 +1044,10 @@ export function buildFurnitureMesh(type, ghost = false, ok = true) {
       add(leg);
     });
     add(seat); add(back);
+    const hit = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.4, 0.5), new THREE.MeshBasicMaterial({ visible: false }));
+    hit.position.set(0, 0.5, 0);
+    hit.userData.seat = 0;
+    g.add(hit);
   } else if (type === "bookshelf") {
     const shell = new THREE.Mesh(new THREE.BoxGeometry(1.75, 1.45, 0.38), paint("#8b5a2b"));
     shell.position.y = 0.74;
@@ -1118,6 +1156,85 @@ export function buildFurnitureMesh(type, ghost = false, ok = true) {
     const console = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.08, 0.22), paint("#2a2a2e"));
     console.position.set(0, 1.0, -0.62);
     add(console);
+  } else if (type === "cubics") {
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.7, 1.7, 0.62), paint("#2a1c4a"));
+    body.position.y = 0.85;
+    add(body);
+    const bezel = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.48, 0.06), paint("#111"));
+    bezel.position.set(0, 1.25, 0.32);
+    add(bezel);
+    const canvas = document.createElement("canvas");
+    canvas.width = 256; canvas.height = 320;
+    const ctx = canvas.getContext("2d");
+    drawCubics(ctx, 256, 320, null, 0, []);
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const cubMat = ghost ? paint("#111") : new THREE.MeshStandardMaterial({
+      map: tex, emissive: "#ffffff", emissiveMap: tex, emissiveIntensity: 0.7, roughness: 0.4,
+    });
+    const cubScreen = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.4, 0.03), cubMat);
+    cubScreen.position.set(0, 1.25, 0.35);
+    add(cubScreen);
+    const panel = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.28, 0.3), paint("#1a1030"));
+    panel.position.set(0, 0.85, 0.22);
+    add(panel);
+    const cubebase = new THREE.Mesh(new THREE.BoxGeometry(0.78, 0.12, 0.7), paint("#1a1030"));
+    cubebase.position.y = 0.06;
+    add(cubebase);
+    if (!ghost) {
+      g.userData.arcadeCanvas = canvas;
+      g.userData.arcadeCtx = ctx;
+      g.userData.arcadeTex = tex;
+      g.userData.arcadeScreen = cubScreen;
+    }
+  } else if (type === "clothescab") {
+    const cab = new THREE.Mesh(new THREE.BoxGeometry(0.85, 1.7, 0.5), paint("#8b5a2b"));
+    cab.position.y = 0.85;
+    add(cab);
+    const inner = new THREE.Mesh(new THREE.BoxGeometry(0.72, 1.4, 0.2), paint("#c4a06a"));
+    inner.position.set(0, 0.9, 0.16);
+    add(inner);
+    const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.68, 8), paint("#c5c9ce"));
+    rod.rotation.z = Math.PI / 2;
+    rod.position.set(0, 1.45, 0.18);
+    add(rod);
+    [["#7c5cff", -0.22], ["#ff7a59", 0], ["#3ecf8e", 0.22]].forEach(([c, x]) => {
+      const shirt = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.32, 0.06), paint(c));
+      shirt.position.set(x, 1.2, 0.2);
+      add(shirt);
+      const hook = new THREE.Mesh(new THREE.TorusGeometry(0.03, 0.008, 6, 10, Math.PI), paint("#c5c9ce"));
+      hook.position.set(x, 1.4, 0.2);
+      hook.rotation.y = Math.PI / 2;
+      add(hook);
+    });
+  } else if (type === "coffeemachine") {
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.7, 0.4), paint("#d8d2ca"));
+    body.position.y = 0.55;
+    add(body);
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.16, 0.3), paint("#2a2a2e"));
+    head.position.set(0, 0.98, 0);
+    add(head);
+    const tray = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.04, 0.28), paint("#8a8f96"));
+    tray.position.set(0, 0.28, 0.08);
+    add(tray);
+    const mug = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.05, 0.1, 12), paint("#fff8f0"));
+    mug.position.set(0, 0.36, 0.1);
+    add(mug);
+    g.userData.mug = mug;
+    const stream = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.28, 6), paint("#3d2314"));
+    stream.position.set(0, 0.7, 0.1);
+    stream.visible = false;
+    add(stream);
+    g.userData.pour = stream;
+    const steam = new THREE.Group();
+    steam.position.set(0, 0.85, 0.1);
+    for (let i = 0; i < 5; i++) {
+      const puff = new THREE.Mesh(new THREE.SphereGeometry(0.04, 8, 8), new THREE.MeshBasicMaterial({ color: "#f4f0ea", transparent: true, opacity: 0.35 }));
+      puff.userData.phase = i;
+      steam.add(puff);
+    }
+    g.add(steam);
+    g.userData.steam = steam;
   } else {
     const seat = new THREE.Mesh(new THREE.BoxGeometry(1.85, 0.28, 0.72), paint("#6d7c8a"));
     seat.position.y = 0.28;
@@ -1246,7 +1363,8 @@ export function createRoom3D(container) {
   const petsGroup = new THREE.Group();
   const gridGroup = new THREE.Group();
   const fxGroup = new THREE.Group();
-  scene.add(tilesGroup, wallsGroup, furnitureGroup, ghostGroup, peopleGroup, petsGroup, gridGroup, fxGroup);
+  const wallArtGroup = new THREE.Group();
+  scene.add(tilesGroup, wallsGroup, furnitureGroup, ghostGroup, peopleGroup, petsGroup, gridGroup, fxGroup, wallArtGroup);
 
   let ghost = null;
   let ghostState = null;
@@ -1270,6 +1388,13 @@ export function createRoom3D(container) {
   let uses = {};
   let chessMap = {};
   let tvs = {};
+  let wallArtList = [];
+  let arcade = {};
+  let serverTime = Date.now();
+  let serverTimeAt = Date.now();
+  let wallGhost = null;
+  let onWallClick = null;
+  let onWallHover = null;
   let windowLightRef = null;
   let switchMesh = null;
 
@@ -1413,6 +1538,7 @@ export function createRoom3D(container) {
     gridSize = next;
     buildFloor();
     buildWalls();
+    setWallArt(wallArtList);
     resize();
   }
 
@@ -1468,7 +1594,9 @@ export function createRoom3D(container) {
   function getGhost() { return ghostState ? { ...ghostState } : null; }
 
   function findFurnMesh(id) {
-    return furnitureGroup.children.find((c) => c.userData.furnitureId === id) || null;
+    return furnitureGroup.children.find((c) => c.userData.furnitureId === id)
+      || wallArtGroup.children.find((c) => c.userData.artId === id)
+      || null;
   }
 
   function highlightFurniture(id) {
@@ -1513,6 +1641,7 @@ export function createRoom3D(container) {
     if (windowLightRef) windowLightRef.intensity = on ? 0.85 : 0.4;
     renderer.setClearColor(on ? 0xb7c4d6 : 0x1a1630, 1);
     if (switchMesh) switchMesh.material.color.set(on ? "#f4c15d" : "#6b6f78");
+    refreshArt();
   }
 
   function setLights(on) {
@@ -1524,6 +1653,112 @@ export function createRoom3D(container) {
   function setUses(next) { uses = next || {}; refreshInteractives(); }
   function setChessMap(next) { chessMap = next || {}; refreshInteractives(); }
   function setTvs(next) { tvs = next || {}; refreshInteractives(); }
+  function setServerTime(t) {
+    serverTime = Number(t) || Date.now();
+    serverTimeAt = Date.now();
+  }
+  function nowServer() {
+    return serverTime + (Date.now() - serverTimeAt);
+  }
+  function tvProgram() {
+    return programAt(nowServer());
+  }
+
+  function wallWorld(wall, slot) {
+    const pos = new THREE.Vector3();
+    if (wall === "back") {
+      pos.set(slot + 0.5 - gridSize / 2, 1.55, -gridSize / 2 + 0.08);
+    } else {
+      pos.set(-gridSize / 2 + 0.08, 1.55, slot + 0.5 - gridSize / 2);
+    }
+    return pos;
+  }
+
+  function makeArtMesh(type, ghost = false, ok = true) {
+    const canvas = document.createElement("canvas");
+    canvas.width = 256; canvas.height = 320;
+    const ctx = canvas.getContext("2d");
+    drawWallArt(ctx, 256, 320, type, lightsOn, 0);
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const mat = new THREE.MeshStandardMaterial({
+      map: tex,
+      roughness: 0.55,
+      metalness: 0.05,
+      transparent: ghost,
+      opacity: ghost ? 0.55 : 1,
+      emissive: type === "art_neon" ? new THREE.Color("#ff4d8d") : new THREE.Color("#000"),
+      emissiveIntensity: 0,
+      color: ghost ? (ok ? "#b8ffd0" : "#ffb0b0") : "#ffffff",
+    });
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(0.72, 0.9), mat);
+    mesh.userData.artCanvas = canvas;
+    mesh.userData.artCtx = ctx;
+    mesh.userData.artTex = tex;
+    mesh.userData.artType = type;
+    return mesh;
+  }
+
+  function placeArtMesh(m, wall, slot) {
+    const pos = wallWorld(wall, slot);
+    m.position.copy(pos);
+    m.rotation.y = wall === "back" ? 0 : Math.PI / 2;
+  }
+
+  function setWallArt(list) {
+    wallArtList = list || [];
+    wallArtGroup.clear();
+    wallArtList.forEach((a) => {
+      const m = makeArtMesh(a.type);
+      placeArtMesh(m, a.wall, a.slot);
+      m.userData.artId = a.id;
+      m.userData.wall = a.wall;
+      m.userData.slot = a.slot;
+      wallArtGroup.add(m);
+    });
+    refreshArt();
+  }
+
+  function refreshArt() {
+    wallArtGroup.children.forEach((m) => {
+      if (!m.userData.artCtx) return;
+      drawWallArt(m.userData.artCtx, 256, 320, m.userData.artType, lightsOn, performance.now() / 1000);
+      m.userData.artTex.needsUpdate = true;
+      if (m.material && m.userData.artType === "art_neon") {
+        m.material.emissiveIntensity = lightsOn ? 0.2 : 1.1;
+      }
+    });
+  }
+
+  function setWallGhost(type, wall, slot, ok) {
+    if (wallGhost) {
+      wallArtGroup.remove(wallGhost);
+      wallGhost = null;
+    }
+    if (!type || wall == null || slot == null) return;
+    wallGhost = makeArtMesh(type, true, ok);
+    placeArtMesh(wallGhost, wall, slot);
+    wallGhost.userData.ghost = true;
+    wallArtGroup.add(wallGhost);
+  }
+
+  function wallFromPoint(point) {
+    const backZ = -gridSize / 2;
+    const leftX = -gridSize / 2;
+    const dBack = Math.abs(point.z - backZ);
+    const dLeft = Math.abs(point.x - leftX);
+    if (dBack <= dLeft && dBack < 0.45) {
+      const slot = Math.round(point.x + gridSize / 2 - 0.5);
+      if (slot >= 0 && slot < gridSize) return { wall: "back", slot };
+    }
+    if (dLeft < 0.45) {
+      const slot = Math.round(point.z + gridSize / 2 - 0.5);
+      if (slot >= 0 && slot < gridSize) return { wall: "left", slot };
+    }
+    return null;
+  }
+
+  function setArcade(next) { arcade = next || {}; refreshInteractives(); }
 
   function layoutChessPieces(root, fen) {
     if (!root) return;
@@ -1726,6 +1961,29 @@ export function createRoom3D(container) {
         return;
       }
     }
+    const artHit = pick(e, wallArtGroup.children);
+    if (artHit) {
+      let obj = artHit.object;
+      while (obj && !obj.userData.artId && !obj.userData.ghost) obj = obj.parent;
+      if (obj?.userData.artId) {
+        onFurnitureClick?.(obj.userData.artId, obj.userData.artType, { wall: obj.userData.wall, slot: obj.userData.slot, wallArt: true });
+        return;
+      }
+    }
+    const wallSpot = wallFromPoint(swHit?.point || artHit?.point || (pick(e, [ ...wallsGroup.children ])?.point));
+    if (!wallSpot) {
+      const wallHit = pick(e, wallsGroup.children);
+      if (wallHit) {
+        const spot = wallFromPoint(wallHit.point);
+        if (spot && onWallClick) {
+          onWallClick(spot.wall, spot.slot);
+          return;
+        }
+      }
+    } else if (onWallClick) {
+      onWallClick(wallSpot.wall, wallSpot.slot);
+      return;
+    }
     const furnHit = pick(e, furnitureGroup.children);
     if (furnHit) {
       let obj = furnHit.object;
@@ -1755,6 +2013,11 @@ export function createRoom3D(container) {
       } else hoverMesh.visible = false;
     }
     if (placing && tile) onTileHover?.(tile.tx, tile.ty);
+    const wallHit = pick(e, wallsGroup.children);
+    if (wallHit) {
+      const spot = wallFromPoint(wallHit.point);
+      if (spot) onWallHover?.(spot.wall, spot.slot);
+    }
   });
   renderer.domElement.addEventListener("pointerleave", () => {
     hovering = false;
@@ -1822,12 +2085,43 @@ export function createRoom3D(container) {
         // visual run pulse
         m.userData.belt.material.color.setHSL(0, 0, 0.12 + 0.05 * Math.sin(t * 12));
       }
-      if (m.userData.screen && m.userData.screen.userData.tvOn && m.userData.screen.material?.emissive) {
-        const hue = (t * 0.15 + (id || "").length) % 1;
-        m.userData.screen.material.emissive.setHSL(hue, 0.65, 0.45);
-        m.userData.screen.material.color.setHSL(hue, 0.4, 0.25);
+      if (m.userData.tvCtx && m.userData.screen) {
+        const on = Boolean(tvs[id]?.on);
+        m.userData.screen.userData.tvOn = on;
+        if (on) {
+          drawCubeChannel(m.userData.tvCtx, 512, 288, nowServer());
+          m.userData.tvTex.needsUpdate = true;
+          if (m.userData.screen.material) m.userData.screen.material.emissiveIntensity = 0.85;
+        } else if (m.userData.screen.material) {
+          m.userData.tvCtx.fillStyle = "#151820";
+          m.userData.tvCtx.fillRect(0, 0, 512, 288);
+          m.userData.tvTex.needsUpdate = true;
+          m.userData.screen.material.emissiveIntensity = 0.08;
+        }
+      }
+      if (m.userData.arcadeCtx) {
+        const cab = arcade[id];
+        drawCubics(m.userData.arcadeCtx, 256, 320, cab?.state || null, t, cab?.scores || []);
+        m.userData.arcadeTex.needsUpdate = true;
+      }
+      if (m.userData.steam) {
+        const brewing = use && use.type === "coffeemachine";
+        const age = brewing ? (Date.now() - (use.startedAt || 0)) / 1000 : 0;
+        m.userData.steam.visible = brewing;
+        if (m.userData.pour) m.userData.pour.visible = brewing && age > 1.4 && age < 3.05;
+        if (m.userData.mug) m.userData.mug.visible = !(brewing && age > 2.85);
+        if (brewing) {
+          m.userData.steam.children.forEach((puff) => {
+            const ph = puff.userData.phase || 0;
+            const k = (t * 0.8 + ph * 0.35) % 1;
+            puff.position.set(Math.sin(t * 2 + ph) * 0.04, k * 0.35, Math.cos(t * 1.6 + ph) * 0.03);
+            puff.scale.setScalar(0.4 + k);
+            puff.material.opacity = 0.4 * (1 - k);
+          });
+        }
       }
     });
+    if (Math.floor(t * 8) !== Math.floor((t - 1 / 60) * 8)) refreshArt();
     rim.position.copy(camera.position);
     controls.update();
     renderer.render(scene, camera);
@@ -1858,7 +2152,15 @@ export function createRoom3D(container) {
     setUses,
     setChessMap,
     setTvs,
+    setWallArt,
+    setWallGhost,
+    setArcade,
+    getArcade() { return arcade; },
+    setServerTime,
+    tvProgram,
+    nowServer,
     findFurnMesh,
+    getWallArt() { return wallArtList.slice(); },
     petSitting(name) { return Boolean(petMeshes.get(name)?.userData.sitting); },
     bagSwinging(id) { return Boolean(findFurnMesh(id)?.userData.swinging); },
     personFlags(name) {
@@ -1866,6 +2168,7 @@ export function createRoom3D(container) {
       if (!m) return null;
       return {
         boxing: Boolean(m.userData.boxing),
+        sitting: Boolean(m.userData.sitting),
         heldItem: m.userData.heldItem || null,
         gym: m.userData.gym || null,
         facing: m.userData.facing || null,
@@ -1878,6 +2181,9 @@ export function createRoom3D(container) {
     onTileHover(fn) { onTileHover = fn; },
     onFurnitureClick(fn) { onFurnitureClick = fn; },
     onSwitchClick(fn) { onSwitchClick = fn; },
+    onWallClick(fn) { onWallClick = fn; },
+    onWallHover(fn) { onWallHover = fn; },
+    simulateWallClick(wall, slot) { onWallClick?.(wall, slot); },
     setZoom(z) {
       camera.zoom = Number(z) || 1;
       camera.updateProjectionMatrix();
@@ -1892,8 +2198,11 @@ export function createRoom3D(container) {
     simulateSwitchClick() { onSwitchClick?.(); },
     clear() {
       setFurniture([]);
+      setWallArt([]);
+      setArcade({});
       syncPeople([]);
       setGhost(null);
+      setWallGhost(null);
     },
     dispose() {
       alive = false;
