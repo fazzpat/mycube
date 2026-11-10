@@ -3,8 +3,8 @@ import { createRoom3D, createAvatarPreview } from "./room3d.js";
 (() => {
   const socket = io({ transports: ["websocket", "polling"] });
   const $ = (sel) => document.querySelector(sel);
-  const SHOW = (el) => el.classList.remove("hidden");
-  const HIDE = (el) => el.classList.add("hidden");
+  const SHOW = (el) => el && el.classList.remove("hidden");
+  const HIDE = (el) => el && el.classList.add("hidden");
 
   window.__lastSays = [];
   window.__joinResults = [];
@@ -23,6 +23,8 @@ import { createRoom3D, createAvatarPreview } from "./room3d.js";
     room3d: null,
     preview3d: null,
     facing: new Map(),
+    creatorReturn: null,
+    phoneApp: null,
   };
 
   function setView(name) {
@@ -136,6 +138,7 @@ import { createRoom3D, createAvatarPreview } from "./room3d.js";
     const room = $("#room-coins");
     if (lobby) lobby.textContent = n;
     if (room) room.textContent = n;
+    updatePhoneBadge();
   }
 
   function showAddSheet() {
@@ -422,15 +425,8 @@ import { createRoom3D, createAvatarPreview } from "./room3d.js";
       state.people.set(p.username, rec);
     });
     $("#room-title").textContent = room.name;
-    const owner = room.owner === state.me?.username;
     $("#room-meta").textContent = `${room.locked ? "Locked" : "Open"} · ${room.people.length} here · ${room.owner}'s cube · ${room.size || 6}×${room.size || 6}`;
-    if (owner) {
-      SHOW($("#invite-btn"));
-      SHOW($("#shop-btn"));
-    } else {
-      HIDE($("#invite-btn"));
-      HIDE($("#shop-btn"));
-    }
+    updatePhoneBadge();
     const r3 = ensureRoom3D();
     r3.setGridSize(room.size || 6);
     r3.setStyle(room.wallpaper || "paint-cream", room.floorStyle || "wood");
@@ -612,30 +608,9 @@ import { createRoom3D, createAvatarPreview } from "./room3d.js";
       b.addEventListener("click", () => startPlace(b.dataset.place))
     );
 
-    const owner = state.room && state.room.owner === state.me?.username;
-    let styleHtml = "";
-    if (owner) {
-      const size = state.room.size || 6;
-      const next = size === 6 ? 8 : size === 8 ? 10 : null;
-      const cost = size === 6 ? 25 : 40;
-      const upgrade = next
-        ? `<button type="button" class="btn small" data-testid="upgrade-cube" ${ (state.me?.coins ?? 0) < cost ? "disabled" : "" }>Upgrade cube to ${next}×${next} · 🪙 ${cost}</button>`
-        : `<div class="item-sub">This cube is maxed at 10×10.</div>`;
-      styleHtml = `<h3>Upgrade cube</h3><div class="style-row" style="margin-bottom:12px">${upgrade}</div>
-      <div class="item-sub" style="margin-bottom:12px">Now ${size}×${size} tiles</div>
-      <h3>Wallpaper</h3><div class="style-row">${HouseIso.WALLPAPERS.map(
-        (w) =>
-          `<button type="button" class="style-swatch${state.room.wallpaper === w.id ? " selected" : ""}" data-wallpaper="${w.id}" style="background:${w.wall};color:#fff">${w.name}</button>`
-      ).join("")}</div>
-      <h3>Floor</h3><div class="style-row">${HouseIso.FLOORS.map(
-        (f) =>
-          `<button type="button" class="style-swatch${state.room.floorStyle === f.id ? " selected" : ""}" data-floor="${f.id}">${f.name}</button>`
-      ).join("")}</div>`;
-    }
-
     const grid = $("#shop-grid");
+    if (!grid) return;
     grid.innerHTML =
-      styleHtml +
       CATALOG.map((item) => {
         const afford = (state.me?.coins ?? 0) >= item.price;
         return `<div class="shop-item">
@@ -648,14 +623,6 @@ import { createRoom3D, createAvatarPreview } from "./room3d.js";
     grid.querySelectorAll("[data-buy]").forEach((b) =>
       b.addEventListener("click", () => socket.emit("buyFurniture", { type: b.dataset.buy }))
     );
-    grid.querySelectorAll("[data-wallpaper]").forEach((b) =>
-      b.addEventListener("click", () => socket.emit("setRoomStyle", { wallpaper: b.dataset.wallpaper }))
-    );
-    grid.querySelectorAll("[data-floor]").forEach((b) =>
-      b.addEventListener("click", () => socket.emit("setRoomStyle", { floorStyle: b.dataset.floor }))
-    );
-    const up = grid.querySelector("[data-testid=upgrade-cube]");
-    if (up) up.addEventListener("click", () => socket.emit("upgradeCube"));
   }
 
   function labelFor(type) {
@@ -669,7 +636,7 @@ import { createRoom3D, createAvatarPreview } from "./room3d.js";
     SHOW(banner);
     $("#floor").classList.add("placing");
     state.room3d?.setPlacing(type);
-    HIDE($("#shop-drawer"));
+    closePhone();
     $("#cancel-place").addEventListener("click", (e) => {
       e.stopPropagation();
       cancelPlace();
@@ -787,6 +754,310 @@ import { createRoom3D, createAvatarPreview } from "./room3d.js";
     }, 1000);
   }
 
+
+  /* ---------- in-room phone ---------- */
+  function isOwner() {
+    return Boolean(state.room && state.me && state.room.owner === state.me.username);
+  }
+
+  function spinAvailable() {
+    return Boolean(state.me?.rewards?.freeSpinAvailable);
+  }
+
+  function updatePhoneBadge() {
+    const on = spinAvailable();
+    document.querySelectorAll("[data-testid=phone-badge], [data-testid=spin-app-badge]").forEach((el) => {
+      el.classList.toggle("hidden", !on);
+    });
+  }
+
+  function tickPhoneTime() {
+    const el = $("#phone-time");
+    if (!el) return;
+    el.textContent = new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  }
+
+  function phoneOpen() {
+    return Boolean($("#phone-overlay") && !$("#phone-overlay").classList.contains("hidden"));
+  }
+
+  function showPhoneHome() {
+    document.querySelectorAll(".phone-app-screen").forEach((el) => HIDE(el));
+    SHOW($("#phone-home"));
+    state.phoneApp = "home";
+  }
+
+  function closePhone() {
+    HIDE($("#phone-overlay"));
+    document.body.classList.remove("phone-open");
+    $("#phone-btn")?.setAttribute("aria-expanded", "false");
+    state.phoneApp = null;
+  }
+
+  const OWNER_APPS = new Set(["edit", "shop", "invite", "lock", "upgrade"]);
+  const APP_TITLES = {
+    edit: "Edit Room",
+    shop: "Shop",
+    invite: "Invite",
+    lock: "Lock",
+    upgrade: "Upgrade",
+  };
+
+  function openPhone(app) {
+    tickPhoneTime();
+    updatePhoneBadge();
+    SHOW($("#phone-overlay"));
+    document.body.classList.add("phone-open");
+    $("#phone-btn")?.setAttribute("aria-expanded", "true");
+    if (app) openPhoneApp(app);
+    else showPhoneHome();
+  }
+
+  function openPhoneApp(app) {
+    if (!phoneOpen()) {
+      tickPhoneTime();
+      updatePhoneBadge();
+      SHOW($("#phone-overlay"));
+      document.body.classList.add("phone-open");
+      $("#phone-btn")?.setAttribute("aria-expanded", "true");
+    }
+    if (OWNER_APPS.has(app) && !isOwner()) {
+      const title = APP_TITLES[app] || "App";
+      const t = $("#phone-guest-title");
+      const c = $("#phone-guest-copy");
+      if (t) t.textContent = title;
+      if (c) c.textContent = "Only the cube owner can use this.";
+      HIDE($("#phone-home"));
+      document.querySelectorAll(".phone-app-screen").forEach((el) => HIDE(el));
+      SHOW($("#phone-screen-guest"));
+      state.phoneApp = "guest";
+      return;
+    }
+    if (app === "wardrobe") {
+      closePhone();
+      state.creatorReturn = "room";
+      state.draft = { ...HearthAvatar.defaults(), ...(state.me.avatar || {}) };
+      $("#display-name").value = state.draft.displayName || state.me.username;
+      paintCreator();
+      SHOW($("#creator-back"));
+      setView("creator");
+      return;
+    }
+    if (app === "spin") {
+      closePhone();
+      paintRewards();
+      SHOW($("#spin-modal"));
+      return;
+    }
+    HIDE($("#phone-home"));
+    document.querySelectorAll(".phone-app-screen").forEach((el) => HIDE(el));
+    const screen = document.getElementById("phone-screen-" + app);
+    if (!screen) return;
+    SHOW(screen);
+    state.phoneApp = app;
+    if (app === "edit") paintEditRoom();
+    if (app === "shop") paintShop();
+    if (app === "invite") {
+      const input = $("#invite-name");
+      if (input) {
+        input.value = "";
+        setTimeout(() => input.focus(), 40);
+      }
+    }
+    if (app === "lock") paintLock();
+    if (app === "pets") paintPets();
+    if (app === "props") paintProps();
+    if (app === "coins") paintPhoneCoins();
+    if (app === "upgrade") paintUpgrade();
+  }
+
+  function paintEditRoom() {
+    const body = $("#phone-edit-body");
+    if (!body || !state.room) return;
+    const items = state.me?.inventory || [];
+    const inv = items.length
+      ? items
+          .map((t, i) => `<button class="inv-chip" data-testid="inv-${t}-${i}" data-place="${t}" type="button">${labelFor(t)} — place</button>`)
+          .join("")
+      : `<span class="phone-empty">Buy furniture in Shop, then place it here.</span>`;
+    const size = state.room.size || 6;
+    body.innerHTML = `
+      <h3>Your furniture</h3>
+      <div class="inv-row">${inv}</div>
+      <h3>Wallpaper</h3>
+      <div class="style-row">${HouseIso.WALLPAPERS.map(
+        (w) =>
+          `<button type="button" class="style-swatch${state.room.wallpaper === w.id ? " selected" : ""}" data-wallpaper="${w.id}" style="background:${w.wall};color:#fff">${w.name}</button>`
+      ).join("")}</div>
+      <h3>Floor</h3>
+      <div class="style-row">${HouseIso.FLOORS.map(
+        (f) =>
+          `<button type="button" class="style-swatch${state.room.floorStyle === f.id ? " selected" : ""}" data-floor="${f.id}">${f.name}</button>`
+      ).join("")}</div>
+      <p class="item-sub">This cube is ${size}×${size} tiles.</p>`;
+    body.querySelectorAll("[data-place]").forEach((b) =>
+      b.addEventListener("click", () => startPlace(b.dataset.place))
+    );
+    body.querySelectorAll("[data-wallpaper]").forEach((b) =>
+      b.addEventListener("click", () => socket.emit("setRoomStyle", { wallpaper: b.dataset.wallpaper }))
+    );
+    body.querySelectorAll("[data-floor]").forEach((b) =>
+      b.addEventListener("click", () => socket.emit("setRoomStyle", { floorStyle: b.dataset.floor }))
+    );
+  }
+
+  function paintLock() {
+    const body = $("#phone-lock-body");
+    if (!body || !state.room) return;
+    const locked = Boolean(state.room.locked);
+    body.innerHTML = `
+      <p class="lede">${locked ? "This cube is locked. Friends need the password or an invite to come in." : "This cube is open. Anyone can walk in."}</p>
+      <label class="check-row">
+        <input type="checkbox" id="phone-lock-toggle" data-testid="phone-lock-toggle" ${locked ? "checked" : ""} />
+        Lock with a password
+      </label>
+      <div class="field ${locked ? "" : "hidden"}" id="phone-lock-pass-field">
+        <label for="phone-lock-password">Password</label>
+        <input id="phone-lock-password" data-testid="phone-lock-password" type="text" maxlength="24" placeholder="${locked ? "Enter a new password to change it" : "something friends can type"}" />
+      </div>
+      <button class="btn" type="button" data-testid="phone-lock-save" id="phone-lock-save">Save</button>
+    `;
+    const toggle = $("#phone-lock-toggle");
+    const field = $("#phone-lock-pass-field");
+    toggle.addEventListener("change", () => field.classList.toggle("hidden", !toggle.checked));
+    $("#phone-lock-save").addEventListener("click", () => {
+      socket.emit("setRoomLock", { locked: toggle.checked, password: $("#phone-lock-password").value });
+    });
+  }
+
+  function paintPets() {
+    const body = $("#phone-pets-body");
+    if (!body) return;
+    const pets = state.me?.collection?.pets || [];
+    if (!pets.length) {
+      body.innerHTML = `<p class="phone-empty">Win a cat, dog, or bunny on the daily spin, then bring them into cubes with you.</p>`;
+      return;
+    }
+    body.innerHTML =
+      `<p class="lede">Pets follow you into other cubes.</p>` +
+      pets
+        .map((c) => {
+          const on = state.me?.activePet === c.item;
+          return `<button type="button" class="inv-chip" data-pet="${c.item}">${on ? "Send home" : "Bring"} ${escapeHtml(c.label)}</button>`;
+        })
+        .join(" ");
+    body.querySelectorAll("[data-pet]").forEach((b) => {
+      b.addEventListener("click", () => {
+        const item = b.dataset.pet;
+        socket.emit("equipPet", { item: state.me?.activePet === item ? null : item });
+      });
+    });
+  }
+
+  function paintProps() {
+    const body = $("#phone-props-body");
+    if (!body) return;
+    const props = state.me?.collection?.props || [];
+    if (!props.length) {
+      body.innerHTML = `<p class="phone-empty">Win a prop on the daily spin, then hold it in your hand.</p>`;
+      return;
+    }
+    body.innerHTML =
+      `<p class="lede">Props are held in your hand.</p>` +
+      props
+        .map((c) => {
+          const on = state.me?.heldProp === c.item;
+          return `<button type="button" class="inv-chip" data-prop="${c.item}">${on ? "Put away" : "Hold"} ${escapeHtml(c.label)}</button>`;
+        })
+        .join(" ");
+    body.querySelectorAll("[data-prop]").forEach((b) => {
+      b.addEventListener("click", () => {
+        const item = b.dataset.prop;
+        socket.emit("equipProp", { item: state.me?.heldProp === item ? null : item });
+      });
+    });
+  }
+
+  function paintPhoneCoins() {
+    const body = $("#phone-coins-body");
+    if (!body || !state.me) return;
+    const r = state.me.rewards || {};
+    const packs = r.packs || {};
+    const adsLeft = r.adsLeft ?? 3;
+    const packHtml = Object.entries(packs)
+      .map(
+        ([id, pack]) => `
+      <button type="button" class="pack-card" data-pack="${id}">
+        <strong>${pack.label || id}</strong>
+        <span>+${pack.coins} coins</span>
+        <span class="pack-price">${pack.price}</span>
+      </button>`
+      )
+      .join("");
+    body.innerHTML = `
+      <p class="lede">You have 🪙 ${state.me.coins ?? 0}. Watch an ad or grab a coin pack.</p>
+      <button class="btn small" type="button" id="phone-watch-ad" ${adsLeft <= 0 ? "disabled" : ""}>${
+      adsLeft > 0 ? `Watch ad · +15 coins (${adsLeft} left today)` : "Ad cap reached today"
+    }</button>
+      <h3 style="margin-top:16px">Coin store</h3>
+      <p class="item-sub">Prototype checkout — real purchases would use Apple In-App Purchase.</p>
+      <div class="pack-row">${packHtml}</div>
+    `;
+    $("#phone-watch-ad")?.addEventListener("click", () => playAd("coins"));
+    body.querySelectorAll("[data-pack]").forEach((b) => {
+      b.addEventListener("click", () => {
+        state.pendingPack = b.dataset.pack;
+        const pack = packs[b.dataset.pack];
+        $("#buy-confirm-copy").textContent = `Get ${pack.coins} coins for ${pack.price}? This is a fake purchase for the prototype.`;
+        SHOW($("#buy-confirm"));
+      });
+    });
+  }
+
+  function paintUpgrade() {
+    const body = $("#phone-upgrade-body");
+    if (!body || !state.room) return;
+    const size = state.room.size || 6;
+    const next = size === 6 ? 8 : size === 8 ? 10 : null;
+    const cost = size === 6 ? 25 : 40;
+    if (!next) {
+      body.innerHTML = `<p class="lede">This cube is maxed at 10×10.</p>`;
+      return;
+    }
+    const can = (state.me?.coins ?? 0) >= cost;
+    body.innerHTML = `
+      <p class="lede">This cube is ${size}×${size}. Upgrade to ${next}×${next} so there's more room to hang out.</p>
+      <button type="button" class="btn" data-testid="upgrade-cube" ${can ? "" : "disabled"}>Upgrade cube to ${next}×${next} · 🪙 ${cost}</button>
+    `;
+    body.querySelector("[data-testid=upgrade-cube]")?.addEventListener("click", () => socket.emit("upgradeCube"));
+  }
+
+  function refreshPhoneScreens() {
+    updatePhoneBadge();
+    if (!phoneOpen()) return;
+    if (state.phoneApp === "edit") paintEditRoom();
+    if (state.phoneApp === "shop") paintShop();
+    if (state.phoneApp === "lock") paintLock();
+    if (state.phoneApp === "pets") paintPets();
+    if (state.phoneApp === "props") paintProps();
+    if (state.phoneApp === "coins") paintPhoneCoins();
+    if (state.phoneApp === "upgrade") paintUpgrade();
+  }
+
+  function returnFromCreator() {
+    const dest = state.creatorReturn;
+    state.creatorReturn = null;
+    HIDE($("#creator-back"));
+    if (dest === "room" && state.room) {
+      setView("room");
+      state.room3d?.resize();
+      renderPeople();
+      return;
+    }
+    paintLobby();
+    setView("lobby");
+  }
+
   /* ---------- events ---------- */
   $("#login-form").addEventListener("submit", (e) => {
     e.preventDefault();
@@ -805,11 +1076,14 @@ import { createRoom3D, createAvatarPreview } from "./room3d.js";
     socket.emit("updateAvatar", state.draft);
   });
   $("#edit-avatar").addEventListener("click", () => {
+    state.creatorReturn = "lobby";
     state.draft = { ...HearthAvatar.defaults(), ...(state.me.avatar || {}) };
     $("#display-name").value = state.draft.displayName || state.me.username;
     paintCreator();
+    SHOW($("#creator-back"));
     setView("creator");
   });
+  $("#creator-back")?.addEventListener("click", returnFromCreator);
 
   $("#room-locked").addEventListener("change", () => {
     $("#password-field").classList.toggle("hidden", !$("#room-locked").checked);
@@ -862,7 +1136,51 @@ import { createRoom3D, createAvatarPreview } from "./room3d.js";
     state.pendingPack = null;
   });
 
-  $("#leave-room").addEventListener("click", () => socket.emit("leaveRoom"));
+  $("#leave-room").addEventListener("click", () => {
+    closePhone();
+    socket.emit("leaveRoom");
+  });
+  $("#phone-btn")?.addEventListener("click", () => {
+    if (phoneOpen()) closePhone();
+    else openPhone();
+  });
+  $("#phone-overlay")?.querySelector(".phone-backdrop")?.addEventListener("click", closePhone);
+  $("#phone-home-bar")?.addEventListener("click", () => {
+    if (state.phoneApp && state.phoneApp !== "home") showPhoneHome();
+    else closePhone();
+  });
+  $("#phone-overlay")?.querySelectorAll("[data-app]").forEach((b) => {
+    b.addEventListener("click", () => openPhoneApp(b.dataset.app));
+  });
+  $("#phone-overlay")?.querySelectorAll("[data-phone-back]").forEach((b) => {
+    b.addEventListener("click", (e) => {
+      e.preventDefault();
+      showPhoneHome();
+    });
+  });
+  $("#room-coins-btn")?.addEventListener("click", () => openPhone("coins"));
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && phoneOpen()) {
+      if (state.phoneApp && state.phoneApp !== "home") showPhoneHome();
+      else closePhone();
+    }
+  });
+  const phoneDevice = $("#phone-device");
+  let swipeStart = null;
+  phoneDevice?.addEventListener("touchstart", (e) => {
+    swipeStart = e.touches[0].clientY;
+  }, { passive: true });
+  phoneDevice?.addEventListener("touchend", (e) => {
+    if (swipeStart == null) return;
+    const dy = e.changedTouches[0].clientY - swipeStart;
+    swipeStart = null;
+    if (dy > 70) {
+      if (state.phoneApp && state.phoneApp !== "home") showPhoneHome();
+      else closePhone();
+    }
+  }, { passive: true });
+  setInterval(tickPhoneTime, 15000);
+  tickPhoneTime();
   $("#emote-eat").addEventListener("click", () => socket.emit("emote", { type: "eat" }));
   $("#emote-drink").addEventListener("click", () => socket.emit("emote", { type: "drink" }));
   function sendChat() {
@@ -904,24 +1222,11 @@ import { createRoom3D, createAvatarPreview } from "./room3d.js";
     state.pendingJoin = null;
   });
 
-  $("#invite-btn").addEventListener("click", () => {
-    $("#invite-name").value = "";
-    SHOW($("#invite-modal"));
-    $("#invite-name").focus();
-  });
-  $("#invite-cancel").addEventListener("click", () => HIDE($("#invite-modal")));
   $("#invite-form").addEventListener("submit", (e) => {
     e.preventDefault();
     socket.emit("inviteUser", { username: $("#invite-name").value.trim() });
-    HIDE($("#invite-modal"));
+    showPhoneHome();
   });
-
-  $("#shop-btn").addEventListener("click", () => {
-    paintShop();
-    SHOW($("#shop-drawer"));
-  });
-  $("#shop-close").addEventListener("click", () => HIDE($("#shop-drawer")));
-  $("#shop-backdrop").addEventListener("click", () => HIDE($("#shop-drawer")));
 
   /* ---------- socket ---------- */
   socket.on("loggedIn", ({ user, rooms }) => {
@@ -953,14 +1258,11 @@ import { createRoom3D, createAvatarPreview } from "./room3d.js";
       renderPeople();
     }
     if (state.view === "creator") {
-      paintLobby();
-      setView("lobby");
+      returnFromCreator();
     } else if (state.view === "lobby") {
       paintLobby();
     }
-    if (document.getElementById("shop-drawer") && !$("#shop-drawer").classList.contains("hidden")) {
-      paintShop();
-    }
+    refreshPhoneScreens();
     if (wasCreating) {
       /* stay in lobby */
     }
@@ -972,6 +1274,7 @@ import { createRoom3D, createAvatarPreview } from "./room3d.js";
     if (state.view === "room" && state.room) {
       const meta = rooms.find((r) => r.id === state.room.id);
       if (meta) {
+        if ("locked" in meta) state.room.locked = meta.locked;
         $("#room-meta").textContent = `${state.room.locked ? "Locked" : "Open"} · ${meta.occupantCount} here · ${state.room.owner}'s cube · ${state.room.size || 6}×${state.room.size || 6}`;
       }
     }
@@ -989,6 +1292,7 @@ import { createRoom3D, createAvatarPreview } from "./room3d.js";
   });
 
   socket.on("leftRoom", () => {
+    closePhone();
     state.room = null;
     state.people.clear();
     state.room3d?.clear();
@@ -1073,7 +1377,7 @@ import { createRoom3D, createAvatarPreview } from "./room3d.js";
     renderPeople();
     $("#room-meta").textContent = `${state.room.locked ? "Locked" : "Open"} · ${state.room.people?.length || state.room.occupants?.length || ""} here · ${state.room.owner}'s cube · ${size}×${size}`;
     toast(`Cube upgraded to ${size}×${size}!`);
-    if (!$("#shop-drawer").classList.contains("hidden")) paintShop();
+    refreshPhoneScreens();
   });
 
   socket.on("roomStyle", ({ wallpaper, floorStyle }) => {
@@ -1083,12 +1387,13 @@ import { createRoom3D, createAvatarPreview } from "./room3d.js";
     state.room3d?.setStyle(wallpaper, floorStyle);
     state.room3d?.setFurniture(state.room.furniture || []);
     renderPeople();
-    if (!$("#shop-drawer").classList.contains("hidden")) paintShop();
+    refreshPhoneScreens();
   });
 
   socket.on("bought", ({ name }) => {
     toast(`Bought a ${name}! Place it from your inventory.`);
-    paintShop();
+    refreshPhoneScreens();
+    if (state.phoneApp === "shop" || !phoneOpen()) paintShop();
   });
 
   socket.on("inviteSent", ({ username, roomName }) => {
@@ -1111,6 +1416,16 @@ import { createRoom3D, createAvatarPreview } from "./room3d.js";
     ]);
   });
 
+  socket.on("roomLock", ({ locked, hasPassword }) => {
+    if (!state.room) return;
+    state.room.locked = locked;
+    state.room.hasPassword = hasPassword;
+    const count = state.room.people?.length || state.room.occupants?.length || "";
+    $("#room-meta").textContent = `${locked ? "Locked" : "Open"} · ${count} here · ${state.room.owner}'s cube · ${state.room.size || 6}×${state.room.size || 6}`;
+    toast(locked ? "Cube locked." : "Cube unlocked.");
+    if (state.phoneApp === "lock") paintLock();
+  });
+
   socket.on("errorMsg", ({ message }) => toast(message));
 
   socket.on("coinsEarned", ({ amount, reason, coins }) => {
@@ -1119,6 +1434,7 @@ import { createRoom3D, createAvatarPreview } from "./room3d.js";
     const why = { daily: "daily login", hangout: "hanging out", ad: "watching an ad", store: "coin pack" }[reason] || reason;
     toast(`+${amount} coins · ${why}`, null, "coin-toast");
     if (!$("#rewards-sheet")?.classList.contains("hidden")) paintRewards();
+    refreshPhoneScreens();
   });
 
   socket.on("spinResult", ({ prize }) => {

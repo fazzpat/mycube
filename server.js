@@ -763,6 +763,32 @@ io.on("connection", (socket) => {
     io.to(room.id).emit("roomResized", { size: next });
   });
 
+  socket.on("setRoomLock", ({ locked, password } = {}) => {
+    const user = getUser(socket);
+    if (!user?.roomId) return;
+    const room = rooms.get(user.roomId);
+    if (!room || room.owner.toLowerCase() !== user.username.toLowerCase()) {
+      socket.emit("errorMsg", { message: "Only the cube owner can lock this room." });
+      return;
+    }
+    locked = Boolean(locked);
+    if (locked) {
+      const next = String(password || "").trim();
+      const pass = next.length ? next : String(room.password || "");
+      if (pass.length < 2) {
+        socket.emit("errorMsg", { message: "Locked rooms need a password (2+ characters)." });
+        return;
+      }
+      room.locked = true;
+      room.password = pass;
+    } else {
+      room.locked = false;
+      room.password = "";
+    }
+    io.to(room.id).emit("roomLock", { locked: room.locked, hasPassword: Boolean(room.password) });
+    broadcastRooms();
+  });
+
   socket.on("setRoomStyle", ({ wallpaper, floorStyle } = {}) => {
     const user = getUser(socket);
     if (!user?.roomId) return;

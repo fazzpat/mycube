@@ -35,6 +35,25 @@ async function openAddSheet(page) {
   await page.waitForSelector('[data-testid="friend-name"]');
 }
 
+async function openPhone(page) {
+  const overlay = page.locator('[data-testid="phone-overlay"]');
+  if (await overlay.evaluate((el) => el.classList.contains("hidden"))) {
+    await page.click('[data-testid="phone-btn"]');
+    await page.waitForSelector('[data-testid="phone-overlay"]:not(.hidden)');
+  }
+  await page.waitForSelector('[data-testid="phone-device"]', { state: "visible" });
+  const home = page.locator('[data-testid="phone-home"]');
+  if (await home.evaluate((el) => el.classList.contains("hidden"))) {
+    await page.click('[data-testid="phone-home-bar"]');
+  }
+  await page.waitForSelector('[data-testid="phone-home"]:not(.hidden)', { state: "visible" });
+}
+
+async function openPhoneApp(page, app) {
+  await openPhone(page);
+  await page.click(`[data-testid="phone-app-${app}"]`);
+}
+
 async function waitForText(page, selector, text, timeout = 10000) {
   await page.waitForFunction(
     ({ selector, text }) => {
@@ -154,6 +173,7 @@ try {
   check("Speech bubbles disappear after a few seconds", (await bob.locator('[data-testid="bubble-alice"]').count()) === 0);
 
   log("Bubbles are not delivered outside the room");
+  await openPhoneApp(bob, "leave");
   await bob.click('[data-testid="leave-room"]');
   await bob.waitForSelector('body[data-view="lobby"]');
   const before = await bob.evaluate(() => window.__lastSays.map((s) => s.text));
@@ -175,6 +195,7 @@ try {
   await bob.click("#spin-close");
   await bob.click("#rewards-close");
 
+  await openPhoneApp(alice, "leave");
   await alice.click('[data-testid="leave-room"]');
   await alice.waitForSelector('body[data-view="lobby"]');
 
@@ -205,8 +226,8 @@ try {
   await bob.click('[data-testid="password-cancel"]');
 
   log("Alice invites Bob; invite bypasses the password");
-  await alice.click('[data-testid="invite-btn"]');
-  await alice.waitForSelector('[data-testid="invite-modal"]:not(.hidden)');
+  await openPhoneApp(alice, "invite");
+  await alice.waitForSelector('[data-testid="phone-screen-invite"]:not(.hidden)');
   await alice.fill('[data-testid="invite-name"]', "bob");
   await alice.click('[data-testid="invite-submit"]');
   await bob.waitForSelector('[data-testid="invite-join"]', { timeout: 10000 });
@@ -216,7 +237,8 @@ try {
   check("An invite lets a user into a locked room without the password", true);
 
   log("Alice buys and places furniture");
-  await alice.click('[data-testid="shop-btn"]');
+  await openPhoneApp(alice, "shop");
+  await alice.waitForSelector('[data-testid="phone-screen-shop"]:not(.hidden)');
   await alice.waitForSelector('[data-testid="buy-couch"]');
   await alice.locator('[data-testid="buy-couch"]').click({ force: true });
   await alice.waitForSelector('[data-place="couch"]');
@@ -225,7 +247,7 @@ try {
   await alice.click('[data-place="couch"]');
   await alice.evaluate(() => window.__clickTile(3, 1));
   await alice.waitForFunction(() => window.HouseRoom3D.getFurniture().some((f) => f.type === "couch"));
-  await alice.click('[data-testid="shop-btn"]');
+  await openPhoneApp(alice, "shop");
   await alice.waitForSelector('[data-place="plant"]');
   await alice.click('[data-place="plant"]');
   await alice.evaluate(() => window.__clickTile(0, 1));
@@ -241,6 +263,30 @@ try {
 
   await alice.waitForTimeout(500);
   await alice.screenshot({ path: `${SHOT}/05-furniture.png` });
+
+  log("In-room phone menu");
+  await alice.setViewportSize({ width: 390, height: 844 });
+  await alice.waitForTimeout(400);
+  await openPhone(alice);
+  await alice.waitForTimeout(250);
+  const chatBox = await alice.locator('[data-testid="chat-input"]').boundingBox();
+  const phoneBox = await alice.locator('[data-testid="phone-device"]').boundingBox();
+  check(
+    "Chat input stays visible outside the phone",
+    Boolean(chatBox && phoneBox && chatBox.y + 8 >= (phoneBox.y + phoneBox.height)),
+    `chatY=${chatBox && Math.round(chatBox.y)} phoneBottom=${phoneBox && Math.round(phoneBox.y + phoneBox.height)}`
+  );
+  await alice.screenshot({ path: `${SHOT}/08-phone-menu.png` });
+  await openPhoneApp(alice, "shop");
+  await alice.waitForSelector('[data-testid="phone-screen-shop"]:not(.hidden)');
+  await alice.waitForTimeout(200);
+  await alice.screenshot({ path: `${SHOT}/09-phone-app-open.png` });
+  await alice.click('[data-testid="phone-home-bar"]');
+  await alice.waitForSelector('[data-testid="phone-home"]:not(.hidden)', { state: "visible" });
+  await alice.click('[data-testid="phone-home-bar"]');
+  await alice.waitForFunction(() => document.querySelector('[data-testid="phone-overlay"]')?.classList.contains("hidden"));
+  await alice.setViewportSize({ width: 1280, height: 800 });
+  check("Room controls are packaged as apps on an in-game phone", true);
 
   log("Charlie sees two friends hanging out together");
   const ctxC = await browser.newContext({ viewport });
