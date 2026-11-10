@@ -198,8 +198,8 @@ const _floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 
 function applyJointBends(ud, { sit = false, walkSwing = null, run = false } = {}) {
   if (!ud) return;
-  const defFore = -0.32;
-  const restKnee = 0.22;
+  const defFore = -0.22;
+  const restKnee = 0.12;
   if (sit) {
     if (ud.leftShin) ud.leftShin.rotation.x = 1.28;
     if (ud.rightShin) ud.rightShin.rotation.x = 1.28;
@@ -228,17 +228,19 @@ function applyJointBends(ud, { sit = false, walkSwing = null, run = false } = {}
 }
 
 const SIT_DROP = -0.14;
-const REST_ARM_OUT = 0.28;
-const REST_ARM_FWD = -0.12;
-const REST_LEG_OUT = 0.12;
-const REST_KNEE = 0.16;
+// Arms hang down the -Y axis, so +Z rotation swings a hanging limb toward +X.
+// Left/right abduction is therefore negative Z on the left and positive Z on the right.
+const REST_ARM_OUT = 0.18; // ~10°
+const REST_ARM_FWD = -0.06;
+const REST_LEG_OUT = 0.035;
+const REST_KNEE = 0.08;
 
 function applyRestStance(ud) {
   if (!ud) return;
-  if (ud.leftArm) ud.leftArm.rotation.set(REST_ARM_FWD, 0.06, REST_ARM_OUT);
-  if (ud.rightArm) ud.rightArm.rotation.set(REST_ARM_FWD, -0.06, -REST_ARM_OUT);
-  if (ud.leftLeg) ud.leftLeg.rotation.set(REST_KNEE, 0.04, REST_LEG_OUT);
-  if (ud.rightLeg) ud.rightLeg.rotation.set(REST_KNEE, -0.04, -REST_LEG_OUT);
+  if (ud.leftArm) ud.leftArm.rotation.set(REST_ARM_FWD, 0, -REST_ARM_OUT);
+  if (ud.rightArm) ud.rightArm.rotation.set(REST_ARM_FWD, 0, REST_ARM_OUT);
+  if (ud.leftLeg) ud.leftLeg.rotation.set(REST_KNEE, 0, -REST_LEG_OUT);
+  if (ud.rightLeg) ud.rightLeg.rotation.set(REST_KNEE, 0, REST_LEG_OUT);
 }
 
 function disposeObject3D(root) {
@@ -536,9 +538,9 @@ function applyCharacterPose(ud, t, walking, sitting) {
       ud.rig.position.y = Math.abs(s) * 0.13;
       ud.rig.rotation.z = s * 0.09;
       applySquash(ud.rig, Math.abs(s));
-      if (ud.leftLeg) { ud.leftLeg.rotation.x = s * 0.95; ud.leftLeg.rotation.z = REST_LEG_OUT; }
-      if (ud.rightLeg) { ud.rightLeg.rotation.x = -s * 0.95; ud.rightLeg.rotation.z = -REST_LEG_OUT; }
-      if (ud.leftArm) { ud.leftArm.rotation.x = -s * 0.6; ud.leftArm.rotation.z = 0.22; }
+      if (ud.leftLeg) { ud.leftLeg.rotation.x = s * 0.95; ud.leftLeg.rotation.z = -REST_LEG_OUT; }
+      if (ud.rightLeg) { ud.rightLeg.rotation.x = -s * 0.95; ud.rightLeg.rotation.z = REST_LEG_OUT; }
+      if (ud.leftArm) { ud.leftArm.rotation.x = -s * 0.6; ud.leftArm.rotation.z = -REST_ARM_OUT; }
       applyJointBends(ud, { walkSwing: s });
     } else if (sitting) {
       ud.rig.position.y = SIT_DROP;
@@ -583,10 +585,10 @@ function applyCharacterPose(ud, t, walking, sitting) {
     ud.rig.position.y = up * 0.13;
     ud.rig.rotation.z = s * 0.09;
     applySquash(ud.rig, up);
-    if (ud.leftLeg) { ud.leftLeg.rotation.x = s * 0.95; ud.leftLeg.rotation.z = REST_LEG_OUT; }
-    if (ud.rightLeg) { ud.rightLeg.rotation.x = -s * 0.95; ud.rightLeg.rotation.z = -REST_LEG_OUT; }
-    if (ud.leftArm) { ud.leftArm.rotation.x = -s * 0.78; ud.leftArm.rotation.z = 0.22; }
-    if (ud.rightArm) { ud.rightArm.rotation.x = s * 0.78; ud.rightArm.rotation.z = -0.22; }
+    if (ud.leftLeg) { ud.leftLeg.rotation.x = s * 0.95; ud.leftLeg.rotation.z = -REST_LEG_OUT; }
+    if (ud.rightLeg) { ud.rightLeg.rotation.x = -s * 0.95; ud.rightLeg.rotation.z = REST_LEG_OUT; }
+    if (ud.leftArm) { ud.leftArm.rotation.x = -s * 0.78; ud.leftArm.rotation.z = -REST_ARM_OUT; }
+    if (ud.rightArm) { ud.rightArm.rotation.x = s * 0.78; ud.rightArm.rotation.z = REST_ARM_OUT; }
     applyJointBends(ud, { walkSwing: s });
     hideEmoteVfx(ud);
     return;
@@ -685,12 +687,12 @@ function addHair(head, style, color) {
     return;
   }
   if (style === "curly") {
-    const afro = mesh(geo("hairAfroShell", () => new THREE.SphereGeometry(0.2, 20, 16, 0, Math.PI * 2, 0, Math.PI / 1.72)), mat, {}, { outlineScale: 1.03 });
-    afro.position.set(0, 0.16, -0.05);
-    afro.scale.set(1.18, 1.12, 1.12);
+    const afro = mesh(geo("hairAfroTight", () => new THREE.SphereGeometry(0.15, 20, 16, 0, Math.PI * 2, 0, Math.PI / 1.75)), mat, {}, { outlineScale: 1.03 });
+    afro.position.set(0, 0.13, -0.03);
+    afro.scale.set(1.08, 0.98, 1.04);
     head.add(afro);
-    [[-0.16, 0.18, -0.02], [0.16, 0.18, -0.02], [0, 0.32, -0.03], [-0.12, 0.26, -0.13], [0.12, 0.26, -0.13], [0, 0.22, 0.06], [-0.18, 0.12, -0.08], [0.18, 0.12, -0.08], [-0.1, 0.28, 0.03], [0.1, 0.28, 0.03], [0, 0.14, -0.17], [-0.14, 0.2, 0.04], [0.14, 0.2, 0.04]].forEach((pt) => {
-      const b = mesh(geo("hairCurlHi", () => new THREE.SphereGeometry(0.07, 12, 10)), mat, {}, { outlineScale: 1.03 });
+    [[-0.11, 0.15, -0.02], [0.11, 0.15, -0.02], [0, 0.23, -0.03], [-0.08, 0.19, -0.1], [0.08, 0.19, -0.1], [0, 0.17, 0.05], [-0.12, 0.1, -0.06], [0.12, 0.1, -0.06], [-0.07, 0.2, 0.02], [0.07, 0.2, 0.02], [0, 0.11, -0.13], [-0.09, 0.16, 0.03], [0.09, 0.16, 0.03]].forEach((pt) => {
+      const b = mesh(geo("hairCurlTight", () => new THREE.SphereGeometry(0.052, 12, 10)), mat, {}, { outlineScale: 1.03 });
       b.position.set(...pt);
       head.add(b);
     });
@@ -721,13 +723,29 @@ function addHair(head, style, color) {
     return;
   }
   if (style === "bangs") {
+    // Keep the scalp cap behind the hairline so it doesn't read as a visor.
+    cap.position.set(0, 0.16, -0.06);
+    cap.scale.set(1.06, 0.84, 0.98);
     head.add(cap);
-    const bang = mesh(geo("hairBangHi", () => new THREE.SphereGeometry(0.1, 16, 12)), mat, {}, { outlineScale: 1.03 });
-    bang.scale.set(1.4, 0.26, 0.4);
-    bang.position.set(0, 0.175, 0.07);
+    const root = mesh(geo("hairFringeRoot", () => new THREE.SphereGeometry(0.07, 12, 10)), mat, {}, { outlineScale: 1.03 });
+    root.scale.set(1.3, 0.32, 0.45);
+    root.position.set(0, 0.175, 0.035);
+    head.add(root);
+    // Hanging fringe: locks tilt down and slightly forward, ending above the brows.
+    [[-0.09, 0.152, 0.088, -0.4, 0.2], [-0.055, 0.145, 0.104, -0.52, 0.1], [-0.02, 0.142, 0.11, -0.58, 0.04], [0.02, 0.142, 0.11, -0.58, -0.04], [0.055, 0.145, 0.104, -0.52, -0.1], [0.09, 0.152, 0.088, -0.4, -0.2]].forEach(([x, y, z, rx, rz], i) => {
+      const lock = mesh(geo("hairFringeHang", () => new THREE.CapsuleGeometry(0.016, 0.09, 4, 8)), mat, {}, { outlineScale: 1.03 });
+      lock.position.set(x, y, z);
+      lock.rotation.x = rx;
+      lock.rotation.z = rz;
+      lock.scale.set(1, i === 2 || i === 3 ? 1.12 : 1, 0.9);
+      head.add(lock);
+    });
     const tail = mesh(geo("hairBangTail", () => new THREE.CapsuleGeometry(0.06, 0.36, 6, 12)), mat, {}, { outlineScale: 1.03 });
-    tail.position.set(-0.15, -0.14, -0.04);
-    head.add(bang, tail);
+    tail.position.set(-0.15, -0.14, -0.05);
+    const back = mesh(geo("hairBangBack", () => new THREE.SphereGeometry(0.1, 14, 12)), mat, {}, { outlineScale: 1.03 });
+    back.position.set(0, 0.04, -0.12);
+    back.scale.set(1.15, 1.1, 0.85);
+    head.add(tail, back);
     return;
   }
   cap.position.set(0, 0.14, -0.03);
@@ -1069,7 +1087,8 @@ export function buildAvatarMesh(avatar = {}) {
       new THREE.Vector2(0.1, 0.22),
       new THREE.Vector2(0.125, 0.32),
       new THREE.Vector2(0.132, 0.4),
-      new THREE.Vector2(0.115, 0.46),
+      new THREE.Vector2(0.128, 0.445),
+      new THREE.Vector2(0.1, 0.48),
       new THREE.Vector2(0.07, 0.5),
     ];
     return new THREE.LatheGeometry(pts, 24);
@@ -1078,10 +1097,11 @@ export function buildAvatarMesh(avatar = {}) {
   const shirtHem = mesh(geo("shirtHem", () => new THREE.CylinderGeometry(0.132, 0.128, 0.05, 20)), matCached(shade(topColor, -14), { roughness: 0.5 }), {}, { outlineScale: 1.03 });
   shirtHem.position.y = 0.04;
   torso.add(shirtHem);
-  const shoulderL = mesh(geo("shoulder", () => new THREE.SphereGeometry(0.075, 14, 12)), topMat, {}, { outlineScale: 1.03 });
+  const shoulderL = mesh(geo("sleeveCap", () => new THREE.SphereGeometry(0.052, 14, 12)), topMat, {}, { outlineScale: 1.03 });
+  shoulderL.scale.set(1.2, 0.55, 0.95);
   const shoulderR = shoulderL.clone();
-  shoulderL.position.set(-0.16, 0.45, 0);
-  shoulderR.position.set(0.16, 0.45, 0);
+  shoulderL.position.set(-0.138, 0.448, 0);
+  shoulderR.position.set(0.138, 0.448, 0);
   torso.add(shoulderL, shoulderR);
 
   if (top === "hoodie") {
@@ -1114,8 +1134,8 @@ export function buildAvatarMesh(avatar = {}) {
   const sleeveLen = top === "tshirt" ? 0.14 : 0.2;
   const mkArm = (side) => {
     const arm = new THREE.Group();
-    arm.position.set(side * 0.2, 0.45, 0);
-    const upper = mesh(geo(top === "tshirt" ? "upperArmShort" : "upperArmLong", () => new THREE.CapsuleGeometry(0.05, sleeveLen, 6, 14)), topMat, {}, { outlineScale: 1.03 });
+    arm.position.set(side * 0.185, 0.445, 0);
+    const upper = mesh(geo(top === "tshirt" ? "upperArmShortBlend" : "upperArmLongBlend", () => new THREE.CapsuleGeometry(0.046, sleeveLen, 6, 14)), topMat, {}, { outlineScale: 1.03 });
     upper.position.y = -sleeveLen / 2 - 0.02;
     arm.add(upper);
     if (top === "tshirt") {
@@ -1199,11 +1219,14 @@ export function buildAvatarMesh(avatar = {}) {
   const chin = mesh(geo("chin", () => new THREE.SphereGeometry(0.04, 14, 12)), skinMat, {}, { outlineScale: 1.03 });
   chin.scale.set(0.9, 0.7, 0.75);
   chin.position.set(0, -0.145, 0.04);
-  const cheekL = mesh(geo("cheek", () => new THREE.SphereGeometry(0.04, 12, 10)), matCached(shade(skin, 16), { roughness: 0.5 }), {}, noOL);
-  const cheekR = cheekL.clone();
-  cheekL.position.set(-0.085, -0.03, 0.09);
-  cheekR.position.set(0.085, -0.03, 0.09);
-  head.add(chin, cheekL, cheekR);
+  const blushCol = new THREE.Color(skin).lerp(new THREE.Color("#e88790"), 0.3);
+  const blushMat = matCached("#" + blushCol.getHexString(), { roughness: 0.62, transparent: true, opacity: 0.42, depthWrite: false }, "std");
+  const blushL = mesh(geo("blushDecal", () => new THREE.CircleGeometry(0.026, 14)), blushMat, {}, noOL);
+  blushL.scale.set(1.15, 0.82, 1);
+  const blushR = blushL.clone();
+  blushL.position.set(-0.05, -0.03, 0.116);
+  blushR.position.set(0.05, -0.03, 0.116);
+  head.add(chin, blushL, blushR);
 
   const earL = mesh(geo("ear", () => new THREE.SphereGeometry(0.038, 12, 10)), matCached(shade(skin, -8), { roughness: 0.48 }), {}, { outlineScale: 1.03 });
   earL.scale.set(0.55, 1.15, 0.8);
