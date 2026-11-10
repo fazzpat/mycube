@@ -2766,10 +2766,9 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
     else delete state.room.chess[id];
     state.room3d?.setChessMap(state.room.chess);
     const me = state.me?.username;
-    const seated = game && (game.white === me || game.black === me || game.seats?.[0] === me || game.seats?.[1] === me);
-    if (seated && game.white && game.black) openChessPanel(id);
-    else if (state.chessId === id) paintChessPanel();
-    // spectators who already opened it stay updated
+    const seated = Boolean(game && (game.seats?.[0] === me || game.seats?.[1] === me));
+    if (seated && (game.white && game.black || game.result)) openChessPanel(id);
+    else if (state.chessId === id) closeChessPanel();
   });
 
   socket.on("roomResized", ({ size }) => {

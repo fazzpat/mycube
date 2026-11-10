@@ -620,18 +620,18 @@ function clearUserActivities(user, room, { forfeit = true } = {}) {
     const furn = room.furniture.find((f) => f.id === stationId);
     if (furn?.type === "chesstable" && room.chess?.[stationId]) {
       const game = room.chess[stationId];
-      if (forfeit && !game.result && (game.white === user.username || game.black === user.username) && game.white && game.black) {
-        const winner = game.white === user.username ? game.black : game.white;
+      const wasWhite = game.white === user.username;
+      const wasBlack = game.black === user.username;
+      if (forfeit && !game.result && (wasWhite || wasBlack) && game.white && game.black) {
         game.result = "forfeit";
-        game.winner = winner;
-        emitRoom(room, "chessUpdated", { id: stationId, game: publicChess(game) });
+        game.winner = wasWhite ? game.black : game.white;
       }
       if (game.seats) {
         if (game.seats[0] === user.username) game.seats[0] = null;
         if (game.seats[1] === user.username) game.seats[1] = null;
       }
-      if (game.white === user.username) game.white = null;
-      if (game.black === user.username) game.black = null;
+      if (wasWhite) game.white = null;
+      if (wasBlack) game.black = null;
       emitRoom(room, "chessUpdated", { id: stationId, game: publicChess(game) });
     }
     if (use && use.user === user.username) {
