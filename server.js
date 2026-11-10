@@ -12,6 +12,11 @@ const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer);
 
+app.get("/sw.js", (_req, res) => {
+  res.set("Cache-Control", "no-cache");
+  res.type("application/javascript");
+  res.sendFile(path.join(__dirname, "public", "sw.js"));
+});
 app.use(express.static(path.join(__dirname, "public")));
 app.get("*", (_req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
@@ -246,6 +251,24 @@ function publicRooms() {
   }));
 }
 
+const ACTION_EMOTES = new Set(["wave", "dance", "cry", "laugh", "clap", "shrug", "heart", "cheer"]);
+const ACTION_EMOTE_MS = { wave: 3000, cry: 4000, laugh: 3500, clap: 3000, shrug: 2500, heart: 3000, cheer: 3000 };
+
+function clearActionEmote(user, emit = true) {
+  if (!user || !ACTION_EMOTES.has(user.actionEmote)) {
+    if (user) {
+      user.actionEmote = null;
+      user.actionEmoteAt = null;
+    }
+    return;
+  }
+  user.actionEmote = null;
+  user.actionEmoteAt = null;
+  if (emit && user.roomId) {
+    io.to(user.roomId).emit("userEmote", { username: user.username, type: null, action: true });
+  }
+}
+
 function snapshotPerson(u) {
   return {
     username: u.username,
@@ -254,6 +277,8 @@ function snapshotPerson(u) {
     y: u.y,
     sitting: u.sitting,
     emote: u.emote,
+    actionEmote: u.actionEmote || null,
+    actionEmoteAt: u.actionEmoteAt || null,
     heldProp: u.heldProp || null,
     activePet: u.activePet || null,
     heldItem: u.heldItem || null,
@@ -630,6 +655,7 @@ function clearUserActivities(user, room, { forfeit = true } = {}) {
   user.seat = null;
   if (user.boxing) user.boxing = null;
   if (user.gym) user.gym = null;
+  clearActionEmote(user, true);
 }
 
 function capturedFromHistory(engine) {
@@ -990,6 +1016,7 @@ io.on("connection", (socket) => {
     user.x = tx;
     user.y = ty;
     user.sitting = false;
+    if (ACTION_EMOTES.has(user.actionEmote)) clearActionEmote(user, true);
     io.to(user.roomId).emit("userMoved", {
       username: user.username,
       x: user.x,
@@ -1023,6 +1050,27 @@ io.on("connection", (socket) => {
   socket.on("emote", ({ type } = {}) => {
     const user = getUser(socket);
     if (!user?.roomId) return;
+    if (ACTION_EMOTES.has(type)) {
+      if (user.actionEmote === type && type === "dance") {
+        clearActionEmote(user, true);
+        emitPerson(user);
+        return;
+      }
+      user.actionEmote = type;
+      user.actionEmoteAt = Date.now();
+      io.to(user.roomId).emit("userEmote", { username: user.username, type, at: user.actionEmoteAt, action: true });
+      emitPerson(user);
+      const stamp = user.actionEmoteAt;
+      const ms = ACTION_EMOTE_MS[type];
+      if (ms) {
+        setTimeout(() => {
+          if (user.actionEmote === type && user.actionEmoteAt === stamp) {
+            clearActionEmote(user, true);
+          }
+        }, ms);
+      }
+      return;
+    }
     if (type !== "eat" && type !== "drink") return;
     user.emote = type;
     startHeldItem(user, type === "eat" ? "sandwich" : "soda");
@@ -1808,6 +1856,7 @@ io.on("connection", (socket) => {
         if (FURNITURE_CATALOG[typ]) user.inventory.push(typ);
       }
     }
+    emitProfile(user);
     emitPerson(user);
   });
 

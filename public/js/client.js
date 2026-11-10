@@ -399,6 +399,8 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
       sitting: p.sitting,
       walking: false,
       emote: p.emote ?? existing.emote ?? null,
+      actionEmote: p.actionEmote ?? existing.actionEmote ?? null,
+      actionEmoteAt: p.actionEmoteAt ?? existing.actionEmoteAt ?? null,
       bubble: existing.bubble || null,
       bubbleUntil: existing.bubbleUntil || 0,
       bubbles: existing.bubbles || [],
@@ -767,6 +769,8 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
       e.stopPropagation();
       cancelPlace();
     });
+    seedPlaceGhost();
+    showPlaceActions();
   }
 
   function cancelPlace() {
@@ -780,6 +784,7 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
     state.movingWallId = null;
     const tools = $("#edit-place-tools");
     if (tools) HIDE(tools);
+    hidePlaceActions();
   }
 
   function updatePlaceHighlight(tx, ty) {
@@ -804,8 +809,47 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
     }
     const tools = $("#edit-place-tools");
     if (tools && (state.pendingPlace || state.movingId)) SHOW(tools);
+    showPlaceActions();
   }
 
+
+  function showPlaceActions() {
+    const bar = $("#place-actions");
+    if (!bar) return;
+    if (state.pendingPlace || state.movingId || state.movingWallId) SHOW(bar);
+    else HIDE(bar);
+    const conf = $("#place-confirm");
+    if (conf) {
+      const g = state.room3d?.getGhost?.();
+      const wg = state.room3d?.getWallGhost?.();
+      const ok = (g && g.ok) || (wg && wg.ok);
+      conf.disabled = !ok;
+      conf.classList.toggle("hidden", false);
+    }
+  }
+  function hidePlaceActions() {
+    HIDE($("#place-actions"));
+  }
+  function seedPlaceGhost() {
+    const type = currentPlaceType() || pendingWallType();
+    if (!type) return;
+    if (HouseIso.isWallArt(type)) return;
+    const size = state.room?.size || 6;
+    const me = state.people.get(state.me?.username);
+    const ignore = state.movingId || undefined;
+    const spots = [];
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        if (HouseIso.canPlace(state.room?.furniture || [], type, x, y, size, state.placeRot || 0, ignore)) {
+          const d = Math.hypot(x - (me?.x ?? size / 2), y - (me?.y ?? size / 2));
+          spots.push({ x, y, d });
+        }
+      }
+    }
+    spots.sort((a, b) => a.d - b.d);
+    if (spots[0]) updatePlaceHighlight(spots[0].x, spots[0].y);
+    showPlaceActions();
+  }
 
   function pendingWallType() {
     if (state.pendingPlace && HouseIso.isWallArt(state.pendingPlace)) return state.pendingPlace;
@@ -832,6 +876,19 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
     }
     const tools = $("#edit-place-tools");
     if (tools) SHOW(tools);
+    showPlaceActions();
+  }
+
+  function confirmWallGhost() {
+    const type = pendingWallType();
+    const g = state.room3d?.getWallGhost?.();
+    if (!type || !g || !g.ok) return false;
+    if (state.movingWallId) {
+      socket.emit("moveWallArt", { id: state.movingWallId, wall: g.wall, slot: g.slot });
+      return true;
+    }
+    socket.emit("placeWallArt", { type, wall: g.wall, slot: g.slot });
+    return true;
   }
 
   function handleWallClick(wall, slot) {
@@ -840,15 +897,13 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
     const ignore = state.movingWallId;
     const ok = HouseIso.canPlaceWall(type, wall, slot, state.room?.size || 6)
       && !HouseIso.wallOccupied(state.room?.wallArt || [], wall, slot, ignore);
-    if (!ok) {
-      toast("That wall space is taken or blocked.");
+    const g = state.room3d?.getWallGhost?.();
+    if (ok && g && g.wall === wall && g.slot === slot && g.ok) {
+      confirmWallGhost();
       return;
     }
-    if (state.movingWallId) {
-      socket.emit("moveWallArt", { id: state.movingWallId, wall, slot });
-      return;
-    }
-    socket.emit("placeWallArt", { type, wall, slot });
+    updateWallHighlight(wall, slot);
+    if (!ok) toast("That wall space is taken or blocked.");
   }
 
   function openCubics(id) {
@@ -1078,6 +1133,10 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
   }
 
   function confirmGhostPlace() {
+    if (pendingWallType()) {
+      confirmWallGhost();
+      return;
+    }
     const g = state.room3d?.getGhost?.();
     if (!g || !g.ok) return;
     handleTileClick(g.tx, g.ty);
@@ -1431,12 +1490,17 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
     }
   }
 
-  function syncKeyboardInset() {
+  function syncAppShell() {
     const vv = window.visualViewport;
-    let inset = 0;
-    if (vv) inset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
-    document.documentElement.style.setProperty("--kb-inset", inset + "px");
-    document.querySelector(".room-view")?.style.setProperty("--kb-inset", inset + "px");
+    const visible = Math.max(1, Math.round((vv && vv.height) || window.innerHeight));
+    document.documentElement.style.setProperty("--app-h", visible + "px");
+    // The shell already tracks the visual viewport, so don't double-apply a keyboard inset.
+    document.documentElement.style.setProperty("--kb-inset", "0px");
+    document.querySelector(".room-view")?.style.setProperty("--kb-inset", "0px");
+    if (state.view === "room") state.room3d?.resize();
+  }
+  function syncKeyboardInset() {
+    syncAppShell();
   }
 
   function autosizeChat() {
@@ -1633,6 +1697,11 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
       paintCreator();
       SHOW($("#creator-back"));
       setView("creator");
+      return;
+    }
+    if (app === "emotes") {
+      closePhone();
+      openEmoteWheel();
       return;
     }
     if (app === "spin") {
@@ -1991,6 +2060,187 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
   }, { passive: true });
   setInterval(tickPhoneTime, 15000);
   tickPhoneTime();
+  const ACTION_EMOTE_LIST = [
+    { id: "wave", label: "Wave", icon: "👋" },
+    { id: "dance", label: "Dance", icon: "💃" },
+    { id: "cry", label: "Cry", icon: "😢" },
+    { id: "laugh", label: "Laugh", icon: "😂" },
+    { id: "clap", label: "Clap", icon: "👏" },
+    { id: "shrug", label: "Shrug", icon: "🤷" },
+    { id: "heart", label: "Heart", icon: "❤️" },
+    { id: "cheer", label: "Cheer", icon: "🎉" },
+  ];
+  let wheelOpen = false;
+  let wheelDrag = false;
+  let wheelJustOpened = false;
+  let wheelHighlight = null;
+
+  function emoteWheelEls() {
+    return { wheel: $("#emote-wheel"), backdrop: $("#emote-wheel-backdrop"), btn: $("#emote-wheel-btn") };
+  }
+
+  function layoutEmoteWheel() {
+    const { wheel, btn } = emoteWheelEls();
+    if (!wheel || !btn) return;
+    const rect = btn.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    wheel.style.left = cx + "px";
+    wheel.style.top = cy + "px";
+    const n = ACTION_EMOTE_LIST.length;
+    const iconR = 32;
+    const pad = 10;
+    let radius = Math.min(134, Math.max(100, window.innerWidth * 0.3));
+    const spaceLeft = cx - pad - iconR;
+    const spaceRight = window.innerWidth - cx - pad - iconR;
+    const spaceTop = cy - pad - iconR - 8;
+    radius = Math.min(radius, Math.max(86, spaceTop));
+    let start, end;
+    if (spaceLeft < radius && spaceRight >= radius * 0.55) {
+      start = Math.PI * 0.92;
+      end = -0.12;
+    } else if (spaceRight < radius && spaceLeft >= radius * 0.55) {
+      start = Math.PI + 0.12;
+      end = Math.PI * 0.08;
+    } else {
+      start = Math.PI;
+      end = 0;
+    }
+    const slots = [...wheel.querySelectorAll(".emote-slot")];
+    slots.forEach((el, i) => {
+      const t = n === 1 ? 0.5 : i / (n - 1);
+      const ang = start + (end - start) * t;
+      const x = Math.cos(ang) * radius;
+      const y = -Math.sin(ang) * radius;
+      el.style.setProperty("--x", x + "px");
+      el.style.setProperty("--y", y + "px");
+      el.style.setProperty("--i", String(i));
+    });
+  }
+
+  function paintEmoteWheel() {
+    const { wheel } = emoteWheelEls();
+    if (!wheel) return;
+    wheel.innerHTML = ACTION_EMOTE_LIST.map(
+      (e, i) => `<button type="button" class="emote-slot" data-testid="emote-slot-${e.id}" data-emote="${e.id}" style="--i:${i}">
+        <span class="emote-ico">${e.icon}</span>
+        <span class="emote-lab">${e.label}</span>
+      </button>`
+    ).join("");
+    wheel.querySelectorAll(".emote-slot").forEach((b) => {
+      b.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        playActionEmote(b.dataset.emote);
+        closeEmoteWheel();
+      });
+    });
+  }
+
+  function setWheelHighlight(id) {
+    wheelHighlight = id;
+    const { wheel } = emoteWheelEls();
+    wheel?.querySelectorAll(".emote-slot").forEach((el) => {
+      el.classList.toggle("active", el.dataset.emote === id);
+    });
+  }
+
+  function slotAtPoint(x, y) {
+    const { wheel } = emoteWheelEls();
+    if (!wheel) return null;
+    let best = null;
+    let bestD = 40;
+    wheel.querySelectorAll(".emote-slot").forEach((el) => {
+      const r = el.getBoundingClientRect();
+      const d = Math.hypot(x - (r.left + r.width / 2), y - (r.top + r.height / 2));
+      if (d < bestD) { bestD = d; best = el.dataset.emote; }
+    });
+    return best;
+  }
+
+  function openEmoteWheel() {
+    const { wheel, backdrop, btn } = emoteWheelEls();
+    if (!wheel) return;
+    if (!wheel.childElementCount) paintEmoteWheel();
+    wheel.classList.remove("open");
+    SHOW(wheel);
+    SHOW(backdrop);
+    layoutEmoteWheel();
+    void wheel.offsetWidth;
+    requestAnimationFrame(() => {
+      layoutEmoteWheel();
+      wheel.classList.add("open");
+    });
+    wheelOpen = true;
+    wheelJustOpened = true;
+    btn?.setAttribute("aria-expanded", "true");
+    setTimeout(() => { wheelJustOpened = false; }, 250);
+  }
+
+  function closeEmoteWheel() {
+    const { wheel, backdrop, btn } = emoteWheelEls();
+    wheelOpen = false;
+    wheelDrag = false;
+    wheelHighlight = null;
+    wheel?.classList.remove("open");
+    HIDE(wheel);
+    HIDE(backdrop);
+    btn?.setAttribute("aria-expanded", "false");
+  }
+
+  function toggleEmoteWheel() {
+    if (wheelOpen) closeEmoteWheel();
+    else openEmoteWheel();
+  }
+
+  function playActionEmote(type) {
+    if (!type) return;
+    socket.emit("emote", { type });
+  }
+
+  const wheelBtn = $("#emote-wheel-btn");
+  let skipWheelClick = false;
+  wheelBtn?.addEventListener("pointerdown", (e) => {
+    if (e.button != null && e.button !== 0) return;
+    if (wheelOpen) return;
+    openEmoteWheel();
+    wheelDrag = true;
+    skipWheelClick = true;
+    try { wheelBtn.setPointerCapture(e.pointerId); } catch {}
+  });
+  wheelBtn?.addEventListener("pointermove", (e) => {
+    if (!wheelDrag || !wheelOpen) return;
+    const id = slotAtPoint(e.clientX, e.clientY);
+    if (id) setWheelHighlight(id);
+  });
+  wheelBtn?.addEventListener("pointerup", (e) => {
+    if (!wheelDrag) return;
+    wheelDrag = false;
+    const id = slotAtPoint(e.clientX, e.clientY);
+    if (id) {
+      playActionEmote(id);
+      closeEmoteWheel();
+    }
+  });
+  wheelBtn?.addEventListener("pointercancel", () => { wheelDrag = false; });
+  wheelBtn?.addEventListener("click", (e) => {
+    e.preventDefault();
+    if (skipWheelClick) {
+      skipWheelClick = false;
+      return;
+    }
+    toggleEmoteWheel();
+  });
+  $("#emote-wheel-backdrop")?.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    closeEmoteWheel();
+  });
+  window.addEventListener("resize", () => { if (wheelOpen) layoutEmoteWheel(); });
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", () => { if (wheelOpen) layoutEmoteWheel(); });
+    window.visualViewport.addEventListener("scroll", () => { if (wheelOpen) layoutEmoteWheel(); });
+  }
+
   $("#emote-eat").addEventListener("click", () => socket.emit("emote", { type: "eat" }));
   $("#emote-drink").addEventListener("click", () => socket.emit("emote", { type: "drink" }));
   function sendChat() {
@@ -2015,25 +2265,33 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
     window.visualViewport.addEventListener("scroll", syncKeyboardInset);
   }
   window.addEventListener("resize", syncKeyboardInset);
+  window.addEventListener("orientationchange", () => setTimeout(syncKeyboardInset, 50));
   syncKeyboardInset();
 
   function handleTileClick(tx, ty) {
     if (state.pendingPlace) {
-      if (!HouseIso.canPlace(state.room?.furniture || [], state.pendingPlace, tx, ty, state.room?.size || 6, state.placeRot)) {
-        toast("That doesn't fit on those tiles.");
+      if (HouseIso.isWallArt(state.pendingPlace)) return;
+      const ok = HouseIso.canPlace(state.room?.furniture || [], state.pendingPlace, tx, ty, state.room?.size || 6, state.placeRot);
+      const g = state.room3d?.getGhost?.();
+      if (ok && g && g.tx === tx && g.ty === ty && g.ok) {
+        socket.emit("placeFurniture", { type: state.pendingPlace, x: tx, y: ty, rot: state.placeRot });
         return;
       }
-      socket.emit("placeFurniture", { type: state.pendingPlace, x: tx, y: ty, rot: state.placeRot });
+      updatePlaceHighlight(tx, ty);
+      if (!ok) toast("That doesn't fit on those tiles.");
       return;
     }
     if (state.movingId) {
       const f = (state.room?.furniture || []).find((x) => x.id === state.movingId);
       if (!f) { cancelPlace(); return; }
-      if (!HouseIso.canPlace(state.room?.furniture || [], f.type, tx, ty, state.room?.size || 6, state.placeRot, f.id)) {
-        toast("That doesn't fit on those tiles.");
+      const ok = HouseIso.canPlace(state.room?.furniture || [], f.type, tx, ty, state.room?.size || 6, state.placeRot, f.id);
+      const g = state.room3d?.getGhost?.();
+      if (ok && g && g.tx === tx && g.ty === ty && g.ok) {
+        socket.emit("moveFurniture", { id: f.id, x: tx, y: ty, rot: state.placeRot });
         return;
       }
-      socket.emit("moveFurniture", { id: f.id, x: tx, y: ty, rot: state.placeRot });
+      updatePlaceHighlight(tx, ty);
+      if (!ok) toast("That doesn't fit on those tiles.");
       return;
     }
     if (pendingWallType()) return;
@@ -2078,6 +2336,9 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
   });
   $("#rotate-place")?.addEventListener("click", () => rotatePending(1));
   $("#confirm-place")?.addEventListener("click", confirmGhostPlace);
+  $("#place-rotate")?.addEventListener("click", () => rotatePending(1));
+  $("#place-confirm")?.addEventListener("click", confirmGhostPlace);
+  $("#place-cancel")?.addEventListener("click", (e) => { e.stopPropagation(); cancelPlace(); });
   $("#furn-rotate")?.addEventListener("click", () => rotatePending(1));
   $("#furn-move")?.addEventListener("click", () => {
     const art = (state.room?.wallArt || []).find((x) => x.id === state.selectedFurnId);
@@ -2304,10 +2565,15 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
     renderPeople();
   });
 
-  socket.on("userEmote", ({ username, type }) => {
+  socket.on("userEmote", ({ username, type, at, action }) => {
     const p = state.people.get(username);
     if (!p) return;
-    p.emote = type;
+    if (action) {
+      p.actionEmote = type || null;
+      p.actionEmoteAt = type ? (at || Date.now()) : null;
+    } else {
+      p.emote = type;
+    }
     renderPeople();
   });
 
@@ -2537,7 +2803,28 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
   window.__startPlace = startPlace;
   window.__highlightTile = (x, y) => updatePlaceHighlight(x, y);
   window.__rotatePending = () => rotatePending(1);
-  window.__clickWall = (wall, slot) => handleWallClick(wall, slot);
+  window.__confirmPlace = confirmGhostPlace;
+  window.__clickTile = (x, y) => {
+    if (state.pendingPlace || state.movingId) {
+      const g = state.room3d?.getGhost?.();
+      if (!(g && g.tx === x && g.ty === y)) updatePlaceHighlight(x, y);
+      confirmGhostPlace();
+      return;
+    }
+    handleTileClick(x, y);
+  };
+  window.__clickWall = (wall, slot) => {
+    if (pendingWallType()) {
+      const g = state.room3d?.getWallGhost?.();
+      if (!(g && g.wall === wall && g.slot === slot)) updateWallHighlight(wall, slot);
+      confirmWallGhost();
+      return;
+    }
+    handleWallClick(wall, slot);
+  };
+  window.__openEmoteWheel = openEmoteWheel;
+  window.__closeEmoteWheel = closeEmoteWheel;
+  window.__playEmote = playActionEmote;
   window.__openCubics = openCubics;
   window.__startCubics = startCubicsPlay;
   window.__cubicsInput = cubicsInput;
@@ -2550,6 +2837,9 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
   window.__useCoffee = (id) => socket.emit("useCoffee", { id });
   window.__usePunchbag = (id) => socket.emit("usePunchbag", { id });
 
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("/sw.js").catch(() => {});
+  }
   paintLoginPreview();
   setView("login");
 

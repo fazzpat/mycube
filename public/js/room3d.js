@@ -150,6 +150,163 @@ function applySquash(rig, up) {
   rig.scale.set(1.1 - up * 0.18, 0.88 + up * 0.24, 1.1 - up * 0.18);
 }
 
+function resetLimbRot(ud) {
+  for (const part of [ud.leftArm, ud.rightArm, ud.leftLeg, ud.rightLeg]) {
+    if (part) part.rotation.set(0, 0, 0);
+  }
+  if (ud.rig) {
+    ud.rig.position.y = 0;
+    ud.rig.rotation.set(0, 0, 0);
+    ud.rig.scale.set(1, 1, 1);
+  }
+}
+
+function hideEmoteVfx(ud) {
+  if (ud?.vfx) {
+    ud.vfx.parent?.remove(ud.vfx);
+    ud.vfx.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
+    ud.vfx = null;
+    ud.vfxKind = null;
+  }
+}
+
+function ensureEmoteVfx(ud, kind, make) {
+  if (ud.vfx && ud.vfxKind === kind) return ud.vfx;
+  hideEmoteVfx(ud);
+  const g = new THREE.Group();
+  ud.vfx = g;
+  ud.vfxKind = kind;
+  make(g);
+  const root = ud.rig?.parent;
+  if (root) root.add(g);
+  return g;
+}
+
+function updateTearVfx(ud, local) {
+  const g = ensureEmoteVfx(ud, "cry", (group) => {
+    for (let i = 0; i < 4; i++) {
+      const drop = new THREE.Mesh(
+        new THREE.SphereGeometry(0.035, 8, 8),
+        new THREE.MeshBasicMaterial({ color: 0x7ec8ff, transparent: true, opacity: 0.9 })
+      );
+      drop.userData.phase = i * 0.22;
+      group.add(drop);
+    }
+  });
+  g.position.set(0.08, 1.42, 0.16);
+  for (const drop of g.children) {
+    const u = ((local + drop.userData.phase) % 0.9) / 0.9;
+    drop.position.set((drop.userData.phase - 0.3) * 0.15, -u * 0.45, 0.04);
+    drop.scale.setScalar(1 - u * 0.4);
+    drop.material.opacity = 0.95 - u * 0.7;
+  }
+}
+
+function updateHeartVfx(ud, local) {
+  const g = ensureEmoteVfx(ud, "heart", (group) => {
+    for (let i = 0; i < 5; i++) {
+      const h = new THREE.Mesh(
+        new THREE.SphereGeometry(0.05, 8, 8),
+        new THREE.MeshBasicMaterial({ color: 0xef476f, transparent: true, opacity: 0.95 })
+      );
+      h.userData.phase = i * 0.18;
+      group.add(h);
+    }
+  });
+  g.position.set(0, 1.35, 0.1);
+  for (const h of g.children) {
+    const u = ((local + h.userData.phase) % 1.2) / 1.2;
+    h.position.set(Math.sin((h.userData.phase + local) * 3) * 0.2, u * 0.7, 0.05);
+    h.scale.setScalar(1.1 - u * 0.6);
+    h.material.opacity = 0.95 - u * 0.85;
+  }
+}
+
+function applyActionEmote(ud, t) {
+  const kind = ud.actionEmote;
+  if (!kind) {
+    hideEmoteVfx(ud);
+    return false;
+  }
+  const at = ud.actionEmoteAt || 0;
+  const local = Math.max(0, t - at / 1000);
+  resetLimbRot(ud);
+  if (kind === "wave") {
+    const s = Math.sin(local * 10);
+    ud.rig.rotation.z = s * 0.08;
+    if (ud.rightArm) {
+      ud.rightArm.rotation.x = -2.15;
+      ud.rightArm.rotation.z = 0.25 + s * 0.85;
+    }
+    if (ud.leftArm) ud.leftArm.rotation.x = 0.25;
+    return true;
+  }
+  if (kind === "dance") {
+    const s = Math.sin(local * 10);
+    const b = Math.abs(s);
+    ud.rig.position.y = b * 0.22;
+    ud.rig.rotation.z = s * 0.22;
+    ud.rig.rotation.y = Math.sin(local * 5) * 0.25;
+    applySquash(ud.rig, b);
+    if (ud.leftArm) { ud.leftArm.rotation.x = -2.0 + s * 0.5; ud.leftArm.rotation.z = 0.4; }
+    if (ud.rightArm) { ud.rightArm.rotation.x = -2.0 - s * 0.5; ud.rightArm.rotation.z = -0.4; }
+    if (ud.leftLeg) ud.leftLeg.rotation.x = s * 0.9;
+    if (ud.rightLeg) ud.rightLeg.rotation.x = -s * 0.9;
+    return true;
+  }
+  if (kind === "cry") {
+    const sob = Math.sin(local * 6);
+    ud.rig.position.y = -0.04;
+    ud.rig.rotation.z = 0.12 + sob * 0.04;
+    if (ud.leftArm) { ud.leftArm.rotation.x = -1.6; ud.leftArm.rotation.z = -0.7; }
+    if (ud.rightArm) { ud.rightArm.rotation.x = -1.6; ud.rightArm.rotation.z = 0.7; }
+    updateTearVfx(ud, local);
+    return true;
+  }
+  if (kind === "laugh") {
+    const sh = Math.sin(local * 18);
+    ud.rig.position.y = Math.abs(sh) * 0.08;
+    ud.rig.rotation.z = sh * 0.18;
+    applySquash(ud.rig, 0.3 + Math.abs(sh) * 0.4);
+    if (ud.leftArm) { ud.leftArm.rotation.x = -1.3; ud.leftArm.rotation.z = 0.5; }
+    if (ud.rightArm) { ud.rightArm.rotation.x = -0.4; ud.rightArm.rotation.z = -0.2; }
+    return true;
+  }
+  if (kind === "clap") {
+    const c = Math.abs(Math.sin(local * 12));
+    if (ud.leftArm) { ud.leftArm.rotation.x = -1.35; ud.leftArm.rotation.y = 0.7 - c * 0.55; }
+    if (ud.rightArm) { ud.rightArm.rotation.x = -1.35; ud.rightArm.rotation.y = -0.7 + c * 0.55; }
+    ud.rig.rotation.z = (c - 0.5) * 0.08;
+    return true;
+  }
+  if (kind === "shrug") {
+    const k = Math.min(1, local / 0.18);
+    if (ud.leftArm) { ud.leftArm.rotation.z = 1.15 * k; ud.leftArm.rotation.x = -0.2; }
+    if (ud.rightArm) { ud.rightArm.rotation.z = -1.15 * k; ud.rightArm.rotation.x = -0.2; }
+    ud.rig.position.y = 0.06 * k;
+    return true;
+  }
+  if (kind === "heart") {
+    const s = Math.sin(local * 6);
+    if (ud.leftArm) { ud.leftArm.rotation.x = -1.7; ud.leftArm.rotation.z = -0.9; ud.leftArm.rotation.y = 0.4; }
+    if (ud.rightArm) { ud.rightArm.rotation.x = -1.7; ud.rightArm.rotation.z = 0.9; ud.rightArm.rotation.y = -0.4; }
+    ud.rig.position.y = 0.04 + Math.abs(s) * 0.05;
+    updateHeartVfx(ud, local);
+    return true;
+  }
+  if (kind === "cheer") {
+    const s = Math.sin(local * 9);
+    ud.rig.position.y = Math.abs(s) * 0.2;
+    applySquash(ud.rig, Math.abs(s));
+    if (ud.leftArm) { ud.leftArm.rotation.x = -2.5; ud.leftArm.rotation.z = 0.35; }
+    if (ud.rightArm) { ud.rightArm.rotation.x = -2.5; ud.rightArm.rotation.z = -0.35; }
+    if (ud.leftLeg) ud.leftLeg.rotation.x = s * 0.4;
+    if (ud.rightLeg) ud.rightLeg.rotation.x = -s * 0.4;
+    return true;
+  }
+  return false;
+}
+
 function applyCharacterPose(ud, t, walking, sitting) {
   if (!ud?.rig) return;
   const phase = ud.phase || 0;
@@ -241,14 +398,14 @@ function applyCharacterPose(ud, t, walking, sitting) {
     }
     return;
   }
-  if (sitting) {
+  if (sitting && !ud.actionEmote) {
+    resetLimbRot(ud);
     ud.rig.position.y = -0.16;
-    ud.rig.rotation.z = 0;
-    ud.rig.scale.set(1, 1, 1);
     if (ud.leftLeg) ud.leftLeg.rotation.x = -1.15;
     if (ud.rightLeg) ud.rightLeg.rotation.x = -1.15;
     if (ud.leftArm) ud.leftArm.rotation.x = 0.18;
     if (ud.rightArm) ud.rightArm.rotation.x = 0.18;
+    hideEmoteVfx(ud);
     return;
   }
   if (walking) {
@@ -261,17 +418,11 @@ function applyCharacterPose(ud, t, walking, sitting) {
     if (ud.rightLeg) ud.rightLeg.rotation.x = -s * 0.95;
     if (ud.leftArm) ud.leftArm.rotation.x = -s * 0.78;
     if (ud.rightArm) ud.rightArm.rotation.x = s * 0.78;
+    hideEmoteVfx(ud);
     return;
   }
-  const wave = Math.sin(t * 2.8 + phase);
-  const up = Math.abs(Math.sin(t * 3.8 + phase));
-  ud.rig.position.y = up * 0.1;
-  ud.rig.rotation.z = wave * 0.09;
-  applySquash(ud.rig, up);
-  if (ud.leftLeg) ud.leftLeg.rotation.x = wave * 0.16;
-  if (ud.rightLeg) ud.rightLeg.rotation.x = -wave * 0.16;
-  if (ud.leftArm) ud.leftArm.rotation.x = wave * 0.28;
-  if (ud.rightArm) ud.rightArm.rotation.x = -wave * 0.28;
+  if (applyActionEmote(ud, t)) return;
+  resetLimbRot(ud);
 }
 
 function makeWallTexture(id) {
@@ -1350,6 +1501,10 @@ export function createRoom3D(container) {
   controls.minZoom = 0.7;
   controls.maxZoom = 1.85;
   controls.target.set(0, 0.45, 0);
+  // One-finger touch is for walking / placing, not orbiting the camera.
+  controls.touches.ONE = -1;
+  controls.touches.TWO = THREE.TOUCH.DOLLY_ROTATE;
+  renderer.domElement.style.touchAction = "none";
 
   const rim = new THREE.DirectionalLight(0xfff6e8, 0.55);
   rim.position.copy(camera.position);
@@ -1393,6 +1548,7 @@ export function createRoom3D(container) {
   let serverTime = Date.now();
   let serverTimeAt = Date.now();
   let wallGhost = null;
+  let wallGhostState = null;
   let onWallClick = null;
   let onWallHover = null;
   let windowLightRef = null;
@@ -1735,12 +1891,15 @@ export function createRoom3D(container) {
       wallArtGroup.remove(wallGhost);
       wallGhost = null;
     }
+    wallGhostState = null;
     if (!type || wall == null || slot == null) return;
     wallGhost = makeArtMesh(type, true, ok);
     placeArtMesh(wallGhost, wall, slot);
     wallGhost.userData.ghost = true;
     wallArtGroup.add(wallGhost);
+    wallGhostState = { type, wall, slot, ok: Boolean(ok) };
   }
+  function getWallGhost() { return wallGhostState ? { ...wallGhostState } : null; }
 
   function wallFromPoint(point) {
     const backZ = -gridSize / 2;
@@ -1861,6 +2020,10 @@ export function createRoom3D(container) {
       m.userData.heldItem = p.heldItem || null;
       m.userData.boxing = p.boxing || null;
       m.userData.gym = p.gym || null;
+      m.userData.actionEmote = p.actionEmote || null;
+      m.userData.actionEmoteAt = p.actionEmoteAt || 0;
+      m.userData.username = p.username;
+      if (!m.userData.actionEmote) hideEmoteVfx(m.userData);
       if (p.walking && (p.dirX != null || p.dirZ != null)) {
         m.rotation.y = Math.atan2(p.dirX || 0, p.dirZ || 1);
         m.userData.facing = { x: p.dirX || 0, z: p.dirZ || 1 };
@@ -1935,23 +2098,44 @@ export function createRoom3D(container) {
     return raycaster.intersectObjects(list, true)[0] || null;
   }
 
+  function tileFromPoint(point) {
+    if (!point) return null;
+    const tx = Math.floor(point.x + gridSize / 2);
+    const ty = Math.floor(point.z + gridSize / 2);
+    if (tx < 0 || ty < 0 || tx >= gridSize || ty >= gridSize) return null;
+    return { tx, ty };
+  }
   function tileFromEvent(event) {
     const hit = pick(event, tileMeshes);
-    if (!hit) return null;
-    let obj = hit.object;
-    while (obj && !obj.userData.tile) obj = obj.parent;
-    return obj?.userData.tile ? { tx: obj.userData.tx, ty: obj.userData.ty } : null;
+    if (hit) {
+      let obj = hit.object;
+      while (obj && !obj.userData.tile) obj = obj.parent;
+      if (obj?.userData.tile) return { tx: obj.userData.tx, ty: obj.userData.ty };
+      const fromPt = tileFromPoint(hit.point);
+      if (fromPt) return fromPt;
+    }
+    const rect = renderer.domElement.getBoundingClientRect();
+    const ev = event.clientX != null ? event : (event.changedTouches && event.changedTouches[0]);
+    if (!ev) return null;
+    pointer.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
+    pointer.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(pointer, camera);
+    const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+    const pt = new THREE.Vector3();
+    if (!raycaster.ray.intersectPlane(plane, pt)) return null;
+    return tileFromPoint(pt);
   }
 
   let downPt = null;
-  renderer.domElement.addEventListener("pointerdown", (e) => {
-    downPt = { x: e.clientX, y: e.clientY };
-  });
-  renderer.domElement.addEventListener("pointerup", (e) => {
-    if (!downPt) return;
-    const moved = Math.hypot(e.clientX - downPt.x, e.clientY - downPt.y);
-    downPt = null;
-    if (moved > 7) return;
+  function pointerPos(e) {
+    if (e && e.clientX != null) return { x: e.clientX, y: e.clientY };
+    const t = e?.changedTouches?.[0] || e?.touches?.[0];
+    return t ? { x: t.clientX, y: t.clientY } : null;
+  }
+  function slopFor(type) {
+    return type === "mouse" ? 8 : 28;
+  }
+  function handleTap(e) {
     const swHit = pick(e, wallsGroup.children);
     if (swHit) {
       let obj = swHit.object;
@@ -1970,20 +2154,6 @@ export function createRoom3D(container) {
         return;
       }
     }
-    const wallSpot = wallFromPoint(swHit?.point || artHit?.point || (pick(e, [ ...wallsGroup.children ])?.point));
-    if (!wallSpot) {
-      const wallHit = pick(e, wallsGroup.children);
-      if (wallHit) {
-        const spot = wallFromPoint(wallHit.point);
-        if (spot && onWallClick) {
-          onWallClick(spot.wall, spot.slot);
-          return;
-        }
-      }
-    } else if (onWallClick) {
-      onWallClick(wallSpot.wall, wallSpot.slot);
-      return;
-    }
     const furnHit = pick(e, furnitureGroup.children);
     if (furnHit) {
       let obj = furnHit.object;
@@ -1998,8 +2168,38 @@ export function createRoom3D(container) {
         return;
       }
     }
+    // Only treat a wall hit as a wall-art placement tap when the client
+    // has a wall handler AND we are actually targeting a wall slot.
+    // Never swallow floor taps just because the ray also grazes a wall.
+    const placingWall = Boolean(onWallClick) && Boolean(placing) && typeof placing === "string" && placing.startsWith("art_");
+    if (placingWall) {
+      const wallHit = swHit || pick(e, wallsGroup.children);
+      const spot = wallHit ? wallFromPoint(wallHit.point) : null;
+      if (spot) {
+        onWallClick(spot.wall, spot.slot);
+        return;
+      }
+    }
     const tile = tileFromEvent(e);
     if (tile) onTileClick?.(tile.tx, tile.ty);
+  }
+  renderer.domElement.addEventListener("pointerdown", (e) => {
+    const p = pointerPos(e);
+    if (!p) return;
+    downPt = { x: p.x, y: p.y, id: e.pointerId, type: e.pointerType || "touch" };
+  });
+  renderer.domElement.addEventListener("pointerup", (e) => {
+    if (!downPt) return;
+    if (e.pointerId != null && downPt.id != null && e.pointerId !== downPt.id) return;
+    const p = pointerPos(e);
+    const moved = p ? Math.hypot(p.x - downPt.x, p.y - downPt.y) : 0;
+    const slop = slopFor(downPt.type);
+    downPt = null;
+    if (moved > slop) return;
+    handleTap(e);
+  });
+  renderer.domElement.addEventListener("pointercancel", () => {
+    downPt = null;
   });
   renderer.domElement.addEventListener("pointermove", (e) => {
     const tile = tileFromEvent(e);
@@ -2025,14 +2225,44 @@ export function createRoom3D(container) {
     if (hoverMesh) hoverMesh.visible = false;
   });
 
+  function syncEmotePop(name, m) {
+    const kind = m.userData.actionEmote;
+    const want = kind === "laugh" || kind === "heart";
+    const sel = `[data-emote-pop="${String(name).replace(/"/g, "")}"]`;
+    let el = overlay.querySelector(sel);
+    if (!want) {
+      el?.remove();
+      return;
+    }
+    if (!el) {
+      el = document.createElement("div");
+      el.className = "emote-fx";
+      el.dataset.emotePop = name;
+      el.dataset.testid = "emote-fx-" + name;
+      overlay.appendChild(el);
+    }
+    el.classList.toggle("laugh", kind === "laugh");
+    el.classList.toggle("heart", kind === "heart");
+    el.textContent = kind === "laugh" ? "HA HA" : "❤";
+    const pos = projectHead(name);
+    if (!pos || !pos.visible) {
+      el.style.display = "none";
+      return;
+    }
+    el.style.display = "block";
+    el.style.left = pos.x + "px";
+    el.style.top = pos.y + "px";
+  }
+
   let raf = 0;
   let alive = true;
   function loop() {
     if (!alive) return;
     raf = requestAnimationFrame(loop);
     const t = performance.now() / 1000;
-    for (const m of peopleMeshes.values()) {
+    for (const [name, m] of peopleMeshes.entries()) {
       applyCharacterPose(m.userData, t, m.userData.walking, m.userData.sitting);
+      try { syncEmotePop(name, m); } catch {}
     }
     for (const pet of petMeshes.values()) {
       const ud = pet.userData;
@@ -2143,6 +2373,7 @@ export function createRoom3D(container) {
     getFurniture() { return furnitureList.slice(); },
     setGhost,
     getGhost,
+    getWallGhost,
     highlightFurniture,
     projectFurniture,
     setLights,
@@ -2172,6 +2403,27 @@ export function createRoom3D(container) {
         heldItem: m.userData.heldItem || null,
         gym: m.userData.gym || null,
         facing: m.userData.facing || null,
+        actionEmote: m.userData.actionEmote || null,
+        walking: Boolean(m.userData.walking),
+      };
+    },
+    personTile(name) {
+      const m = peopleMeshes.get(name);
+      if (!m) return null;
+      return {
+        x: m.position.x + gridSize / 2 - 0.5,
+        y: m.position.z + gridSize / 2 - 0.5,
+      };
+    },
+    projectTile(tx, ty) {
+      const pos = tileToWorld(tx, ty, gridSize);
+      const v = new THREE.Vector3(pos.x, 0.06, pos.z);
+      v.project(camera);
+      const rect = renderer.domElement.getBoundingClientRect();
+      return {
+        x: rect.left + (v.x * 0.5 + 0.5) * rect.width,
+        y: rect.top + (-v.y * 0.5 + 0.5) * rect.height,
+        visible: v.z < 1,
       };
     },
     syncPeople,
@@ -2213,6 +2465,5 @@ export function createRoom3D(container) {
     },
   };
   window.HouseRoom3D = api;
-  window.__clickTile = (x, y) => api.simulateTileClick(x, y);
   return api;
 }

@@ -1,4 +1,4 @@
-import { chromium } from "playwright";
+import { chromium, devices } from "playwright";
 import { mkdir } from "fs/promises";
 
 const BASE = process.env.BASE_URL || "http://127.0.0.1:3000";
@@ -70,6 +70,224 @@ function check(name, ok, extra = "") {
   results.push({ name, ok, extra });
   console.log(`${ok ? "PASS" : "FAIL"}  ${name}${extra ? " — " + extra : ""}`);
 }
+
+
+async function tapTile(page, tx, ty) {
+  const pt = await page.evaluate(({ tx, ty }) => window.HouseRoom3D.projectTile(tx, ty), { tx, ty });
+  if (!pt || !pt.visible) throw new Error(`tile ${tx},${ty} is not visible`);
+  await page.touchscreen.tap(pt.x, pt.y);
+}
+
+async function openPhoneAppTouch(page, app) {
+  const overlay = page.locator('[data-testid="phone-overlay"]');
+  if (await overlay.evaluate((el) => el.classList.contains("hidden"))) {
+    await page.locator('[data-testid="phone-btn"]').tap();
+    await page.waitForSelector('[data-testid="phone-overlay"]:not(.hidden)');
+  }
+  const home = page.locator('[data-testid="phone-home"]');
+  if (await home.evaluate((el) => el.classList.contains("hidden"))) {
+    await page.locator('[data-testid="phone-home-bar"]').tap();
+  }
+  await page.locator(`[data-testid="phone-app-${app}"]`).tap();
+}
+
+async function loginToNewRoom(page, username, displayName, roomName, restoreViewport) {
+  await login(page, username);
+  // Creator controls get covered by the 3D preview on short phone viewports.
+  const prev = page.viewportSize();
+  await page.setViewportSize({ width: Math.max(prev.width, 390), height: Math.max(prev.height, 1100) });
+  await customize(page, { displayName, hair: 1, shirt: 2, skin: 2, glasses: false });
+  await saveAvatar(page);
+  await openAddSheet(page);
+  await page.fill('[data-testid="room-name"]', roomName);
+  await page.click('[data-testid="create-room-btn"]');
+  await page.waitForSelector('body[data-view="room"]');
+  await page.waitForFunction(() => window.HouseRoom3D && window.HouseRoom3D.ready);
+  if (restoreViewport) await page.setViewportSize(restoreViewport);
+}
+
+async function runMobileWalkAndPlace(browser, deviceName, { screenshot } = {}) {
+  const desc = devices[deviceName];
+  if (!desc) throw new Error("Missing Playwright device: " + deviceName);
+  const ctx = await browser.newContext({ ...desc, hasTouch: true, isMobile: true });
+  const page = await ctx.newPage();
+  page.setDefaultTimeout(20000);
+  const tag = deviceName.toLowerCase().includes("iphone") ? "mia" : "nico";
+  const display = tag === "mia" ? "Mia" : "Nico";
+  await loginToNewRoom(page, tag, display, display + " Cube", desc.viewport);
+  await page.evaluate(() => window.HouseRoom3D?.resize?.());
+  await page.waitForTimeout(500);
+  const before = await page.evaluate((name) => window.HouseRoom3D.personTile(name), tag);
+  const dest = { tx: 4, ty: 4 };
+  if (before && Math.round(before.x) === 4 && Math.round(before.y) === 4) {
+    dest.tx = 1;
+    dest.ty = 2;
+  }
+  await tapTile(page, dest.tx, dest.ty);
+  const walked = await page.waitForFunction(({ name, sx, sy, tx, ty }) => {
+    const p = window.HouseRoom3D.personTile(name);
+    if (!p) return false;
+    if (Math.abs(p.x - tx) < 0.35 && Math.abs(p.y - ty) < 0.35) return true;
+    return Math.hypot(p.x - sx, p.y - sy) > 0.8;
+  }, { name: tag, sx: before?.x ?? 0, sy: before?.y ?? 0, tx: dest.tx, ty: dest.ty }, { timeout: 12000 }).then(() => true).catch(() => false);
+  const afterWalk = await page.evaluate((name) => window.HouseRoom3D.personTile(name), tag);
+  check(`Touch walking works on ${deviceName}`, walked, `from=${JSON.stringify(before)} dest=${dest.tx},${dest.ty} after=${JSON.stringify(afterWalk)}`);
+
+  await page.evaluate(() => window.__debugKit({ furniture: ["plant"], coins: 400 }));
+  await page.waitForTimeout(300);
+  await openPhoneAppTouch(page, "edit");
+  await page.waitForSelector('[data-testid="edit-inventory"]:not(.hidden)');
+  await page.locator('[data-testid="edit-item-plant"]').tap();
+  await page.waitForSelector('[data-testid="place-actions"]:not(.hidden)');
+  await tapTile(page, 2, 2);
+  await page.waitForFunction(() => {
+    const g = window.HouseRoom3D.getGhost();
+    return g && g.type === "plant" && g.tx === 2 && g.ty === 2;
+  });
+  const ghost = await page.evaluate(() => window.HouseRoom3D.getGhost());
+  check(`Touch placement shows a preview on ${deviceName}`, Boolean(ghost && ghost.type === "plant" && ghost.tx === 2 && ghost.ty === 2), JSON.stringify(ghost));
+  if (screenshot) {
+    await page.waitForTimeout(350);
+    await page.screenshot({ path: screenshot });
+  }
+  await page.locator('[data-testid="place-confirm"]').tap();
+  const placed = await page.waitForFunction(() => window.HouseRoom3D.getFurniture().some((f) => f.type === "plant" && f.x === 2 && f.y === 2), null, { timeout: 8000 }).then(() => true).catch(() => false);
+  check(`Touch placement confirms with Place on ${deviceName}`, placed);
+
+  const invToggle = page.locator('[data-testid="edit-inv-toggle"]');
+  if (await invToggle.count()) await invToggle.tap();
+  await page.waitForTimeout(200);
+  await tapTile(page, 2, 2);
+  const actionsOpen = await page.waitForSelector('[data-testid="furn-actions"]:not(.hidden)', { timeout: 8000 }).then(() => true).catch(() => false);
+  check(`Tapping placed furniture shows rotate / move / pick up on ${deviceName}`, actionsOpen);
+  if (actionsOpen) {
+    await page.locator('[data-testid="furn-rotate"]').tap();
+    await page.waitForTimeout(300);
+  }
+  await ctx.close();
+}
+
+
+async function assertInsideViewport(page, selectors, label) {
+  const rows = await page.evaluate((sels) => {
+    const w = window.visualViewport?.width ?? window.innerWidth;
+    const h = window.visualViewport?.height ?? window.innerHeight;
+    const pad = 2;
+    return sels.map((sel) => {
+      const el = document.querySelector(sel);
+      if (!el) return { sel, missing: true };
+      const style = getComputedStyle(el);
+      if (el.classList.contains("hidden") || el.closest(".hidden") || style.display === "none" || style.visibility === "hidden") {
+        return { sel, missing: true };
+      }
+      const r = el.getBoundingClientRect();
+      if (r.width < 1 || r.height < 1) return { sel, missing: true };
+      const ok = r.top >= -pad && r.left >= -pad && r.bottom <= h + pad && r.right <= w + pad;
+      return { sel, ok, top: +r.top.toFixed(1), left: +r.left.toFixed(1), bottom: +r.bottom.toFixed(1), right: +r.right.toFixed(1), vw: w, vh: h };
+    });
+  }, selectors);
+  const present = rows.filter((r) => !r.missing);
+  const clipped = present.filter((r) => !r.ok);
+  const missing = rows.filter((r) => r.missing).map((r) => r.sel);
+  check(
+    label,
+    present.length === selectors.length && clipped.length === 0,
+    JSON.stringify(clipped.length ? clipped : missing.length ? { missing } : { ok: present.map((r) => r.sel) })
+  );
+}
+
+async function checkShellOverflow(page, label) {
+  const info = await page.evaluate(() => {
+    const w = window.visualViewport?.width ?? window.innerWidth;
+    const h = window.visualViewport?.height ?? window.innerHeight;
+    const app = document.getElementById("app");
+    const r = app.getBoundingClientRect();
+    const bodyOverflow = getComputedStyle(document.body).overflow;
+    const htmlOverflow = getComputedStyle(document.documentElement).overflow;
+    return {
+      ok: r.top >= -2 && r.left >= -2 && r.bottom <= h + 2 && r.right <= w + 2 && (bodyOverflow.includes("hidden") || htmlOverflow.includes("hidden")),
+      box: { top: r.top, bottom: r.bottom, width: r.width, height: r.height },
+      vp: { w, h },
+      overflow: { body: bodyOverflow, html: htmlOverflow },
+    };
+  });
+  check(label, Boolean(info.ok), JSON.stringify(info));
+}
+
+async function runAppShellFit(browser) {
+  const i14 = devices["iPhone 14"] || devices["iPhone 13"];
+  const ctx = await browser.newContext({ ...i14, hasTouch: true, isMobile: true });
+  const page = await ctx.newPage();
+  page.setDefaultTimeout(20000);
+  await page.goto(BASE, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector('[data-testid="username-input"]');
+  await page.waitForTimeout(200);
+  const pwa = await page.evaluate(async () => {
+    const man = document.querySelector('link[rel="manifest"]');
+    const apple = document.querySelector('meta[name="apple-mobile-web-app-capable"]');
+    const icon = document.querySelector('link[rel="apple-touch-icon"]');
+    let manifest = null;
+    try { manifest = await (await fetch("/manifest.json")).json(); } catch {}
+    const sw = await fetch("/sw.js").then((r) => r.status).catch(() => 0);
+    const icon192 = await fetch("/icons/icon-192.png").then((r) => r.status).catch(() => 0);
+    const icon512 = await fetch("/icons/icon-512.png").then((r) => r.status).catch(() => 0);
+    return {
+      manifestHref: man?.getAttribute("href") || "",
+      apple: apple?.getAttribute("content") || "",
+      appleIcon: icon?.getAttribute("href") || "",
+      name: manifest?.name,
+      display: manifest?.display,
+      sw,
+      icon192,
+      icon512,
+    };
+  });
+  check(
+    "MyCube is installable as a standalone PWA",
+    pwa.manifestHref.includes("manifest") && pwa.apple === "yes" && pwa.name === "MyCube" && pwa.display === "standalone" && pwa.sw === 200 && pwa.icon192 === 200 && pwa.icon512 === 200,
+    JSON.stringify(pwa)
+  );
+  await assertInsideViewport(page, ['[data-testid="username-input"]', '[data-testid="login-btn"]'], "Sign-in fits the iPhone 14 viewport");
+  await checkShellOverflow(page, "The app shell does not scroll the sign-in page");
+
+  await login(page, "pia");
+  await page.waitForTimeout(200);
+  await assertInsideViewport(page, [".topbar", '[data-testid="display-name"]', '[data-testid="save-avatar"]'], "Character creator chrome fits the iPhone 14 viewport");
+  const prev = page.viewportSize();
+  await page.setViewportSize({ width: Math.max(prev.width, 390), height: Math.max(prev.height, 1100) });
+  await customize(page, { displayName: "Pia", hair: 1, shirt: 2, skin: 2, glasses: false });
+  await saveAvatar(page);
+  await page.setViewportSize(i14.viewport);
+  await page.waitForSelector('body[data-view="lobby"]');
+  await page.waitForTimeout(250);
+  await assertInsideViewport(page, [".lobby-topbar", '[data-testid="friend-search"]', '[data-testid="add-menu-btn"]'], "Contact-list home fits the iPhone 14 viewport");
+  await page.screenshot({ path: `${SHOT}/27-app-home.png` });
+
+  await openAddSheet(page);
+  await page.fill('[data-testid="room-name"]', "Pia Cube");
+  await page.click('[data-testid="create-room-btn"]');
+  await page.waitForSelector('body[data-view="room"]');
+  await page.waitForFunction(() => window.HouseRoom3D && window.HouseRoom3D.ready);
+  await page.evaluate(() => window.HouseRoom3D?.resize?.());
+  await page.waitForTimeout(300);
+  await assertInsideViewport(page, ['[data-testid="room-title"]', '[data-testid="chat-dock"]', '[data-testid="chat-input"]', '[data-testid="phone-btn"]', '[data-testid="emote-wheel-btn"]'], "In-room chrome fits the iPhone 14 viewport");
+  await page.screenshot({ path: `${SHOT}/28-app-room.png` });
+
+  const sizes = [
+    { name: "iPhone SE", width: 375, height: 667 },
+    { name: "Pixel 7", width: (devices["Pixel 7"]?.viewport?.width) || 412, height: (devices["Pixel 7"]?.viewport?.height) || 915 },
+    { name: "iPhone 14 landscape", width: 844, height: 390 },
+  ];
+  for (const sz of sizes) {
+    await page.setViewportSize({ width: sz.width, height: sz.height });
+    await page.evaluate(() => window.HouseRoom3D?.resize?.());
+    await page.waitForTimeout(250);
+    await assertInsideViewport(page, ['[data-testid="room-title"]', '[data-testid="chat-dock"]', '[data-testid="chat-input"]', '[data-testid="phone-btn"]'], `In-room chrome fits the ${sz.name} viewport`);
+    await checkShellOverflow(page, `The app shell does not page-scroll on ${sz.name}`);
+  }
+  await ctx.close();
+}
+
 
 const browser = await chromium.launch({
   headless: true,
@@ -630,6 +848,33 @@ try {
 
   await alice.setViewportSize({ width: 1280, height: 800 });
 
+  log("Emotes half-wheel and sync");
+  await alice.evaluate(() => window.__standUp());
+  await alice.waitForTimeout(200);
+  await alice.setViewportSize({ width: 390, height: 844 });
+  await alice.waitForTimeout(250);
+  await alice.locator('[data-testid="emote-wheel-btn"]').click();
+  await alice.waitForSelector('[data-testid="emote-slot-wave"]', { state: "visible", timeout: 8000 });
+  check("Emote button opens a half-wheel of emotes", await alice.locator('[data-testid="emote-slot-wave"]').count() === 1 && await alice.locator('[data-testid="emote-slot-dance"]').count() === 1 && await alice.locator('[data-testid="emote-slot-cry"]').count() === 1 && await alice.locator('[data-testid="emote-slot-laugh"]').count() === 1);
+  await alice.locator('[data-testid="emote-slot-dance"]').click();
+  await alice.waitForFunction(() => window.HouseRoom3D.personFlags("alice")?.actionEmote === "dance", null, { timeout: 8000 });
+  const bobSeesDance = await bob.waitForFunction(() => window.HouseRoom3D.personFlags("alice")?.actionEmote === "dance", null, { timeout: 8000 }).then(() => true).catch(() => false);
+  check("An emote broadcasts to everyone in the cube", bobSeesDance);
+  await alice.evaluate(() => window.__openEmoteWheel());
+  await alice.waitForSelector('[data-testid="emote-slot-laugh"]', { state: "visible" });
+  await alice.waitForTimeout(450);
+  await alice.screenshot({ path: `${SHOT}/26-emotes.png` });
+  await alice.evaluate(() => window.__closeEmoteWheel());
+  await alice.setViewportSize({ width: 1280, height: 800 });
+
+  log("Mobile touch: walk and place (iPhone)");
+  await runMobileWalkAndPlace(browser, devices["iPhone 13"] ? "iPhone 13" : "iPhone 12", { screenshot: `${SHOT}/25-mobile-place.png` });
+
+  log("Mobile touch: walk and place (Android)");
+  await runMobileWalkAndPlace(browser, devices["Pixel 5"] ? "Pixel 5" : "Pixel 7");
+
+  log("App shell, PWA, and short/tall phone viewports");
+  await runAppShellFit(browser);
 
   const failed = results.filter((r) => !r.ok);
   if (failed.length) {
