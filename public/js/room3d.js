@@ -124,8 +124,8 @@ function toon(color, extras = {}) {
   const { roughness, metalness, ...rest } = extras;
   return new THREE.MeshStandardMaterial({
     color,
-    roughness: roughness ?? 0.52,
-    metalness: metalness ?? 0.03,
+    roughness: roughness ?? 0.46,
+    metalness: metalness ?? 0.02,
     ...rest,
   });
 }
@@ -559,8 +559,8 @@ function makeFloorTexture(style, tiles) {
 function addHair(head, style, color) {
   const mat = toon(color, { roughness: 0.62 });
   const cap = mesh(new THREE.SphereGeometry(0.2, 28, 22, 0, Math.PI * 2, 0, Math.PI / 1.55), mat, {}, { outlineScale: 1.03 });
-  cap.position.set(0, 0.07, -0.015);
-  cap.scale.set(1.1, 0.95, 1.08);
+  cap.position.set(0, 0.11, -0.03);
+  cap.scale.set(1.08, 0.9, 1.04);
   if (style === "spiky") {
     cap.scale.set(1.06, 0.7, 1.02);
     head.add(cap);
@@ -576,7 +576,7 @@ function addHair(head, style, color) {
     return;
   }
   if (style === "curly") {
-    [[-0.14, 0.1, 0.06], [0.14, 0.1, 0.06], [0, 0.22, 0.02], [-0.11, 0.16, -0.12], [0.11, 0.16, -0.12], [0, 0.1, 0.16], [-0.17, 0.04, -0.04], [0.17, 0.04, -0.04], [-0.08, 0.2, 0.09], [0.08, 0.2, 0.09], [0, 0.06, -0.16]].forEach((pt) => {
+    [[-0.14, 0.12, 0.02], [0.14, 0.12, 0.02], [0, 0.24, -0.02], [-0.11, 0.18, -0.12], [0.11, 0.18, -0.12], [0, 0.14, 0.08], [-0.17, 0.06, -0.05], [0.17, 0.06, -0.05], [-0.08, 0.22, 0.05], [0.08, 0.22, 0.05], [0, 0.08, -0.16]].forEach((pt) => {
       const b = mesh(new THREE.SphereGeometry(0.095, 14, 12), mat, {}, { outlineScale: 1.03 });
       b.position.set(...pt);
       head.add(b);
@@ -608,15 +608,15 @@ function addHair(head, style, color) {
   if (style === "bangs") {
     head.add(cap);
     const bang = mesh(new THREE.SphereGeometry(0.12, 16, 12), mat, {}, { outlineScale: 1.03 });
-    bang.scale.set(1.55, 0.48, 0.72);
-    bang.position.set(0, 0.09, 0.14);
+    bang.scale.set(1.45, 0.42, 0.58);
+    bang.position.set(0, 0.14, 0.1);
     const tail = mesh(new THREE.CapsuleGeometry(0.065, 0.34, 6, 12), mat, {}, { outlineScale: 1.03 });
     tail.position.set(-0.16, -0.14, 0);
     head.add(bang, tail);
     return;
   }
   head.add(cap);
-  [[-0.14, 0.04, 0.03], [0.14, 0.04, 0.03], [0, 0.1, -0.11]].forEach((pt) => {
+  [[-0.14, 0.06, 0.0], [0.14, 0.06, 0.0], [0, 0.12, -0.12]].forEach((pt) => {
     const side = mesh(new THREE.SphereGeometry(0.095, 14, 12), mat, {}, { outlineScale: 1.03 });
     side.position.set(...pt);
     head.add(side);
@@ -707,16 +707,16 @@ function buildGlove() {
 
 function buildHandPhone() {
   const g = new THREE.Group();
-  const body = mesh(new THREE.BoxGeometry(0.062, 0.12, 0.01), "#1b1430", {}, { outline: false });
+  const body = mesh(new THREE.BoxGeometry(0.08, 0.15, 0.012), "#1b1430", {}, { outline: false });
   const screen = mesh(
-    new THREE.BoxGeometry(0.05, 0.1, 0.004),
+    new THREE.BoxGeometry(0.064, 0.128, 0.004),
     new THREE.MeshStandardMaterial({ color: "#8ce7ff", emissive: "#7ad8ff", emissiveIntensity: 0.7, roughness: 0.25, metalness: 0.1 }),
     {},
     { outline: false }
   );
   screen.position.z = 0.007;
   const glow = mesh(
-    new THREE.BoxGeometry(0.052, 0.102, 0.002),
+    new THREE.BoxGeometry(0.066, 0.13, 0.002),
     new THREE.MeshStandardMaterial({ color: "#b8f4ff", emissive: "#9be7ff", emissiveIntensity: 0.35, transparent: true, opacity: 0.55, roughness: 0.4 }),
     {},
     { outline: false }
@@ -838,7 +838,7 @@ function applyPetPose(ud, t, walking, sitting) {
 
 
 export function buildAvatarMesh(avatar = {}) {
-  const skin = saturate(avatar.skin || "#f1c27d", 0.06);
+  const skin = saturate(avatar.skin || "#f1c27d", 0.1);
   const topColor = saturate(avatar.shirt || "#ff7a59", 0.22);
   const hair = avatar.hairColor || "#2b1d16";
   const style = avatar.hair || "short";
@@ -1006,8 +1006,8 @@ export function buildAvatarMesh(avatar = {}) {
 
   const head = new THREE.Group();
   head.position.y = 0.74;
-  const skull = mesh(new THREE.SphereGeometry(0.185, 32, 28), skin, {}, { outlineScale: 1.03 });
-  skull.scale.set(1.08, 1.14, 1.04);
+  const skull = mesh(new THREE.SphereGeometry(0.2, 32, 28), skin, {}, { outlineScale: 1.03 });
+  skull.scale.set(1.08, 1.12, 1.05);
   head.add(skull);
   const jaw = mesh(new THREE.SphereGeometry(0.12, 20, 16), skin, {}, { outlineScale: 1.03 });
   jaw.scale.set(1.15, 0.72, 0.95);
@@ -1023,33 +1023,33 @@ export function buildAvatarMesh(avatar = {}) {
   const eyeWhite = toon("#fffef8", { roughness: 0.28 });
   const irisC = toon("#4a311f", { roughness: 0.35 });
   const brows = [];
-  [[-0.062, 0.03, 0.168], [0.062, 0.03, 0.168]].forEach(([x, y, z], i) => {
-    const w = mesh(new THREE.SphereGeometry(0.05, 18, 14), eyeWhite, {}, noOL);
-    w.scale.set(1.05, 1.18, 0.55);
+  [[-0.068, 0.032, 0.182], [0.068, 0.032, 0.182]].forEach(([x, y, z], i) => {
+    const w = mesh(new THREE.SphereGeometry(0.058, 18, 14), eyeWhite, {}, noOL);
+    w.scale.set(1.08, 1.2, 0.58);
     w.position.set(x, y, z);
-    const iris = mesh(new THREE.SphereGeometry(0.028, 16, 14), irisC, {}, noOL);
-    iris.position.set(x, y - 0.002, z + 0.016);
-    const pupil = mesh(new THREE.SphereGeometry(0.014, 12, 10), "#14110f", {}, noOL);
-    pupil.position.set(x, y - 0.002, z + 0.03);
-    const shine = mesh(new THREE.SphereGeometry(0.012, 10, 8), "#fff", {}, noOL);
-    shine.position.set(x + 0.012, y + 0.014, z + 0.038);
+    const iris = mesh(new THREE.SphereGeometry(0.032, 16, 14), irisC, {}, noOL);
+    iris.position.set(x, y - 0.002, z + 0.018);
+    const pupil = mesh(new THREE.SphereGeometry(0.016, 12, 10), "#14110f", {}, noOL);
+    pupil.position.set(x, y - 0.002, z + 0.034);
+    const shine = mesh(new THREE.SphereGeometry(0.013, 10, 8), "#fff", {}, noOL);
+    shine.position.set(x + 0.013, y + 0.015, z + 0.042);
     const shine2 = mesh(new THREE.SphereGeometry(0.006, 8, 8), "#fff", {}, noOL);
-    shine2.position.set(x - 0.01, y - 0.008, z + 0.036);
+    shine2.position.set(x - 0.01, y - 0.008, z + 0.04);
     head.add(w, iris, pupil, shine, shine2);
-    const brow = mesh(new THREE.CapsuleGeometry(0.01, 0.055, 3, 8), shade(hair, 8), {}, noOL);
-    brow.rotation.z = Math.PI / 2 + (i === 0 ? 0.18 : -0.18);
-    brow.position.set(x, y + 0.05, z + 0.004);
+    const brow = mesh(new THREE.CapsuleGeometry(0.01, 0.06, 3, 8), shade(hair, 8), {}, noOL);
+    brow.rotation.z = Math.PI / 2 + (i === 0 ? 0.16 : -0.16);
+    brow.position.set(x, y + 0.055, z + 0.004);
     head.add(brow);
     brows.push(brow);
   });
   const nose = mesh(new THREE.SphereGeometry(0.022, 12, 10), shade(skin, -12), {}, noOL);
   nose.scale.set(0.85, 1.05, 1.15);
-  nose.position.set(0, -0.01, 0.195);
+  nose.position.set(0, -0.01, 0.21);
 
   const mouths = {};
   const mouthSmile = new THREE.Group();
-  const smile = mesh(new THREE.TorusGeometry(0.045, 0.01, 10, 20, Math.PI * 1.05), "#d64b62", {}, noOL);
-  smile.position.set(0, -0.068, 0.165);
+  const smile = mesh(new THREE.TorusGeometry(0.052, 0.011, 10, 20, Math.PI * 1.05), "#d64b62", {}, noOL);
+  smile.position.set(0, -0.072, 0.18);
   smile.rotation.set(Math.PI * 0.92, 0, 0);
   mouthSmile.add(smile);
   const mouthLaugh = new THREE.Group();
@@ -1081,15 +1081,15 @@ export function buildAvatarMesh(avatar = {}) {
     const lens = new THREE.MeshStandardMaterial({ color: "#2a2430", transparent: true, opacity: 0.32, roughness: 0.12, metalness: 0.1 });
     const g1 = mesh(new THREE.TorusGeometry(0.05, 0.008, 8, 18), frame, {}, noOL);
     const g2 = g1.clone();
-    g1.position.set(-0.062, 0.03, 0.178);
-    g2.position.set(0.062, 0.03, 0.178);
+    g1.position.set(-0.068, 0.032, 0.195);
+    g2.position.set(0.068, 0.032, 0.195);
     const l1 = mesh(new THREE.CircleGeometry(0.044, 16), lens, {}, noOL);
     const l2 = l1.clone();
-    l1.position.set(-0.062, 0.03, 0.178);
-    l2.position.set(0.062, 0.03, 0.178);
+    l1.position.set(-0.068, 0.032, 0.195);
+    l2.position.set(0.068, 0.032, 0.195);
     const bar = mesh(new THREE.CapsuleGeometry(0.006, 0.03, 3, 6), frame, {}, noOL);
     bar.rotation.z = Math.PI / 2;
-    bar.position.set(0, 0.03, 0.178);
+    bar.position.set(0, 0.032, 0.195);
     head.add(g1, g2, l1, l2, bar);
   }
   if (accessory === "cap") {
@@ -1147,6 +1147,7 @@ export function buildAvatarMesh(avatar = {}) {
     handY,
     mouthShape: "smile",
   };
+  group.scale.setScalar(1.16);
   return group;
 }
 
@@ -1529,15 +1530,16 @@ export function createAvatarPreview(container) {
   container.innerHTML = "";
   container.appendChild(renderer.domElement);
   const scene = new THREE.Scene();
-  scene.add(new THREE.HemisphereLight(0xffe8d6, 0x8899aa, 0.95));
-  const sun = new THREE.DirectionalLight(0xfff1d6, 1.05);
+  scene.add(new THREE.HemisphereLight(0xfff3e6, 0x9aa6b0, 1.1));
+  scene.add(new THREE.AmbientLight(0xfff4ea, 0.55));
+  const sun = new THREE.DirectionalLight(0xfff4e4, 1.15);
   sun.position.set(2.2, 4.2, 3.2);
   sun.castShadow = true;
   scene.add(sun);
-  const fill = new THREE.DirectionalLight(0xfff6e8, 0.4);
-  fill.position.set(-2, 2, 2);
+  const fill = new THREE.DirectionalLight(0xfff6e8, 0.75);
+  fill.position.set(-1.4, 2.4, 4.2);
   scene.add(fill);
-  const previewRim = new THREE.DirectionalLight(0xfff8f0, 0.65);
+  const previewRim = new THREE.DirectionalLight(0xfff8f0, 0.5);
   previewRim.position.set(-1.6, 1.8, -3.2);
   scene.add(previewRim);
   const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 20);
@@ -1587,7 +1589,7 @@ export function createRoom3D(container) {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.08;
+  renderer.toneMappingExposure = 1.18;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.setClearColor(0xb7c4d6, 1);
@@ -1601,11 +1603,11 @@ export function createRoom3D(container) {
   const scene = new THREE.Scene();
   scene.fog = new THREE.Fog(0xc5b7a8, 22, 36);
 
-  const hemi = new THREE.HemisphereLight(0xffe6c9, 0x8a9aaa, 0.7);
-  const ambient = new THREE.AmbientLight(0xfff6e8, 0.28);
+  const hemi = new THREE.HemisphereLight(0xfff3e6, 0xb7c2c8, 1.1);
+  const ambient = new THREE.AmbientLight(0xfff4ea, 0.62);
   scene.add(hemi);
   scene.add(ambient);
-  const sun = new THREE.DirectionalLight(0xffe4c4, 0.95);
+  const sun = new THREE.DirectionalLight(0xfff0dc, 1.05);
   sun.position.set(5.5, 10, 4.5);
   sun.castShadow = true;
   sun.shadow.mapSize.set(1024, 1024);
@@ -1622,6 +1624,26 @@ export function createRoom3D(container) {
   camera.position.set(9.5, 9.2, 9.5);
   camera.lookAt(0, 0.45, 0);
 
+  function measureRoomViewExtents() {
+    camera.updateMatrixWorld(true);
+    const inv = camera.matrixWorldInverse;
+    const half = gridSize / 2;
+    const pts = [
+      [-half, 0, -half], [half, 0, -half], [-half, 0, half], [half, 0, half],
+      [-half, WALL_H, -half], [half, WALL_H, -half], [-half, WALL_H, half],
+      [half, 1.9, half], [-half, 1.9, half], [half, 1.9, -half],
+    ];
+    const v = new THREE.Vector3();
+    let maxX = 0;
+    let maxY = 0;
+    for (const [x, y, z] of pts) {
+      v.set(x, y, z).applyMatrix4(inv);
+      maxX = Math.max(maxX, Math.abs(v.x));
+      maxY = Math.max(maxY, Math.abs(v.y));
+    }
+    return { halfW: maxX + 0.45, halfH: maxY + 0.45 };
+  }
+
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enablePan = false;
   controls.enableDamping = true;
@@ -1636,7 +1658,10 @@ export function createRoom3D(container) {
   controls.touches.TWO = THREE.TOUCH.DOLLY_ROTATE;
   renderer.domElement.style.touchAction = "none";
 
-  const rim = new THREE.DirectionalLight(0xfff8f2, 0.7);
+  const fill = new THREE.DirectionalLight(0xffe8d8, 0.85);
+  fill.position.set(-4, 5.5, 7);
+  scene.add(fill);
+  const rim = new THREE.DirectionalLight(0xfff8f2, 0.55);
   rim.position.copy(camera.position).multiplyScalar(-0.4).add(new THREE.Vector3(-2, 3, -4));
   scene.add(rim);
 
@@ -1688,13 +1713,24 @@ export function createRoom3D(container) {
     const w = container.clientWidth || 800;
     const h = container.clientHeight || 500;
     renderer.setSize(w, h, false);
-    const a = w / h;
-    const frustum = frustumSize();
-    camera.left = (-frustum * a) / 2;
-    camera.right = (frustum * a) / 2;
-    camera.top = frustum / 2;
-    camera.bottom = -frustum / 2;
+    const a = Math.max(0.15, w / Math.max(1, h));
+    const need = measureRoomViewExtents();
+    const base = frustumSize();
+    // Desktop framing (never zoom in tighter than this).
+    let halfW = Math.max(need.halfW, (base * a) / 2);
+    let halfH = Math.max(need.halfH, base / 2);
+    // Keep the camera aspect and make sure the whole cube stays in frame.
+    if (halfW / halfH < a) halfW = halfH * a;
+    else halfH = halfW / a;
+    camera.left = -halfW;
+    camera.right = halfW;
+    camera.top = halfH;
+    camera.bottom = -halfH;
+    camera.zoom = 1;
     camera.updateProjectionMatrix();
+    const fitZoom = Math.min(halfW / need.halfW, halfH / need.halfH);
+    controls.minZoom = 0.7;
+    controls.maxZoom = Math.max(1, Math.min(1.85, fitZoom));
   }
 
   function showGrid(on) {
@@ -2571,6 +2607,27 @@ export function createRoom3D(container) {
     setZoom(z) {
       camera.zoom = Number(z) || 1;
       camera.updateProjectionMatrix();
+    },
+    roomFitsView() {
+      const canvas = renderer.domElement;
+      const rect = canvas.getBoundingClientRect();
+      camera.updateMatrixWorld(true);
+      const half = gridSize / 2;
+      const pts = [
+        [-half, 0, -half], [half, 0, -half], [-half, 0, half], [half, 0, half],
+        [-half, WALL_H, -half], [half, WALL_H, -half], [-half, WALL_H, half],
+      ];
+      const v = new THREE.Vector3();
+      const pad = 3;
+      const clipped = [];
+      for (const p of pts) {
+        v.set(p[0], p[1], p[2]).project(camera);
+        const x = rect.left + (v.x * 0.5 + 0.5) * rect.width;
+        const y = rect.top + (-v.y * 0.5 + 0.5) * rect.height;
+        const ok = x >= rect.left - pad && x <= rect.right + pad && y >= rect.top - pad && y <= rect.bottom + pad;
+        if (!ok) clipped.push({ x, y, nx: v.x, ny: v.y });
+      }
+      return { ok: clipped.length === 0, clipped, rect: { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height } };
     },
     setPlacing(type) {
       placing = type;

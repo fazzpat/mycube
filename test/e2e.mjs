@@ -273,6 +273,10 @@ async function runAppShellFit(browser) {
   await page.evaluate(() => window.HouseRoom3D?.resize?.());
   await page.waitForTimeout(300);
   await assertInsideViewport(page, ['[data-testid="room-title"]', '[data-testid="chat-dock"]', '[data-testid="chat-input"]', '[data-testid="phone-btn"]', '[data-testid="emote-wheel-btn"]'], "In-room chrome fits the iPhone 14 viewport");
+  const fit14 = await page.evaluate(() => window.HouseRoom3D.roomFitsView());
+  check("The whole cube fits the iPhone 14 portrait viewport", Boolean(fit14?.ok), JSON.stringify(fit14));
+  const ph = await page.evaluate(() => document.getElementById("chat-input")?.placeholder || "");
+  check("The chat box stays on one line on a phone", ph === "Say something…", `placeholder=${JSON.stringify(ph)}`);
   await page.screenshot({ path: `${SHOT}/28-app-room.png` });
 
   const sizes = [
@@ -288,6 +292,8 @@ async function runAppShellFit(browser) {
     await page.waitForTimeout(250);
     await assertInsideViewport(page, chrome, `In-room chrome fits the ${sz.name} viewport`);
     await checkShellOverflow(page, `The app shell does not page-scroll on ${sz.name}`);
+    const roomFit = await page.evaluate(() => window.HouseRoom3D.roomFitsView());
+    check(`The whole cube fits the ${sz.name} viewport`, Boolean(roomFit?.ok), JSON.stringify(roomFit));
   }
 
   await page.setViewportSize(i14.viewport);
@@ -301,6 +307,8 @@ async function runAppShellFit(browser) {
   await assertInsideViewport(page, chrome, "In-room chrome stays inside a 47px top safe-area", { top: 47, bottom: 0 });
   const titleTop = await page.locator('[data-testid="room-title"]').evaluate((el) => el.getBoundingClientRect().top);
   check("The in-room HUD sits below a 47px notch inset", titleTop >= 47, `titleTop=${titleTop.toFixed(1)}`);
+  const fitSat = await page.evaluate(() => window.HouseRoom3D.roomFitsView());
+  check("The whole cube stays in frame with a simulated notch", Boolean(fitSat?.ok), JSON.stringify(fitSat));
   await page.screenshot({ path: `${SHOT}/30-fit-top.png` });
 
   await page.setViewportSize({ width: 390, height: 744 });
@@ -340,11 +348,20 @@ async function runCornerPhoneAndAvatars(browser) {
         await page.waitForFunction(() => window.HouseRoom3D && window.HouseRoom3D.ready);
       }
     }
-    const tiles = [[1, 4], [4, 4], [1, 1], [4, 1]];
+    const tiles = [[1, 2], [4, 2], [1, 5], [4, 5]];
     for (let i = 0; i < pages.length; i++) {
       await pages[i].evaluate(({ x, y }) => window.__clickTile(x, y), { x: tiles[i][0], y: tiles[i][1] });
     }
-    await pages[0].waitForTimeout(1600);
+    await pages[0].waitForFunction(() => {
+      const names = ["nova", "rex", "lina", "mo"];
+      const dest = { nova: [1, 2], rex: [4, 2], lina: [1, 5], mo: [4, 5] };
+      return names.every((n) => {
+        const p = window.HouseRoom3D.personTile(n);
+        const d = dest[n];
+        return p && Math.hypot(p.x - d[0], p.y - d[1]) < 0.6;
+      });
+    }, null, { timeout: 12000 }).catch(() => {});
+    await pages[0].waitForTimeout(400);
     check("Four varied Bitmoji-style avatars can share a cube", await pages[0].evaluate(() => window.HouseRoom3D && ["nova", "rex", "lina", "mo"].every((n) => window.HouseRoom3D.personTile(n))));
     await pages[0].screenshot({ path: `${SHOT}/31-new-avatars.png` });
   } finally {
@@ -392,6 +409,8 @@ try {
 
   await login(bob, "bob");
   await customize(bob, { displayName: "Bob", hair: 2, shirt: 2, skin: 3, glasses: true });
+  await bob.waitForTimeout(500);
+  await bob.locator('[data-testid="creator-preview"]').screenshot({ path: `${SHOT}/07-character-closeup.png` });
   await saveAvatar(bob);
   check("Bob can create an avatar and reach the lobby", await bob.locator('body[data-view="lobby"]').count() === 1);
 
@@ -450,7 +469,6 @@ try {
   await alice.evaluate(() => window.__clickTile(3, 5));
   await bob.evaluate(() => window.__clickTile(5, 5));
   await alice.waitForTimeout(3000);
-  await bob.screenshot({ path: `${SHOT}/07-character-closeup.png` });
   await bob.waitForTimeout(5000);
   check("Speech bubbles disappear after a few seconds", (await bob.locator('[data-testid="bubble-alice"]').count()) === 0);
 
@@ -561,7 +579,7 @@ try {
   const vp = alice.viewportSize();
   check(
     "The phone menu is a small handheld in the corner",
-    Boolean(phoneBox && phoneBox.width <= 240 && phoneBox.height <= 400 && phoneBox.x > vp.width * 0.35 && (phoneBox.x + phoneBox.width) > vp.width - 28 && phoneBox.x + phoneBox.width < vp.width + 4),
+    Boolean(phoneBox && phoneBox.width <= 176 && phoneBox.width <= vp.width * 0.42 && phoneBox.height <= 250 && phoneBox.x > vp.width * 0.5 && (phoneBox.x + phoneBox.width) > vp.width - 28 && phoneBox.x + phoneBox.width < vp.width + 4),
     JSON.stringify(phoneBox && { w: Math.round(phoneBox.width), h: Math.round(phoneBox.height), x: Math.round(phoneBox.x), y: Math.round(phoneBox.y) })
   );
   const aliceOnPhone = await alice.waitForFunction(() => window.HouseRoom3D.personFlags("alice")?.usingPhone, null, { timeout: 8000 }).then(() => true).catch(() => false);

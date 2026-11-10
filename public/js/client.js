@@ -1506,6 +1506,12 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
       const h = Math.round(dock.getBoundingClientRect().height);
       if (h > 0) root.style.setProperty("--dock-h", h + "px");
     }
+    const chat = document.getElementById("chat-input");
+    if (chat) {
+      const narrow = (window.visualViewport?.width || window.innerWidth) <= 520;
+      const next = narrow ? "Say something…" : "Say something — it vanishes in a few seconds";
+      if (chat.placeholder !== next) chat.placeholder = next;
+    }
     if (state.view === "room") state.room3d?.resize();
   }
   function syncKeyboardInset() {
@@ -1646,16 +1652,21 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
     return Boolean($("#phone-overlay") && !$("#phone-overlay").classList.contains("hidden"));
   }
 
+  function setPhoneExpanded(on) {
+    $("#phone-overlay")?.classList.toggle("app-open", Boolean(on));
+  }
   function showPhoneHome() {
     document.querySelectorAll(".phone-app-screen").forEach((el) => HIDE(el));
     SHOW($("#phone-home"));
     state.phoneApp = "home";
+    setPhoneExpanded(false);
   }
 
   function closePhone() {
     const wasOpen = phoneOpen();
     HIDE($("#phone-overlay"));
     document.body.classList.remove("phone-open");
+    setPhoneExpanded(false);
     $("#phone-btn")?.setAttribute("aria-expanded", "false");
     state.phoneApp = null;
     if (wasOpen) socket.emit("usePhone", { on: false });
@@ -1701,6 +1712,7 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
       document.querySelectorAll(".phone-app-screen").forEach((el) => HIDE(el));
       SHOW($("#phone-screen-guest"));
       state.phoneApp = "guest";
+      setPhoneExpanded(true);
       return;
     }
     if (app === "wardrobe") {
@@ -1730,6 +1742,7 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
     if (!screen) return;
     SHOW(screen);
     state.phoneApp = app;
+    setPhoneExpanded(true);
     if (app === "edit") {
       closePhone();
       enterEditMode();
