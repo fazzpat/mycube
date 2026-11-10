@@ -198,32 +198,47 @@ const _floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 
 function applyJointBends(ud, { sit = false, walkSwing = null, run = false } = {}) {
   if (!ud) return;
-  const defFore = 0.22;
+  const defFore = -0.32;
+  const restKnee = 0.22;
   if (sit) {
     if (ud.leftShin) ud.leftShin.rotation.x = 1.28;
     if (ud.rightShin) ud.rightShin.rotation.x = 1.28;
     if (ud.leftFoot) ud.leftFoot.rotation.x = -0.1;
     if (ud.rightFoot) ud.rightFoot.rotation.x = -0.1;
-    if (ud.leftForearm) ud.leftForearm.rotation.set(0.35, 0, 0);
-    if (ud.rightForearm) ud.rightForearm.rotation.set(0.35, 0, 0);
+    if (ud.leftForearm) ud.leftForearm.rotation.set(-0.28, 0, 0);
+    if (ud.rightForearm) ud.rightForearm.rotation.set(-0.28, 0, 0);
     return;
   }
   if (walkSwing != null) {
     const amp = run ? 0.85 : 0.7;
-    if (ud.leftShin) ud.leftShin.rotation.x = 0.08 + Math.max(0, walkSwing) * amp;
-    if (ud.rightShin) ud.rightShin.rotation.x = 0.08 + Math.max(0, -walkSwing) * amp;
+    if (ud.leftShin) ud.leftShin.rotation.x = restKnee + Math.max(0, walkSwing) * amp;
+    if (ud.rightShin) ud.rightShin.rotation.x = restKnee + Math.max(0, -walkSwing) * amp;
     if (ud.leftFoot) ud.leftFoot.rotation.x = -ud.leftShin.rotation.x * 0.45;
     if (ud.rightFoot) ud.rightFoot.rotation.x = -ud.rightShin.rotation.x * 0.45;
     if (ud.leftForearm) ud.leftForearm.rotation.set(defFore + Math.max(0, -walkSwing) * 0.25, 0, 0);
     if (ud.rightForearm) ud.rightForearm.rotation.set(defFore + Math.max(0, walkSwing) * 0.25, 0, 0);
     return;
   }
-  if (ud.leftShin) ud.leftShin.rotation.set(0.08, 0, 0);
-  if (ud.rightShin) ud.rightShin.rotation.set(0.08, 0, 0);
-  if (ud.leftFoot) ud.leftFoot.rotation.set(0, 0, 0);
-  if (ud.rightFoot) ud.rightFoot.rotation.set(0, 0, 0);
+  if (ud.leftShin) ud.leftShin.rotation.set(restKnee, 0, 0);
+  if (ud.rightShin) ud.rightShin.rotation.set(restKnee, 0, 0);
+  if (ud.leftFoot) ud.leftFoot.rotation.set(-0.08, 0, 0);
+  if (ud.rightFoot) ud.rightFoot.rotation.set(-0.08, 0, 0);
   if (ud.leftForearm) ud.leftForearm.rotation.set(defFore, 0, 0);
   if (ud.rightForearm) ud.rightForearm.rotation.set(defFore, 0, 0);
+}
+
+const SIT_DROP = -0.14;
+const REST_ARM_OUT = 0.28;
+const REST_ARM_FWD = -0.12;
+const REST_LEG_OUT = 0.12;
+const REST_KNEE = 0.16;
+
+function applyRestStance(ud) {
+  if (!ud) return;
+  if (ud.leftArm) ud.leftArm.rotation.set(REST_ARM_FWD, 0.06, REST_ARM_OUT);
+  if (ud.rightArm) ud.rightArm.rotation.set(REST_ARM_FWD, -0.06, -REST_ARM_OUT);
+  if (ud.leftLeg) ud.leftLeg.rotation.set(REST_KNEE, 0.04, REST_LEG_OUT);
+  if (ud.rightLeg) ud.rightLeg.rotation.set(REST_KNEE, -0.04, -REST_LEG_OUT);
 }
 
 function disposeObject3D(root) {
@@ -242,9 +257,7 @@ function applySquash(rig, up) {
 }
 
 function resetLimbRot(ud) {
-  for (const part of [ud.leftArm, ud.rightArm, ud.leftLeg, ud.rightLeg]) {
-    if (part) part.rotation.set(0, 0, 0);
-  }
+  applyRestStance(ud);
   if (ud.head) ud.head.rotation.set(0, 0, 0);
   if (ud.rig) {
     ud.rig.position.y = 0;
@@ -422,7 +435,7 @@ function applyPhoneScroll(ud, t, sitting) {
   }
   if (ud.handPhone) ud.handPhone.visible = true;
   if (sitting) {
-    ud.rig.position.y = -0.22;
+    ud.rig.position.y = SIT_DROP;
     if (ud.leftLeg) ud.leftLeg.rotation.x = -1.2;
     if (ud.rightLeg) ud.rightLeg.rotation.x = -1.2;
     applyJointBends(ud, { sit: true });
@@ -523,12 +536,12 @@ function applyCharacterPose(ud, t, walking, sitting) {
       ud.rig.position.y = Math.abs(s) * 0.13;
       ud.rig.rotation.z = s * 0.09;
       applySquash(ud.rig, Math.abs(s));
-      if (ud.leftLeg) ud.leftLeg.rotation.x = s * 0.95;
-      if (ud.rightLeg) ud.rightLeg.rotation.x = -s * 0.95;
-      if (ud.leftArm) ud.leftArm.rotation.x = -s * 0.6;
+      if (ud.leftLeg) { ud.leftLeg.rotation.x = s * 0.95; ud.leftLeg.rotation.z = REST_LEG_OUT; }
+      if (ud.rightLeg) { ud.rightLeg.rotation.x = -s * 0.95; ud.rightLeg.rotation.z = -REST_LEG_OUT; }
+      if (ud.leftArm) { ud.leftArm.rotation.x = -s * 0.6; ud.leftArm.rotation.z = 0.22; }
       applyJointBends(ud, { walkSwing: s });
     } else if (sitting) {
-      ud.rig.position.y = -0.22;
+      ud.rig.position.y = SIT_DROP;
       ud.rig.rotation.z = 0;
       ud.rig.scale.set(1, 1, 1);
       if (ud.leftLeg) ud.leftLeg.rotation.x = -1.2;
@@ -555,7 +568,7 @@ function applyCharacterPose(ud, t, walking, sitting) {
   }
   if (sitting && !ud.actionEmote) {
     resetLimbRot(ud);
-    ud.rig.position.y = -0.22;
+    ud.rig.position.y = SIT_DROP;
     if (ud.leftLeg) ud.leftLeg.rotation.x = -1.2;
     if (ud.rightLeg) ud.rightLeg.rotation.x = -1.2;
     if (ud.leftArm) ud.leftArm.rotation.x = 0.18;
@@ -570,10 +583,10 @@ function applyCharacterPose(ud, t, walking, sitting) {
     ud.rig.position.y = up * 0.13;
     ud.rig.rotation.z = s * 0.09;
     applySquash(ud.rig, up);
-    if (ud.leftLeg) ud.leftLeg.rotation.x = s * 0.95;
-    if (ud.rightLeg) ud.rightLeg.rotation.x = -s * 0.95;
-    if (ud.leftArm) ud.leftArm.rotation.x = -s * 0.78;
-    if (ud.rightArm) ud.rightArm.rotation.x = s * 0.78;
+    if (ud.leftLeg) { ud.leftLeg.rotation.x = s * 0.95; ud.leftLeg.rotation.z = REST_LEG_OUT; }
+    if (ud.rightLeg) { ud.rightLeg.rotation.x = -s * 0.95; ud.rightLeg.rotation.z = -REST_LEG_OUT; }
+    if (ud.leftArm) { ud.leftArm.rotation.x = -s * 0.78; ud.leftArm.rotation.z = 0.22; }
+    if (ud.rightArm) { ud.rightArm.rotation.x = s * 0.78; ud.rightArm.rotation.z = -0.22; }
     applyJointBends(ud, { walkSwing: s });
     hideEmoteVfx(ud);
     return;
@@ -653,25 +666,31 @@ function makeFloorTexture(style, tiles) {
 
 function addHair(head, style, color) {
   const mat = matCached(color, { roughness: 0.62 });
-  const cap = mesh(geo("hairCap", () => new THREE.SphereGeometry(0.135, 28, 22, 0, Math.PI * 2, 0, Math.PI / 1.6)), mat, {}, { outlineScale: 1.03 });
-  cap.position.set(0, 0.1, -0.02);
-  cap.scale.set(1.12, 0.92, 1.06);
+  // Hairline stays above the brows (y ≈ 0.077). Front volume sits at y >= 0.16 and is pulled back.
+  const cap = mesh(geo("hairCapHi", () => new THREE.SphereGeometry(0.135, 28, 22, 0, Math.PI * 2, 0, Math.PI / 1.85)), mat, {}, { outlineScale: 1.03 });
+  cap.position.set(0, 0.15, -0.04);
+  cap.scale.set(1.08, 0.86, 1.02);
   if (style === "spiky") {
-    cap.scale.set(1.06, 0.68, 1.0);
+    cap.scale.set(1.02, 0.6, 0.96);
+    cap.position.set(0, 0.17, -0.03);
     head.add(cap);
     for (let i = 0; i < 10; i++) {
       const cone = mesh(geo("hairSpike", () => new THREE.ConeGeometry(0.035, 0.13, 8)), mat, {}, { outlineScale: 1.03 });
-      const a = (i / 10) * Math.PI * 1.75 - 0.5;
-      cone.position.set(Math.cos(a) * 0.1, 0.2, Math.sin(a) * 0.08 - 0.02);
-      cone.rotation.z = Math.cos(a) * 0.4;
-      cone.rotation.x = 0.25;
+      const a = (i / 10) * Math.PI * 1.55 + 0.45;
+      cone.position.set(Math.cos(a) * 0.09, 0.22, Math.sin(a) * 0.07 - 0.05);
+      cone.rotation.z = Math.cos(a) * 0.35;
+      cone.rotation.x = 0.15;
       head.add(cone);
     }
     return;
   }
   if (style === "curly") {
-    [[-0.13, 0.12, 0.02], [0.13, 0.12, 0.02], [0, 0.23, -0.02], [-0.1, 0.18, -0.11], [0.1, 0.18, -0.11], [0, 0.13, 0.08], [-0.16, 0.05, -0.04], [0.16, 0.05, -0.04], [-0.07, 0.21, 0.05], [0.07, 0.21, 0.05], [0, 0.07, -0.15], [-0.11, 0.08, 0.1], [0.11, 0.08, 0.1]].forEach((pt) => {
-      const b = mesh(geo("hairCurl", () => new THREE.SphereGeometry(0.085, 12, 10)), mat, {}, { outlineScale: 1.03 });
+    const afro = mesh(geo("hairAfroShell", () => new THREE.SphereGeometry(0.2, 20, 16, 0, Math.PI * 2, 0, Math.PI / 1.72)), mat, {}, { outlineScale: 1.03 });
+    afro.position.set(0, 0.16, -0.05);
+    afro.scale.set(1.18, 1.12, 1.12);
+    head.add(afro);
+    [[-0.16, 0.18, -0.02], [0.16, 0.18, -0.02], [0, 0.32, -0.03], [-0.12, 0.26, -0.13], [0.12, 0.26, -0.13], [0, 0.22, 0.06], [-0.18, 0.12, -0.08], [0.18, 0.12, -0.08], [-0.1, 0.28, 0.03], [0.1, 0.28, 0.03], [0, 0.14, -0.17], [-0.14, 0.2, 0.04], [0.14, 0.2, 0.04]].forEach((pt) => {
+      const b = mesh(geo("hairCurlHi", () => new THREE.SphereGeometry(0.07, 12, 10)), mat, {}, { outlineScale: 1.03 });
       b.position.set(...pt);
       head.add(b);
     });
@@ -680,10 +699,10 @@ function addHair(head, style, color) {
   if (style === "bun") {
     head.add(cap);
     const sides = mesh(geo("hairBunSide", () => new THREE.SphereGeometry(0.11, 16, 14)), mat, {}, { outlineScale: 1.03 });
-    sides.position.set(0, 0.02, -0.04);
-    sides.scale.set(1.5, 0.7, 1.15);
+    sides.position.set(0, 0.1, -0.08);
+    sides.scale.set(1.4, 0.62, 1.05);
     const bun = mesh(geo("hairBun", () => new THREE.SphereGeometry(0.09, 16, 14)), mat, {}, { outlineScale: 1.03 });
-    bun.position.set(0, 0.24, -0.05);
+    bun.position.set(0, 0.27, -0.06);
     head.add(sides, bun);
     return;
   }
@@ -691,30 +710,33 @@ function addHair(head, style, color) {
     head.add(cap);
     const p1 = mesh(geo("hairLock", () => new THREE.CapsuleGeometry(0.065, 0.46, 6, 12)), mat, {}, { outlineScale: 1.03 });
     const p2 = p1.clone();
-    p1.position.set(-0.13, -0.16, -0.02);
-    p2.position.set(0.13, -0.16, -0.02);
+    p1.position.set(-0.14, -0.16, -0.06);
+    p2.position.set(0.14, -0.16, -0.06);
     const back = mesh(geo("hairLongBack", () => new THREE.SphereGeometry(0.13, 14, 12)), mat, {}, { outlineScale: 1.03 });
-    back.position.set(0, -0.02, -0.12);
-    back.scale.set(1.25, 1.35, 0.95);
+    back.position.set(0, 0.02, -0.13);
+    back.scale.set(1.2, 1.25, 0.95);
     const fall = mesh(geo("hairFall", () => new THREE.CapsuleGeometry(0.09, 0.38, 6, 12)), mat, {}, { outlineScale: 1.03 });
-    fall.position.set(0, -0.14, -0.1);
+    fall.position.set(0, -0.12, -0.12);
     head.add(p1, p2, back, fall);
     return;
   }
   if (style === "bangs") {
     head.add(cap);
-    const bang = mesh(geo("hairBang", () => new THREE.SphereGeometry(0.11, 16, 12)), mat, {}, { outlineScale: 1.03 });
-    bang.scale.set(1.5, 0.38, 0.55);
-    bang.position.set(0, 0.13, 0.1);
+    const bang = mesh(geo("hairBangHi", () => new THREE.SphereGeometry(0.1, 16, 12)), mat, {}, { outlineScale: 1.03 });
+    bang.scale.set(1.4, 0.26, 0.4);
+    bang.position.set(0, 0.175, 0.07);
     const tail = mesh(geo("hairBangTail", () => new THREE.CapsuleGeometry(0.06, 0.36, 6, 12)), mat, {}, { outlineScale: 1.03 });
-    tail.position.set(-0.15, -0.14, 0);
+    tail.position.set(-0.15, -0.14, -0.04);
     head.add(bang, tail);
     return;
   }
+  cap.position.set(0, 0.14, -0.03);
+  cap.scale.set(1.16, 0.88, 1.12);
   head.add(cap);
-  [[-0.13, 0.05, 0.02], [0.13, 0.05, 0.02], [0, 0.1, -0.12]].forEach((pt) => {
-    const side = mesh(geo("hairShortSide", () => new THREE.SphereGeometry(0.085, 14, 12)), mat, {}, { outlineScale: 1.03 });
+  [[-0.12, 0.07, -0.03], [0.12, 0.07, -0.03], [0, 0.13, -0.13]].forEach((pt, i) => {
+    const side = mesh(geo("hairShortSideHi", () => new THREE.SphereGeometry(0.07, 14, 12)), mat, {}, { outlineScale: 1.03 });
     side.position.set(...pt);
+    if (i < 2) side.scale.set(0.85, 1.05, 1.05);
     head.add(side);
   });
 }
@@ -948,9 +970,9 @@ export function buildAvatarMesh(avatar = {}) {
   const accessory = avatar.accessory || "none";
   const hpColor = saturate(avatar.headphoneColor || "#2a2a2e", 0.12);
   const noOL = { outline: false };
-  const HIP = 0.62;
-  const THIGH = 0.30;
-  const SHIN = 0.26;
+  const HIP = 0.54;
+  const THIGH = 0.24;
+  const SHIN = 0.21;
   const group = new THREE.Group();
   const rig = new THREE.Group();
   group.add(rig);
@@ -993,14 +1015,14 @@ export function buildAvatarMesh(avatar = {}) {
 
   const mkLeg = (side) => {
     const leg = new THREE.Group();
-    leg.position.set(side * 0.1, HIP, 0);
-    const thigh = mesh(geo("thigh", () => new THREE.CapsuleGeometry(0.075, THIGH, 8, 14)), pantMat, {}, { outlineScale: 1.03 });
+    leg.position.set(side * 0.13, HIP, 0);
+    const thigh = mesh(geo("thighShort", () => new THREE.CapsuleGeometry(0.08, THIGH, 8, 14)), pantMat, {}, { outlineScale: 1.03 });
     thigh.position.y = -THIGH / 2 - 0.02;
     leg.add(thigh);
     const shinG = new THREE.Group();
     shinG.position.y = -THIGH - 0.02;
     const shinLen = bottom === "joggers" ? SHIN * 0.72 : SHIN;
-    const shin = mesh(geo(bottom === "joggers" ? "shinJog" : "shin", () => new THREE.CapsuleGeometry(0.058, shinLen, 6, 14)), bottom === "joggers" ? skinMat : pantMat, {}, { outlineScale: 1.03 });
+    const shin = mesh(geo(bottom === "joggers" ? "shinJogShort" : "shinShort", () => new THREE.CapsuleGeometry(0.06, shinLen, 6, 14)), bottom === "joggers" ? skinMat : pantMat, {}, { outlineScale: 1.03 });
     shin.position.y = -shinLen / 2 - 0.02;
     shinG.add(shin);
     if (bottom === "joggers") {
@@ -1066,7 +1088,7 @@ export function buildAvatarMesh(avatar = {}) {
     const pocket = mesh(geo("hoodiePocket", () => new THREE.BoxGeometry(0.2, 0.1, 0.04)), matCached(shade(topColor, -14), { roughness: 0.5 }), {}, { outlineScale: 1.03 });
     pocket.position.set(0, 0.16, 0.12);
     const hood = mesh(geo("hoodieHood", () => new THREE.SphereGeometry(0.16, 18, 14, 0, Math.PI * 2, 0, Math.PI / 1.5)), matCached(shade(topColor, -8), { roughness: 0.5 }), {}, { outlineScale: 1.03 });
-    hood.position.set(0, 0.58, -0.08);
+    hood.position.set(0, 0.64, -0.08);
     hood.rotation.x = 0.28;
     const strL = mesh(geo("hoodieString", () => new THREE.CapsuleGeometry(0.01, 0.14, 3, 8)), matCached(shade(topColor, -24), { roughness: 0.5 }), {}, noOL);
     const strR = strL.clone();
@@ -1150,12 +1172,13 @@ export function buildAvatarMesh(avatar = {}) {
   }
   torso.add(leftArm, rightArm);
 
-  const neck = mesh(geo("neck", () => new THREE.CapsuleGeometry(0.045, 0.09, 6, 12)), skinMat, {}, { outlineScale: 1.03 });
-  neck.position.y = 0.56;
+  const neck = mesh(geo("neckShort", () => new THREE.CapsuleGeometry(0.06, 0.045, 6, 12)), skinMat, {}, { outlineScale: 1.03 });
+  neck.position.y = 0.53;
   torso.add(neck);
 
   const head = new THREE.Group();
-  head.position.y = 0.78;
+  head.position.y = 0.74;
+  head.scale.setScalar(1.16);
   const skull = mesh(geo("headLathe", () => {
     const pts = [
       new THREE.Vector2(0.001, -0.155),
@@ -1343,7 +1366,7 @@ export function buildAvatarMesh(avatar = {}) {
     sculpted: true,
   };
   group.scale.setScalar(1.16);
-  applyJointBends(group.userData, {});
+  resetLimbRot(group.userData);
   return group;
 }
 
@@ -1773,7 +1796,7 @@ export function createAvatarPreview(container) {
     renderer.setSize(w, h);
     camera.aspect = w / h;
     camera.fov = 30;
-    camera.position.set(2.65, 1.02, 5.15);
+    camera.position.set(1.95, 1.0, 3.55);
     camera.lookAt(0, 0.88, 0);
     camera.updateProjectionMatrix();
   }

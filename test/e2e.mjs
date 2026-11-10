@@ -1,5 +1,9 @@
 import { chromium, devices } from "playwright";
-import { mkdir } from "fs/promises";
+import { mkdir, unlink } from "fs/promises";
+import { execFile } from "child_process";
+import { promisify } from "util";
+
+const execFileAsync = promisify(execFile);
 
 const BASE = process.env.BASE_URL || "http://127.0.0.1:3000";
 const SHOT = "/workspace/rooms-app/screenshots";
@@ -17,12 +21,20 @@ async function login(page, username) {
   await page.waitForSelector('[data-testid="save-avatar"]', { timeout: 10000 });
 }
 
-async function customize(page, { displayName, hair, shirt, skin, glasses }) {
-  await page.fill('[data-testid="display-name"]', displayName);
-  await page.click(`[data-testid="hair-${hair}"]`);
-  await page.click(`[data-testid="shirt-${shirt}"]`);
-  await page.click(`[data-testid="skin-${skin}"]`);
-  if (glasses) await page.check('[data-testid="glasses-toggle"]');
+async function customize(page, { displayName, hair, shirt, skin, glasses, hairColor, top, accessory } = {}) {
+  if (displayName != null) await page.fill('[data-testid="display-name"]', displayName);
+  if (hair != null) await page.click(`[data-testid="hair-${hair}"]`);
+  if (shirt != null) await page.click(`[data-testid="shirt-${shirt}"]`);
+  if (skin != null) await page.click(`[data-testid="skin-${skin}"]`);
+  if (hairColor != null) await page.click(`[data-testid="hairColor-${hairColor}"]`);
+  if (top != null) await page.click(`[data-testid="top-${top}"]`);
+  if (accessory != null) await page.click(`[data-testid="accessory-${accessory}"]`);
+  if (glasses != null) {
+    const box = page.locator('[data-testid="glasses-toggle"]');
+    const on = await box.isChecked();
+    if (glasses && !on) await box.check();
+    if (!glasses && on) await box.uncheck();
+  }
 }
 
 async function saveAvatar(page) {
@@ -198,6 +210,77 @@ async function assertInsideViewport(page, selectors, label, inset = { top: 0, bo
   );
 }
 
+async function assertNoHudOverlap(page, selectors, label) {
+  const info = await page.evaluate((sels) => {
+    const els = sels.map((sel) => {
+      const el = document.querySelector(sel);
+      if (!el) return { sel, missing: true };
+      const style = getComputedStyle(el);
+      if (el.classList.contains("hidden") || el.closest(".hidden") || style.display === "none" || style.visibility === "hidden") {
+        return { sel, missing: true, hidden: true };
+      }
+      const r = el.getBoundingClientRect();
+      if (r.width < 1 || r.height < 1) return { sel, missing: true };
+      return { sel, top: +r.top.toFixed(1), left: +r.left.toFixed(1), bottom: +r.bottom.toFixed(1), right: +r.right.toFixed(1) };
+    });
+    const visible = els.filter((e) => !e.missing);
+    const nodeOf = (sel) => document.querySelector(sel);
+    const nested = (aSel, bSel) => {
+      const a = nodeOf(aSel);
+      const b = nodeOf(bSel);
+      return Boolean(a && b && (a.contains(b) || b.contains(a)));
+    };
+    const overlaps = [];
+    const pad = 1;
+    for (let i = 0; i < visible.length; i++) {
+      for (let j = i + 1; j < visible.length; j++) {
+        const a = visible[i];
+        const b = visible[j];
+        if (nested(a.sel, b.sel)) continue;
+        const hit = a.left < b.right - pad && a.right > b.left + pad && a.top < b.bottom - pad && a.bottom > b.top + pad;
+        if (hit) overlaps.push({ a: a.sel, b: b.sel, aBox: a, bBox: b });
+      }
+    }
+    return { overlaps, visible: visible.map((v) => v.sel), missing: els.filter((e) => e.missing).map((e) => e.sel) };
+  }, selectors);
+  check(label, info.overlaps.length === 0, JSON.stringify(info));
+}
+
+async function composeAvatarGrid(paths, labels, out) {
+  const script = `
+from PIL import Image, ImageDraw, ImageFont
+import sys
+out = sys.argv[1]
+args = sys.argv[2:]
+pairs = list(zip(args[0::2], args[1::2]))
+imgs = [Image.open(p).convert("RGB") for p, _ in pairs]
+labels = [lb for _, lb in pairs]
+w = min(im.width for im in imgs)
+h = min(im.height for im in imgs)
+imgs = [im.resize((w, h)) for im in imgs]
+cols, rows = 3, 2
+pad, gap, cap = 18, 14, 34
+canvas = Image.new("RGB", (cols * w + pad * 2 + gap * (cols - 1), rows * (h + cap) + pad * 2 + gap * (rows - 1)), (255, 248, 242))
+draw = ImageDraw.Draw(canvas)
+try:
+    font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 20)
+except Exception:
+    font = ImageFont.load_default()
+for i, im in enumerate(imgs):
+    r, c = divmod(i, cols)
+    x = pad + c * (w + gap)
+    y = pad + r * (h + cap + gap)
+    canvas.paste(im, (x, y))
+    draw.text((x + 8, y + h + 6), labels[i], fill=(42, 28, 70), font=font)
+canvas.save(out)
+`;
+  const args = [out];
+  for (let i = 0; i < paths.length; i++) args.push(paths[i], labels[i]);
+  await execFileAsync("python3", ["-c", script, ...args]);
+}
+
+const PHONE_HUD = ['[data-testid="room-title"]', '#room-meta', '[data-testid="room-coins"]', '[data-testid="cam-toggle"]', '[data-testid="phone-btn"]', '[data-testid="emote-wheel-btn"]', '[data-testid="chat-dock"]'];
+
 async function checkShellOverflow(page, label) {
   const info = await page.evaluate(() => {
     const w = window.visualViewport?.width ?? window.innerWidth;
@@ -272,7 +355,8 @@ async function runAppShellFit(browser) {
   await page.waitForFunction(() => window.HouseRoom3D && window.HouseRoom3D.ready);
   await page.evaluate(() => window.HouseRoom3D?.resize?.());
   await page.waitForTimeout(300);
-  await assertInsideViewport(page, ['[data-testid="room-title"]', '[data-testid="chat-dock"]', '[data-testid="chat-input"]', '[data-testid="phone-btn"]', '[data-testid="emote-wheel-btn"]'], "In-room chrome fits the iPhone 14 viewport");
+  await assertInsideViewport(page, ['[data-testid="room-title"]', '[data-testid="chat-dock"]', '[data-testid="chat-input"]', '[data-testid="phone-btn"]', '[data-testid="emote-wheel-btn"]', '[data-testid="cam-toggle"]', '[data-testid="room-coins"]'], "In-room chrome fits the iPhone 14 viewport");
+  await assertNoHudOverlap(page, PHONE_HUD, "In-room HUD does not overlap on iPhone 14");
   const camDefault = await page.evaluate(() => window.__camState());
   check("Portrait phones default to a closer follow camera", Boolean(camDefault?.phone && camDefault.mode === "follow" && camDefault.zoom >= 1.3), JSON.stringify(camDefault));
   await page.evaluate(() => window.__setCamMode("room"));
@@ -285,6 +369,7 @@ async function runAppShellFit(browser) {
   await page.click('[data-testid="cam-toggle"]');
   const camToggled = await page.evaluate(() => window.__camState());
   check("The camera toggle shows the whole cube", camToggled?.mode === "room" && camToggled.zoom <= 1.05, JSON.stringify(camToggled));
+  await assertNoHudOverlap(page, PHONE_HUD, "The camera button stays clear of the room title after toggling");
   const ph = await page.evaluate(() => document.getElementById("chat-input")?.placeholder || "");
   check("The chat box stays on one line on a phone", ph === "Say something…", `placeholder=${JSON.stringify(ph)}`);
   await page.screenshot({ path: `${SHOT}/28-app-room.png` });
@@ -303,6 +388,9 @@ async function runAppShellFit(browser) {
     await page.evaluate(() => window.__setCamMode?.("room"));
     await page.waitForTimeout(80);
     await assertInsideViewport(page, chrome, `In-room chrome fits the ${sz.name} viewport`);
+    if (sz.width < 821) {
+      await assertNoHudOverlap(page, PHONE_HUD, `In-room HUD does not overlap on ${sz.name}`);
+    }
     await checkShellOverflow(page, `The app shell does not page-scroll on ${sz.name}`);
     const roomFit = await page.evaluate(() => window.HouseRoom3D.roomFitsView());
     check(`The whole cube fits the ${sz.name} viewport`, Boolean(roomFit?.ok), JSON.stringify(roomFit));
@@ -319,6 +407,7 @@ async function runAppShellFit(browser) {
   await page.evaluate(() => window.__setCamMode?.("room"));
   await page.waitForTimeout(80);
   await assertInsideViewport(page, chrome, "In-room chrome stays inside a 47px top safe-area", { top: 47, bottom: 0 });
+  await assertNoHudOverlap(page, PHONE_HUD, "In-room HUD does not overlap with a 47px notch inset");
   const titleTop = await page.locator('[data-testid="room-title"]').evaluate((el) => el.getBoundingClientRect().top);
   check("The in-room HUD sits below a 47px notch inset", titleTop >= 47, `titleTop=${titleTop.toFixed(1)}`);
   const fitSat = await page.evaluate(() => window.HouseRoom3D.roomFitsView());
@@ -424,6 +513,7 @@ async function runPhonePlaytest(browser) {
     await a.evaluate(() => window.HouseRoom3D.setZoom(2));
     await a.waitForTimeout(350);
     await a.screenshot({ path: `${SHOT}/33-phone-follow-cam.png` });
+    await assertNoHudOverlap(a, PHONE_HUD, "Follow-cam HUD does not overlap on iPhone 14");
 
     await a.evaluate(() => window.__setCamMode("room"));
     await b.evaluate(() => window.__setCamMode("room"));
@@ -477,6 +567,7 @@ async function runPhonePlaytest(browser) {
     await a.evaluate(() => { document.getElementById("chess-close")?.click(); });
     await b.evaluate(() => { document.getElementById("chess-close")?.click(); });
     await a.waitForTimeout(250);
+    await assertNoHudOverlap(a, PHONE_HUD, "Chess-table HUD does not overlap the room title or coin pill");
     await a.screenshot({ path: `${SHOT}/34-chess-seated.png` });
     await a.evaluate(() => window.__standUp());
     await b.evaluate(() => window.__standUp());
@@ -513,6 +604,53 @@ async function runPhonePlaytest(browser) {
     await tapFurniture(a, ids.chair);
     const sat = await a.waitForFunction(() => window.HouseRoom3D.personFlags("nila")?.sitting, null, { timeout: 12000 }).then(() => true).catch(() => false);
     check("Tapping a chair on a phone walks you there and sits you down", sat);
+    await a.evaluate(() => window.__standUp?.());
+    await a.waitForTimeout(250);
+
+    await a.locator('[data-testid="emote-wheel-btn"]').tap();
+    await a.waitForFunction(() => document.getElementById("emote-wheel")?.classList.contains("open") && document.querySelectorAll("#emote-wheel .emote-slot").length > 0, null, { timeout: 8000 });
+    const emoteFits = await a.evaluate(() => {
+      const slots = [...document.querySelectorAll("#emote-wheel .emote-slot")];
+      if (!slots.length) return { ok: false, reason: "no slots" };
+      const w = window.visualViewport?.width ?? window.innerWidth;
+      const h = window.visualViewport?.height ?? window.innerHeight;
+      const boxes = slots.map((el) => el.getBoundingClientRect());
+      const r = {
+        left: Math.min(...boxes.map((b) => b.left)),
+        right: Math.max(...boxes.map((b) => b.right)),
+        top: Math.min(...boxes.map((b) => b.top)),
+        bottom: Math.max(...boxes.map((b) => b.bottom)),
+      };
+      return { ok: r.right > r.left && r.left >= -8 && r.right <= w + 8 && r.top >= -8 && r.bottom <= h + 8, r, vp: { w, h } };
+    });
+    check("The emote wheel fits the phone screen", Boolean(emoteFits.ok), JSON.stringify(emoteFits));
+    const emoteBtn = a.locator("#emote-wheel .emote-slot").first();
+    if (await emoteBtn.count()) await emoteBtn.tap();
+    await a.waitForTimeout(250);
+    if (await a.evaluate(() => document.getElementById("emote-wheel")?.classList.contains("open"))) {
+      await a.locator('[data-testid="emote-wheel-backdrop"]').tap({ force: true }).catch(() => {});
+    }
+    await a.waitForTimeout(150);
+
+    await openPhone(a);
+    const phoneFits = await a.evaluate(() => {
+      const el = document.querySelector('[data-testid="phone-overlay"]');
+      if (!el || el.classList.contains("hidden")) return false;
+      const r = el.getBoundingClientRect();
+      const w = window.visualViewport?.width ?? window.innerWidth;
+      const h = window.visualViewport?.height ?? window.innerHeight;
+      return r.width > 40 && r.left >= -8 && r.right <= w + 8 && r.top >= -8 && r.bottom <= h + 8;
+    });
+    check("The phone menu fits the phone screen", phoneFits);
+    await a.locator('[data-testid="phone-backdrop"]').tap();
+    await a.waitForSelector('[data-testid="phone-overlay"].hidden, body:not(.phone-open)', { timeout: 8000 }).catch(() => {});
+    await a.waitForTimeout(150);
+
+    await a.evaluate(() => window.__enterEdit?.());
+    await a.waitForSelector('[data-testid="edit-inventory"]:not(.hidden)', { timeout: 8000 });
+    await assertInsideViewport(a, ['[data-testid="edit-inventory"]', '[data-testid="edit-done"]', '[data-testid="cam-toggle"]'], "Edit mode inventory fits the phone screen");
+    await assertNoHudOverlap(a, ['[data-testid="room-title"]', '[data-testid="room-coins"]', '[data-testid="cam-toggle"]', '[data-testid="edit-inventory"]'], "Edit mode HUD does not overlap");
+    await a.evaluate(() => window.__exitEdit?.());
   } catch (err) {
     try { await a.screenshot({ path: `${SHOT}/debug-phone-a.png` }); } catch {}
     try { await b.screenshot({ path: `${SHOT}/debug-phone-b.png` }); } catch {}
@@ -561,7 +699,29 @@ try {
   check("Alice can create an avatar and reach the lobby", await alice.locator('body[data-view="lobby"]').count() === 1);
 
   await login(bob, "bob");
-  await customize(bob, { displayName: "Bob", hair: 2, shirt: 2, skin: 3, glasses: true });
+  const varietyLooks = [
+    { name: "short", hair: 0, shirt: 0, skin: 0, hairColor: 3, glasses: false },
+    { name: "long", hair: 1, shirt: 2, skin: 1, hairColor: 0, glasses: false },
+    { name: "curly", hair: 2, shirt: 4, skin: 3, hairColor: 1, glasses: true },
+    { name: "bun", hair: 3, shirt: 1, skin: 2, hairColor: 2, glasses: false },
+    { name: "spiky", hair: 4, shirt: 6, skin: 4, hairColor: 5, glasses: false },
+    { name: "bangs", hair: 5, shirt: 3, skin: 5, hairColor: 7, glasses: false },
+  ];
+  const varietyPaths = [];
+  for (const look of varietyLooks) {
+    await customize(bob, { displayName: "Bob", ...look });
+    await bob.waitForTimeout(350);
+    const path = `${SHOT}/_av-${look.name}.png`;
+    await bob.locator('[data-testid="creator-preview"]').screenshot({ path });
+    varietyPaths.push(path);
+  }
+  await composeAvatarGrid(varietyPaths, varietyLooks.map((l) => l.name), `${SHOT}/36-avatar-variety.png`);
+  for (const path of varietyPaths) {
+    await unlink(path).catch(() => {});
+  }
+  check("Avatar variety grid shows every hairstyle", true);
+
+  await customize(bob, { displayName: "Bob", hair: 2, shirt: 2, skin: 3, hairColor: 0, glasses: true });
   await bob.waitForTimeout(500);
   await bob.locator('[data-testid="creator-preview"]').screenshot({ path: `${SHOT}/07-character-closeup.png` });
   await bob.locator('[data-testid="creator-preview"]').screenshot({ path: `${SHOT}/32-avatar-closeup.png` });
