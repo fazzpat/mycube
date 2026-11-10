@@ -142,6 +142,12 @@
         <div class="room-stage">
           <div id="place-banner" class="place-banner hidden"></div>
           <div class="room3d-root" id="floor" data-testid="floor"></div>
+          <button type="button" id="cam-toggle" class="cam-toggle" data-testid="cam-toggle" aria-label="Show the whole cube" title="Show the whole cube">
+            <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round">
+              <path d="M8.5 7l1.3-2.1h4.4L15.5 7H18a2 2 0 012 2v9a2 2 0 01-2 2H6a2 2 0 01-2-2V9a2 2 0 012-2h2.5z"/>
+              <circle cx="12" cy="13.2" r="3.4"/>
+            </svg>
+          </button>
         </div>
       </div>
       <button class="phone-fab" data-testid="phone-btn" id="phone-btn" type="button" aria-label="Open phone menu" aria-expanded="false">
@@ -180,7 +186,6 @@
         <button type="button" class="btn sage" id="place-confirm" data-testid="place-confirm">Place</button>
       </div>
       <div id="activity-chip" class="activity-chip hidden" data-testid="activity-chip"></div>
-      <button type="button" id="cam-toggle" class="cam-toggle" data-testid="cam-toggle" aria-label="Toggle camera">Whole cube</button>
       <div id="fridge-picker" class="fridge-picker hidden" data-testid="fridge-picker">
         <div class="fridge-picker-title">Grab a snack</div>
         <div class="fridge-picker-row">

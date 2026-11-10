@@ -1505,8 +1505,12 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
     const st = state.room3d?.camState?.() || {};
     view?.classList.toggle("phone-cam", Boolean(st.phone));
     if (btn) {
-      btn.textContent = st.mode === "room" ? "Follow me" : "Whole cube";
-      btn.setAttribute("aria-pressed", st.mode === "room" ? "true" : "false");
+      const follow = st.mode !== "room";
+      const label = follow ? "Show the whole cube" : "Follow me";
+      btn.title = label;
+      btn.setAttribute("aria-label", label);
+      btn.setAttribute("aria-pressed", follow ? "false" : "true");
+      btn.dataset.mode = st.mode || "follow";
     }
   }
 
