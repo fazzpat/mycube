@@ -1,7 +1,7 @@
 import { createRoom3D, createAvatarPreview } from "./isoRoom.js";
 import { CLOTHING_STOCK, PET_STOCK, PUBLIC_PLACES } from "./storeCatalog.js";
-import { Chess } from "/vendor/chess.js";
 import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, snapshot as cubicsSnap, drawCubics, jokeAt } from "./cubics.js";
+import { initChessUI } from "./chess-ui.js";
 
 (() => {
   const socket = io({ transports: ["websocket", "polling"] });
@@ -55,6 +55,10 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
     chatFloats: [],
     chatQuietAt: 0,
   };
+
+  const chessUI = initChessUI({ socket, state, $, SHOW, HIDE });
+  const openChessPanel = (...args) => chessUI.openChessPanel(...args);
+  const closeChessPanel = (...args) => chessUI.closeChessPanel(...args);
 
   function setView(name) {
     state.view = name;
@@ -527,6 +531,7 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
     r3.resize();
     renderPeople();
     syncCamToggle();
+    chessUI.restoreAfterMount();
   }
 
   function renderFloorStatic() {
@@ -1606,14 +1611,9 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
       return;
     }
     if (type === "chesstable") {
-      const game = state.room?.chess?.[id];
-      const me = state.me?.username;
-      if (game && (game.white === me || game.black === me || (game.seats && (game.seats[0] === me || game.seats[1] === me)))) {
-        openChessPanel(id);
-        return;
-      }
-      const seat = extra.seat === 1 ? 1 : (extra.seat === 0 ? 0 : pickFreeChessSeat(game));
-      approachFurniture(furn, () => socket.emit("sitFurniture", { id, seat }));
+      chessUI.handleTableClick(id, extra, (seat) => {
+        approachFurniture(furn, () => socket.emit("sitFurniture", { id, seat }));
+      });
       return;
     }
     if (type === "fridge") {
@@ -1645,13 +1645,6 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
         toast("Brewing a cup…");
       });
     }
-  }
-
-  function pickFreeChessSeat(game) {
-    if (!game) return 0;
-    if (!game.seats?.[0]) return 0;
-    if (!game.seats?.[1]) return 1;
-    return 0;
   }
 
   function refreshActivityUI() {
@@ -1752,122 +1745,6 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
   function hideFridgePicker() {
     HIDE($("#fridge-picker"));
     state.fridgeId = null;
-  }
-
-  const PIECE_UNI = {
-    p: "♟", r: "♜", n: "♞", b: "♝", q: "♛", k: "♚",
-    P: "♙", R: "♖", N: "♘", B: "♗", Q: "♕", K: "♔",
-  };
-
-  function openChessPanel(id) {
-    state.chessId = id;
-    SHOW($("#chess-panel"));
-    paintChessPanel();
-  }
-  function closeChessPanel() {
-    HIDE($("#chess-panel"));
-    state.chessId = null;
-    state.chessSel = null;
-  }
-
-  function paintChessPanel() {
-    const id = state.chessId;
-    const game = id && state.room?.chess?.[id];
-    if (!game) return;
-    const me = state.me?.username;
-    const isWhite = game.white === me;
-    const isBlack = game.black === me;
-    const isPlayer = isWhite || isBlack;
-    const myTurn = !game.result && ((game.turn === "w" && isWhite) || (game.turn === "b" && isBlack));
-    const status = $("#chess-status");
-    if (status) {
-      if (game.result) status.textContent = game.result === "checkmate" ? `Checkmate · ${game.winner} wins` : game.result === "resign" ? `${game.winner} wins` : "Draw";
-      else if (!game.white || !game.black) status.textContent = "Waiting for an opponent…";
-      else status.textContent = `${game.turn === "w" ? "White" : "Black"} to move${game.check ? " · check" : ""}`;
-    }
-    const cap = $("#chess-captured");
-    if (cap) {
-      const w = (game.captured?.w || []).map((c) => PIECE_UNI[c.toUpperCase()] || c).join(" ");
-      const b = (game.captured?.b || []).map((c) => PIECE_UNI[c] || c).join(" ");
-      cap.textContent = (w ? "White took " + w + "  " : "") + (b ? "Black took " + b : "");
-    }
-    const result = $("#chess-result");
-    if (result) {
-      if (game.result) {
-        result.textContent = game.checkmate || game.result === "checkmate"
-          ? `Checkmate! ${game.winner} wins`
-          : game.result === "stalemate"
-            ? "Stalemate"
-            : game.result === "resign"
-              ? `${game.winner} wins by resignation`
-              : "Draw";
-        SHOW(result);
-        if (isPlayer) SHOW($("#chess-rematch"));
-      } else {
-        HIDE(result);
-        HIDE($("#chess-rematch"));
-      }
-    }
-    const boardEl = $("#chess-board");
-    if (!boardEl) return;
-    let engine = null;
-    try { engine = new Chess(game.fen); } catch { engine = new Chess(); }
-    const flip = isBlack;
-    const legal = new Set();
-    if (myTurn && state.chessSel) {
-      engine.moves({ square: state.chessSel, verbose: true }).forEach((m) => legal.add(m.to));
-    }
-    const last = game.lastMove || {};
-    const files = "abcdefgh";
-    const ranks = [8, 7, 6, 5, 4, 3, 2, 1];
-    const orderFiles = flip ? files.split("").reverse() : files.split("");
-    const orderRanks = flip ? ranks.slice().reverse() : ranks;
-    let html = "";
-    for (const r of orderRanks) {
-      for (const f of orderFiles) {
-        const sq = f + r;
-        const fileIdx = files.indexOf(f);
-        const dark = (fileIdx + r) % 2 === 0;
-        const piece = engine.get(sq);
-        const ch = piece ? (piece.color === "w" ? piece.type.toUpperCase() : piece.type) : "";
-        const cls = [
-          "chess-sq",
-          dark ? "dark" : "light",
-          state.chessSel === sq ? "sel" : "",
-          legal.has(sq) ? "legal" : "",
-          last.from === sq || last.to === sq ? "last" : "",
-        ].filter(Boolean).join(" ");
-        html += `<button type="button" class="${cls}" data-square="${sq}" data-testid="chess-sq-${sq}">${ch ? PIECE_UNI[ch] : ""}</button>`;
-      }
-    }
-    boardEl.innerHTML = html;
-    boardEl.querySelectorAll("[data-square]").forEach((b) => {
-      b.addEventListener("click", () => onChessSquare(b.dataset.square, engine, myTurn, isPlayer, isWhite, isBlack));
-    });
-  }
-
-  function onChessSquare(sq, engine, myTurn, isPlayer, isWhite, isBlack) {
-    if (!isPlayer || !myTurn) {
-      // spectators / waiting: still allow select highlight locally? keep read-only
-      return;
-    }
-    const piece = engine.get(sq);
-    if (state.chessSel) {
-      const moves = engine.moves({ square: state.chessSel, verbose: true }).filter((m) => m.to === sq);
-      if (moves.length) {
-        socket.emit("chessMove", { id: state.chessId, from: state.chessSel, to: sq });
-        state.chessSel = null;
-        paintChessPanel();
-        return;
-      }
-    }
-    if (piece && ((piece.color === "w" && isWhite) || (piece.color === "b" && isBlack))) {
-      state.chessSel = sq;
-      paintChessPanel();
-    } else {
-      state.chessSel = null;
-      paintChessPanel();
-    }
   }
 
   function syncCamToggle() {
@@ -2890,17 +2767,6 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
       hideFridgePicker();
     });
   });
-  $("#chess-close")?.addEventListener("click", closeChessPanel);
-  $("#chess-resign")?.addEventListener("click", () => {
-    if (state.chessId) socket.emit("chessResign", { id: state.chessId });
-  });
-  $("#chess-rematch")?.addEventListener("click", () => {
-    if (state.chessId) socket.emit("chessRematch", { id: state.chessId });
-  });
-  $("#chess-stand")?.addEventListener("click", () => {
-    socket.emit("standUp");
-    closeChessPanel();
-  });
   $("#cubics-close")?.addEventListener("click", closeCubics);
   $("#cubics-start")?.addEventListener("click", startCubicsPlay);
   $("#cam-toggle")?.addEventListener("click", () => {
@@ -3247,15 +3113,7 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
   });
 
   socket.on("chessUpdated", ({ id, game }) => {
-    if (!state.room) return;
-    state.room.chess = state.room.chess || {};
-    if (game) state.room.chess[id] = game;
-    else delete state.room.chess[id];
-    state.room3d?.setChessMap(state.room.chess);
-    const me = state.me?.username;
-    const seated = Boolean(game && (game.seats?.[0] === me || game.seats?.[1] === me));
-    if (seated && (game.white && game.black || game.result)) openChessPanel(id);
-    else if (state.chessId === id) closeChessPanel();
+    chessUI.onChessUpdated(id, game);
   });
 
   socket.on("roomResized", ({ size }) => {

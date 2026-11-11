@@ -17,6 +17,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/css/styles.css" />
+  <link rel="stylesheet" href="/css/chess.css" />
   <script type="importmap">
   { "imports": { "three": "/vendor/three.module.js" } }
   </script>
@@ -210,7 +211,12 @@
           <button type="button" class="btn tiny ghost" id="chess-close" data-testid="chess-close">✕</button>
         </div>
         <div id="chess-captured" class="chess-captured" data-testid="chess-captured"></div>
-        <div id="chess-board" class="chess-board" data-testid="chess-board"></div>
+        <div class="chess-board-shell">
+          <div id="chess-ranks" class="chess-ranks" data-testid="chess-ranks" aria-hidden="true"></div>
+          <div id="chess-board" class="chess-board" data-testid="chess-board"></div>
+          <div id="chess-files" class="chess-files" data-testid="chess-files" aria-hidden="true"></div>
+        </div>
+        <div id="chess-promo" class="chess-promo hidden" data-testid="chess-promo"></div>
         <div id="chess-result" class="chess-result hidden" data-testid="chess-result"></div>
         <div class="chess-actions">
           <button type="button" class="btn small" id="chess-resign" data-testid="chess-resign">Resign</button>
