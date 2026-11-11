@@ -19,7 +19,7 @@ function check(name, ok, extra = "") {
   console.log(`${ok ? "PASS" : "FAIL"}  ${name}${extra ? " — " + extra : ""}`);
 }
 
-check("There are exactly 6 original pixel-art pieces", ART_PIECES.length === 6 && ART_TYPES.length === 6, String(ART_TYPES));
+check("There are exactly 10 original pixel-art pieces", ART_PIECES.length === 10 && ART_TYPES.length === 10, String(ART_TYPES));
 
 const names = new Set(), types = new Set();
 let catalogOk = true;
@@ -34,7 +34,7 @@ for (const piece of ART_PIECES) {
   if (!catalog || catalog.name !== piece.name || catalog.price !== piece.price) catalogOk = false;
   if (!isPainting(piece.type) || !isPixelArt(piece.type)) catalogOk = false;
 }
-check("Each piece has a unique name, type, description, coin price, and wall catalog entry", catalogOk && names.size === 6 && types.size === 6);
+check("Each piece has a unique name, type, description, coin price, and one-tile wall catalog entry", catalogOk && names.size === 10 && types.size === 10);
 
 check(
   "Artwork size matches one floor-tile face (isoRoom TW=64, TH=32)",
@@ -42,8 +42,12 @@ check(
   JSON.stringify({ ART_SIZE, FLOOR_TILE_PX, ART_TILE_SPAN, ART_WORLD_UP }),
 );
 
-const expected = ["art_shore", "art_peaks", "art_mesa", "art_blocks", "art_tide", "art_splash"];
-check("The six types cover three landscapes and three abstracts", expected.every((t) => ART_TYPES.includes(t)));
+const landscapes = ["art_ocean", "art_peaks", "art_nightwood", "art_mesa", "art_farm", "art_skyline"];
+const abstracts = ["art_blocks", "art_gridsun", "art_swirl", "art_bloom"];
+check(
+  "The ten types cover six landscapes and four abstracts",
+  landscapes.every((t) => ART_TYPES.includes(t)) && abstracts.every((t) => ART_TYPES.includes(t)),
+);
 
 let pixelsOk = true;
 const palettes = [];
@@ -55,12 +59,12 @@ for (const piece of ART_PIECES) {
   if (width !== ART_SIZE || height !== ART_SIZE) pixelsOk = false;
   if (pixels.length !== ART_SIZE * ART_SIZE) pixelsOk = false;
   if (missing !== 0) pixelsOk = false;
-  if (colors.length < 6 || colors.length > 28) pixelsOk = false;
+  if (colors.length < 6 || colors.length > 40) pixelsOk = false;
 }
 check("Each piece is a complete 32x32 pixel buffer with a limited palette", pixelsOk, JSON.stringify(palettes));
 
 const hashes = ART_PIECES.map((p) => renderArtPixels(p.type).pixels.join(","));
-check("The six paintings are visually distinct", new Set(hashes).size === 6);
+check("The ten paintings are visually distinct", new Set(hashes).size === 10);
 
 const failed = results.filter((r) => !r.ok);
 if (failed.length) {
