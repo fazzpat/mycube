@@ -2085,16 +2085,17 @@ input, textarea, select {
 .speech-bubble.shout { box-shadow: 0 0 0 2px #c4182d, 0 0 10px rgba(196,24,45,.35); }
 
 body[data-view="room"] #toasts {
-  top: calc(var(--safe-top, 0px) + 52px + 78px);
+  top: calc(var(--safe-top, 0px) + 52px + 44px);
   right: auto;
-  left: calc(12px + var(--safe-left, 0px));
-  width: min(220px, calc(100% - 88px));
-  z-index: 42;
+  left: calc(8px + var(--safe-left, 0px));
+  width: min(148px, 38vw);
+  z-index: 34;
 }
 body[data-view="room"] .toast {
-  padding: 6px 10px;
-  font-size: 12px;
-  border-radius: 8px;
+  padding: 3px 6px;
+  font-size: 10px;
+  line-height: 1.2;
+  border-radius: 6px;
   font-weight: 600;
 }
 
@@ -2715,10 +2716,10 @@ body.phone-open .phone-dock-btn {
 
 /* In-handset apps stay at the home-screen size; content scrolls inside. */
 .phone-edit-preview {
-  flex: 0 0 auto;
-  height: 40px;
+  flex: 0 0 64px;
+  height: 64px;
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: center;
   background: linear-gradient(180deg, #3b2760 0%, #1c1233 100%);
   border-bottom: 1px solid #5a3a20;
@@ -2727,6 +2728,8 @@ body.phone-open .phone-dock-btn {
 .phone-edit-preview canvas {
   image-rendering: pixelated;
   display: block;
+  max-width: 100%;
+  max-height: 100%;
 }
 #phone-screen-edit-character,
 #phone-screen-edit {
@@ -3045,16 +3048,16 @@ body[data-view="room"] #toasts {
   top: calc(var(--safe-top, 0px) + 52px + 44px);
   left: calc(8px + var(--safe-left, 0px));
   right: auto;
-  width: min(188px, 44vw);
-  max-width: 188px;
-  gap: 4px;
+  width: min(148px, 38vw);
+  max-width: 148px;
+  gap: 3px;
   z-index: 34;
   pointer-events: none;
 }
 body[data-view="room"] .toast {
-  padding: 4px 8px;
-  font-size: 11px;
-  line-height: 1.25;
+  padding: 3px 6px;
+  font-size: 10px;
+  line-height: 1.2;
   border-radius: 6px;
   font-weight: 600;
   box-shadow: 0 2px 0 #2a1c4a22, 0 4px 10px rgba(0,0,0,.18);

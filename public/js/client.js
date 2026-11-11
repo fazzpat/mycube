@@ -203,7 +203,7 @@ import {
       el.appendChild(row);
     }
     $("#toasts").appendChild(el);
-    setTimeout(() => el.remove(), actions ? 8000 : 2000);
+    setTimeout(() => el.remove(), actions ? 8000 : 3000);
   }
 
   function escapeHtml(s) {
@@ -2707,23 +2707,32 @@ import {
     if (!screen || screen.classList.contains("hidden") || !state.draft) {
       box.innerHTML = "";
       return;
-    };
+    }
+    if (!box.clientHeight) {
+      requestAnimationFrame(() => paintPhoneEditPreview());
+      return;
+    }
     const spr = drawAvatarSprite(state.draft, { bodyDir: 1, headDir: 1, blink: "open" }, 0);
-    const scale = 2;
+    const boxW = Math.max(1, box.clientWidth || 140);
+    const boxH = Math.max(1, box.clientHeight || 64);
+    const raw = Math.min(boxW / spr.w, boxH / spr.h);
+    const scale = raw >= 1 ? Math.floor(raw) : Math.max(0.5, raw);
+    const dw = Math.max(1, Math.round(spr.w * scale));
+    const dh = Math.max(1, Math.round(spr.h * scale));
     let c = box.querySelector("canvas");
     if (!c) {
       c = document.createElement("canvas");
       box.innerHTML = "";
       box.appendChild(c);
     }
-    c.width = spr.w * scale;
-    c.height = spr.h * scale;
-    c.style.width = c.width + "px";
-    c.style.height = c.height + "px";
+    c.width = spr.w;
+    c.height = spr.h;
+    c.style.width = dw + "px";
+    c.style.height = dh + "px";
     const ctx = c.getContext("2d");
     ctx.imageSmoothingEnabled = false;
     ctx.clearRect(0, 0, c.width, c.height);
-    ctx.drawImage(spr.c, 0, 0, spr.w, spr.h, 0, 0, c.width, c.height);
+    ctx.drawImage(spr.c, 0, 0);
   }
   function paintPhoneEmotes() {
     const body = $("#phone-emotes-body");
@@ -3741,7 +3750,7 @@ import {
     } catch {}
     state.draft = { ...HearthAvatar.defaults(), ...(user.avatar || {}), displayName: user.avatar?.displayName || user.username };
     if (isNew) {
-      toast(`Welcome to your cube, ${state.draft.displayName}. Open your phone to edit your look or name.`);
+      toast("Welcome to your cube.");
     }
   });
 
