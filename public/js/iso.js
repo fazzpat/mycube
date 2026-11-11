@@ -80,7 +80,13 @@
   }
 
   function normalizeRot(rot) {
-    return ((Number(rot) || 0) % 4 + 4) % 4;
+    const n = Number(rot);
+    if (!Number.isFinite(n)) return 0;
+    if (Math.abs(n) >= 45) {
+      const deg = ((n % 360) + 360) % 360;
+      return Math.round(deg / 90) % 4;
+    }
+    return ((Math.round(n) % 4) + 4) % 4;
   }
 
   function dims(type, rot) {

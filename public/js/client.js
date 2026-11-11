@@ -1337,7 +1337,7 @@ import { initChessUI } from "./chess-ui.js";
 
   function rotatePending(dir = 1) {
     if (state.pendingPlace || state.movingId) {
-      state.placeRot = ((state.placeRot || 0) + dir + 4) % 4;
+      state.placeRot = HouseIso.normalizeRot((state.placeRot || 0) + dir);
       const g = state.room3d?.getGhost?.();
       if (g) updatePlaceHighlight(g.tx, g.ty);
       paintEditInventory();
@@ -1346,7 +1346,7 @@ import { initChessUI } from "./chess-ui.js";
     if (state.selectedFurnId && state.editMode) {
       const f = (state.room?.furniture || []).find((x) => x.id === state.selectedFurnId);
       if (!f) return;
-      const rot = ((f.rot || 0) + dir + 4) % 4;
+      const rot = HouseIso.normalizeRot((f.rot || 0) + dir);
       socket.emit("moveFurniture", { id: f.id, x: f.x, y: f.y, rot });
     }
   }
@@ -2739,7 +2739,7 @@ import { initChessUI } from "./chess-ui.js";
     hideFurnActions();
     state.movingId = f.id;
     state.pendingPlace = null;
-    state.placeRot = f.rot || 0;
+    state.placeRot = HouseIso.normalizeRot(f.rot);
     state.room3d?.setPlacing(f.type);
     SHOW($("#place-banner"));
     $("#place-banner").innerHTML = `Move your ${escapeHtml(labelFor(f.type))} <button class="btn small secondary" id="cancel-place" type="button">Cancel</button>`;

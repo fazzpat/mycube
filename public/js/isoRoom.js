@@ -1,6 +1,10 @@
 import { drawAvatarSprite, paintAvatarSheet, paintStoreThumb, AVATAR_SHEET_LOOKS, AV_W, AV_H, facingIndex8 } from "./avatar3d.js";
 import { drawPetSprite as drawPetPixel, paintPetSheet, paintPetThumb, PET_W, PET_H } from "./petSprites.js";
 import { programAt } from "./cubechannel.js";
+import {
+  normalizeFurnRot, snapFacingToAxis, furnTileDims, furnSpriteMetrics, furnBlitPos,
+  drawFurnitureSprite, paintFurnitureSheet, hitFurnitureAt, FURN_SHEET_TYPES,
+} from "./furnIso.js";
 /* 2D isometric pixel room renderer — 2000s house style, HouseRoom3D API. */
 const TW = 64;
 const TH = 32;
@@ -291,341 +295,9 @@ function wallStrip(wallStyle, side, col, lights, hasWindow, hasDoor, sign) {
   });
 }
 
-const FURN_WIDE = new Set(["couch", "capsulecouch", "table", "bed", "rug", "chesstable", "benchpress", "treadmill", "djdeck", "counter", "petpen"]);
-function furnLogical(type, rot = 0) {
-  const sizes = {
-    plant: [22, 28], podplant: [22, 30], cubics: [28, 30], couch: [40, 24],
-    capsulecouch: [40, 24], table: [30, 22], lamp: [16, 32], rug: [36, 20],
-    chair: [20, 24], hoverchair: [22, 26], bed: [40, 28], tv: [28, 30],
-    holotv: [28, 32], fridge: [20, 34], chesstable: [32, 24], coffeemachine: [20, 26],
-    heavybag: [18, 36], benchpress: [36, 22], treadmill: [32, 26], clothescab: [24, 34],
-    djdeck: [32, 26], sodavending: [22, 36], pinball: [28, 32], neonsign: [28, 28], shopkeeper: [AV_W, AV_H],
-    rack: [28, 32], mannequin: [20, 36], petpen: [32, 24], cage: [24, 28], counter: [36, 22],
-  };
-  sizes.punchbag = sizes.heavybag;
-  let [w, h] = sizes[type] || [24, 24];
-  if ((rot | 0) % 2 && FURN_WIDE.has(type)) {
-    w = Math.max(16, Math.round(h * 1.2));
-    h = Math.max(16, Math.round((sizes[type] || [24, 24])[0] * 0.7));
-  }
-  return [w, h];
-}
 function furnSize(type, rot = 0) {
-  if (type === "shopkeeper") return [AV_W, AV_H];
-  const [w, h] = furnLogical(type, rot);
-  return [w * 2, h * 2];
-}
-
-function drawFurnitureSprite(type, opts = {}) {
-  const lights = opts.lights !== false;
-  const rot = opts.rot || 0;
-  const on = Boolean(opts.on);
-  const open = Boolean(opts.open);
-  const key = "furn:" + type + ":" + rot + ":" + lights + ":" + on + ":" + open + ":" + (opts.sku || "");
-  const [lw, lh] = type === "shopkeeper" ? [AV_W, AV_H] : furnLogical(type, rot);
-  return sprite(key, lw * (type === "shopkeeper" ? 1 : 2), lh * (type === "shopkeeper" ? 1 : 2), (ctx) => {
-    ctx.save();
-    if (type !== "shopkeeper" && ((rot | 0) % 4) >= 2) { ctx.translate(lw * 2, 0); ctx.scale(-1, 1); }
-    if (type !== "shopkeeper") ctx.scale(2, 2);
-    const w = lw, h = lh;
-    const metal = lights ? NEON.metal2 : shade(NEON.metal, -20);
-    const body = (x, y, bw, bh, c) => px(ctx, x, y, bw, bh, c);
-    const outline = (x, y, bw, bh, c = "#000") => {
-      ctx.strokeStyle = c;
-      ctx.strokeRect(x + 0.5, y + 0.5, bw - 1, bh - 1);
-    };
-    ctx.fillStyle = "rgba(0,0,0,0.35)";
-    ctx.beginPath();
-    ctx.ellipse(w / 2, h - 2, Math.min(12, w / 2 - 1), 3, 0, 0, Math.PI * 2);
-    ctx.fill();
-    const drawBox = (x, y, bw, bh, fill, trim) => {
-      body(x, y, bw, bh, fill);
-      body(x, y, bw, 2, shade(fill, 30));
-      body(x, y + bh - 2, bw, 2, shade(fill, -25));
-      if (trim) outline(x, y, bw, bh, trim);
-    };
-    switch (type) {
-      case "plant":
-      case "podplant": {
-        drawBox(w / 2 - 6, h - 10, 12, 8, "#b86a3a", "#6a3a20");
-        body(w / 2 - 5, h - 9, 10, 2, "#d48850");
-        body(w / 2 - 2, h - 18, 4, 8, "#3a5a28");
-        body(w / 2 - 6, h - 24, 5, 8, lights ? "#3d7a4a" : "#1a4a2a");
-        body(w / 2 + 1, h - 26, 5, 10, lights ? "#5a9a48" : "#3a5a20");
-        body(w / 2 - 3, h - 28, 4, 6, lights ? "#2a6a38" : "#2a4a20");
-        break;
-      }
-      case "couch":
-      case "capsulecouch": {
-        drawBox(2, h - 13, w - 4, 10, "#7a1420", "#3a0a10");
-        drawBox(3, h - 22, w - 6, 11, "#c4182d", "#5a1018");
-        body(3, h - 22, w - 6, 2, lights ? "#f26a72" : "#8a3038");
-        body(8, h - 20, Math.max(6, w - 16), 1, lights ? "#ffd0d4" : "#c07070");
-        body(4, h - 17, 6, 5, "#a81828");
-        body(w - 12, h - 17, 6, 5, "#8a1420");
-        body(3, h - 13, w - 6, 1, "#3a0a10");
-        break;
-      }
-      case "chair":
-      case "hoverchair": {
-        if (type === "hoverchair") {
-          ctx.fillStyle = lights ? "#e8e0d0" : "#a8a090";
-          ctx.beginPath();
-          ctx.ellipse(w / 2, h / 2 - 1, 8, 12, 0, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.strokeStyle = "#5a5048";
-          ctx.stroke();
-          ctx.fillStyle = lights ? "#fff8ec" : "#d0c8bc";
-          ctx.beginPath();
-          ctx.ellipse(w / 2 - 2, h / 2 - 4, 3, 5, 0, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.fillStyle = "#3a3040";
-          ctx.beginPath();
-          ctx.ellipse(w / 2, h / 2 + 3, 5, 6, 0, 0, Math.PI * 2);
-          ctx.fill();
-          body(w / 2 - 2, h - 6, 4, 5, "#c0c4c8");
-          body(w / 2 - 5, h - 2, 10, 2, "#8a8e92");
-        } else {
-          drawBox(5, h - 12, 12, 7, "#8a5a32", "#4a2e18");
-          body(6, h - 18, 10, 7, "#c48850");
-          body(6, h - 18, 10, 2, lights ? "#e8c090" : "#8a6038");
-          body(7, h - 5, 2, 4, metal);
-          body(13, h - 5, 2, 4, metal);
-        }
-        break;
-      }
-      case "table":
-      case "counter": {
-        drawBox(3, h - 12, w - 6, 7, "#6a4630", "#3a2418");
-        body(4, h - 11, w - 8, 2, lights ? "#c4a078" : "#6a4a30");
-        body(5, h - 10, w - 10, 1, lights ? "#ead0a8" : "#8a6a48");
-        body(6, h - 5, 2, 4, "#4a3a2a");
-        body(w - 9, h - 5, 2, 4, "#4a3a2a");
-        break;
-      }
-      case "rug": {
-        ctx.fillStyle = lights ? "#b02030" : "#6a1820";
-        ctx.beginPath();
-        ctx.ellipse(w / 2, h / 2, w / 2 - 2, 7, 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = lights ? "#e8c878" : "#8a7030";
-        ctx.stroke();
-        ctx.strokeStyle = lights ? "#f4e0a0" : "#6a5420";
-        ctx.beginPath();
-        ctx.ellipse(w / 2, h / 2, w / 2 - 6, 4, 0, 0, Math.PI * 2);
-        ctx.stroke();
-        pset(ctx, w / 2, h / 2, lights ? "#f4e0a0" : "#8a7030");
-        break;
-      }
-      case "lamp": {
-        body(w / 2 - 2, h - 8, 4, 6, "#8a6a40");
-        body(w / 2 - 1, 8, 2, h - 16, "#c4a070");
-        body(w / 2 - 6, 4, 12, 8, lights ? "#f4e0a8" : "#6a5a40");
-        if (lights) {
-          ctx.fillStyle = "rgba(255, 200, 80, 0.28)";
-          ctx.beginPath();
-          ctx.moveTo(w / 2 - 6, 12);
-          ctx.lineTo(w / 2 + 6, 12);
-          ctx.lineTo(w / 2 + 10, h - 6);
-          ctx.lineTo(w / 2 - 10, h - 6);
-          ctx.fill();
-        }
-        outline(w / 2 - 6, 4, 12, 8, "#6a5a40");
-        break;
-      }
-      case "bed": {
-        drawBox(2, h - 12, w - 4, 10, "#6b4a32", "#3a2818");
-        body(3, h - 18, w - 6, 8, "#d8c8b0");
-        body(3, h - 18, 8, 8, lights ? "#efe6d4" : "#a89880");
-        body(4, h - 16, 6, 3, "#f4efe4");
-        body(2, h - 12, w - 4, 1, "#4a3220");
-        break;
-      }
-      case "tv":
-      case "holotv": {
-        drawBox(4, 6, w - 8, h - 14, "#2a2a2e", "#1a1a1c");
-        body(4, 6, w - 8, 2, "#4a4a4e");
-        const scr = on && lights ? "#1a2840" : "#101014";
-        body(6, 8, w - 12, h - 20, scr);
-        if (on && lights) {
-          body(7, 10, w - 14, 5, "#3a6aaa");
-          body(7, 16, 6, 3, "#c4a070");
-          body(14, 16, 6, 3, "#6a9a50");
-          body(7, 20, w - 14, 1, "#d8d0c4");
-        }
-        body(w / 2 - 4, h - 8, 8, 4, "#3a3228");
-        body(w / 2 - 3, h - 7, 6, 2, "#5a4a38");
-        break;
-      }
-      case "fridge": {
-        drawBox(4, 2, 12, h - 6, "#e8e4dc", "#6a665c");
-        if (open) body(5, 6, 6, h - 14, "#2a2a28");
-        else {
-          body(5, 4, 10, 12, "#f4f0e8");
-          body(5, 18, 10, h - 28, "#f4f0e8");
-        }
-        pset(ctx, 13, 10, lights ? "#c4a35a" : "#888");
-        break;
-      }
-      default:
-        break;
-    }
-    // continued in next switch block via typ2
-    drawFurnitureRest(ctx, type, { w, h, lights, on, metal, body, drawBox, outline, open });
-    ctx.restore();
-  });
-}
-
-function drawFurnitureRest(ctx, type, S) {
-  const { w, h, lights, on, metal, body, drawBox, outline, open } = S;
-  void on; void open;
-  switch (type) {
-    case "cubics":
-      drawBox(3, 4, w - 6, h - 8, "#2a3040", "#111");
-      body(4, 5, w - 8, 2, lights ? "#6a7380" : "#333");
-      body(5, 8, w - 10, Math.max(8, h - 22), lights ? "#0a1820" : "#0a0c10");
-      if (lights) {
-        body(7, 10, 3, 3, "#3d7a4a");
-        body(12, 14, 3, 3, "#ff5a6a");
-        body(8, 18, 6, 2, "#f4c15d");
-      }
-      body(6, h - 12, w - 12, 4, "#1a1c22");
-      body(7, h - 11, 3, 2, "#c0c4c8");
-      body(w / 2 - 4, h - 6, 8, 4, "#3a4048");
-      break;
-    case "pinball":
-      drawBox(3, 6, w - 6, h - 10, "#8a1520", "#3a0a10");
-      body(4, 8, w - 8, 8, lights ? "#0a1828" : "#111");
-      if (lights) {
-        body(6, 10, 3, 2, "#c4a35a");
-        body(11, 11, 3, 2, "#c43a4a");
-        body(8, 14, 6, 1, "#f4c15d");
-      }
-      body(5, 18, w - 10, 6, "#c4182d");
-      body(6, 19, 4, 1, "#ffd0d4");
-      body(w / 2 - 3, h - 6, 6, 4, "#3a4048");
-      break;
-    case "chesstable":
-      drawBox(4, h - 14, w - 8, 8, "#2a2030", NEON.purp);
-      for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) {
-        body(8 + i * 4, 6 + j * 3, 4, 3, (i + j) % 2 ? (lights ? "#efe6d4" : "#8a8070") : (lights ? "#3a2a20" : "#1a1410"));
-      }
-      body(6, h - 6, 2, 4, metal);
-      body(w - 8, h - 6, 2, 4, metal);
-      break;
-    case "coffeemachine":
-      drawBox(5, 8, 10, h - 12, metal, NEON.mag);
-      body(7, 10, 6, 6, lights ? "#3a1020" : "#220");
-      body(8, 18, 4, 4, "#1a1220");
-      if (lights) pset(ctx, 11, 12, NEON.mag);
-      break;
-    case "benchpress":
-      drawBox(2, h - 10, w - 4, 6, metal, NEON.cyan);
-      body(4, h - 14, w - 8, 5, "#1a1228");
-      body(6, h - 20, w - 12, 3, "#889");
-      body(4, h - 22, 3, 6, metal);
-      body(w - 7, h - 22, 3, 6, metal);
-      break;
-    case "treadmill":
-      drawBox(3, h - 10, w - 6, 8, "#1a1c22", NEON.cyan);
-      body(4, h - 9, w - 8, 4, "#111");
-      body(w - 10, 6, 6, h - 16, metal);
-      body(w - 9, 8, 4, 6, lights ? "#082028" : "#111");
-      if (lights) body(w - 8, 10, 2, 2, NEON.acid);
-      break;
-    case "clothescab":
-      drawBox(4, 2, 16, h - 6, "#1c1428", NEON.purp);
-      body(5, 4, 6, h - 10, "#2a1a40");
-      body(12, 4, 7, h - 10, "#2a1a40");
-      if (lights) body(4, 2, 16, 2, NEON.mag);
-      pset(ctx, 10, 16, NEON.cyan);
-      pset(ctx, 17, 16, NEON.cyan);
-      break;
-    case "djdeck":
-      drawBox(2, h - 16, w - 4, 12, "#2a2428", "#111");
-      body(3, h - 15, w - 6, 2, "#6a5a48");
-      body(4, h - 13, 9, 7, "#121214");
-      body(w - 13, h - 13, 9, 7, "#121214");
-      ctx.strokeStyle = lights ? "#c0c4c8" : "#555";
-      ctx.beginPath(); ctx.arc(8, h - 10, 3, 0, Math.PI * 2); ctx.stroke();
-      ctx.beginPath(); ctx.arc(w - 8, h - 10, 3, 0, Math.PI * 2); ctx.stroke();
-      if (lights) {
-        pset(ctx, 8, h - 10, "#d8dce0");
-        pset(ctx, w - 8, h - 10, "#d8dce0");
-        pset(ctx, w / 2, h - 11, "#c43a4a");
-      }
-      body(w / 2 - 2, h - 14, 4, 8, "#3a3040");
-      break;
-    case "sodavending":
-      drawBox(3, 2, 16, h - 4, "#d8d0c4", "#3a3c40");
-      body(4, 3, 14, 3, "#c4182d");
-      body(5, 7, 12, 8, lights ? "#8ec8e8" : "#334");
-      glyph(ctx, 6, 13, "CUBE", lights ? "#1a2040" : "#223");
-      body(5, 17, 12, 10, "#2a2c30");
-      body(6, 18, 4, 5, lights ? "#c4182d" : "#444");
-      body(11, 18, 4, 5, lights ? "#f4c15d" : "#444");
-      body(6, 24, 4, 5, lights ? "#3d7a4a" : "#444");
-      body(8, h - 5, 6, 2, "#8a8e92");
-      body(4, 3, 14, 1, lights ? "#f26a72" : "#8a3038");
-      break;
-    case "neonsign": {
-      body(w / 2 - 5, h - 6, 10, 5, "#6b4a32");
-      body(w / 2 - 4, h - 5, 8, 3, "#8a6a40");
-      // glass
-      body(w / 2 - 3, 6, 6, h - 12, lights ? "#d8e8e0" : "#6a7870");
-      body(w / 2 - 2, 7, 4, h - 14, lights ? "#c8e0d4" : "#5a6860");
-      if (lights) {
-        body(w / 2 - 2, 10, 4, 5, "#e85a2a");
-        body(w / 2 - 1, 16, 3, 4, "#f4a020");
-        body(w / 2 - 2, 21, 4, 4, "#e85a2a");
-      }
-      body(w / 2 - 4, 4, 8, 3, "#8a6a40");
-      break;
-    }
-    case "rack":
-      body(3, 4, 2, h - 6, metal);
-      body(w - 5, 4, 2, h - 6, metal);
-      body(3, 6, w - 6, 2, metal);
-      body(3, 14, w - 6, 2, metal);
-      body(3, 22, w - 6, 2, metal);
-      body(6, 4, 5, 10, lights ? "#c43a4a" : "#423");
-      body(12, 12, 5, 10, lights ? "#3d4f7c" : "#234");
-      body(8, 20, 5, 8, lights ? "#2a2a2e" : "#223");
-      break;
-    case "mannequin":
-      body(w / 2 - 3, 6, 6, 6, "#d8c4a8");
-      body(w / 2 - 4, 12, 8, 12, lights ? "#2a2a2e" : "#445");
-      body(w / 2 - 6, 14, 3, 8, "#d8c4a8");
-      body(w / 2 + 3, 14, 3, 8, "#d8c4a8");
-      body(w / 2 - 3, 24, 3, 10, "#3d4f7c");
-      body(w / 2, 24, 3, 10, "#3d4f7c");
-      body(w / 2 - 1, h - 2, 2, 2, metal);
-      break;
-    case "petpen":
-      drawBox(2, h - 12, w - 4, 10, "#1a1820", NEON.acid);
-      body(3, 8, 2, h - 10, metal);
-      body(w - 5, 8, 2, h - 10, metal);
-      body(3, 8, w - 6, 2, metal);
-      body(w / 2 - 3, h - 16, 6, 5, lights ? NEON.purp : "#334");
-      pset(ctx, w / 2 - 2, h - 15, "#fff");
-      pset(ctx, w / 2 + 1, h - 15, "#fff");
-      break;
-    case "cage":
-      drawBox(4, h - 10, w - 8, 8, metal, NEON.cyan);
-      for (let i = 0; i < 5; i++) body(6 + i * 3, 8, 1, h - 18, lights ? mix(NEON.cyan, "#222", 0.6) : "#334");
-      body(w / 2 - 2, h - 16, 4, 5, lights ? NEON.acid : "#353");
-      break;
-    default:
-      if (type === "plant" || type === "podplant" || type === "couch" || type === "capsulecouch" || type === "chair" || type === "hoverchair" || type === "table" || type === "counter" || type === "rug" || type === "lamp" || type === "bed" || type === "tv" || type === "holotv" || type === "fridge") return;
-      if (type === "heavybag" || type === "punch" + "bag") {
-        body(w / 2 - 1, 2, 2, 8, "#445");
-        drawBox(w / 2 - 5, 8, 10, 18, "#2a1030", NEON.mag);
-        body(w / 2 - 4, 10, 8, 3, lights ? NEON.mag : "#423");
-        return;
-      }
-      drawBox(4, 6, w - 8, h - 10, metal, lights ? NEON.purp : "#334");
-      glyph(ctx, 6, 16, String(type).slice(0, 6), lights ? NEON.cyan : "#445");
-  }
+  const m = furnSpriteMetrics(type, rot);
+  return [m.w, m.h];
 }
 
 function facingIndex(facing, dirX, dirY) {
@@ -853,17 +525,18 @@ export function createRoom3D(container) {
     const list = [];
     for (const f of furniture) {
       const type = f.type;
-      const [fw, fh] = furnSize(type, f.rot || 0);
-      const foot = footOf(f.x, f.y);
+      const rot = normalizeFurnRot(f.rot);
+      const m = furnSpriteMetrics(type, rot);
+      const pos = furnBlitPos(f.x, f.y, type, rot, tileToScreen);
       const tv = tvs[f.id] || {};
       const spr = drawFurnitureSprite(type, {
         lights: lightsOn,
-        rot: f.rot || 0,
+        rot,
         on: type === "tv" || type === "holotv" ? Boolean(tv.on) : Boolean(uses[f.id]?.on),
         open: type === "fridge" ? Boolean(uses[f.id]?.open) : false,
         sku: f.sku,
       });
-      list.push({ kind: "furn", id: f.id, type, depth: f.x + f.y + 0.2, sx: foot.sx - fw / 2, sy: foot.sy - fh + 2, w: fw, h: fh, spr, raw: f });
+      list.push({ kind: "furn", id: f.id, type, depth: f.x + f.y + (m.tw + m.th) / 2 + 0.2, sx: pos.sx, sy: pos.sy, w: pos.w, h: pos.h, spr, raw: f });
     }
     for (const npc of npcs) {
       const foot = footOf(npc.x, npc.y);
@@ -875,8 +548,9 @@ export function createRoom3D(container) {
       const x = st.x ?? p.x, y = st.y ?? p.y;
       const walking = Boolean(st.walking || p.walking);
       const frame = Math.floor(now / 96) % 8;
+      const rawFacing = p.facing || st.facing;
       const flags = {
-        sitting: p.sitting, walking, facing: p.facing || st.facing, dirX: st.dirX, dirY: st.dirY,
+        sitting: p.sitting, walking, facing: p.sitting ? snapFacingToAxis(rawFacing) : rawFacing, dirX: st.dirX, dirY: st.dirY,
         usingPhone: p.usingPhone, boxing: p.boxing, actionEmote: p.actionEmote,
         heldItem: p.heldItem, heldProp: p.heldProp, gym: p.gym,
       };
@@ -897,10 +571,11 @@ export function createRoom3D(container) {
       }
     }
     if (ghost) {
-      const [fw, fh] = furnSize(ghost.type, ghost.rot || 0);
-      const foot = footOf(ghost.tx, ghost.ty);
-      const spr = drawFurnitureSprite(ghost.type, { lights: lightsOn, rot: ghost.rot || 0 });
-      list.push({ kind: "ghost", depth: ghost.tx + ghost.ty + 0.9, sx: foot.sx - fw / 2, sy: foot.sy - fh + 2, w: fw, h: fh, spr, alpha: 0.55 });
+      const rot = normalizeFurnRot(ghost.rot);
+      const m = furnSpriteMetrics(ghost.type, rot);
+      const pos = furnBlitPos(ghost.tx, ghost.ty, ghost.type, rot, tileToScreen);
+      const spr = drawFurnitureSprite(ghost.type, { lights: lightsOn, rot });
+      list.push({ kind: "ghost", depth: ghost.tx + ghost.ty + (m.tw + m.th) / 2 + 0.9, sx: pos.sx, sy: pos.sy, w: pos.w, h: pos.h, spr, alpha: 0.55 });
     }
     list.sort((a, b) => a.depth - b.depth);
     return list;
@@ -1123,9 +798,14 @@ export function createRoom3D(container) {
     drawWalls();
     const list = collectDrawList(now);
     for (const it of list) {
-      if (highlightId && it.id === highlightId) {
-        ctx.fillStyle = "rgba(212, 180, 106, 0.28)";
-        ctx.fillRect(it.sx - 1, it.sy - 1, it.w + 2, it.h + 2);
+      if (highlightId && it.id === highlightId && it.raw) {
+        const r = normalizeFurnRot(it.raw.rot);
+        const { w, h } = furnTileDims(it.raw.type, r);
+        const a = tileToScreen(it.raw.x, it.raw.y);
+        const b = tileToScreen(it.raw.x + w, it.raw.y);
+        const c = tileToScreen(it.raw.x + w, it.raw.y + h);
+        const d = tileToScreen(it.raw.x, it.raw.y + h);
+        fillPoly(ctx, [a, b, c, d], "rgba(212, 180, 106, 0.28)", "#d4b46a");
       }
       blit(it.spr, it.sx, it.sy, it.alpha ?? 1);
     }
@@ -1148,6 +828,7 @@ export function createRoom3D(container) {
           const tx = Math.floor(tile.x), ty = Math.floor(tile.y);
           if (tx >= 0 && ty >= 0 && tx < gridSize && ty < gridSize) continue;
         }
+        if (it.kind === "furn" && it.raw && !hitFurnitureAt(it.raw, wpt.sx, wpt.sy, screenToTile)) continue;
         return it;
       }
     }
@@ -1301,13 +982,13 @@ export function createRoom3D(container) {
     resize,
     setStyle(wp, fl) { if (wp) wallpaper = wp; if (fl) floorStyle = fl; },
     setGridSize(n) { gridSize = Math.max(4, Math.min(12, n || 6)); applyCamera(); },
-    setFurniture(list) { furniture = (list || []).map((f) => ({ ...f })); },
-    addFurniture(f) { furniture = furniture.concat([f]); },
+    setFurniture(list) { furniture = (list || []).map((f) => ({ ...f, rot: normalizeFurnRot(f.rot) })); },
+    addFurniture(f) { furniture = furniture.concat([{ ...f, rot: normalizeFurnRot(f.rot) }]); },
     getFurniture() { return furniture.slice(); },
     setGhost(type, tx, ty, ok, rot) {
       if (!type) { ghost = null; return; }
       if (typeof type === "object") { ghost = type; return; }
-      ghost = { type, tx, ty, ok: ok !== false, rot: rot || 0 };
+      ghost = { type, tx, ty, ok: ok !== false, rot: normalizeFurnRot(rot) };
     },
 
     getGhost() { return ghost; },
@@ -1316,9 +997,10 @@ export function createRoom3D(container) {
     projectFurniture(id) {
       const f = furniture.find((x) => x.id === id);
       if (!f) return null;
-      const [, fh] = furnSize(f.type, f.rot || 0);
-      const foot = footOf(f.x, f.y);
-      return clientFromWorld(foot.sx, foot.sy - fh / 2);
+      const rot = normalizeFurnRot(f.rot);
+      const m = furnSpriteMetrics(f.type, rot);
+      const mid = tileToScreen(f.x + m.tw / 2, f.y + m.th / 2);
+      return clientFromWorld(mid.sx, mid.sy - m.bodyH / 2);
     },
     setLights(on) { lightsOn = on !== false; },
     lightsOn() { return lightsOn; },
@@ -1348,7 +1030,7 @@ export function createRoom3D(container) {
       if (!p) return null;
       const st = personState.get(name) || {};
       return {
-        boxing: p.boxing || st.boxing || Object.values(uses || {}).some((u) => u && u.type === "punchbag" && u.user === name), sitting: p.sitting, heldItem: p.heldItem, gym: p.gym, facing: p.facing,
+        boxing: p.boxing || st.boxing || Object.values(uses || {}).some((u) => u && u.type === "punchbag" && u.user === name), sitting: p.sitting, heldItem: p.heldItem, gym: p.gym, facing: p.sitting ? snapFacingToAxis(p.facing) : p.facing,
         actionEmote: p.actionEmote, walking: Boolean(st.walking || p.walking), usingPhone: p.usingPhone,
         sculpted: false, paperDoll: true, pixel: true,
       };
@@ -1438,4 +1120,5 @@ export function createRoom3D(container) {
   return api;
 }
 
-export default { createRoom3D, createAvatarPreview, paintAvatarSheet, paintStoreThumb, paintPetSheet, AVATAR_SHEET_LOOKS, PET_W, PET_H };
+export default { createRoom3D, createAvatarPreview, paintAvatarSheet, paintStoreThumb, paintPetSheet, paintFurnitureSheet, AVATAR_SHEET_LOOKS, PET_W, PET_H, FURN_SHEET_TYPES };
+

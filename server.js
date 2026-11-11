@@ -146,7 +146,22 @@ function inBounds(x, y, size) {
 }
 
 function normalizeRot(rot) {
-  return ((Number(rot) || 0) % 4 + 4) % 4;
+  const n = Number(rot);
+  if (!Number.isFinite(n)) return 0;
+  if (Math.abs(n) >= 45) {
+    const deg = ((n % 360) + 360) % 360;
+    return Math.round(deg / 90) % 4;
+  }
+  return ((Math.round(n) % 4) + 4) % 4;
+}
+
+
+function snapFacingToAxis(facing) {
+  const dx = Number(facing?.x) || 0;
+  const dz = Number(facing?.z ?? facing?.y) || 0;
+  if (dx === 0 && dz === 0) return { x: 0, z: 1 };
+  if (Math.abs(dx) >= Math.abs(dz)) return { x: dx >= 0 ? 1 : -1, z: 0 };
+  return { x: 0, z: dz >= 0 ? 1 : -1 };
 }
 
 function dimsOf(type, rot) {
@@ -383,13 +398,14 @@ function snapshotPerson(u) {
     heldItem: u.heldItem || null,
     boxing: u.boxing || null,
     gym: u.gym || null,
-    facing: u.facing || null,
+    facing: u.sitting ? snapFacingToAxis(u.facing) : (u.facing || null),
     stationId: u.stationId || null,
     seat: u.seat ?? null,
   };
 }
 
 function roomState(room) {
+  ensureRoomExtras(room);
   return {
     id: room.id,
     name: room.name,
@@ -665,6 +681,9 @@ function ensureRoomExtras(room) {
   if (!room.seats) room.seats = {};
   if (!room.arcade) room.arcade = {};
   if (room.lightsOn === undefined) room.lightsOn = true;
+  if (Array.isArray(room.furniture)) {
+    for (const f of room.furniture) f.rot = normalizeRot(f.rot);
+  }
   return room;
 }
 
