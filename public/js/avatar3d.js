@@ -77,6 +77,7 @@ function normalizeAvatar(raw = {}) {
   if (a.accessory === "visor" || a.accessory === "goggles") { a.glasses = true; a.accessory = "none"; }
   if (a.accessory === "tattoo") a.accessory = "none";
   if (a.hair === "neon") a.hair = "spiky";
+  if (a.hair === "pigtails") a.hair = "ponytail";
   return {
     skin: a.skin || "#f1c27d",
     hair: a.hair || "short",
@@ -1477,7 +1478,7 @@ function drawHairUnderHat(buf, av, key, pal, g, cy) {
   }
 }
 
-function drawHair(buf, av, key, pal, upper, hatOn) {
+function drawHair(buf, av, key, pal, upper, hatOn, bob = 0) {
   const g = headGeom(key);
   const cy = g.cy + upper;
   const { sx, sy } = hairScale(g);
@@ -1548,7 +1549,7 @@ function drawHair(buf, av, key, pal, upper, hatOn) {
       if (partBot > partTop) rect(buf, g.cx - 0.8, partTop, g.cx + 0.8, partBot, pal.skin, "part", 49);
     }
   }
-  if (av.hair === "ponytail") drawPonyTail(buf, av, key, pal, upper, hatOn);
+  if (!hatOn && av.hair === "ponytail") drawPonyTail(buf, av, key, pal, upper, false, bob);
   if (av.hair === "bobclips") {
     const pink = rgb(255, 90, 160);
     const cyan = rgb(80, 200, 255);
@@ -1574,49 +1575,88 @@ function drawHair(buf, av, key, pal, upper, hatOn) {
   }
 }
 
-function drawPonyTail(buf, av, key, pal, upper, hatOn) {
-  // Hair tie on the crown and a long swishy pointed tail. Never a short upward horn.
+function drawPonyTail(buf, av, key, pal, upper, hatOn, bob = 0) {
+  // Twin anime pigtails sticking out sideways from high side ties, just above the ears.
   const g = headGeom(key);
   const cy = g.cy + upper;
-  const skullTop = cy + 0.4 - g.ry;
-  const tieCol = rgb(36, 22, 28);
-  const tieHi = rgb(110, 64, 74);
-  let tx, ty;
-  if (key === "e") {
-    tx = g.cx - g.rx * 0.52;
-    ty = hatOn ? (cy + 1.0) : (skullTop + 1.8);
-  } else if (key === "n" || key === "ne") {
-    tx = g.cx + (key === "ne" ? -1.6 : 1.6);
-    ty = hatOn ? (cy + 1.2) : (skullTop + 1.6);
-  } else if (key === "se") {
-    tx = g.cx - g.rx * 0.40;
-    ty = hatOn ? (cy + 1.0) : (skullTop + 1.6);
-  } else {
-    tx = g.cx + 1.6;
-    ty = hatOn ? (cy + 1.4) : (skullTop + 1.4);
-  }
+  const hy = cy + 0.4;
+  const tieY = hy + g.ry * 0.06;
+  const flick = (bob || 0) * 0.14;
   const depth = hatOn ? 63 : 50;
-  function ribbon(ox, oy, len, half, ang) {
-    stampSpike(buf, ox, oy, len, half, ang, pal.hair, "hair-tail", depth, false);
-  }
-  // One sleek tapered ribbon. No extra companion locks.
-  if (key === "n" || key === "ne") {
-    // Long enough to hang past the nape and read as a ribbon on the back.
-    ribbon(tx, ty, 26, 2.5, Math.PI / 2 + (key === "ne" ? -0.12 : 0.12));
-  } else if (key === "e") {
-    ribbon(tx, ty, 22, 2.6, Math.PI * 0.72);
+  const left = {
+    x: g.cx - g.rx * 0.90,
+    y: tieY + 0.25,
+    len: 11.2,
+    half: 2.70,
+    ang: Math.PI - 0.24 + flick,
+    curl: 0.58,
+  };
+  const right = {
+    x: g.cx + g.rx * 0.92,
+    y: tieY - 0.15,
+    len: 12.0,
+    half: 2.85,
+    ang: 0.30 - flick,
+    curl: 0.40,
+  };
+  if (key === "e") {
+    // Profile: near tail juts toward the viewer, far tail peeks behind the head.
+    left.x = g.cx - g.rx * 0.95;
+    left.y = tieY + 0.35;
+    left.ang = Math.PI - 0.16 + flick;
+    left.len = 11.0;
+    left.curl = 0.48;
+    right.x = g.cx + g.rx * 0.58;
+    right.y = tieY + 0.15;
+    right.ang = 0.22 - flick;
+    right.len = 12.2;
+    right.curl = 0.38;
   } else if (key === "se") {
-    ribbon(tx, ty, 22, 2.6, Math.PI * 0.74);
-  } else if (hatOn) {
-    ribbon(g.cx + g.rx * 0.95, cy + g.ry * 0.12, 15, 2.6, Math.PI * 0.52);
-  } else {
-    ribbon(tx, ty, 18, 2.7, Math.PI * 0.36);
+    // 3/4: near (right) sticks out to the viewer's side; far (left) peeks behind.
+    left.x = g.cx - g.rx * 0.80;
+    left.y = tieY + 0.30;
+    left.ang = Math.PI - 0.14 + flick;
+    left.len = 10.4;
+    left.half = 2.55;
+    right.x = g.cx + g.rx * 1.02;
+    right.y = tieY;
+    right.ang = 0.26 - flick;
+    right.len = 12.4;
+  } else if (key === "ne") {
+    left.x = g.cx - g.rx * 0.98;
+    left.y = tieY + 0.20;
+    left.ang = Math.PI - 0.20 + flick;
+    right.x = g.cx + g.rx * 0.78;
+    right.y = tieY + 0.10;
+    right.ang = 0.22 - flick;
+    right.len = 11.4;
+  } else if (key === "n") {
+    left.y = tieY + 0.10;
+    right.y = tieY + 0.10;
   }
-  // Hide the tie under a hat in front; keep it visible at the nape/side exit in other views.
-  if (!hatOn || key === "n" || key === "ne" || key === "e") {
-    ellipse(buf, tx, ty, 2.4, 2.0, tieCol, "hair-tie", depth + 2, { shade: "flat" });
-    plot(buf, Math.round(tx), Math.round(ty) - 1, tieHi, "hair-tie", depth + 3);
+
+  function tail(t) {
+    stampSpike(buf, t.x, t.y, t.len, t.half, t.ang, pal.hair, "hair-tail", depth, false);
+    const tipX = t.x + Math.cos(t.ang) * t.len * 0.78;
+    const tipY = t.y + Math.sin(t.ang) * t.len * 0.78;
+    stampSpike(buf, tipX, tipY, t.len * 0.40, t.half * 0.70, t.ang + t.curl, pal.hair, "hair-tail", depth, false);
   }
+  function tie(x, y) {
+    // Small contrasting pink-red knot, never a near-white pixel.
+    const mid = rgb(220, 52, 92);
+    const sh = rgb(150, 24, 56);
+    const hi = rgb(228, 96, 120);
+    ellipse(buf, x, y, 1.85, 1.55, { mid, sh, hi }, "hair-tie", depth + 3, { shade: "flat" });
+    ellipse(buf, x - 1.7, y + 0.1, 1.25, 1.05, { mid, sh, hi }, "hair-tie", depth + 3, { shade: "flat" });
+    ellipse(buf, x + 1.7, y - 0.1, 1.25, 1.05, { mid, sh, hi }, "hair-tie", depth + 3, { shade: "flat" });
+    plotInside(buf, Math.round(x), Math.round(y) - 1, hi, "hair-tie-hi", depth + 4);
+  }
+
+  tail(left);
+  tail(right);
+  // Ties sit on the tail roots; they peek from under a hat at the sides.
+  tie(left.x, left.y);
+  tie(right.x, right.y);
 }
 
 function drawHairFront(buf, av, key, pal, upper) {
@@ -1624,10 +1664,10 @@ function drawHairFront(buf, av, key, pal, upper) {
   stampBangs(buf, av, key, pal, upper, false);
 }
 
-function drawHairPeeks(buf, av, key, pal, upper) {
+function drawHairPeeks(buf, av, key, pal, upper, bob = 0) {
   // Bangs and side strands belong in front of the hat brim, never on the crown.
-  // A high pony's tail also has to exit from under the hat in every view.
-  if (av.hair === "ponytail") drawPonyTail(buf, av, key, pal, upper, true);
+  // Pigtails also exit from under the hat at the sides in every view.
+  if (av.hair === "ponytail") drawPonyTail(buf, av, key, pal, upper, true, bob);
   if (key === "n" || key === "ne") return;
   stampBangs(buf, av, key, pal, upper, true);
   const style = av.hair;
@@ -2273,19 +2313,19 @@ function composeAvatar(av, flags, frame) {
   let head = makeBuf();
   const hk = headView.key;
   if (hk === "n" || hk === "ne") {
-    drawHair(head, av, hk, pal, headUpper, hatOn);
+    drawHair(head, av, hk, pal, headUpper, hatOn, bob);
     drawHead(head, hk, pal, headUpper, emote);
-    drawHair(head, av, hk, pal, headUpper, hatOn);
+    drawHair(head, av, hk, pal, headUpper, hatOn, bob);
   } else {
     drawHead(head, hk, pal, headUpper, emote);
-    drawHair(head, av, hk, pal, headUpper, hatOn);
+    drawHair(head, av, hk, pal, headUpper, hatOn, bob);
     clearFaceWindow(head, hk, pal, headUpper);
     drawFace(head, hk, pal, headUpper, emote);
     if (!hatOn) drawHairFront(head, av, hk, pal, headUpper);
   }
   if (av.glasses || av.accessory === "shades") drawGlasses(head, av, hk, headUpper);
   if (hatOn) drawHat(head, av, hk, pal, headUpper);
-  if (hatOn) drawHairPeeks(head, av, hk, pal, headUpper);
+  if (hatOn) drawHairPeeks(head, av, hk, pal, headUpper, bob);
   if (av.accessory === "headphones") drawHeadphones(head, av, hk, pal, headUpper);
   if (emote === "heart") {
     const g = headGeom(hk);
@@ -2854,7 +2894,7 @@ export const HAIRCUT_LOOKS = [
   { label: "Swoop emo", hair: "swoop", hairColor: "#3d48c8" },
   { label: "Cornrows", hair: "cornrows", hairColor: "#7a3a14" },
   { label: "Shaggy skater", hair: "shaggy", hairColor: "#c45a28" },
-  { label: "High pony", hair: "ponytail", hairColor: "#e0b01a" },
+  { label: "Pigtails", hair: "ponytail", hairColor: "#e0b01a" },
   { label: "Space buns", hair: "spacebuns", hairColor: "#9b4fd0" },
   { label: "Straight bangs", hair: "straightbangs", hairColor: "#b02848" },
   { label: "Afro puff", hair: "afropuff", hairColor: "#7a3c14" },
@@ -3026,7 +3066,7 @@ export function inspectAvatarGeometry(avatar = {}, flags = {}, frame = 0) {
       }
     }
   }
-  // Crown hair (buns, puffs, a high pony) counts in the head; hanging locks below the chin do not.
+  // Crown hair (buns, puffs, pigtails) counts in the head; hanging locks below the chin do not.
   for (let y = 0; y <= (skullBot < 0 ? AV_H - 1 : skullBot); y++) {
     for (let x = 0; x < AV_W; x++) {
       const p = buf[y * AV_W + x];
