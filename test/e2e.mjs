@@ -34,6 +34,7 @@ async function customize(page, { displayName, hair, shirt, skin, glasses, hairCo
   if (accessory != null) await clickCreatorOption(page, `accessory-${accessory}`);
   if (glasses != null) {
     await openCreatorTab(page, "face");
+    await page.evaluate((id) => window.__creatorMenu?.showOption?.(id), "glasses-toggle");
     const box = page.locator('[data-testid="glasses-toggle"]');
     const on = await box.isChecked();
     if (glasses && !on) await box.check();
@@ -320,13 +321,39 @@ async function checkShellOverflow(page, label) {
 
 
 const CREATOR_TABS = ["body", "hair", "face", "top", "bottom", "shoes"];
-const CREATOR_PHONES = [
+const CREATOR_VIEWPORTS = [
   { name: "360x640", width: 360, height: 640 },
   { name: "375x667", width: 375, height: 667 },
   { name: "390x844", width: 390, height: 844 },
   { name: "414x896", width: 414, height: 896 },
   { name: "844x390 landscape", width: 844, height: 390 },
+  { name: "1280x800", width: 1280, height: 800 },
 ];
+const CREATOR_PHONES = CREATOR_VIEWPORTS;
+
+async function snapshotCreatorLayout(page) {
+  return page.evaluate(() => {
+    const box = (el) => {
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return { x: +r.x.toFixed(2), y: +r.y.toFixed(2), w: +r.width.toFixed(2), h: +r.height.toFixed(2) };
+    };
+    const room = document.querySelector("[data-testid=creator-room]");
+    const canvas = room?.querySelector("canvas") || room;
+    return {
+      room: box(canvas),
+      preview: box(document.querySelector("[data-testid=creator-preview]")),
+      panel: box(document.querySelector("[data-testid=creator-window]")),
+      pages: window.__creatorMenu?.pages?.() ?? 1,
+      page: window.__creatorMenu?.page?.() ?? 0,
+    };
+  });
+}
+
+function sameBox(a, b, slack = 1.25) {
+  if (!a || !b) return false;
+  return Math.abs(a.x - b.x) <= slack && Math.abs(a.y - b.y) <= slack && Math.abs(a.w - b.w) <= slack && Math.abs(a.h - b.h) <= slack;
+}
 
 async function measureCreatorFit(page, tab) {
   return page.evaluate((tab) => {
@@ -341,7 +368,7 @@ async function measureCreatorFit(page, tab) {
     const inView = (el) => {
       if (!el) return { missing: true };
       const style = getComputedStyle(el);
-      if (style.display === "none" || style.visibility === "hidden" || el.classList.contains("hidden") || el.closest(".hidden")) {
+      if (style.display === "none" || style.visibility === "hidden" || el.classList.contains("hidden") || el.closest(".hidden") || el.classList.contains("creator-offpage") || el.closest(".creator-offpage")) {
         return { missing: true };
       }
       const r = el.getBoundingClientRect();
@@ -357,7 +384,7 @@ async function measureCreatorFit(page, tab) {
       return { name, ok: el.scrollHeight <= el.clientHeight + slack && el.scrollWidth <= el.clientWidth + 8, scrollH: el.scrollHeight, clientH: el.clientHeight, scrollW: el.scrollWidth, clientW: el.clientWidth };
     };
     const options = [...(panel?.querySelectorAll("button.swatch, button.choice, .check-row") || [])]
-      .filter((el) => !el.closest(".hidden"));
+      .filter((el) => !el.closest(".hidden") && !el.classList.contains("creator-offpage") && !el.closest(".creator-offpage"));
     return {
       scrolls: [
         noScroll(document.documentElement, "html"),
@@ -375,40 +402,75 @@ async function measureCreatorFit(page, tab) {
         name: inView(document.querySelector("[data-testid=display-name]")),
         save: inView(document.querySelector("[data-testid=save-avatar]")),
         preview: inView(document.querySelector("[data-testid=creator-preview]")),
+        pager: inView(document.querySelector("[data-testid=creator-pager]")),
       },
       optionFits: options.map((el) => ({ id: el.dataset.testid || el.id || el.textContent.trim(), minH: Math.round(el.getBoundingClientRect().height), ...inView(el) })),
     };
   }, tab);
 }
 
-async function assertCreatorTabsFit(page, viewportName) {
+async function assertCreatorPageFit(page, viewportName, tab, pageNo) {
+  const label = `Creator ${viewportName} ${tab.toUpperCase()} p${pageNo}`;
+  const info = await measureCreatorFit(page, tab);
+  const scrollFail = info.scrolls.filter((r) => !r.ok);
+  check(
+    `${label} does not scroll`,
+    scrollFail.length === 0,
+    JSON.stringify(scrollFail.length ? scrollFail : { ok: true })
+  );
+  const chromeFail = Object.entries(info.chrome).filter(([, v]) => v.missing || v.ok === false);
+  check(
+    `${label} chrome and visible options stay in view`,
+    chromeFail.length === 0 && info.optionFits.every((o) => o.ok && !o.missing),
+    JSON.stringify({ chrome: chromeFail, options: info.optionFits.filter((o) => !o.ok || o.missing) })
+  );
+  if (viewportName !== "844x390 landscape" && viewportName !== "1280x800") {
+    const small = info.optionFits.filter((o) => !o.missing && o.minH < 44);
+    check(
+      `${label} tap targets are at least 44px`,
+      small.length === 0,
+      JSON.stringify(small)
+    );
+  }
+}
+
+async function assertCreatorTabsFit(page, viewportName, viewport) {
   await page.evaluate(() => document.getElementById("creator-back")?.classList.remove("hidden"));
+  await openCreatorTab(page, "body");
+  await page.waitForTimeout(80);
+  const baseline = await snapshotCreatorLayout(page);
+  check(
+    `Creator ${viewportName} captured a stable room, character, and panel`,
+    Boolean(baseline.room && baseline.preview && baseline.panel && baseline.room.w > 10 && baseline.preview.w > 10 && baseline.panel.w > 10),
+    JSON.stringify(baseline)
+  );
   for (const tab of CREATOR_TABS) {
     await openCreatorTab(page, tab);
     if (tab === "face") {
       await clickCreatorOption(page, "accessory-4");
       await page.waitForSelector("#headphone-color-field:not(.hidden)", { timeout: 4000 }).catch(() => {});
     }
-    const info = await measureCreatorFit(page, tab);
-    const scrollFail = info.scrolls.filter((r) => !r.ok);
-    check(
-      `Creator ${viewportName} ${tab.toUpperCase()} does not scroll`,
-      scrollFail.length === 0,
-      JSON.stringify(scrollFail.length ? scrollFail : { ok: true })
-    );
-    const chromeFail = Object.entries(info.chrome).filter(([, v]) => v.missing || v.ok === false);
-    check(
-      `Creator ${viewportName} ${tab.toUpperCase()} chrome and options stay in view`,
-      chromeFail.length === 0 && info.optionFits.every((o) => o.ok && !o.missing),
-      JSON.stringify({ chrome: chromeFail, options: info.optionFits.filter((o) => !o.ok || o.missing) })
-    );
-    if (viewportName !== "844x390 landscape") {
-      const small = info.optionFits.filter((o) => !o.missing && o.minH < 44);
+    await page.waitForTimeout(40);
+    const first = await snapshotCreatorLayout(page);
+    if (tab === "hair" && viewport && viewport.width <= 414) {
       check(
-        `Creator ${viewportName} ${tab.toUpperCase()} tap targets are at least 44px`,
-        small.length === 0,
-        JSON.stringify(small)
+        `Creator ${viewportName} HAIR paginates inside the fixed panel`,
+        first.pages > 1,
+        JSON.stringify(first)
       );
+    }
+    const pages = first.pages || 1;
+    for (let p = 0; p < pages; p++) {
+      await page.evaluate((i) => window.__creatorMenu?.setPage?.(i), p);
+      await page.waitForTimeout(40);
+      const snap = await snapshotCreatorLayout(page);
+      const moved = ["room", "preview", "panel"].filter((k) => !sameBox(baseline[k], snap[k]));
+      check(
+        `Creator ${viewportName} ${tab.toUpperCase()} p${p} keeps the room, character, and panel fixed`,
+        moved.length === 0,
+        JSON.stringify({ moved, baseline, snap })
+      );
+      await assertCreatorPageFit(page, viewportName, tab, p);
     }
   }
 }
@@ -484,14 +546,14 @@ async function runCreatorPhoneAndBoot(browser) {
   cp.setDefaultTimeout(20000);
   await login(cp, "fituser");
   await cp.waitForSelector('[data-testid="creator-window"]');
-  await cp.waitForTimeout(400);
+  await cp.waitForTimeout(650);
   const emptyBd = await cp.evaluate(() => window.__creatorMenu?.usingRoomBackdrop?.());
   check("A new user's creator uses the empty cube backdrop", emptyBd === false, String(emptyBd));
   for (const vp of CREATOR_PHONES) {
     await cp.setViewportSize({ width: vp.width, height: vp.height });
     await cp.waitForTimeout(200);
     await cp.evaluate(() => { window.__creatorMenu && 0; document.querySelector("[data-testid=creator-room]") && null; });
-    await assertCreatorTabsFit(cp, vp.name);
+    await assertCreatorTabsFit(cp, vp.name, vp);
   }
   await cctx.close();
 }
@@ -1227,7 +1289,7 @@ try {
   await alice.keyboard.press("ArrowRight");
   const afterRight = await alice.evaluate(() => window.__creatorMenu?.tab());
   check("Arrow keys move between creator tabs", afterRight === "hair", afterRight);
-  await alice.locator('[data-testid="hair-3"]').click();
+  await clickCreatorOption(alice, "hair-3");
   const hairOn = await alice.evaluate(() => document.querySelector('[data-testid="hair-3"]')?.classList.contains("selected"));
   check("Choosing a hair style in its tab updates the live selection", hairOn === true);
   await alice.keyboard.press("ArrowLeft");

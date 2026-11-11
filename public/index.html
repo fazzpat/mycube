@@ -75,7 +75,6 @@
       <div id="creator-room" class="creator-room" data-testid="creator-room" aria-hidden="true"></div>
       <header class="topbar creator-topbar">
         <div style="display:flex;align-items:center;gap:10px">
-          <button class="btn secondary small hidden" data-testid="creator-back" id="creator-back" type="button">Back</button>
           <div class="brand"><div class="brand-mark cube-logo" aria-hidden="true"><svg viewBox="0 0 32 32" width="28" height="28"><path d="M16 3 L29 10.5 L16 18 L3 10.5 Z" fill="#d4c4ff"/><path d="M3 10.5 L16 18 L16 30 L3 22.5 Z" fill="#7c5cff"/><path d="M16 18 L29 10.5 L29 22.5 L16 30 Z" fill="#4e35c9"/></svg></div> MyCube</div>
         </div>
         <div class="user-chip" id="creator-user"></div>
@@ -95,7 +94,7 @@
             <button type="button" data-testid="creator-tab-bottom" data-tab="bottom" role="tab">BOTTOM</button>
             <button type="button" data-testid="creator-tab-shoes" data-tab="shoes" role="tab">SHOES</button>
           </div>
-          <div class="creator-tab-panels" id="creator-tab-panels">
+          <div class="creator-tab-panels" id="creator-tab-panels" data-testid="creator-tab-panels">
             <div data-testid="creator-panel-body" data-panel="body" role="tabpanel">
               <h3>Skin tone</h3>
               <div class="swatch-row" id="skin-choices"></div>
@@ -135,12 +134,18 @@
               <div class="swatch-row" id="shoes-choices"></div>
             </div>
           </div>
+          <div class="creator-pager" id="creator-pager" data-testid="creator-pager">
+            <button type="button" class="creator-page-btn" data-testid="creator-page-prev" id="creator-page-prev" aria-label="Previous options">◀</button>
+            <div class="creator-page-dots" id="creator-page-dots" data-testid="creator-page-dots"></div>
+            <button type="button" class="creator-page-btn" data-testid="creator-page-next" id="creator-page-next" aria-label="Next options">▶</button>
+          </div>
           <div class="creator-footer">
             <div class="field">
               <label for="display-name">CHARACTER NAME</label>
               <input id="display-name" data-testid="display-name" type="text" maxlength="16" placeholder="Shown under your avatar" />
             </div>
             <div class="creator-footer-actions">
+              <button class="btn secondary hidden" data-testid="creator-back" id="creator-back" type="button">BACK</button>
               <button class="btn" data-testid="save-avatar" id="save-avatar" type="button">LOOKS GOOD</button>
             </div>
           </div>

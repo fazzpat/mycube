@@ -33,6 +33,7 @@ export async function clickCreatorOption(page, testId) {
   const key = String(testId).split("-")[0];
   const tab = TAB_FOR[key];
   if (tab) await openCreatorTab(page, tab);
+  await page.evaluate((id) => window.__creatorMenu?.showOption?.(id), testId);
   await page.click(`[data-testid="${testId}"]`);
 }
 

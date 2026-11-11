@@ -1,13 +1,17 @@
-/* Arcade character creator — empty cube backdrop, character in the room,
-   tabbed option window matching the start menu chrome. */
+/* Arcade character creator — full-screen room stays fixed; a small
+   fixed-size option panel overlays it. Dense tabs paginate in-place. */
 @import url("https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap");
 
 #view-creator.creator-view {
-  position: relative;
-  background: #000;
+  position: fixed;
+  inset: 0;
+  display: block;
+  background: #000 !important;
   overflow: hidden;
-  display: flex;
-  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  height: 100lvh !important;
+  max-height: none !important;
 }
 
 #view-creator.creator-view .creator-room {
@@ -19,16 +23,20 @@
 }
 
 #view-creator.creator-view .topbar.creator-topbar {
-  position: relative;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
   z-index: 3;
-  flex: 0 0 auto;
   background: #1a1424;
   -webkit-backdrop-filter: none;
+  backdrop-filter: none;
   border-bottom: 3px solid #f4c15d;
   box-shadow: 0 4px 0 #1a1020;
-  backdrop-filter: none;
   color: #fff8e8;
   font-family: "Press Start 2P", "Nunito", monospace;
+  padding: 6px 10px;
+  padding-top: max(6px, var(--safe-top));
 }
 
 #view-creator.creator-view .creator-topbar .brand,
@@ -49,25 +57,11 @@
   color: #fff4c4;
 }
 
-#view-creator.creator-view .creator-topbar .btn {
-  font-family: "Press Start 2P", monospace;
-  font-size: 8px;
-  border-radius: 0;
-  border: 3px solid #f4c15d;
-  background: #2a2230;
-  color: #fff8e8;
-  box-shadow: 2px 2px 0 #1a1020;
-  min-height: 36px;
-  padding: 8px 10px;
-}
-
-
-/* Keep the daily-login toast off the arcade window. */
 body[data-view="creator"] #toasts {
-  top: calc(var(--safe-top, 0px) + 58px);
+  top: calc(var(--safe-top, 0px) + 52px);
   right: auto;
   left: calc(12px + var(--safe-left, 0px));
-  width: min(240px, 38vw);
+  width: min(220px, 36vw);
   z-index: 4;
 }
 body[data-view="creator"] .toast {
@@ -75,36 +69,28 @@ body[data-view="creator"] .toast {
   font-size: 11px;
   border-radius: 8px;
 }
+body[data-view="creator"]:has(#view-creator.is-keyboard) #toasts {
+  display: none;
+}
 
+/* Stage is an overlay; it never participates in a reflowing grid. */
 .creator-stage {
-  position: relative;
+  position: absolute;
+  inset: 0;
   z-index: 2;
-  flex: 1 1 auto;
-  min-height: 0;
-  display: flex;
-  flex-direction: row;
-  align-items: stretch;
-  justify-content: center;
-  gap: 20px;
-  padding: 12px 18px calc(12px + var(--safe-bottom));
-  padding-left: calc(18px + var(--safe-left));
-  padding-right: calc(18px + var(--safe-right));
+  pointer-events: none;
 }
 
 .creator-hero {
-  flex: 1 1 46%;
-  min-width: 0;
+  position: absolute;
+  pointer-events: none;
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  pointer-events: none;
-  padding-bottom: 4%;
 }
 
 #view-creator.creator-view #creator-preview,
 #view-creator.creator-view .preview-stage {
-  width: min(360px, 42vw);
-  height: min(520px, 72vh);
   background: transparent !important;
   pointer-events: none;
   transform-origin: 50% 100%;
@@ -128,119 +114,139 @@ body[data-view="creator"] .toast {
 
 .creator-window {
   pointer-events: auto;
-  flex: 0 1 470px;
-  width: min(470px, 100%);
-  max-height: 100%;
-  min-height: 0;
+  position: absolute;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   font-family: "Press Start 2P", "Nunito", monospace;
   color: #fff8e8;
   text-align: center;
-  padding: 16px 14px 14px;
   background: #140e1c;
   border: 4px solid #f4c15d;
   box-shadow:
     0 0 0 4px #3d2c29,
     0 0 0 6px #f4c15d,
-    0 12px 0 #1a1020,
+    0 8px 0 #1a1020,
     0 0 28px rgba(244, 193, 93, 0.35);
   image-rendering: pixelated;
+  /* Fixed size — never grows with tab content. */
+  width: var(--creator-panel-w, 400px);
+  height: var(--creator-panel-h, 420px);
+  box-sizing: border-box;
 }
 
 .creator-logo {
-  font-size: clamp(10px, 2.4vw, 13px);
-  line-height: 1.5;
+  font-size: 11px;
+  line-height: 1.4;
   letter-spacing: 0.06em;
   color: #fff4c4;
   text-shadow:
     0 0 8px rgba(244, 193, 93, 0.85),
     2px 2px 0 #5a2a12;
-  margin: 0 0 6px;
+  margin: 0 0 2px;
+  flex: 0 0 auto;
 }
 
 .creator-tag {
   font-size: 7px;
-  line-height: 1.7;
+  line-height: 1.5;
   color: #c4b8ff;
-  margin: 0 0 12px;
+  margin: 0 0 6px;
+  flex: 0 0 auto;
 }
 
 .creator-tabs {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: center;
-  gap: 4px;
-  margin: 0 0 10px;
+  gap: 2px;
+  margin: 0 0 4px;
+  flex: 0 0 auto;
 }
 
 .creator-tabs button {
   font-family: inherit;
-  font-size: 8px;
-  line-height: 1.3;
+  font-size: 7px;
+  line-height: 1.15;
   color: #d8c8b0;
   background: transparent;
   border: 2px solid transparent;
-  min-height: 36px;
-  padding: 8px 8px;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 44px;
+  padding: 4px 2px;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
 
-.creator-window [data-panel] { overflow: hidden; }
+.creator-tabs button.is-selected {
+  color: #1a1020;
+  background: #f4c15d;
+  border-color: #fff4c4;
+  text-shadow: none;
+  box-shadow:
+    0 0 0 2px #3d2c29,
+    0 0 14px rgba(255, 228, 122, 0.9);
+}
+
 .creator-tab-panels {
   flex: 1 1 auto;
   min-height: 0;
   overflow: hidden;
-  overscroll-behavior: contain;
   text-align: left;
-  padding: 2px 2px 8px;
+  padding: 2px 8px 0;
 }
+
+.creator-window [data-panel] { overflow: hidden; height: 100%; }
+.creator-window .creator-offpage { display: none !important; }
 
 .creator-window h3 {
   font-family: inherit;
-  font-size: 8px;
-  line-height: 1.5;
-  color: #c4b8ff;
+  font-size: 7px;
+  line-height: 1.3;
+  color: #efe6ff;
   letter-spacing: 0.06em;
-  margin: 8px 0 8px;
+  margin: 0 0 2px;
 }
 
 .creator-window .swatch-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-}
-
-.creator-window button.swatch {
-  width: 28px;
-  height: 28px;
-  border-radius: 0;
-  border: 3px solid #3d2c29;
-  box-shadow: 2px 2px 0 #1a1020;
-  padding: 0;
-}
-
-.creator-window button.choice {
-  font-family: inherit;
-  font-size: 8px;
-  line-height: 1.3;
-  color: #fff8e8;
-  background: #2a2230;
-  border: 3px solid #3d2c29;
-  border-radius: 0;
-  min-height: 36px;
-  padding: 8px 10px;
-  box-shadow: 2px 2px 0 #1a1020;
+  gap: 4px;
 }
 
 .creator-window button.swatch,
 .creator-window button.choice {
   position: relative;
 }
+
 .creator-window button.swatch {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: 0;
+  border: 3px solid #3d2c29;
   box-shadow: 2px 2px 0 #1a1020, inset 0 0 0 1px rgba(255, 248, 232, 0.35);
+  padding: 0;
 }
+
+.creator-window button.choice {
+  font-family: inherit;
+  font-size: 7px;
+  line-height: 1.15;
+  color: #fff8e8;
+  background: #2a2230;
+  border: 3px solid #3d2c29;
+  border-radius: 0;
+  flex: 1 1 calc(16.66% - 4px);
+  min-width: 0;
+  max-width: calc(16.66% - 4px);
+  min-height: 44px;
+  padding: 4px 3px;
+  box-shadow: 2px 2px 0 #1a1020;
+}
+
 .creator-window button.swatch.selected,
 .creator-window button.choice.selected {
   border-color: #ffe47a;
@@ -250,15 +256,15 @@ body[data-view="creator"] .toast {
     0 0 14px rgba(255, 228, 122, 0.85);
   z-index: 1;
 }
+
 .creator-window button.swatch.selected::after,
 .creator-window button.choice.selected::after {
   content: "✓";
   position: absolute;
-  top: -7px;
-  right: -7px;
+  top: -6px;
+  right: -6px;
   width: 16px;
   height: 16px;
-  border-radius: 0;
   background: #f4c15d;
   color: #1a1020;
   font-size: 11px;
@@ -267,16 +273,6 @@ body[data-view="creator"] .toast {
   font-family: "Press Start 2P", monospace;
   box-shadow: 1px 1px 0 #1a1020;
   pointer-events: none;
-}
-.creator-tabs button.is-selected {
-  color: #1a1020;
-  background: #f4c15d;
-  border-color: #fff4c4;
-  text-shadow: none;
-  box-shadow:
-    0 0 0 2px #3d2c29,
-    0 0 14px rgba(255, 228, 122, 0.9);
-  font-weight: 700;
 }
 
 .creator-window button.swatch.is-cursor,
@@ -293,301 +289,180 @@ body[data-view="creator"] .toast {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 36px;
-  margin-top: 10px;
+  min-height: 44px;
+  margin-top: 0;
+}
+
+.creator-window .check-row input[type="checkbox"] {
+  width: 22px;
+  height: 22px;
+  accent-color: #f4c15d;
+}
+
+.creator-pager {
+  flex: 0 0 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 6px;
+}
+
+.creator-page-btn {
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  color: #fff4c4;
+  background: #2a2230;
+  border: 3px solid #f4c15d;
+  box-shadow: 2px 2px 0 #1a1020;
+  cursor: pointer;
+}
+.creator-page-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.creator-page-dots {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  min-height: 12px;
+}
+.creator-page-dots span {
+  width: 8px;
+  height: 8px;
+  background: #5a4a62;
+  box-shadow: 1px 1px 0 #1a1020;
+}
+.creator-page-dots span.is-on {
+  background: #f4c15d;
 }
 
 .creator-footer {
   flex: 0 0 auto;
-  padding-top: 10px;
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  padding: 6px 8px 8px;
   border-top: 2px solid rgba(244, 193, 93, 0.45);
-  margin-top: 6px;
 }
 
 .creator-window .field {
+  flex: 1 1 auto;
+  min-width: 0;
   text-align: left;
-  margin-bottom: 10px;
+  margin: 0;
 }
-
-.creator-window .field label {
-  font-family: inherit;
-  font-size: 8px;
-  color: #c4b8ff;
-  letter-spacing: 0.04em;
-}
+.creator-window .field label { display: none; }
 
 .creator-window input[type="text"] {
   font-family: "Press Start 2P", monospace;
-  font-size: 10px;
+  font-size: 12px;
   border: 3px solid #f4c15d;
   border-radius: 0;
   background: #1a1424;
   color: #fff8e8;
-  padding: 10px 10px;
+  padding: 8px;
+  min-height: 44px;
+  width: 100%;
   box-shadow: inset 0 0 0 2px #3d2c29;
   caret-color: #f4c15d;
 }
-
 .creator-window input[type="text"]:focus {
   border-color: #fff4c4;
   outline: none;
-  box-shadow: inset 0 0 0 2px #3d2c29, 0 0 12px rgba(244, 193, 93, 0.55);
 }
 
 .creator-footer-actions {
+  flex: 0 0 auto;
   display: flex;
-  gap: 8px;
-  justify-content: center;
-  flex-wrap: wrap;
+  gap: 6px;
 }
 
 #view-creator.creator-view .creator-window .btn {
   font-family: "Press Start 2P", monospace;
-  font-size: 9px;
+  font-size: 8px;
   border-radius: 0;
   border: 3px solid #f4c15d;
-  padding: 12px 14px;
+  padding: 8px 10px;
   min-height: 44px;
-  box-shadow: 3px 3px 0 #1a1020;
+  min-width: 44px;
+  box-shadow: 2px 2px 0 #1a1020;
   letter-spacing: 0.04em;
 }
-
 #view-creator.creator-view .creator-window #save-avatar {
   background: #ff7a59;
   color: #fff;
 }
+#view-creator.creator-view .creator-window #creator-back {
+  background: #2a2230;
+  color: #fff8e8;
+}
 
-/* Phone: character sits in a shrinking hero; the window hugs its content
-   so every tab's options stay on screen with no scrolling. */
-/* Phone: 44px tap targets, every option on screen, no scrolling.
-   The window hugs its content; the hero band takes leftover height. */
+/* Desktop: room full-bleed, character on the left, compact panel docked right. */
+@media (min-width: 781px) {
+  #view-creator.creator-view {
+    --creator-panel-w: 400px;
+    --creator-panel-h: 420px;
+  }
+  .creator-hero {
+    top: 52px;
+    left: 0;
+    right: calc(var(--creator-panel-w) + 28px);
+    bottom: 12px;
+  }
+  #view-creator.creator-view #creator-preview,
+  #view-creator.creator-view .preview-stage {
+    width: 320px;
+    height: 460px;
+  }
+  .creator-window {
+    top: 60px;
+    right: 16px;
+    bottom: auto;
+    left: auto;
+    padding: 10px 8px 8px;
+  }
+}
+
+/* Phone: character fixed in the upper room, panel anchored to the bottom. */
 @media (max-width: 780px) {
   #view-creator.creator-view {
-    display: grid;
-    grid-template-rows: auto minmax(72px, 1fr) auto;
-    grid-template-areas:
-      "topbar"
-      "hero"
-      "window";
-    height: 100%;
-    max-height: 100%;
-    overflow: hidden;
+    --creator-panel-w: min(420px, calc(100% - 16px - var(--safe-left) - var(--safe-right)));
+    --creator-panel-h: 272px;
   }
   #view-creator.creator-view .topbar.creator-topbar {
-    grid-area: topbar;
     padding: 6px 8px;
     padding-top: max(6px, var(--safe-top));
-    background: #1a1424;
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
     border-bottom-width: 2px;
     box-shadow: 0 2px 0 #1a1020;
   }
   #view-creator.creator-view .creator-topbar .brand,
-  #view-creator.creator-view .creator-topbar .user-chip {
-    font-size: 8px;
-    max-width: 42vw;
-  }
-  #view-creator.creator-view .creator-topbar .btn {
-    min-height: 36px;
-    padding: 6px 8px;
-    font-size: 7px;
-  }
-  #view-creator.creator-view .creator-room {
-    grid-area: hero;
-    position: relative;
-    inset: auto;
-    width: 100%;
-    height: 100%;
-    z-index: 0;
-    background: #000;
-  }
-  .creator-stage { display: contents; }
+  #view-creator.creator-view .creator-topbar .user-chip { font-size: 8px; }
   .creator-hero {
-    grid-area: hero;
-    position: relative;
-    z-index: 1;
-    flex: unset;
-    height: auto;
-    width: 100%;
-    min-height: 0;
-    padding-bottom: 0;
-    align-items: flex-end;
-    justify-content: center;
+    top: 48px;
+    left: 0;
+    right: 0;
+    bottom: calc(var(--creator-panel-h) + 16px + var(--safe-bottom));
   }
   #view-creator.creator-view #creator-preview,
   #view-creator.creator-view .preview-stage {
-    width: min(180px, 52vw);
-    height: 94%;
+    width: 180px;
+    height: 250px;
   }
   .creator-window {
-    grid-area: window;
-    flex: none;
-    width: calc(100% - 16px - var(--safe-left) - var(--safe-right));
-    max-width: 420px;
-    justify-self: center;
-    height: auto;
-    min-height: 0;
-    max-height: none;
-    overflow: hidden;
-    margin: 0 calc(8px + var(--safe-left)) calc(6px + var(--safe-bottom));
-    padding: 6px 6px 6px;
-    border-width: 3px;
-    box-shadow:
-      0 0 0 3px #3d2c29,
-      0 0 0 5px #f4c15d,
-      0 3px 0 #1a1020,
-      0 0 16px rgba(244, 193, 93, 0.28);
-  }
-  .creator-logo { font-size: 10px; margin: 0 0 4px; }
-  .creator-tag { display: none; }
-  .creator-tabs {
-    flex-wrap: nowrap;
-    gap: 2px;
-    margin: 0 0 4px;
-  }
-  .creator-tabs button {
-    flex: 1 1 0;
-    min-width: 0;
-    min-height: 44px;
-    padding: 4px 2px;
-    font-size: 7px;
-    line-height: 1.15;
-    border-width: 2px;
-  }
-  .creator-tab-panels {
-    flex: 0 0 auto;
-    overflow: hidden;
-    padding: 2px 8px 0;
-  }
-  .creator-window h3 {
-    font-size: 7px;
-    margin: 4px 0 4px;
-    color: #efe6ff;
-  }
-  .creator-window .swatch-row { gap: 4px; }
-  .creator-window button.swatch {
-    width: 44px;
-    height: 44px;
-    min-width: 44px;
-    min-height: 44px;
-    border-width: 3px;
-    box-shadow: 2px 2px 0 #1a1020, inset 0 0 0 1px rgba(255, 248, 232, 0.45);
-  }
-  .creator-window button.choice {
-    flex: 1 1 calc(16.66% - 4px);
-    min-width: 0;
-    max-width: calc(25% - 4px);
-    min-height: 44px;
-    padding: 4px 3px;
-    font-size: 7px;
-    line-height: 1.15;
-    border-width: 3px;
-    box-shadow: 2px 2px 0 #1a1020;
-  }
-  .creator-window button.swatch.selected::after,
-  .creator-window button.choice.selected::after {
-    top: -6px;
-    right: -6px;
-    width: 18px;
-    height: 18px;
-    font-size: 12px;
-    line-height: 18px;
-  }
-  .creator-window .check-row {
-    font-size: 8px;
-    min-height: 44px;
-    margin-top: 4px;
-    gap: 8px;
-  }
-  .creator-window .check-row input[type="checkbox"] {
-    width: 22px;
-    height: 22px;
-    accent-color: #f4c15d;
-  }
-  .creator-footer {
-    display: flex;
-    align-items: stretch;
-    gap: 6px;
-    position: static;
-    padding-top: 6px;
-    margin-top: 4px;
-    background: transparent;
-  }
-  .creator-window .field {
-    flex: 1 1 auto;
-    min-width: 0;
-    margin-bottom: 0;
-  }
-  .creator-window .field label { display: none; }
-  .creator-window input[type="text"] {
-    font-size: 16px;
-    padding: 8px 8px;
-    min-height: 44px;
-  }
-  .creator-footer-actions { flex: 0 0 auto; display: flex; }
-  #view-creator.creator-view .creator-window .btn {
-    font-size: 8px;
-    padding: 8px 10px;
-    min-height: 44px;
-    min-width: 44px;
-    box-shadow: 2px 2px 0 #1a1020;
-  }
-  body[data-view="creator"] #toasts {
-    top: calc(var(--safe-top, 0px) + 4px);
-    left: 8px;
+    left: 50%;
     right: auto;
-    width: min(180px, 50vw);
-    transform: none;
-    z-index: 5;
-  }
-  body[data-view="creator"] .toast {
-    padding: 6px 8px;
-    font-size: 10px;
-  }
-  body[data-view="creator"]:has(#view-creator.is-keyboard) #toasts {
-    display: none;
-  }
-  #view-creator.creator-view.is-keyboard {
-    grid-template-rows: auto 0 auto;
-  }
-  #view-creator.creator-view.is-keyboard .creator-hero,
-  #view-creator.creator-view.is-keyboard .creator-room {
-    min-height: 0;
-    height: 0;
-    overflow: hidden;
-    visibility: hidden;
-  }
-}
-
-@media (max-width: 780px) and (max-height: 720px) {
-  .creator-logo { display: none; }
-}
-
-/* Short landscape / short desktop: 44px targets, no scroll. */
-@media (max-height: 500px) {
-  #view-creator.creator-view .topbar.creator-topbar {
-    padding: 4px 8px;
-    padding-top: max(4px, var(--safe-top));
-    border-bottom-width: 2px;
-    box-shadow: 0 2px 0 #1a1020;
-  }
-  #view-creator.creator-view .creator-topbar .btn {
-    min-height: 32px;
-    padding: 4px 8px;
-    font-size: 7px;
-  }
-  .creator-stage {
-    gap: 8px;
-    padding: 4px 8px calc(4px + var(--safe-bottom));
-  }
-  #view-creator.creator-view #creator-preview,
-  #view-creator.creator-view .preview-stage {
-    width: min(200px, 34vw);
-    height: min(280px, 78vh);
-  }
-  .creator-window {
-    padding: 4px 6px 4px;
+    top: auto;
+    bottom: calc(8px + var(--safe-bottom));
+    width: var(--creator-panel-w);
+    height: var(--creator-panel-h);
+    transform: translateX(-50%);
+    padding: 6px 6px 6px;
     border-width: 3px;
     box-shadow:
       0 0 0 3px #3d2c29,
@@ -597,73 +472,47 @@ body[data-view="creator"] .toast {
   }
   .creator-logo,
   .creator-tag { display: none; }
-  .creator-tabs {
-    flex-wrap: nowrap;
-    gap: 2px;
-    margin: 0 0 2px;
+  body[data-view="creator"] #toasts {
+    top: calc(var(--safe-top, 0px) + 4px);
+    left: 8px;
+    width: min(180px, 50vw);
   }
-  .creator-tabs button {
-    flex: 1 1 0;
-    min-width: 0;
-    min-height: 44px;
-    padding: 4px 4px;
-    font-size: 7px;
+  /* Keyboard lifts only the panel; the room and character stay put. */
+  #view-creator.creator-view.is-keyboard .creator-window {
+    transform: translateX(-50%) translateY(var(--creator-kb, 0px));
   }
-  .creator-tab-panels {
-    flex: 0 0 auto;
-    overflow: hidden;
-    padding: 2px 8px 0;
+}
+
+/* Short landscape: keep a side-docked fixed panel so the character isn't covered. */
+@media (max-height: 500px) and (min-width: 600px) {
+  #view-creator.creator-view {
+    --creator-panel-w: 360px;
+    --creator-panel-h: 320px;
   }
-  .creator-window h3 {
-    font-size: 7px;
-    margin: 2px 0 2px;
-    color: #efe6ff;
+  .creator-hero {
+    top: 48px;
+    left: 0;
+    right: calc(var(--creator-panel-w) + 20px);
+    bottom: 8px;
   }
-  .creator-window .swatch-row { gap: 4px; }
-  .creator-window button.swatch {
-    width: 44px;
-    height: 44px;
-    min-width: 44px;
-    min-height: 44px;
-    border-width: 3px;
+  #view-creator.creator-view #creator-preview,
+  #view-creator.creator-view .preview-stage {
+    width: 180px;
+    height: 250px;
   }
-  .creator-window button.choice {
-    flex: 1 1 calc(12.5% - 4px);
-    min-width: 0;
-    max-width: calc(14.28% - 4px);
-    min-height: 44px;
-    padding: 4px 4px;
-    font-size: 7px;
-    line-height: 1.15;
-    border-width: 3px;
+  .creator-window {
+    top: 52px;
+    right: 10px;
+    left: auto;
+    bottom: auto;
+    width: var(--creator-panel-w);
+    height: var(--creator-panel-h);
+    transform: none;
+    padding: 6px;
   }
-  .creator-window .check-row {
-    font-size: 8px;
-    min-height: 44px;
-    margin-top: 3px;
-  }
-  .creator-footer {
-    display: flex;
-    align-items: stretch;
-    gap: 6px;
-    padding-top: 2px;
-    margin-top: 2px;
-  }
-  .creator-window .field {
-    flex: 1 1 auto;
-    min-width: 0;
-    margin-bottom: 0;
-  }
-  .creator-window .field label { display: none; }
-  .creator-window input[type="text"] {
-    font-size: 16px;
-    padding: 6px 8px;
-    min-height: 44px;
-  }
-  #view-creator.creator-view .creator-window .btn {
-    font-size: 8px;
-    padding: 8px 10px;
-    min-height: 44px;
-    box-shadow: 2px 2px 0 #1a1020;
+  .creator-logo,
+  .creator-tag { display: none; }
+  #view-creator.creator-view.is-keyboard .creator-window {
+    transform: none;
   }
 }
