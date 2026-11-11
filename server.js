@@ -686,6 +686,7 @@ function publicChess(game) {
     stalemate: engine ? engine.isStalemate() : false,
     captured: game.captured || { w: [], b: [] },
     legal: null,
+    away: game.away && Object.keys(game.away).length ? { ...game.away } : {},
   };
 }
 
@@ -713,13 +714,13 @@ function clearHeldTimer(user) {
   }
 }
 
-function clearUserActivities(user, room, { forfeit = true } = {}) {
+function clearUserActivities(user, room, { forfeit = true, keepChess = false } = {}) {
   if (!user) return;
   const stationId = user.stationId;
   if (room && stationId) {
     const use = room.uses?.[stationId];
     const furn = room.furniture.find((f) => f.id === stationId);
-    if (furn?.type === "chesstable" && room.chess?.[stationId]) {
+    if (furn?.type === "chesstable" && room.chess?.[stationId] && !keepChess) {
       const game = room.chess[stationId];
       const wasWhite = game.white === user.username;
       const wasBlack = game.black === user.username;
@@ -733,6 +734,7 @@ function clearUserActivities(user, room, { forfeit = true } = {}) {
       }
       if (wasWhite) game.white = null;
       if (wasBlack) game.black = null;
+      clearChessAway(game, user.username);
       emitRoom(room, "chessUpdated", { id: stationId, game: publicChess(game) });
     }
     if (use && use.user === user.username) {
@@ -762,6 +764,57 @@ function clearUserActivities(user, room, { forfeit = true } = {}) {
     if (user.roomId) io.to(user.roomId).emit("userPhone", { username: user.username, on: false });
   }
   clearActionEmote(user, true);
+}
+
+const CHESS_RECONNECT_MS = 60_000;
+
+function findActiveChess(room, username) {
+  if (!room?.chess) return null;
+  for (const [id, game] of Object.entries(room.chess)) {
+    if (!game || game.result) continue;
+    if (game.white === username || game.black === username) return { id, game };
+  }
+  return null;
+}
+
+function clearChessAway(game, username) {
+  if (!game) return;
+  if (game.away) delete game.away[username];
+  if (game._awayTimers?.[username]) {
+    clearTimeout(game._awayTimers[username]);
+    delete game._awayTimers[username];
+  }
+}
+
+function armChessReconnect(room, id, username) {
+  const game = room?.chess?.[id];
+  if (!game || game.result) return;
+  game.away = game.away || {};
+  game.away[username] = Date.now();
+  game._awayTimers = game._awayTimers || {};
+  if (game._awayTimers[username]) clearTimeout(game._awayTimers[username]);
+  game._awayTimers[username] = setTimeout(() => {
+    delete game._awayTimers[username];
+    if (game.result) return;
+    if (!game.away?.[username]) return;
+    const wasWhite = game.white === username;
+    const wasBlack = game.black === username;
+    if (game.white && game.black && (wasWhite || wasBlack)) {
+      game.result = "forfeit";
+      game.winner = wasWhite ? game.black : game.white;
+    }
+    if (game.seats) {
+      if (game.seats[0] === username) game.seats[0] = null;
+      if (game.seats[1] === username) game.seats[1] = null;
+    }
+    if (wasWhite) game.white = null;
+    if (wasBlack) game.black = null;
+    delete game.away[username];
+    emitRoom(room, "chessUpdated", { id, game: publicChess(game) });
+    const parked = [...users.values()].find((u) => u.username === username && u.roomId === room.id && !u.socketId);
+    if (parked) leaveRoom(parked);
+  }, CHESS_RECONNECT_MS);
+  emitRoom(room, "chessUpdated", { id, game: publicChess(game) });
 }
 
 function capturedFromHistory(engine) {
@@ -1001,8 +1054,18 @@ io.on("connection", (socket) => {
       user.coins += DAILY_LOGIN_BONUS;
       daily = DAILY_LOGIN_BONUS;
     }
-    socket.emit("loggedIn", { user: publicUser(user), rooms: publicRooms() });
+    const resumeRoom = user.roomId ? rooms.get(user.roomId) : null;
+    socket.emit("loggedIn", { user: publicUser(user), rooms: publicRooms(), resumeRoomId: resumeRoom ? resumeRoom.id : null });
     if (daily) socket.emit("coinsEarned", { amount: daily, reason: "daily", coins: user.coins });
+    if (resumeRoom) {
+      socket.join(resumeRoom.id);
+      const playing = findActiveChess(resumeRoom, user.username);
+      if (playing) {
+        clearChessAway(playing.game, user.username);
+        emitRoom(resumeRoom, "chessUpdated", { id: playing.id, game: publicChess(playing.game) });
+      }
+      socket.emit("joinedRoom", roomState(resumeRoom));
+    }
     notifyFriendWatchers(user);
   });
 
@@ -1606,9 +1669,12 @@ io.on("connection", (socket) => {
       if (game.seats[1] === user.username) game.seats[1] = null;
       clearUserActivities(user, room, { forfeit: false });
       game.seats[seatNum] = user.username;
-      if (!game.white && !game.black) {
+      clearChessAway(game, user.username);
+      if (game.white === user.username || game.black === user.username) {
+        // returning player keeps their color
+      } else if (!game.white && !game.black) {
         game.white = user.username;
-      } else if (!game.result && !game.black && game.white !== user.username && !game.black) {
+      } else if (!game.result && !game.black && game.white !== user.username) {
         game.black = user.username;
       } else if (!game.result && !game.white && game.black !== user.username) {
         game.white = user.username;
@@ -2046,6 +2112,23 @@ io.on("connection", (socket) => {
         if (FURNITURE_CATALOG[typ]) user.inventory.push(typ);
       }
     }
+    if (kit.chessFen && kit.chessId && user.roomId) {
+      const room = rooms.get(user.roomId);
+      const game = room?.chess?.[kit.chessId];
+      if (game) {
+        try {
+          game.engine = new Chess(String(kit.chessFen));
+          game.fen = game.engine.fen();
+          game.result = null;
+          game.winner = null;
+          game.lastMove = null;
+          game.captured = { w: [], b: [] };
+          emitRoom(room, "chessUpdated", { id: kit.chessId, game: publicChess(game) });
+        } catch (err) {
+          socket.emit("errorMsg", { message: "Invalid debug FEN." });
+        }
+      }
+    }
     emitProfile(user);
     emitPerson(user);
   });
@@ -2053,6 +2136,14 @@ io.on("connection", (socket) => {
   socket.on("disconnect", () => {
     const user = getUser(socket);
     if (!user || user.socketId !== socket.id) return;
+    const room = user.roomId ? rooms.get(user.roomId) : null;
+    const playing = room ? findActiveChess(room, user.username) : null;
+    if (playing) {
+      user.socketId = null;
+      armChessReconnect(room, playing.id, user.username);
+      notifyFriendWatchers(user);
+      return;
+    }
     leaveRoom(user);
     user.socketId = null;
     notifyFriendWatchers(user);
