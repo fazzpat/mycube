@@ -1140,7 +1140,16 @@ export function createRoom3D(container) {
     for (let i = list.length - 1; i >= 0; i--) {
       const it = list[i];
       if (it.kind === "ghost") continue;
-      if (wpt.sx >= it.sx && wpt.sx <= it.sx + it.w && wpt.sy >= it.sy && wpt.sy <= it.sy + it.h) return it;
+      if (wpt.sx >= it.sx && wpt.sx <= it.sx + it.w && wpt.sy >= it.sy && wpt.sy <= it.sy + it.h) {
+        // Taller avatars/pets overlap floor diamonds behind them. Prefer the
+        // tile under the cursor so those sprites don't swallow walk/place taps.
+        if (it.kind === "person" || it.kind === "pet") {
+          const tile = screenToTile(wpt.sx, wpt.sy);
+          const tx = Math.floor(tile.x), ty = Math.floor(tile.y);
+          if (tx >= 0 && ty >= 0 && tx < gridSize && ty < gridSize) continue;
+        }
+        return it;
+      }
     }
     const sw = lightSwitchPos();
     if (wpt.sx >= sw.sx && wpt.sx <= sw.sx + sw.w && wpt.sy >= sw.sy && wpt.sy <= sw.sy + sw.h) return { kind: "switch" };

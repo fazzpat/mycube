@@ -153,6 +153,12 @@ async function runMobileWalkAndPlace(browser, deviceName, { screenshot } = {}) {
   const afterWalk = await page.evaluate((name) => window.HouseRoom3D.personTile(name), tag);
   check(`Touch walking works on ${deviceName}`, walked, `from=${JSON.stringify(before)} dest=${dest.tx},${dest.ty} after=${JSON.stringify(afterWalk)}`);
 
+  await page.waitForFunction((name) => {
+    const flags = window.HouseRoom3D.personFlags(name);
+    return Boolean(flags) && !flags.walking;
+  }, tag, { timeout: 8000 });
+  await page.waitForTimeout(250);
+
   await page.evaluate(() => window.__debugKit({ furniture: ["plant"], coins: 400 }));
   await page.waitForTimeout(300);
   await openPhoneAppTouch(page, "edit");
