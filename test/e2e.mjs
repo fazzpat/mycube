@@ -983,7 +983,8 @@ try {
   const rows = stacked.rows || [];
   const rowIds = rows.map((b) => b.row).sort((a, b) => a - b);
   const uniqueRows = new Set(rowIds);
-  check("Chat bubbles stay in chronological row order", Boolean(rows.length >= 3 && rows[0].row > rows[rows.length - 1].row && uniqueRows.size === rows.length), JSON.stringify(stacked));
+  const yOrder = rows.length >= 3 && rows.every((b, i) => i === 0 || b.y > rows[i - 1].y + 8);
+  check("Chat bubbles stay in chronological row order", Boolean(rows.length >= 3 && rows[0].row > rows[rows.length - 1].row && uniqueRows.size === rows.length && yOrder), JSON.stringify(stacked));
   check("A new message pushes older bubbles up one row", Boolean(rows.find((b) => b.text.includes("hey there friend!") && b.row >= 1 && b.y < y0 - 10)), JSON.stringify({ y0, rows }));
   check("No two chat bubbles share a row", uniqueRows.size === rows.length && boxes.length >= 2 && boxes.every((b, i) => i === 0 || b.top >= boxes[i - 1].bottom - 2), JSON.stringify(boxes));
   await bob.screenshot({ path: `${SHOT}/04-speech-bubble.png` });

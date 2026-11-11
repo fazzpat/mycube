@@ -561,6 +561,16 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
   }
 
   const CHAT_ROW_H = 24;
+  function layoutChatRows(baseY) {
+    const list = state.chatFloats || [];
+    if (!list.length) return;
+    const base = baseY;
+    for (let i = 0; i < list.length; i++) {
+      const row = list.length - 1 - i;
+      list[i].row = row;
+      list[i].targetY = base - row * CHAT_ROW_H;
+    }
+  }
   function pushChatFloat(p, text) {
     const layer = document.getElementById("bubble-layer");
     const W = layer?.clientWidth || 1;
@@ -572,10 +582,6 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
       headY = (pos.y || 160) - 22;
     }
     if (!state.chatFloats) state.chatFloats = [];
-    for (const b of state.chatFloats) {
-      b.row += 1;
-      b.targetY -= CHAT_ROW_H;
-    }
     state.chatFloats.push({
       id: p.username + "-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6),
       username: p.username,
@@ -584,14 +590,16 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
       targetY: headY,
       row: 0,
     });
+    // Global rows: newest lowest at the speaker's head, older rows stacked above
+    // it so a foreground speaker cannot sit below a newer line.
+    layoutChatRows(headY);
     state.chatQuietAt = Date.now();
   }
   function stepChatRows() {
     if (!state.chatFloats) state.chatFloats = [];
-    for (const b of state.chatFloats) {
-      b.row += 1;
-      b.targetY -= CHAT_ROW_H;
-    }
+    if (!state.chatFloats.length) return;
+    const newest = state.chatFloats[state.chatFloats.length - 1];
+    layoutChatRows(newest.targetY - CHAT_ROW_H);
     state.chatQuietAt = Date.now();
   }
 
@@ -692,11 +700,7 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
     const CHAT_FADE_TOP = 16;
     if (!state.chatFloats) state.chatFloats = [];
     if (state.chatFloats.length && state.chatQuietAt && now - state.chatQuietAt >= CHAT_ROW_MS) {
-      for (const b of state.chatFloats) {
-        b.row += 1;
-        b.targetY -= CHAT_ROW_H;
-      }
-      state.chatQuietAt = now;
+      stepChatRows();
     }
     const usedIds = new Set();
     const latestOf = new Map();
