@@ -537,6 +537,135 @@ async function assertCreatorTabsFit(page, viewportName, viewport) {
   }
 }
 
+
+async function runRecordPlayerTests(browser) {
+  log("Record table picker, vinyls, and synced lofi beats");
+  const ctxA = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const ctxB = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const recA = await ctxA.newPage();
+  const recB = await ctxB.newPage();
+  recA.setDefaultTimeout(20000);
+  recB.setDefaultTimeout(20000);
+  try {
+    await login(recA, "recalice");
+    await recA.waitForFunction(() => window.HouseRoom3D && window.HouseRoom3D.ready);
+    await login(recB, "recbob");
+    await recB.waitForFunction(() => window.HouseRoom3D && window.HouseRoom3D.ready);
+
+    await openAddSheet(recA);
+    await recA.fill('[data-testid="friend-name"]', "recbob");
+    await recA.click('[data-testid="add-friend-btn"]');
+    await recA.waitForSelector('[data-testid="friend-item-recbob"]');
+    await recA.click("#add-sheet-close").catch(() => {});
+    await openAddSheet(recB);
+    await recB.fill('[data-testid="friend-name"]', "recalice");
+    await recB.click('[data-testid="add-friend-btn"]');
+    await recB.waitForSelector('[data-testid="friend-item-recalice"]');
+    await recB.click("#add-sheet-close").catch(() => {});
+
+    await openAddSheet(recA);
+    await recA.fill('[data-testid="room-name"]', "Vinyl Lounge");
+    await recA.click('[data-testid="create-room-btn"]');
+    await recA.waitForSelector('body[data-view="room"]');
+    await recA.waitForFunction(() => window.HouseRoom3D && window.HouseRoom3D.ready);
+    await recB.click('[data-testid="friend-item-recalice"]');
+    await recB.waitForSelector('body[data-view="room"]', { timeout: 15000 });
+    await recB.waitForFunction(() => window.HouseRoom3D && window.HouseRoom3D.ready);
+    await recA.waitForSelector('[data-testid="avatar-recbob"]', { timeout: 15000 });
+
+    const catalog = await recA.evaluate(() => window.HouseIso?.CATALOG?.recordplayer);
+    check(
+      "Record table is in the furniture catalog for 28 coins on a 1-tile footprint",
+      Boolean(catalog && catalog.name === "Record table" && catalog.price === 28 && catalog.w === 1 && catalog.h === 1),
+      JSON.stringify(catalog)
+    );
+
+    await openPhoneApp(recA, "shop");
+    await recA.waitForSelector('[data-testid="phone-screen-shop"]:not(.hidden)');
+    const shopHas = await recA.locator('[data-testid="buy-recordplayer"]').count();
+    check("Record table appears in the furniture shop", shopHas >= 1);
+    await closePhoneIfOpen(recA);
+
+    await recA.evaluate(() => window.__debugKit?.({ furniture: ["recordplayer"], coins: 400 }));
+    await recA.evaluate(() => { window.__startPlace("recordplayer"); window.__clickTile(4, 2); });
+    await recA.waitForFunction(() => window.HouseRoom3D.getFurniture().some((f) => f.type === "recordplayer"));
+    await recB.waitForFunction(() => window.HouseRoom3D.getFurniture().some((f) => f.type === "recordplayer"));
+    await recA.evaluate(() => window.__exitEdit?.());
+    const recId = await recA.evaluate(() => window.HouseRoom3D.getFurniture().find((f) => f.type === "recordplayer").id);
+    check("A 1-tile record table can be placed in the room", Boolean(recId));
+
+    await recA.evaluate((id) => window.__clickFurniture(id, "recordplayer"), recId);
+    await recA.waitForSelector('[data-testid="record-picker"]:not(.hidden)', { timeout: 12000 });
+    const vinylIds = await recA.evaluate(() => Array.from(document.querySelectorAll("[data-testid^=record-vinyl-]")).map((el) => el.getAttribute("data-testid").replace("record-vinyl-", "")));
+    const pickerText = await recA.locator('[data-testid="record-picker"]').innerText();
+    const expected = ["neon-drift", "midnight-ramen", "rainy-rooftop", "cube-city-nights"];
+    check(
+      "Tapping the record table opens an arcade picker with four named vinyls",
+      vinylIds.length === 4 && expected.every((id) => vinylIds.includes(id)) && pickerText.includes("Neon Drift") && pickerText.includes("Midnight Ramen") && pickerText.includes("Rainy Rooftop") && pickerText.includes("Cube City Nights"),
+      JSON.stringify({ vinylIds, pickerText })
+    );
+    check("The picker includes a Stop control", await recA.locator('[data-testid="record-stop"]').count() === 1);
+
+    const targets = await recA.evaluate(() => {
+      const ids = ["record-vinyl-neon-drift", "record-vinyl-midnight-ramen", "record-vinyl-rainy-rooftop", "record-vinyl-cube-city-nights", "record-stop", "record-mute", "record-close"];
+      return ids.map((id) => {
+        const r = document.querySelector(`[data-testid="${id}"]`)?.getBoundingClientRect();
+        return r ? { id, w: +r.width.toFixed(1), h: +r.height.toFixed(1) } : { id, missing: true };
+      });
+    });
+    check("Picker buttons are at least 40px tall for tapping", targets.every((t) => !t.missing && t.h >= 39.5), JSON.stringify(targets));
+
+    await recA.click('[data-testid="record-vinyl-neon-drift"]');
+    await recA.waitForFunction((id) => window.HouseRoom3D.recordOn(id) && window.HouseRoom3D.recordVinyl(id) === "neon-drift", recId);
+    await recB.waitForFunction((id) => window.HouseRoom3D.recordOn(id) && window.HouseRoom3D.recordVinyl(id) === "neon-drift", recId);
+    await recA.waitForTimeout(450);
+    const noteCount = await recA.evaluate((id) => window.HouseRoom3D.recordNotes(id).length, recId);
+    const aliceAudio = await recA.evaluate(() => window.__recordAudioState());
+    const bobAudio = await recB.evaluate(() => window.__recordAudioState());
+    check(
+      "Choosing Neon Drift starts that vinyl, spins the platter, and floats notes",
+      Boolean(aliceAudio?.listening && (aliceAudio?.vinyl === "neon-drift" || aliceAudio?.playing === "neon-drift") && noteCount >= 1),
+      JSON.stringify({ aliceAudio, noteCount })
+    );
+    check(
+      "A guest sees the same vinyl playing but does not auto-hear it",
+      bobAudio?.listening === false,
+      JSON.stringify({ bobAudio })
+    );
+
+    await recB.waitForSelector('[data-testid="record-listen-hint"]:not(.hidden)', { timeout: 6000 });
+    check("A guest gets a tap-to-listen hint while a record is playing", true);
+    await recB.click('[data-testid="record-listen-hint"]');
+    await recB.waitForFunction(() => window.__recordAudioState()?.listening === true, null, { timeout: 5000 });
+    check("Tapping the hint lets the guest hear the same beat", ((s) => s?.listening === true && (s?.vinyl === "neon-drift" || s?.playing === "neon-drift"))(await recB.evaluate(() => window.__recordAudioState())));
+
+    await recA.click('[data-testid="record-stop"]');
+    await recA.waitForFunction((id) => !window.HouseRoom3D.recordOn(id), recId);
+    await recB.waitForFunction((id) => !window.HouseRoom3D.recordOn(id), recId);
+    const stoppedNotes = await recA.evaluate((id) => window.HouseRoom3D.recordNotes(id).length, recId);
+    check("Stop turns the table off for everyone and the notes fade out", stoppedNotes === 0 && !(await recB.evaluate((id) => window.HouseRoom3D.recordOn(id), recId)));
+
+    await recA.click('[data-testid="record-vinyl-cube-city-nights"]');
+    await recA.waitForFunction((id) => window.HouseRoom3D.recordVinyl(id) === "cube-city-nights", recId);
+    await recB.waitForFunction((id) => window.HouseRoom3D.recordVinyl(id) === "cube-city-nights", recId);
+    await recA.click('[data-testid="record-close"]');
+    await goToLobby(recA);
+    await recA.click('[data-testid="friend-item-recbob"]');
+    await recA.waitForSelector('body[data-view="room"]', { timeout: 15000 });
+    await recA.waitForFunction(() => window.HouseRoom3D && window.HouseRoom3D.ready);
+    const after = await recA.evaluate((id) => ({ on: window.HouseRoom3D.recordOn(id), vinyl: window.HouseRoom3D.recordVinyl(id) }), recId);
+    const afterBob = await recB.evaluate((id) => ({ on: window.HouseRoom3D.recordOn(id), vinyl: window.HouseRoom3D.recordVinyl(id) }), recId);
+    check(
+      "The chosen vinyl is still playing after the owner leaves and rejoins",
+      after.on && after.vinyl === "cube-city-nights" && afterBob.on && afterBob.vinyl === "cube-city-nights",
+      JSON.stringify({ after, afterBob })
+    );
+  } finally {
+    await ctxA.close();
+    await ctxB.close();
+  }
+}
+
 async function runCreatorPhoneAndBoot(browser) {
   log("Everyone boots straight into their own cube");
   const fresh = await browser.newContext({ viewport: { width: 1280, height: 800 } });
@@ -2888,6 +3017,9 @@ try {
 
   log("Stores and restyle screenshots");
   await runStoresAndCyberShots(browser);
+
+  log("Record table picker and synced lofi beats");
+  await runRecordPlayerTests(browser);
 
   log("New avatar looks together in a cube");
   await ctxA.close();

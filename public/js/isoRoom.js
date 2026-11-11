@@ -9,6 +9,10 @@ import {
 import { doorSlot as layoutDoorSlot, switchSlot as layoutSwitchSlot, windowSlots as layoutWindowSlots } from "./wallLayout.js";
 import { chessSeatPose, chessBoardMetrics } from "./chessTable.js";
 import { steamFrameAt } from "./coffeeMaker.js";
+import {
+  TYPE as RECORD_TYPE, spinFrameAt, notesAt, drawNotes, platterOffset, paintListenHint,
+  isRecordListening,
+} from "./recordPlayer.js";
 import { isPainting, drawPaintingOnWall, preloadPaintings, ART_TILE_SPAN, ART_WORLD_UP, ART_HANG_UP, ART_SIZE } from "./artPieces.js";
 preloadPaintings();
 /* 2D isometric pixel room renderer — 2000s house style, HouseRoom3D API. */
@@ -530,6 +534,7 @@ export function createRoom3D(container, opts = {}) {
   let wallArt = [];
   let uses = {};
   let tvs = {};
+  let recordPlayers = {};
   let chess = {};
   let arcade = {};
   let people = [];
@@ -802,8 +807,11 @@ export function createRoom3D(container, opts = {}) {
       const m = furnSpriteMetrics(type, rot);
       const pos = furnBlitPos(f.x, f.y, type, rot, tileToScreen);
       const tv = tvs[f.id] || {};
+      const rec = recordPlayers[f.id] || {};
       const isTv = type === "tv" || type === "holotv";
+      const isRec = type === "recordplayer" || type === RECORD_TYPE;
       const tvOn = isTv && Boolean(tv.on);
+      const recOn = isRec && Boolean(rec.on);
       let screen = null;
       let glow = false;
       if (tvOn) {
@@ -818,14 +826,17 @@ export function createRoom3D(container, opts = {}) {
       const spr = drawFurnitureSprite(type, {
         lights: lightsOn,
         rot,
-        on: isTv ? tvOn : Boolean(uses[f.id]?.on),
+        on: isTv ? tvOn : isRec ? recOn : Boolean(uses[f.id]?.on),
         open: type === "fridge" ? Boolean(uses[f.id]?.open) : false,
         sku: f.sku,
         brewing: type === "coffeemachine" && uses[f.id]?.phase === "brew",
         steamFrame: type === "coffeemachine" ? steamFrameAt(now) : 0,
+        spinFrame: isRec && recOn ? spinFrameAt(nowServer(), rec.startedAt) : 0,
+        vinyl: isRec ? (rec.vinyl || null) : null,
         screen,
       });
-      list.push({ kind: "furn", id: f.id, type, depth: f.x + f.y + (m.tw + m.th) / 2 + 0.2, sx: pos.sx, sy: pos.sy, w: pos.w, h: pos.h, spr, raw: f, glow });
+      const recNotes = isRec && recOn ? notesAt(f.id, rec, nowServer()) : null;
+      list.push({ kind: "furn", id: f.id, type, depth: f.x + f.y + (m.tw + m.th) / 2 + 0.2, sx: pos.sx, sy: pos.sy, w: pos.w, h: pos.h, spr, raw: f, glow, recNotes, recOn });
       if (type === "chesstable") {
         for (const seat of [0, 1]) {
           const pose = chessSeatPose(f, seat);
@@ -1238,6 +1249,10 @@ export function createRoom3D(container, opts = {}) {
         fillPoly(ctx, [a, b, c, d], "rgba(212, 180, 106, 0.28)", "#d4b46a");
       }
       blit(it.spr, it.sx, it.sy, it.alpha ?? 1);
+      if (it.recNotes?.length) {
+        const off = platterOffset(it.raw?.rot);
+        drawNotes(ctx, it.sx + off.x, it.sy + off.y, it.recNotes, lightsOn);
+      }
       if (it.glow) {
         ctx.save();
         ctx.fillStyle = tvGlowColor();
@@ -1248,6 +1263,18 @@ export function createRoom3D(container, opts = {}) {
       }
     }
     ctx.restore();
+    const playingRec = furniture.find((f) => (f.type === "recordplayer" || f.type === RECORD_TYPE) && recordPlayers[f.id]?.on);
+    if (playingRec && !isRecordListening()) {
+      const proj = (function () {
+        const rot = normalizeFurnRot(playingRec.rot);
+        const pos = furnBlitPos(playingRec.x, playingRec.y, playingRec.type, rot, tileToScreen);
+        const off = platterOffset(rot);
+        return clientFromWorld(pos.sx + off.x, pos.sy + off.y - 8);
+      })();
+      paintListenHint(playingRec.id, proj && proj.visible !== false ? { x: proj.x, y: proj.y, w: 0, h: 0 } : null);
+    } else {
+      paintListenHint(null);
+    }
     requestAnimationFrame(render);
   }
 
@@ -1524,6 +1551,14 @@ export function createRoom3D(container, opts = {}) {
     setUses(u) { uses = u || {}; },
     setChessMap(m) { chess = m || {}; },
     setTvs(m) { tvs = m || {}; },
+    setRecordPlayers(m) { recordPlayers = m || {}; },
+    recordOn(id) { return Boolean(recordPlayers[id]?.on); },
+    recordVinyl(id) { return recordPlayers[id]?.on ? (recordPlayers[id].vinyl || null) : null; },
+    recordState(id) { return recordPlayers[id] ? { ...recordPlayers[id] } : { on: false, vinyl: null }; },
+    recordNotes(id) {
+      const rec = recordPlayers[id];
+      return rec?.on ? notesAt(id, rec, nowServer()) : [];
+    },
     setWallArt(list) { wallArt = list || []; },
     setWallGhost(type, wall, slot, ok) { wallGhost = type ? { type, wall, slot, ok } : null; },
     setArcade(m) { arcade = m || {}; },

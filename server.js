@@ -67,6 +67,7 @@ const FURNITURE_CATALOG = {
   cubics: { name: "Arcade cabinet", price: 40, w: 1, h: 1, blocks: true },
   clothescab: { name: "Clothes cabinet", price: 30, w: 1, h: 1, blocks: true },
   coffeemachine: { name: "Coffee maker", price: 25, w: 1, h: 1, blocks: true },
+  recordplayer: { name: "Record table", price: 28, w: 1, h: 1, blocks: true },
   art_mona: { name: "Mona Cuba", price: 22, w: 1, h: 1, blocks: false, surface: "wall" },
   art_starry: { name: "Starry Cube Night", price: 28, w: 1, h: 1, blocks: false, surface: "wall" },
   art_pop: { name: "Pop-art cubes", price: 18, w: 1, h: 1, blocks: false, surface: "wall" },
@@ -433,6 +434,7 @@ function roomState(room) {
     floorStyle: room.floorStyle,
     lightsOn: room.lightsOn !== false,
     tvs: room.tvs || {},
+    recordPlayers: room.recordPlayers || {},
     chess: publicChessMap(room),
     uses: room.uses || {},
     wallArt: room.wallArt || [],
@@ -696,6 +698,7 @@ function migrateRoomChessTables(room) {
 
 function ensureRoomExtras(room) {
   if (!room.tvs) room.tvs = {};
+  if (!room.recordPlayers) room.recordPlayers = {};
   if (!room.chess) room.chess = {};
   if (!room.uses) room.uses = {};
   if (!room.wallArt) room.wallArt = [];
@@ -1604,6 +1607,7 @@ io.on("connection", (socket) => {
     }
     if (room.chess?.[id]) delete room.chess[id];
     if (room.tvs?.[id]) delete room.tvs[id];
+    if (room.recordPlayers?.[id]) delete room.recordPlayers[id];
     if (room.uses?.[id]) delete room.uses[id];
     room.furniture.splice(idx, 1);
     user.inventory.push(piece.type);
@@ -1844,6 +1848,29 @@ io.on("connection", (socket) => {
     cur.changedAt = now;
     room.tvs[id] = cur;
     io.to(room.id).emit("tvUpdated", { id, tv: cur, serverTime: now });
+  });
+
+  socket.on("selectRecordPlayer", ({ id, vinyl, stop } = {}) => {
+    const user = getUser(socket);
+    if (!user?.roomId) return;
+    const room = rooms.get(user.roomId);
+    const furn = room?.furniture.find((f) => f.id === id && f.type === "recordplayer");
+    if (!furn) return;
+    ensureRoomExtras(room);
+    const now = Date.now();
+    if (stop || !vinyl) {
+      const cur = room.recordPlayers[id] || { on: false, vinyl: null };
+      cur.on = false;
+      cur.changedAt = now;
+      room.recordPlayers[id] = cur;
+      io.to(room.id).emit("recordPlayerUpdated", { id, player: cur, serverTime: now });
+      return;
+    }
+    const allowed = ["neon-drift", "midnight-ramen", "rainy-rooftop", "cube-city-nights"];
+    if (!allowed.includes(String(vinyl))) return;
+    const cur = { on: true, vinyl: String(vinyl), startedAt: now, changedAt: now };
+    room.recordPlayers[id] = cur;
+    io.to(room.id).emit("recordPlayerUpdated", { id, player: cur, serverTime: now });
   });
 
   socket.on("standUp", () => {

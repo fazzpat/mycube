@@ -1,6 +1,7 @@
 /* Isometric furniture sprites — edges stay parallel to the floor-tile grid.
    Rotation is only the 4 axis directions: 0 = +Y (SW), 1 = +X (SE), 2 = -Y (NE), 3 = -X (NW). */
 import { drawCoffeeMaker } from "./coffeeMaker.js";
+import { drawRecordPlayer, TYPE as RECORD_PLAYER } from "./recordPlayer.js";
 import { drawChessTableSmall, drawChessStool, CHESS_STOOL_TYPE } from "./chessTable.js";
 
 const TW = 64;
@@ -13,7 +14,7 @@ const TILES = {
   tv: [2, 1], holotv: [2, 1], fridge: [1, 1], kitchenette: [2, 1], chair: [1, 1],
   hoverchair: [1, 1], bookshelf: [2, 1], chesstable: [1, 1], chessstool: [1, 1], punchbag: [1, 1],
   heavybag: [1, 1], benchpress: [2, 1], treadmill: [1, 2], cubics: [1, 1],
-  clothescab: [1, 1], coffeemachine: [1, 1], djdeck: [2, 1], sodavending: [1, 1],
+  clothescab: [1, 1], coffeemachine: [1, 1], recordplayer: [1, 1], djdeck: [2, 1], sodavending: [1, 1],
   neonsign: [1, 1], pinball: [1, 1], rack: [1, 1], mannequin: [1, 1],
   petpen: [2, 1], cage: [1, 1], counter: [2, 1],
 };
@@ -22,14 +23,14 @@ const BODY_H = {
   rug: 4, plant: 36, podplant: 38, lamp: 48, table: 18, coffeetable: 14, counter: 20,
   couch: 26, capsulecouch: 26, chair: 24, hoverchair: 32, bed: 18, tv: 60, holotv: 60,
   fridge: 44, kitchenette: 24, bookshelf: 42, chesstable: 14, chessstool: 14, punchbag: 46, heavybag: 46,
-  benchpress: 22, treadmill: 30, cubics: 44, pinball: 40, clothescab: 42, coffeemachine: 48,
+  benchpress: 22, treadmill: 30, cubics: 44, pinball: 40, clothescab: 42, coffeemachine: 48, recordplayer: 40,
   djdeck: 18, sodavending: 46, neonsign: 46, rack: 36, mannequin: 42, petpen: 22, cage: 24,
 };
 
 export const FURN_SHEET_TYPES = [
   "rug", "plant", "podplant", "lamp", "neonsign", "table", "coffeetable", "counter",
   "chair", "hoverchair", "couch", "capsulecouch", "bed", "tv", "holotv", "fridge",
-  "kitchenette", "bookshelf", "clothescab", "chesstable", "coffeemachine", "cubics",
+  "kitchenette", "bookshelf", "clothescab", "chesstable", "coffeemachine", "recordplayer", "cubics",
   "pinball", "djdeck", "sodavending", "punchbag", "benchpress", "treadmill",
   "rack", "mannequin", "petpen", "cage",
 ];
@@ -871,6 +872,7 @@ function paintPiece(ctx, type, rot, lights, on, open, opts = {}) {
     case "bookshelf":
     case "clothescab": drawBookshelf(ctx, tw, th, r, lights, type === "clothescab"); break;
     case "coffeemachine": drawCoffeeMaker(ctx, tw, th, r, lights, opts, ISO_DRAW); break;
+    case "recordplayer": drawRecordPlayer(ctx, tw, th, r, lights, { ...opts, on }, ISO_DRAW); break;
     case "punchbag":
     case "heavybag":
     case "benchpress":
@@ -899,13 +901,15 @@ export function drawFurnitureSprite(type, opts = {}) {
   const open = Boolean(opts.open);
   const brewing = Boolean(opts.brewing);
   const steamFrame = type === "coffeemachine" ? (opts.steamFrame ?? 0) : 0;
+  const spinFrame = type === "recordplayer" ? (opts.spinFrame ?? 0) : 0;
+  const vinyl = type === "recordplayer" ? (opts.vinyl || "") : "";
   const screen = opts.screen || null;
-  const key = "iso-furn:" + type + ":" + rot + ":" + lights + ":" + on + ":" + open + ":" + (opts.sku || "") + (type === "coffeemachine" ? (":brew" + brewing + ":st" + steamFrame) : "");
+  const key = "iso-furn:" + type + ":" + rot + ":" + lights + ":" + on + ":" + open + ":" + (opts.sku || "") + (type === "coffeemachine" ? (":brew" + brewing + ":st" + steamFrame) : "") + (type === "recordplayer" ? (":v" + vinyl + ":sp" + spinFrame + ":on" + on) : "");
   const m = furnSpriteMetrics(type, rot);
   const body = sprite(key, m.w, m.h, (ctx) => {
     ctx.save();
     ctx.translate(m.ox, m.oy);
-    paintPiece(ctx, type, rot, lights, on, open, { brewing, steamFrame, sku: opts.sku });
+    paintPiece(ctx, type, rot, lights, on, open, { brewing, steamFrame, sku: opts.sku, spinFrame, vinyl });
     ctx.restore();
   });
   if (!screen || !on || (type !== "tv" && type !== "holotv")) return body;

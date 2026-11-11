@@ -7,6 +7,12 @@ import { installWallLayout, switchFloorTile } from "./wallLayout.js";
 import { installChessLayout } from "./chessTable.js";
 import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, snapshot as cubicsSnap, drawCubics, jokeAt } from "./cubics.js";
 import { initChessUI } from "./chess-ui.js";
+import {
+  TYPE as RECORD_TYPE, VINYLS as RECORD_VINYLS,
+  mountRecordPicker, openRecordPicker, closeRecordPicker, isRecordPickerOpen,
+  paintRecordPicker, paintListenHint, syncRecordAudio, setRecordVolume, setRecordMuted,
+  getRecordAudioState, unlockRecordAudio, vinylById,
+} from "./recordPlayer.js";
 
 (() => {
   const socket = io({ transports: ["websocket", "polling"] });
@@ -29,6 +35,27 @@ import { initChessUI } from "./chess-ui.js";
   installPaintings(window.HouseIso);
   installWallLayout(window.HouseIso);
   installChessLayout(window.HouseIso);
+  mountRecordPicker({
+    onSelect(id, vinyl) {
+      socket.emit("selectRecordPlayer", { id, vinyl });
+      unlockRecordAudio().then(() => syncRecordAudio({ on: true, vinyl }, { userGesture: true }));
+    },
+    onStop(id) {
+      socket.emit("selectRecordPlayer", { id, stop: true });
+      syncRecordAudio({ on: false });
+    },
+    onListen(id) {
+      const rec = state.room?.recordPlayers?.[id];
+      unlockRecordAudio().then(() => {
+        syncRecordAudio(rec, { userGesture: true });
+        paintRecordPicker(rec);
+      });
+    },
+    onVolume: setRecordVolume,
+    onMute: setRecordMuted,
+    getState(id) { return state.room?.recordPlayers?.[id]; },
+    onClose() {},
+  });
   registerArtCatalog(HouseIso);
   const CATALOG = Object.entries(HouseIso.CATALOG).map(([type, item]) => ({ type, ...item }));
 
@@ -648,6 +675,7 @@ import { initChessUI } from "./chess-ui.js";
     r3.setUses(room.uses || {});
     r3.setChessMap(room.chess || {});
     r3.setTvs(room.tvs || {});
+    r3.setRecordPlayers(room.recordPlayers || {});
     r3.setWallArt(room.wallArt || []);
     r3.setArcade(room.arcade || {});
     r3.setServerTime(room.serverTime || Date.now());
@@ -655,6 +683,7 @@ import { initChessUI } from "./chess-ui.js";
     state.room.uses = room.uses || {};
     state.room.chess = room.chess || {};
     state.room.tvs = room.tvs || {};
+    state.room.recordPlayers = room.recordPlayers || {};
     state.room.wallArt = room.wallArt || [];
     state.room.seats = room.seats || {};
     state.room.arcade = room.arcade || {};
@@ -1980,6 +2009,12 @@ import { initChessUI } from "./chess-ui.js";
       approachFurniture(furn, () => {
         socket.emit("useCoffee", { id });
         toast("Brewing a cup…");
+      });
+      return;
+    }
+    if (type === "recordplayer" || type === RECORD_TYPE) {
+      approachFurniture(furn, () => {
+        openRecordPicker(id, state.room.recordPlayers?.[id]);
       });
       return;
     }
@@ -3530,10 +3565,13 @@ import { initChessUI } from "./chess-ui.js";
     if (state.room.uses) delete state.room.uses[id];
     if (state.room.chess) delete state.room.chess[id];
     if (state.room.tvs) delete state.room.tvs[id];
+    if (state.room.recordPlayers) delete state.room.recordPlayers[id];
     renderFloorStatic();
     state.room3d?.setUses(state.room.uses || {});
     state.room3d?.setChessMap(state.room.chess || {});
     state.room3d?.setTvs(state.room.tvs || {});
+    state.room3d?.setRecordPlayers(state.room.recordPlayers || {});
+    if (isRecordPickerOpen()) closeRecordPicker();
     if (state.selectedFurnId === id) {
       state.selectedFurnId = null;
       hideFurnActions();
@@ -3556,6 +3594,17 @@ import { initChessUI } from "./chess-ui.js";
     state.room3d?.setTvs(state.room.tvs);
     if (serverTime) state.room3d?.setServerTime(serverTime);
     maybeTvChannelToast(false);
+  });
+
+  socket.on("recordPlayerUpdated", ({ id, player, serverTime }) => {
+    if (!state.room) return;
+    state.room.recordPlayers = state.room.recordPlayers || {};
+    if (player) state.room.recordPlayers[id] = player;
+    else delete state.room.recordPlayers[id];
+    state.room3d?.setRecordPlayers(state.room.recordPlayers);
+    if (serverTime) state.room3d?.setServerTime(serverTime);
+    paintRecordPicker(state.room.recordPlayers[id]);
+    syncRecordAudio(state.room.recordPlayers[id] || { on: false });
   });
 
   socket.on("seatsUpdated", ({ seats }) => {
@@ -3773,6 +3822,17 @@ import { initChessUI } from "./chess-ui.js";
   window.__stowItem = () => socket.emit("stowItem");
   window.__openWardrobe = (id) => openWardrobe(id);
   window.__useCoffee = (id) => socket.emit("useCoffee", { id });
+  window.__selectRecord = (id, vinyl) => socket.emit("selectRecordPlayer", { id, vinyl });
+  window.__stopRecord = (id) => socket.emit("selectRecordPlayer", { id, stop: true });
+  window.__openRecordPicker = (id) => openRecordPicker(id, state.room?.recordPlayers?.[id]);
+  window.__closeRecordPicker = () => closeRecordPicker();
+  window.__recordAudioState = () => getRecordAudioState();
+  window.__listenToRecord = async (id) => {
+    await unlockRecordAudio();
+    return syncRecordAudio(state.room?.recordPlayers?.[id], { userGesture: true });
+  };
+  window.__setRecordVolume = (v) => setRecordVolume(v);
+  window.__setRecordMuted = (m) => setRecordMuted(m);
   window.__toggleCam = () => { const m = state.room3d?.toggleCamMode(); syncCamToggle(); return m; };
   window.__setCamMode = (mode) => { const m = state.room3d?.setCamMode(mode); syncCamToggle(); return m; };
   window.__camState = () => state.room3d?.camState?.() || null;
