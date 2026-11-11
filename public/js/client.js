@@ -1257,7 +1257,14 @@ import { initChessUI } from "./chess-ui.js";
     root.appendChild(swatch(HearthAvatar.TOPS, "top", "Top", false));
     root.appendChild(swatch(HearthAvatar.BOTTOMS, "bottom", "Bottoms", false));
     root.appendChild(swatch(HearthAvatar.BOTTOM_COLORS, "bottomColor", "Bottom color", true));
-    root.appendChild(swatch(HearthAvatar.SHOES, "shoes", "Shoes", false));
+    const shoeList = [...(HearthAvatar.SHOES || [])];
+    const extraShoes = ["skate", "hightop", "boots", "checker"];
+    const ownedClothes = state.me?.collection?.clothes || [];
+    for (const sh of extraShoes) {
+      const owned = ownedClothes.some((it) => it?.item?.shoes === sh) || (state.draft && state.draft.shoes === sh);
+      if (owned && !shoeList.includes(sh)) shoeList.push(sh);
+    }
+    root.appendChild(swatch(shoeList, "shoes", "Shoes", false));
     root.appendChild(swatch(HearthAvatar.ACCESSORIES, "accessory", "Accessory", false));
   }
 

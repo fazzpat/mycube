@@ -9,7 +9,7 @@ export const SHIRTS = ["#ff7a59", "#7bc47f", "#6c7bff", "#f4c15d", "#ef476f", "#
 export const TOPS = ["tshirt", "hoodie", "jacket", "bandtee"];
 export const BOTTOMS = ["jeans", "joggers", "cargo", "shorts"];
 export const BOTTOM_COLORS = ["#3d4f7c", "#2a2a2e", "#6b7280", "#c4a35a"];
-export const SHOES = ["white", "black", "red", "gum", "skate"];
+export const SHOES = ["white", "black", "red", "gum", "skate", "hightop", "boots", "checker"];
 export const ACCESSORIES = ["none", "cap", "beanie", "chain", "headphones", "trucker", "wristband", "belt"];
 export const HEADPHONE_COLORS = ["#2a2a2e", "#ff7a59", "#7c5cff", "#f4c15d", "#ef476f", "#20b2aa", "#f6f3ee", "#3d4f7c"];
 export const PETS = ["cat", "dog", "bunny", "fox", "hamster", "parrot", "turtle"];
@@ -22,7 +22,7 @@ export const BASE_HAIR = ["short", "long", "curly", "bun", "spiky", "bangs"];
 export const STORE_LOCKED = {
   top: new Set(["bandtee"]),
   bottom: new Set(["cargo", "shorts"]),
-  shoes: new Set(["skate"]),
+  shoes: new Set(["skate", "hightop", "boots", "checker"]),
   accessory: new Set(["trucker", "wristband", "belt"]),
   hair: new Set(["undercut"]),
 };
@@ -40,6 +40,9 @@ export const CLOTHING_STOCK = [
   { id: "nt-shorts", label: "Cargo Shorts", price: 14, item: { bottom: "shorts", bottomColor: "#c4a35a" } },
   { id: "nt-baggy", label: "Baggy Jeans", price: 16, item: { bottom: "jeans", bottomColor: "#2a2a2e" } },
   { id: "nt-skate", label: "Skate Shoes", price: 18, item: { shoes: "skate" } },
+  { id: "nt-hightop", label: "High-Tops", price: 20, item: { shoes: "hightop" } },
+  { id: "nt-boots", label: "Work Boots", price: 22, item: { shoes: "boots" } },
+  { id: "nt-checker", label: "Checker Slips", price: 16, item: { shoes: "checker" } },
   { id: "nt-trucker", label: "Trucker Hat", price: 10, item: { accessory: "trucker" } },
   { id: "nt-beanie", label: "Slouch Beanie", price: 10, item: { accessory: "beanie", headphoneColor: "#2a2a2e" } },
   { id: "nt-wrist", label: "Wristband", price: 8, item: { accessory: "wristband" } },
