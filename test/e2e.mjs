@@ -764,18 +764,25 @@ async function runPhonePlaytest(browser) {
     await a.waitForTimeout(200);
 
     await a.evaluate(() => window.__clickTile(5, 5));
-    await a.waitForTimeout(800);
+    await a.waitForFunction(() => {
+      const f = window.HouseRoom3D.personFlags("nila");
+      const t = window.HouseRoom3D.personTile("nila");
+      return Boolean(f && !f.walking && t && Math.hypot((t.x ?? 0) - 5, (t.y ?? 0) - 5) < 0.7);
+    }, null, { timeout: 10000 }).catch(() => {});
     await tapFurniture(a, ids.coffee);
     const brewed = await a.waitForFunction(() => window.HouseRoom3D.personFlags("nila")?.heldItem?.kind === "coffee", null, { timeout: 16000 }).then(() => true).catch(() => false);
-    check("Tapping the coffee machine on a phone brews a cup you can sip", brewed && await b.evaluate(() => window.HouseRoom3D.personFlags("nila")?.heldItem?.kind === "coffee"));
+    const bobSawBrew = brewed && await b.waitForFunction(() => window.HouseRoom3D.personFlags("nila")?.heldItem?.kind === "coffee", null, { timeout: 4000 }).then(() => true).catch(() => false);
+    check("Tapping the coffee machine on a phone brews a cup you can sip", bobSawBrew);
     await a.waitForTimeout(400);
     await a.screenshot({ path: `${SHOT}/35-coffee-touch.png` });
 
     await a.evaluate(() => window.__stowItem?.());
-    await a.waitForTimeout(200);
+    await a.waitForFunction(() => !window.HouseRoom3D.personFlags("nila")?.heldItem && !window.HouseRoom3D.personFlags("nila")?.walking, null, { timeout: 4000 }).catch(() => {});
     await tapFurniture(a, ids.chair);
     const sat = await a.waitForFunction(() => window.HouseRoom3D.personFlags("nila")?.sitting, null, { timeout: 12000 }).then(() => true).catch(() => false);
     check("Tapping a chair on a phone walks you there and sits you down", sat);
+    await a.waitForTimeout(250);
+    await a.screenshot({ path: `${SHOT}/phone-sit.png` });
     await a.evaluate(() => window.__standUp?.());
     await a.waitForTimeout(250);
 

@@ -838,13 +838,7 @@ import { initChessUI } from "./chess-ui.js";
           p.path.shift();
           if (!p.path.length) {
             p.walking = false;
-            if (p.username === state.me?.username && state.pendingArrive) {
-              const job = state.pendingArrive;
-              if (Math.hypot((job.x - p.x), (job.y - p.y)) < 0.85) {
-                state.pendingArrive = null;
-                setTimeout(() => job.fn(), 30);
-              }
-            }
+            maybeFireArrive(p);
           }
           changed = true;
         } else {
@@ -1461,6 +1455,8 @@ import { initChessUI } from "./chess-ui.js";
 
   function requestWalkTo(tx, ty) {
     const me = state.people.get(state.me?.username);
+    // A regular floor walk cancels a pending "use this furniture when I arrive" job.
+    state.pendingArrive = null;
     if (me?.sitting) {
       socket.emit("standUp");
       me.sitting = false;
@@ -1539,7 +1535,24 @@ import { initChessUI } from "./chess-ui.js";
     }
     state.pendingArrive = { x: dest.x, y: dest.y, fn: then };
     state.room3d?.setMoveTarget?.(dest.x, dest.y);
+    // Start the approach locally so a late userMoved from a previous walk cannot
+    // drop the path before we even begin heading to the furniture.
+    setPersonDest(me, dest.x, dest.y, false);
     socket.emit("move", { x: dest.x, y: dest.y });
+  }
+
+  function pendingArriveDest() {
+    const job = state.pendingArrive;
+    return job && Number.isFinite(job.x) && Number.isFinite(job.y) ? job : null;
+  }
+
+  function maybeFireArrive(p) {
+    const job = pendingArriveDest();
+    if (!job || !p || p.username !== state.me?.username) return false;
+    if (Math.hypot(job.x - p.x, job.y - p.y) >= 0.85) return false;
+    state.pendingArrive = null;
+    setTimeout(() => job.fn(), 30);
+    return true;
   }
 
   function isShopProp(type) {
@@ -3063,8 +3076,15 @@ import { initChessUI } from "./chess-ui.js";
     if (facing) p.facing = facing;
     if (usingPhone != null) p.usingPhone = usingPhone;
     else p.usingPhone = false;
-    setPersonDest(p, x, y, sitting);
+    const job = (username === state.me?.username && !sitting) ? pendingArriveDest() : null;
+    // Ignore a stale dest from an earlier walk while we are approaching furniture.
+    if (job && Math.hypot(job.x - x, job.y - y) > 0.85) {
+      setPersonDest(p, job.x, job.y, false);
+    } else {
+      setPersonDest(p, x, y, sitting);
+    }
     if (username === state.me?.username && !sitting) closeChessPanel();
+    if (username === state.me?.username) maybeFireArrive(p);
     renderPeople();
   });
 
