@@ -457,6 +457,26 @@ async function runStoresAndCyberShots(browser) {
   await page.locator('[data-testid="store-buy"]').click();
   await page.waitForFunction(() => (window.__storeState()?.collection?.clothes || []).some((c) => c.catalogId === "nt-tee"), null, { timeout: 8000 });
   check("Buying clothes spends coins and adds the item to the wardrobe", await page.evaluate(() => (window.__storeState()?.collection?.clothes || []).some((c) => c.catalogId === "nt-tee")));
+  const slotCounts = await page.evaluate(() => ({
+    tabs: document.querySelectorAll('[data-testid="store-slot-tabs"] [data-slot]').length,
+    tops: document.querySelectorAll('[data-testid="store-slot-tops"]').length,
+    bottoms: document.querySelectorAll('[data-testid="store-slot-bottoms"]').length,
+    hats: document.querySelectorAll('[data-testid="store-slot-hats"]').length,
+    acc: document.querySelectorAll('[data-testid="store-slot-accessories"]').length,
+    shoes: document.querySelectorAll('[data-testid="store-slot-shoes"]').length,
+  }));
+  check("The clothes tab has Tops / Bottoms / Hats / Accessories / Shoes filters", slotCounts.tabs >= 5 && slotCounts.tops === 1 && slotCounts.bottoms === 1 && slotCounts.hats === 1 && slotCounts.acc === 1 && slotCounts.shoes === 1, JSON.stringify(slotCounts));
+  await page.locator('[data-testid="store-slot-tops"]').click();
+  check("The Tops filter still lists the Cube Tee", await page.locator('[data-testid="store-item-nt-tee"]').count() === 1);
+  await page.locator('[data-testid="store-item-nt-varsity"]').click();
+  await page.locator('[data-testid="store-tryon"]').click();
+  await page.waitForTimeout(150);
+  await page.locator('[data-testid="store-buy"]').click();
+  await page.waitForFunction(() => (window.__storeState()?.collection?.clothes || []).some((c) => c.catalogId === "nt-varsity"), null, { timeout: 8000 });
+  check("Buying a varsity jacket adds it to the wardrobe", await page.evaluate(() => (window.__storeState()?.collection?.clothes || []).some((c) => c.catalogId === "nt-varsity")));
+  await page.locator('[data-testid="store-wear"]').click();
+  await page.waitForFunction(() => window.__storeState()?.me?.avatar?.top === "varsity", null, { timeout: 8000 });
+  check("Owned clothes can be equipped from the clothing tab", await page.evaluate(() => window.__storeState()?.me?.avatar?.top === "varsity" && window.__storeState()?.me?.avatar?.shirt === "#c43a3a"));
   await page.waitForTimeout(300);
   await page.screenshot({ path: `${SHOT}/40-clothing-store.png` });
 
