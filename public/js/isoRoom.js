@@ -1,4 +1,4 @@
-import { drawAvatarSprite, paintAvatarSheet, paintStoreThumb, AVATAR_SHEET_LOOKS, AV_W, AV_H, AV_GROUND_Y, AV_HEAD_TOP, facingIndex8 } from "./avatar3d.js";
+import { drawAvatarSprite, paintAvatarSheet, paintStoreThumb, AVATAR_SHEET_LOOKS, AV_W, AV_H, AV_GROUND_Y, AV_HEAD_TOP, facingIndex8, tickChibiAnim, setChibiAnimOverride, getChibiAnim } from "./avatar3d.js";
 import { drawPetSprite as drawPetPixel, paintPetSheet, paintPetThumb, PET_W, PET_H, PET_GROUND_Y } from "./petSprites.js";
 import { programAt } from "./cubechannel.js";
 import {
@@ -346,8 +346,24 @@ function facingIndex(facing, dirX, dirY) {
   return dy < 0 ? 1 : 3;
 }
 
-function drawPetSprite(kind, frame, walking, sit, facing) {
-  return drawPetPixel(kind, { walking, sit, facing, dir: facing ? facingIndex8(facing) : undefined }, frame);
+
+const shoePopAtMap = new Map();
+const lastShoeOf = new Map();
+function shoePopAt(id, shoes, now) {
+  const prev = lastShoeOf.get(id);
+  if (prev !== shoes) {
+    if (prev != null && shoes) shoePopAtMap.set(id, now);
+    lastShoeOf.set(id, shoes);
+  }
+  const start = shoePopAtMap.get(id);
+  if (start == null) return -1;
+  const dt = now - start;
+  if (dt > 480) { shoePopAtMap.delete(id); return -1; }
+  return dt;
+}
+
+function drawPetSprite(kind, frame, walking, sit, facing, blink) {
+  return drawPetPixel(kind, { walking, sit, facing, dir: facing ? facingIndex8(facing) : undefined, blink }, frame);
 }
 
 export function createAvatarPreview(container) {
@@ -379,8 +395,11 @@ export function createAvatarPreview(container) {
     c.fillStyle = "#efe6d4";
     c.fillRect(0, 0, w, h);
     const scale = Math.max(2, Math.floor(Math.min(w / (AV_W + 8), h / (AV_H + 8))));
-    const frame = Math.floor((now || 0) / 400) % 2;
-    const spr = drawAvatarSprite(avatar, { facing, walking: false }, frame);
+    const frame = Math.floor((now || 0) / 96) % 16;
+    const targetDir = facingIndex8(facing);
+    const anim = tickChibiAnim("preview", now || 0, { walking: false, targetDir, self: { x: 0, y: 0, username: "preview" }, others: [] });
+    const pop = shoePopAt("preview", avatar && avatar.shoes, now || 0);
+    const spr = drawAvatarSprite(avatar, { facing, walking: false, ...anim, shoePop: pop }, frame);
     const dx = Math.floor((w - spr.w * scale) / 2);
     const dy = Math.floor((h - spr.h * scale) / 2);
     c.drawImage(spr.c, 0, 0, spr.w, spr.h, dx, dy, spr.w * scale, spr.h * scale);
@@ -589,6 +608,7 @@ export function createRoom3D(container) {
     return { sx: b.minX, sy: b.minY, w: b.w, h: b.h, wall: wname, slot: s };
   }
 
+
   function collectDrawList(now) {
     const list = [];
     for (const f of furniture) {
@@ -617,10 +637,30 @@ export function createRoom3D(container) {
       const walking = Boolean(st.walking || p.walking);
       const frame = Math.floor(now / 96) % 8;
       const rawFacing = p.facing || st.facing;
+      const face = p.sitting ? snapFacingToAxis(rawFacing) : rawFacing;
+      const targetDir = (walking && (st.dirX || st.dirY))
+        ? facingIndex8(null, st.dirX, st.dirY)
+        : facingIndex8(face, st.dirX, st.dirY);
+      const lastSay = (typeof window !== "undefined" && window.__lastSays && window.__lastSays.length)
+        ? window.__lastSays[window.__lastSays.length - 1]
+        : null;
+      const anim = tickChibiAnim(p.username, now, {
+        walking, dirX: st.dirX || 0, dirY: st.dirY || 0, targetDir,
+        self: { username: p.username, x, y },
+        others: people.map((o) => {
+          const ost = personState.get(o.username) || o;
+          return { username: o.username, x: ost.x ?? o.x, y: ost.y ?? o.y, bubble: o.bubble, bubbleUntil: o.bubbleUntil, bubbles: o.bubbles };
+        }),
+        lastSay,
+        wallTime: Date.now(),
+      });
       const flags = {
-        sitting: p.sitting, walking, facing: p.sitting ? snapFacingToAxis(rawFacing) : rawFacing, dirX: st.dirX, dirY: st.dirY,
+        sitting: p.sitting, walking, facing: face, dirX: st.dirX, dirY: st.dirY,
         usingPhone: p.usingPhone, boxing: p.boxing, actionEmote: p.actionEmote,
         heldItem: p.heldItem, heldProp: p.heldProp, gym: p.gym,
+        blink: anim.blink, lookX: anim.lookX, lookY: anim.lookY,
+        bodyDir: anim.bodyDir, headDir: anim.headDir,
+        shoePop: shoePopAt(p.username, (p.avatar || {}).shoes, now),
       };
       const spr = drawAvatarSprite(p.avatar || {}, flags, frame);
       const foot = tileToScreen(x + 0.5, y + 0.5);
@@ -634,7 +674,8 @@ export function createRoom3D(container) {
         const pst = st.petX != null ? { x: st.petX, y: st.petY } : { x: x + (rx / plen) * 0.45, y: y + (ry / plen) * 0.45 };
         const pf = tileToScreen(pst.x + 0.5, pst.y + 0.5);
         const hover = false;
-        const pspr = drawPetSprite(p.activePet, frame, walking || hover, sit && !hover, facing);
+        const petAnim = tickChibiAnim(p.username + "-pet", now, { walking: false, targetDir: 1 });
+        const pspr = drawPetSprite(p.activePet, frame, walking || hover, sit && !hover, facing, petAnim.blink);
         list.push({ kind: "pet", id: p.username + "-pet", type: "pet", depth: pst.x + pst.y + 0.35, sx: pf.sx - PET_W / 2, sy: pf.sy - PET_GROUND_Y, w: PET_W, h: PET_H, spr: pspr });
       }
     }
@@ -1115,8 +1156,10 @@ export function createRoom3D(container) {
         boxing: p.boxing || st.boxing || Object.values(uses || {}).some((u) => u && u.type === "punchbag" && u.user === name), sitting: p.sitting, heldItem: p.heldItem, gym: p.gym, facing: p.sitting ? snapFacingToAxis(p.facing) : p.facing,
         actionEmote: p.actionEmote, walking: Boolean(st.walking || p.walking), usingPhone: p.usingPhone,
         sculpted: false, paperDoll: true, pixel: true,
+        eyes: getChibiAnim(name),
       };
     },
+    setEyeOverride(name, state) { setChibiAnimOverride(name, state || null); },
     personTile(name) {
       const st = personState.get(name);
       const p = people.find((x) => x.username === name);
