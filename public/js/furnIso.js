@@ -804,11 +804,14 @@ function paintUprightGlyphs(ctx, corners, text, color, u0 = 0, v0 = 0, u1 = 1, v
   const [bl, br, tr, tl] = corners;
   const p = (u, v) => lerp2(lerp2(bl, br, u), lerp2(tl, tr, u), v);
   const mid = p((u0 + u1) / 2, (v0 + v1) / 2);
+  const topL = p(u0, v1), topR = p(u1, v1);
+  const slope = (topR.y - topL.y) / Math.max(1, topR.x - topL.x);
   const letters = String(text).split("");
   const letterW = 3, letterH = 5, gap = 1;
   const totalW = letters.length * letterW + Math.max(0, letters.length - 1) * gap;
   const startX = Math.round(mid.x - totalW / 2);
-  const startY = Math.round(mid.y - letterH / 2);
+  // Sit a pixel below center so the 5-row glyphs stay inside the slanted sign.
+  const startY = Math.round(mid.y - letterH / 2 + 1);
   ctx.fillStyle = color;
   letters.forEach((ch, i) => {
     const rows = glyphs[ch];
@@ -817,7 +820,9 @@ function paintUprightGlyphs(ctx, corners, text, color, u0 = 0, v0 = 0, u1 = 1, v
     for (let r = 0; r < rows.length; r++) {
       for (let c = 0; c < rows[r].length; c++) {
         if (rows[r][c] !== "#") continue;
-        ctx.fillRect(ox + c, startY + r, 1, 1);
+        const x = ox + c;
+        const y = startY + r + Math.round((x - mid.x) * slope);
+        ctx.fillRect(x, y, 1, 1);
       }
     }
   });
@@ -942,12 +947,12 @@ function drawRetroArcade(ctx, tw, th, rot, lights, flicker = 0) {
   box(ctx, mq.x, mq.y, mq.w, mq.h, BODY, MARQUEE_H, mqPal);
   if (front) {
     const mc = faceCorners(mq.x, mq.y, mq.w, mq.h, BODY, MARQUEE_H, front);
-    faceRect(ctx, mc, 0.04, 0.10, 0.96, 0.90, lights ? "#0a0a0c" : "#060608", mqPal.outline);
-    // Neon-green sign plate with upright dark letters — readable at phone zoom.
-    faceRect(ctx, mc, 0.07, 0.18, 0.93, 0.82, neon, null);
-    if (lights) faceRect(ctx, mc, 0.07, 0.70, 0.93, 0.82, neonHi, null);
+    faceRect(ctx, mc, 0.03, 0.08, 0.97, 0.92, lights ? "#0a0a0c" : "#060608", mqPal.outline);
+    // Neon-green sign plate with iso-aligned dark letters — readable at phone zoom.
+    faceRect(ctx, mc, 0.06, 0.14, 0.94, 0.86, neon, null);
+    if (lights) faceRect(ctx, mc, 0.06, 0.78, 0.94, 0.86, neonHi, null);
     const word = lights ? "#06140a" : "#0a180c";
-    paintUprightGlyphs(ctx, mc, "CUBICS", word, 0.07, 0.18, 0.93, 0.82);
+    paintUprightGlyphs(ctx, mc, "CUBICS", word, 0.06, 0.14, 0.94, 0.86);
   }
 
   // Little arcade stool at the front-left, kept inside the 1x1 tile.
