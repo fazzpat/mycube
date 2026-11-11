@@ -516,3 +516,173 @@ body[data-view="creator"]:has(#view-creator.is-keyboard) #toasts {
     transform: none;
   }
 }
+
+
+/* In-phone character editor: slightly enlarge the existing handset and
+   render the arcade options inside the phone screen. The room/avatar
+   stay put. Do not restyle the phone bezel, home grid, or other apps. */
+#phone-overlay .phone-device {
+  transition:
+    width 0.28s cubic-bezier(.2, 1.15, .3, 1),
+    height 0.28s cubic-bezier(.2, 1.15, .3, 1),
+    max-height 0.28s cubic-bezier(.2, 1.15, .3, 1);
+}
+
+#phone-overlay.is-character-edit .phone-device {
+  /* ~20% larger than the app-open handset, capped so it never overflows. */
+  width: min(408px, calc(100% - 16px - var(--safe-left, 0px) - var(--safe-right, 0px))) !important;
+  height: min(624px, calc(var(--layout-h, var(--app-h, 100dvh)) - var(--dock-h, 76px) - 16px)) !important;
+  max-height: calc(var(--layout-h, var(--app-h, 100dvh)) - var(--dock-h, 76px) - 16px) !important;
+}
+
+#phone-overlay.is-character-edit .phone-screens,
+#phone-overlay.is-character-edit #phone-screen-edit-character,
+#phone-overlay.is-character-edit .phone-character-editor {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+#phone-overlay.is-character-edit .phone-character-editor {
+  flex: 1 1 auto;
+}
+
+#phone-overlay.is-character-edit .creator-window {
+  position: relative !important;
+  inset: auto !important;
+  left: auto !important;
+  right: auto !important;
+  top: auto !important;
+  bottom: auto !important;
+  transform: none !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: none !important;
+  margin: 0;
+  padding: 4px 4px 2px;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+  overflow: hidden;
+}
+
+#phone-overlay.is-character-edit .creator-logo,
+#phone-overlay.is-character-edit .creator-tag {
+  display: none;
+}
+
+#phone-overlay.is-character-edit .creator-tabs button {
+  min-height: 36px;
+}
+
+#phone-overlay.is-character-edit .creator-pager {
+  flex-basis: 36px;
+}
+
+#phone-overlay.is-character-edit .creator-page-btn {
+  min-width: 36px;
+  min-height: 36px;
+}
+
+#phone-overlay.is-character-edit .creator-footer {
+  padding: 4px 4px 2px;
+}
+
+#phone-overlay.is-character-edit .creator-window input[type="text"],
+#phone-overlay.is-character-edit .creator-window .btn,
+#phone-overlay.is-character-edit .creator-window button.swatch,
+#phone-overlay.is-character-edit .creator-window button.choice,
+#phone-overlay.is-character-edit .creator-window .check-row {
+  min-height: 36px;
+}
+
+#phone-overlay.is-character-edit.is-keyboard .phone-device {
+  transform: translateY(var(--creator-kb, 0px)) !important;
+}
+
+/* On narrow phones keep a visible strip of the room so the in-place
+   avatar isn't swallowed by the handset. */
+@media (max-width: 520px) {
+  #phone-overlay.is-character-edit .phone-device {
+    width: min(252px, calc(100% - 16px - var(--safe-left, 0px) - var(--safe-right, 0px))) !important;
+  }
+  #phone-overlay.is-character-edit .creator-footer {
+    flex-wrap: wrap;
+  }
+  #phone-overlay.is-character-edit .creator-footer .field,
+  #phone-overlay.is-character-edit .creator-footer-actions {
+    flex: 1 1 100%;
+  }
+  #phone-overlay.is-character-edit .creator-footer-actions .btn {
+    flex: 1 1 auto;
+  }
+}
+
+@media (max-height: 500px) {
+  #phone-overlay.is-character-edit .creator-tabs button,
+  #phone-overlay.is-character-edit .creator-page-btn,
+  #phone-overlay.is-character-edit .creator-window input[type="text"],
+  #phone-overlay.is-character-edit .creator-window .btn,
+  #phone-overlay.is-character-edit .creator-window button.swatch,
+  #phone-overlay.is-character-edit .creator-window button.choice,
+  #phone-overlay.is-character-edit .creator-window .check-row {
+    min-height: 32px;
+  }
+  #phone-overlay.is-character-edit .creator-pager,
+  #phone-overlay.is-character-edit .creator-page-btn {
+    flex-basis: 32px;
+    min-height: 32px;
+  }
+}
+
+
+/* CUBE PHONE wordmark + white Rubik's-cube mark. Layout only; keeps the
+   existing phone typeface and colors. */
+.phone-brand,
+.phone-home-title {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-family: "VT323", monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.phone-brand {
+  position: absolute;
+  left: 50%;
+  top: 4px;
+  transform: translateX(-50%);
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #fff;
+  background: rgba(8, 6, 16, 0.55);
+  border-radius: 6px;
+  padding: 1px 6px 0;
+  text-shadow: 0 1px 0 rgba(0,0,0,.45);
+  pointer-events: none;
+  line-height: 1.1;
+  z-index: 3;
+}
+#phone-overlay.is-character-edit .phone-brand {
+  font-size: 0.82rem;
+}
+#phone-overlay.is-character-edit .phone-brand-mark {
+  width: 14px;
+  height: 14px;
+}
+.phone-brand-mark {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
+  display: block;
+  image-rendering: auto;
+}
+.phone-home-title .phone-brand-mark {
+  width: 14px;
+  height: 14px;
+}

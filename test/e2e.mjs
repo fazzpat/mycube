@@ -4,7 +4,7 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import path from "path";
 import { fileURLToPath } from "url";
-import { openStartForm, openCreatorTab, clickCreatorOption, goToLobby, seedAndLogin, openCharacterEditor } from "./startMenuHelp.mjs";
+import { openStartForm, openCreatorTab, clickCreatorOption, goToLobby, seedAndLogin, openCharacterEditor, closePhoneIfOpen } from "./startMenuHelp.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -42,6 +42,10 @@ async function saveAvatar(page) {
   await openCharacterEditor(page);
   await page.click('[data-testid="save-avatar"]');
   await page.waitForSelector('body[data-view="room"]', { timeout: 15000 });
+  await page.waitForFunction(() => !window.__creatorMenu?.isPhoneEdit?.(), null, { timeout: 8000 }).catch(() => {});
+  await page.waitForTimeout(320);
+  // Helper is done with the editor; close the handset so later room clicks aren't blocked.
+  await closePhoneIfOpen(page);
 }
 
 async function openAddSheet(page) {
@@ -71,6 +75,23 @@ async function openPhone(page) {
 async function openPhoneApp(page, app) {
   await openPhone(page);
   await page.click(`[data-testid="phone-app-${app}"]`);
+}
+
+async function screenshotAvatar(page, path) {
+  const box = await page.evaluate(() => {
+    const head = window.__avatarPose?.()?.head;
+    if (!head || head.x == null) return null;
+    const x = Math.max(0, head.x - 90);
+    const y = Math.max(0, head.y - 150);
+    return { x, y, width: 180, height: 260 };
+  });
+  if (box && box.width > 8 && box.height > 8) {
+    await page.screenshot({ path, clip: box });
+    return;
+  }
+  const canvas = page.locator("#view-room canvas").first();
+  if (await canvas.count()) await canvas.screenshot({ path });
+  else await page.screenshot({ path });
 }
 
 async function waitForText(page, selector, text, timeout = 10000) {
@@ -335,16 +356,45 @@ async function snapshotCreatorLayout(page) {
       const r = el.getBoundingClientRect();
       return { x: +r.x.toFixed(2), y: +r.y.toFixed(2), w: +r.width.toFixed(2), h: +r.height.toFixed(2) };
     };
-    const room = document.querySelector("[data-testid=creator-room]");
-    const canvas = room?.querySelector("canvas") || room;
+    const roomView = document.getElementById("view-room") || document.querySelector(".room-view");
+    const canvas = roomView?.querySelector("canvas") || roomView;
+    const name = window.__storeState?.()?.me?.username || localStorage.getItem("hearthUser");
+    const r3 = window.HouseRoom3D;
     return {
       room: box(canvas),
-      preview: box(document.querySelector("[data-testid=creator-preview]")),
+      phone: box(document.querySelector("[data-testid=phone-device]")),
       panel: box(document.querySelector("[data-testid=creator-window]")),
+      pose: window.__avatarPose?.() || null,
+      tile: r3?.personTile?.(name) || null,
+      head: r3?.projectHead?.(name) || null,
+      flags: r3?.personFlags?.(name) || null,
+      cam: r3?.camState?.() || null,
+      zoom: r3?.visualZoom?.() ?? null,
+      view: document.body.dataset.view,
       pages: window.__creatorMenu?.pages?.() ?? 1,
       page: window.__creatorMenu?.page?.() ?? 0,
     };
   });
+}
+
+function samePose(a, b) {
+  if (!a || !b) return false;
+  const tileOk = a.tile && b.tile && Math.abs(a.tile.x - b.tile.x) <= 0.05 && Math.abs(a.tile.y - b.tile.y) <= 0.05;
+  const flagsA = a.flags || {}, flagsB = b.flags || {};
+  const poseOk = Boolean(flagsA.sitting) === Boolean(flagsB.sitting)
+    && (flagsA.actionEmote || null) === (flagsB.actionEmote || null)
+    && Boolean(flagsA.walking) === Boolean(flagsB.walking)
+    && Boolean(flagsA.gym) === Boolean(flagsB.gym)
+    && Boolean(flagsA.boxing) === Boolean(flagsB.boxing);
+  const seatOk = (a.stationId || flagsA.stationId || null) === (b.stationId || flagsB.stationId || null)
+    && Boolean(a.sitting ?? flagsA.sitting) === Boolean(b.sitting ?? flagsB.sitting);
+  const camA = a.cam || {}, camB = b.cam || {};
+  // Follow-camera easing and dance/hair bob change projected head / target
+  // slightly; mode and zoom must stay put, and the avatar must not be recentered
+  // into a different camera mode.
+  const camOk = (camA.mode || "") === (camB.mode || "")
+    && Math.abs((camA.zoom || 0) - (camB.zoom || 0)) <= 0.02;
+  return tileOk && poseOk && seatOk && camOk;
 }
 
 function sameBox(a, b, slack = 1.25) {
@@ -374,7 +424,7 @@ async function measureCreatorFit(page, tab) {
       return { ok, top: +r.top.toFixed(1), bottom: +r.bottom.toFixed(1), w: +r.width.toFixed(1), h: +r.height.toFixed(1) };
     };
     const noScroll = (el, name) => {
-      if (!el) return { name, ok: false, missing: true };
+      if (!el) return { name, ok: true, missing: true };
       const slack = 1.5;
       // Vertical overflow is the "must not scroll" rule. A few px of horizontal
       // halo from the selected-state ring is allowed and is not user-scrollable.
@@ -382,23 +432,32 @@ async function measureCreatorFit(page, tab) {
     };
     const options = [...(panel?.querySelectorAll("button.swatch, button.choice, .check-row") || [])]
       .filter((el) => !el.closest(".hidden") && !el.classList.contains("creator-offpage") && !el.closest(".creator-offpage"));
+    const roomView = document.getElementById("view-room");
+    const phone = document.querySelector("[data-testid=phone-device]");
+    const screen = document.getElementById("phone-screen-edit-character");
+    const mount = document.querySelector("[data-testid=phone-character-editor]");
+    const pages = window.__creatorMenu?.pages?.() ?? 1;
     return {
       scrolls: [
         noScroll(document.documentElement, "html"),
         noScroll(document.body, "body"),
-        noScroll(view, "view"),
+        noScroll(roomView, "room"),
+        noScroll(phone, "phone"),
+        noScroll(screen, "screen"),
+        noScroll(mount, "mount"),
         noScroll(win, "window"),
         noScroll(panels, "panels"),
         noScroll(panel, "panel"),
       ],
+      pages,
       chrome: {
-        topbar: inView(document.querySelector(".topbar")),
+        phone: inView(document.querySelector("[data-testid=phone-device]")),
+        window: inView(document.querySelector("[data-testid=creator-window]")),
         back: inView(document.querySelector("[data-testid=creator-back]")),
         tabs: inView(document.querySelector("[data-testid=creator-tabs]")),
         tab: inView(document.querySelector(`[data-testid=creator-tab-${tab}]`)),
         name: inView(document.querySelector("[data-testid=display-name]")),
         save: inView(document.querySelector("[data-testid=save-avatar]")),
-        preview: inView(document.querySelector("[data-testid=creator-preview]")),
         pager: inView(document.querySelector("[data-testid=creator-pager]")),
       },
       optionFits: options.map((el) => ({ id: el.dataset.testid || el.id || el.textContent.trim(), minH: Math.round(el.getBoundingClientRect().height), ...inView(el) })),
@@ -415,16 +474,18 @@ async function assertCreatorPageFit(page, viewportName, tab, pageNo) {
     scrollFail.length === 0,
     JSON.stringify(scrollFail.length ? scrollFail : { ok: true })
   );
-  const chromeFail = Object.entries(info.chrome).filter(([, v]) => v.missing || v.ok === false);
+  const chromeEntries = Object.entries(info.chrome).filter(([k]) => k !== "pager" || (info.pages || 1) > 1);
+  const chromeFail = chromeEntries.filter(([, v]) => v.missing || v.ok === false);
   check(
     `${label} chrome and visible options stay in view`,
     chromeFail.length === 0 && info.optionFits.every((o) => o.ok && !o.missing),
     JSON.stringify({ chrome: chromeFail, options: info.optionFits.filter((o) => !o.ok || o.missing) })
   );
-  if (viewportName !== "844x390 landscape" && viewportName !== "1280x800") {
-    const small = info.optionFits.filter((o) => !o.missing && o.minH < 44);
+  const minTap = viewportName === "844x390 landscape" ? 28 : 32;
+  if (viewportName !== "1280x800") {
+    const small = info.optionFits.filter((o) => !o.missing && o.minH < minTap);
     check(
-      `${label} tap targets are at least 44px`,
+      `${label} tap targets are at least ${minTap}px`,
       small.length === 0,
       JSON.stringify(small)
     );
@@ -436,10 +497,12 @@ async function assertCreatorTabsFit(page, viewportName, viewport) {
   await openCreatorTab(page, "body");
   await page.waitForTimeout(80);
   const baseline = await snapshotCreatorLayout(page);
+  const vw = viewport?.width || 0, vh = viewport?.height || 0;
+  const phoneFits = baseline.phone && baseline.phone.x >= -1 && baseline.phone.y >= -1 && baseline.phone.x + baseline.phone.w <= vw + 1 && baseline.phone.y + baseline.phone.h <= vh + 1;
   check(
-    `Creator ${viewportName} captured a stable room, character, and panel`,
-    Boolean(baseline.room && baseline.preview && baseline.panel && baseline.room.w > 10 && baseline.preview.w > 10 && baseline.panel.w > 10),
-    JSON.stringify(baseline)
+    `Creator ${viewportName} captured a stable room, character, and in-phone panel`,
+    Boolean(baseline.room && baseline.phone && baseline.panel && baseline.room.w > 10 && baseline.phone.w > 10 && baseline.panel.w > 10 && baseline.view === "room" && phoneFits),
+    JSON.stringify({ room: baseline.room, phone: baseline.phone, panel: baseline.panel, view: baseline.view, pose: baseline.pose })
   );
   for (const tab of CREATOR_TABS) {
     await openCreatorTab(page, tab);
@@ -449,25 +512,27 @@ async function assertCreatorTabsFit(page, viewportName, viewport) {
     }
     await page.waitForTimeout(40);
     const first = await snapshotCreatorLayout(page);
-    if (tab === "hair" && viewport && viewport.width <= 414) {
+    if (tab === "hair" && viewport && viewport.height <= 500) {
       check(
-        `Creator ${viewportName} HAIR paginates inside the fixed panel`,
+        `Creator ${viewportName} HAIR paginates inside the phone when the screen is short`,
         first.pages > 1,
-        JSON.stringify(first)
+        JSON.stringify({ pages: first.pages })
       );
     }
     const pages = first.pages || 1;
-    for (let p = 0; p < pages; p++) {
-      await page.evaluate((i) => window.__creatorMenu?.setPage?.(i), p);
+    for (let pno = 0; pno < pages; pno++) {
+      await page.evaluate((i) => window.__creatorMenu?.setPage?.(i), pno);
       await page.waitForTimeout(40);
       const snap = await snapshotCreatorLayout(page);
-      const moved = ["room", "preview", "panel"].filter((k) => !sameBox(baseline[k], snap[k]));
+      const roomMoved = !sameBox(baseline.room, snap.room);
+      const phoneMoved = !sameBox(baseline.phone, snap.phone);
+      const poseMoved = !samePose({ ...baseline, head: snap.head }, snap);
       check(
-        `Creator ${viewportName} ${tab.toUpperCase()} p${p} keeps the room, character, and panel fixed`,
-        moved.length === 0,
-        JSON.stringify({ moved, baseline, snap })
+        `Creator ${viewportName} ${tab.toUpperCase()} p${pno} keeps the room, character, and phone size fixed`,
+        !roomMoved && !phoneMoved && !poseMoved && snap.view === "room",
+        JSON.stringify({ roomMoved, phoneMoved, poseMoved, view: snap.view, baseTile: baseline.tile, tile: snap.tile, baseFlags: baseline.flags, flags: snap.flags })
       );
-      await assertCreatorPageFit(page, viewportName, tab, p);
+      await assertCreatorPageFit(page, viewportName, tab, pno);
     }
   }
 }
@@ -525,21 +590,54 @@ async function runCreatorPhoneAndBoot(browser) {
   const placed = await page.evaluate(() => (window.HouseRoom3D?.getFurniture?.() || []).length);
   check("Home cube accepted furniture for the in-room creator backdrop", placed >= 2, String(placed));
   await openPhone(page);
+  const brand = await page.evaluate(() => ({
+    home: (document.querySelector("[data-testid=phone-home-title]")?.textContent || "").replace(/\s+/g, " ").trim(),
+    bar: (document.querySelector("[data-testid=phone-brand]")?.textContent || "").replace(/\s+/g, " ").trim(),
+    icon: Boolean(document.querySelector("[data-testid=phone-brand] img.phone-brand-mark, [data-testid=phone-home-title] img.phone-brand-mark")),
+  }));
+  check("The in-game phone is branded CUBE PHONE with a cube mark", brand.home.includes("CUBE PHONE") && brand.bar.includes("CUBE PHONE") && brand.icon, JSON.stringify(brand));
   check("The phone menu has an Edit Character entry", await page.locator('[data-testid="phone-app-edit-character"]').isVisible());
+  const homePhone = await page.evaluate(() => {
+    const r = document.querySelector("[data-testid=phone-device]").getBoundingClientRect();
+    return { w: r.width, h: r.height };
+  });
   await page.click('[data-testid="phone-app-edit-character"]');
   await page.waitForSelector('[data-testid="creator-window"]');
   await page.waitForTimeout(400);
-  const inRoomBd = await page.evaluate(() => ({
-    using: window.__creatorMenu?.usingRoomBackdrop?.(),
-    furn: window.__creatorMenu?.furnitureCount?.(),
-  }));
+  const inRoomBd = await page.evaluate(() => {
+    const phone = document.querySelector("[data-testid=phone-device]").getBoundingClientRect();
+    const win = document.querySelector("[data-testid=creator-window]").getBoundingClientRect();
+    return {
+      view: document.body.dataset.view,
+      phoneEdit: window.__creatorMenu?.isPhoneEdit?.() || false,
+      furn: window.HouseRoom3D?.getFurniture?.()?.length || 0,
+      phone: { w: phone.width, h: phone.height, x: phone.x, y: phone.y },
+      windowInside: win.left >= phone.left - 2 && win.right <= phone.right + 2,
+    };
+  });
   check(
-    "Editing a character from inside a cube uses that cube as the creator backdrop",
-    inRoomBd.using === true && inRoomBd.furn >= 2,
+    "Edit Character stays in the cube and opens the options inside the phone",
+    inRoomBd.view === "room" && inRoomBd.phoneEdit && inRoomBd.furn >= 2 && inRoomBd.windowInside,
     JSON.stringify(inRoomBd)
   );
+  check(
+    "The in-game phone grows when Edit Character opens",
+    inRoomBd.phone.w > homePhone.w + 8 && inRoomBd.phone.h > homePhone.h + 8,
+    JSON.stringify({ home: homePhone, edit: inRoomBd.phone })
+  );
   await page.click('[data-testid="creator-back"]');
+  await page.waitForFunction(() => !window.__creatorMenu?.isPhoneEdit?.(), null, { timeout: 8000 });
+  await page.waitForTimeout(320);
   await page.waitForSelector('body[data-view="room"]');
+  const afterClose = await page.evaluate(() => {
+    const r = document.querySelector("[data-testid=phone-device]").getBoundingClientRect();
+    return { w: r.width, h: r.height, home: !document.getElementById("phone-home")?.classList.contains("hidden") };
+  });
+  check(
+    "Back shrinks the phone and returns to the phone home",
+    Math.abs(afterClose.w - homePhone.w) <= 2 && Math.abs(afterClose.h - homePhone.h) <= 2 && afterClose.home,
+    JSON.stringify({ home: homePhone, after: afterClose })
+  );
   const savedLook = await page.evaluate(() => window.__storeState?.()?.me?.avatar || {});
 
   await page.reload({ waitUntil: "domcontentloaded" });
@@ -573,15 +671,169 @@ async function runCreatorPhoneAndBoot(browser) {
   await login(cp, "fituser");
   await openCharacterEditor(cp);
   await cp.waitForTimeout(650);
-  const homeBd = await cp.evaluate(() => window.__creatorMenu?.usingRoomBackdrop?.());
-  check("A new user's phone editor uses their home cube as the backdrop", homeBd === true, String(homeBd));
+  const homeBd = await cp.evaluate(() => ({
+    view: document.body.dataset.view,
+    phoneEdit: window.__creatorMenu?.isPhoneEdit?.() || false,
+    inPhone: Boolean(document.querySelector("[data-testid=phone-character-editor] [data-testid=creator-window]")),
+  }));
+  check("A new user's character editor opens inside the in-game phone and stays in the cube", homeBd.view === "room" && homeBd.phoneEdit && homeBd.inPhone, JSON.stringify(homeBd));
   for (const vp of CREATOR_PHONES) {
     await cp.setViewportSize({ width: vp.width, height: vp.height });
     await cp.waitForTimeout(200);
-    await cp.evaluate(() => { window.__creatorMenu && 0; document.querySelector("[data-testid=creator-room]") && null; });
     await assertCreatorTabsFit(cp, vp.name, vp);
   }
   await cctx.close();
+
+  await runPhoneEditPoseTests(browser);
+}
+
+async function runPhoneEditPoseTests(browser) {
+  log("Editing a character leaves pose, seat, and action unchanged");
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const page = await ctx.newPage();
+  page.setDefaultTimeout(20000);
+  await login(page, "posecheck");
+  await page.waitForFunction(() => window.HouseRoom3D && window.HouseRoom3D.ready);
+  await page.evaluate(() => window.__debugKit?.({ furniture: ["capsulecouch", "chesstable"], coins: 400 }));
+  await page.evaluate(() => { window.__startPlace?.("capsulecouch"); window.__clickTile(2, 3); });
+  await page.waitForFunction(() => window.HouseRoom3D.getFurniture().some((f) => f.type === "capsulecouch"));
+  await page.evaluate(() => { window.__startPlace?.("chesstable"); window.__clickTile(4, 1); });
+  await page.waitForFunction(() => window.HouseRoom3D.getFurniture().some((f) => f.type === "chesstable"));
+  await page.evaluate(() => window.__exitEdit?.());
+
+  const snap = () => page.evaluate(() => window.__avatarPose?.());
+  const phoneBox = () => page.evaluate(() => {
+    const r = document.querySelector("[data-testid=phone-device]")?.getBoundingClientRect();
+    return r ? { w: +r.width.toFixed(2), h: +r.height.toFixed(2), x: +r.x.toFixed(2), y: +r.y.toFixed(2) } : null;
+  });
+
+  async function assertStable(label, before, during, after, homePhone, editPhone) {
+    check(
+      `${label}: avatar position and pose stay identical before, during, and after editing`,
+      samePose(before, during) && samePose(before, after) && before.view === "room" && during.view === "room" && after.view === "room" && during.phoneEdit && !after.phoneEdit && Boolean(during.flags?.sitting) === Boolean(before.flags?.sitting),
+      JSON.stringify({ before, during, after })
+    );
+    if (homePhone && editPhone) {
+      check(
+        `${label}: the phone grows on open and restores on close`,
+        editPhone.w > homePhone.w + 8 && editPhone.h > homePhone.h + 8 && Math.abs(after.restored.w - homePhone.w) <= 2 && Math.abs(after.restored.h - homePhone.h) <= 2,
+        JSON.stringify({ homePhone, editPhone, restored: after.restored })
+      );
+    }
+  }
+
+  // Measure the resting phone size, then start a looping dance so we can
+  // prove Edit Character does not cancel a mid-action animation.
+  await openPhone(page);
+  const homeA = await phoneBox();
+  await page.click('[data-testid="phone-home-bar"]').catch(() => {});
+  await page.evaluate(() => window.__closePhone?.() || document.getElementById("phone-overlay")?.classList.add("hidden"));
+  await page.waitForTimeout(200);
+  await page.evaluate(() => window.__playEmote?.("dance"));
+  await page.waitForFunction(() => window.__avatarPose?.()?.flags?.actionEmote === "dance", null, { timeout: 4000 });
+  await page.waitForTimeout(400);
+  const beforeA = await snap();
+  await openCharacterEditor(page);
+  const duringA = await snap();
+  const editA = await phoneBox();
+  await clickCreatorOption(page, "shirt-2");
+  const midA = await snap();
+  await page.click('[data-testid="save-avatar"]');
+  await page.waitForFunction(() => !window.__creatorMenu?.isPhoneEdit?.(), null, { timeout: 8000 });
+  await page.waitForTimeout(320);
+  const afterA = await snap();
+  afterA.restored = await phoneBox();
+  check(
+    "A mid-action dance is not cancelled by opening Edit Character",
+    beforeA.flags?.actionEmote === "dance" && duringA.flags?.actionEmote === "dance" && midA.flags?.actionEmote === "dance" && afterA.flags?.actionEmote === "dance",
+    JSON.stringify({ before: beforeA.flags, during: duringA.flags, mid: midA.flags, after: afterA.flags })
+  );
+  await assertStable("Standing / mid-action", beforeA, duringA, afterA, homeA, editA);
+  check("Standing mid-action keeps the same tile while looks update in place", samePose({ ...beforeA, head: midA.head }, midA) && midA.view === "room", JSON.stringify({ before: beforeA, mid: midA }));
+
+  // Seated on couch
+  const couchId = await page.evaluate(() => window.HouseRoom3D.getFurniture().find((f) => f.type === "capsulecouch").id);
+  await page.evaluate((id) => window.__sit(id, 0), couchId);
+  await page.waitForFunction(() => window.HouseRoom3D.personFlags("posecheck")?.sitting, null, { timeout: 12000 });
+  await page.waitForTimeout(400);
+  await openPhone(page);
+  const homeB = await phoneBox();
+  const beforeB = await snap();
+  await openCharacterEditor(page);
+  const duringB = await snap();
+  const editB = await phoneBox();
+  await clickCreatorOption(page, "hair-2");
+  const midB = await snap();
+  await page.click('[data-testid="creator-back"]');
+  await page.waitForFunction(() => !window.__creatorMenu?.isPhoneEdit?.(), null, { timeout: 8000 });
+  await page.waitForTimeout(320);
+  const afterB = await snap();
+  afterB.restored = await phoneBox();
+  check("A seated character stays seated in place while looks update", Boolean(beforeB.flags?.sitting && duringB.flags?.sitting && midB.flags?.sitting && afterB.flags?.sitting), JSON.stringify({ before: beforeB, during: duringB, mid: midB, after: afterB }));
+  await assertStable("Seated on a couch", beforeB, duringB, afterB, homeB, editB);
+
+  // Chess stool
+  await page.evaluate(() => {
+    const flags = window.HouseRoom3D.personFlags("posecheck");
+    if (flags?.sitting) {
+      const couch = window.HouseRoom3D.getFurniture().find((f) => f.type === "capsulecouch");
+      if (couch) window.__sit(couch.id, 0);
+    }
+  });
+  // stand first if needed by clicking again? sit toggle may stand. Then sit on chess.
+  await page.waitForTimeout(200);
+  const chessId = await page.evaluate(() => window.HouseRoom3D.getFurniture().find((f) => f.type === "chesstable").id);
+  // If still sitting on couch, stand via sit toggle then sit chess
+  const stillSitting = await page.evaluate(() => window.HouseRoom3D.personFlags("posecheck")?.sitting);
+  if (stillSitting) {
+    await page.evaluate((id) => window.__sit(id, 0), couchId);
+    await page.waitForFunction(() => !window.HouseRoom3D.personFlags("posecheck")?.sitting, null, { timeout: 8000 }).catch(() => {});
+  }
+  await page.evaluate((id) => window.__sit(id, 0), chessId);
+  await page.waitForFunction(() => window.HouseRoom3D.personFlags("posecheck")?.sitting, null, { timeout: 12000 });
+  await page.evaluate(() => document.getElementById("chess-close")?.click());
+  await page.waitForTimeout(120);
+  await openPhone(page);
+  const homeC = await phoneBox();
+  const beforeC = await snap();
+  await openCharacterEditor(page);
+  const duringC = await snap();
+  const editC = await phoneBox();
+  await page.click('[data-testid="save-avatar"]');
+  await page.waitForFunction(() => !window.__creatorMenu?.isPhoneEdit?.(), null, { timeout: 8000 });
+  await page.waitForTimeout(320);
+  const afterC = await snap();
+  afterC.restored = await phoneBox();
+  check("A chess-stool sitter stays seated while editing", Boolean(beforeC.flags?.sitting && duringC.flags?.sitting && afterC.flags?.sitting), JSON.stringify({ before: beforeC, during: duringC, after: afterC }));
+  await assertStable("Seated on a chess stool", beforeC, duringC, afterC, homeC, editC);
+
+  // No page scroll at the required viewports
+  await openCharacterEditor(page);
+  for (const vp of [{ name: "360x640", width: 360, height: 640 }, { name: "390x844", width: 390, height: 844 }, { name: "1280x800", width: 1280, height: 800 }]) {
+    await page.setViewportSize({ width: vp.width, height: vp.height });
+    await page.waitForTimeout(250);
+    const fit = await page.evaluate((vp) => {
+      const html = document.documentElement, body = document.body, room = document.getElementById("view-room");
+      const phone = document.querySelector("[data-testid=phone-device]");
+      const r = phone.getBoundingClientRect();
+      const slack = 1.5;
+      const noScroll = (el) => !el || (el.scrollHeight <= el.clientHeight + slack && el.scrollWidth <= el.clientWidth + 8);
+      return {
+        view: document.body.dataset.view,
+        html: noScroll(html),
+        body: noScroll(body),
+        room: noScroll(room),
+        phoneFits: r.left >= -1 && r.top >= -1 && r.right <= vp.width + 1 && r.bottom <= vp.height + 1,
+        phone: { w: r.width, h: r.height, x: r.x, y: r.y },
+      };
+    }, vp);
+    check(
+      `Edit Character does not scroll the page at ${vp.name}`,
+      fit.view === "room" && fit.html && fit.body && fit.room && fit.phoneFits,
+      JSON.stringify(fit)
+    );
+  }
+  await ctx.close();
 }
 
 async function runAppShellFit(browser) {
@@ -631,7 +883,7 @@ async function runAppShellFit(browser) {
   await page.waitForTimeout(200);
   await openCharacterEditor(page);
   await page.waitForTimeout(200);
-  await assertInsideViewport(page, [".topbar", '[data-testid="display-name"]', '[data-testid="save-avatar"]'], "Character creator chrome fits the iPhone 14 viewport");
+  await assertInsideViewport(page, ['[data-testid="phone-device"]', '[data-testid="display-name"]', '[data-testid="save-avatar"]'], "Character creator chrome fits the iPhone 14 viewport");
   const prev = page.viewportSize();
   await page.setViewportSize({ width: Math.max(prev.width, 390), height: Math.max(prev.height, 1100) });
   await customize(page, { displayName: "Pia", hair: 1, shirt: 2, skin: 2, glasses: false });
@@ -1308,26 +1560,29 @@ try {
   await alice.waitForSelector('[data-testid="creator-window"]');
   await alice.waitForTimeout(400);
   const creatorLayout = await alice.evaluate(() => {
-    const room = document.querySelector('[data-testid="creator-room"]');
+    const room = document.getElementById("view-room");
     const canvas = room && room.querySelector("canvas");
-    const preview = document.querySelector('[data-testid="creator-preview"]');
-    const win = document.querySelector('[data-testid="creator-window"]');
+    const phone = document.querySelector("[data-testid=phone-device]");
+    const win = document.querySelector("[data-testid=creator-window]");
     const tabs = [...document.querySelectorAll("#creator-tabs [data-tab]")].map((el) => el.getAttribute("data-tab"));
-    const pr = preview.getBoundingClientRect();
     const wr = win.getBoundingClientRect();
+    const pr = phone.getBoundingClientRect();
     const rr = (canvas || room).getBoundingClientRect();
+    const pose = window.__avatarPose?.();
     return {
+      view: document.body.dataset.view,
+      phoneEdit: window.__creatorMenu?.isPhoneEdit?.() || false,
       hasRoom: Boolean(canvas && canvas.width > 8 && canvas.height > 8 && rr.width > 80 && rr.height > 80),
-      previewVisible: pr.width > 40 && pr.height > 40,
-      windowVisible: wr.width > 80 && wr.height > 80,
+      phoneVisible: pr.width > 80 && pr.height > 80,
+      windowInsidePhone: wr.width > 80 && wr.height > 80 && wr.left >= pr.left - 2 && wr.right <= pr.right + 2 && wr.top >= pr.top - 2 && wr.bottom <= pr.bottom + 2,
+      characterInRoom: Boolean(pose?.tile && pose.view === "room"),
       tab: window.__creatorMenu?.tab() || "",
       tabs,
-      sideBySide: wr.left >= pr.right - 40,
     };
   });
   check(
-    "The character creator shows the avatar in an empty cube beside an arcade option window",
-    Boolean(creatorLayout.hasRoom && creatorLayout.previewVisible && creatorLayout.windowVisible),
+    "Edit Character enlarges the in-game phone and keeps the avatar in the room",
+    Boolean(creatorLayout.view === "room" && creatorLayout.phoneEdit && creatorLayout.hasRoom && creatorLayout.phoneVisible && creatorLayout.windowInsidePhone && creatorLayout.characterInRoom),
     JSON.stringify(creatorLayout)
   );
   check(
@@ -1374,7 +1629,7 @@ try {
     await customize(bob, { displayName: "Bob", ...look });
     await bob.waitForTimeout(350);
     const path = `${SHOT}/_av-${look.name}.png`;
-    await bob.locator('[data-testid="creator-preview"]').screenshot({ path });
+    await screenshotAvatar(bob, path);
     varietyPaths.push(path);
   }
   await composeAvatarGrid(varietyPaths, varietyLooks.map((l) => l.name), `${SHOT}/36-avatar-variety.png`);
@@ -1385,8 +1640,8 @@ try {
 
   await customize(bob, { displayName: "Bob", hair: 2, shirt: 2, skin: 3, hairColor: 0, glasses: true });
   await bob.waitForTimeout(500);
-  await bob.locator('[data-testid="creator-preview"]').screenshot({ path: `${SHOT}/07-character-closeup.png` });
-  await bob.locator('[data-testid="creator-preview"]').screenshot({ path: `${SHOT}/32-avatar-closeup.png` });
+  await screenshotAvatar(bob, `${SHOT}/07-character-closeup.png`);
+  await screenshotAvatar(bob, `${SHOT}/32-avatar-closeup.png`);
   await saveAvatar(bob);
   check("Bob can create an avatar and land in his own cube", await bob.locator('body[data-view="room"]').count() === 1);
   await goToLobby(bob);

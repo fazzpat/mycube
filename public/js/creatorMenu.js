@@ -12,10 +12,17 @@ const TABS = [
   { id: "shoes", label: "SHOES" },
 ];
 
-/* Phone hook: Edit Character calls this; the client then shows the overlay
-   via setView("creator"), which invokes show() without leaving the cube. */
+/* Phone hook: Edit Character enlarges the in-game handset and mounts the
+   option window inside it. The room and in-room avatar are left alone. */
+let phoneApi = null;
 export function openFromPhone() {
-  return true;
+  return phoneApi?.openFromPhone?.() || false;
+}
+export function closeFromPhone() {
+  return phoneApi?.closeFromPhone?.() || false;
+}
+export function isPhoneEditOpen() {
+  return Boolean(phoneApi?.isOpen?.());
 }
 
 export function initCreatorMenu({ onShow, getBackdropRoom } = {}) {
@@ -39,6 +46,21 @@ export function initCreatorMenu({ onShow, getBackdropRoom } = {}) {
   let room = null;
   let usingRoom = false;
   let paging = false;
+  let phoneHomeParent = null;
+  let phoneHomeNext = null;
+
+  function overlayEl() {
+    return document.getElementById("phone-overlay");
+  }
+
+  function phoneEditOpen() {
+    return Boolean(overlayEl()?.classList.contains("is-character-edit"));
+  }
+
+  function editorActive() {
+    return document.body.dataset.view === "creator" || phoneEditOpen();
+  }
+
   let ro = null;
   let locked = { w: 0, h: 0 };
 
@@ -314,7 +336,7 @@ export function initCreatorMenu({ onShow, getBackdropRoom } = {}) {
   }
 
   function onKey(e) {
-    if (document.body.dataset.view !== "creator") return;
+    if (!editorActive()) return;
     const tag = (e.target && e.target.tagName) || "";
     if (tag === "INPUT" || tag === "TEXTAREA") return;
     if (e.key === "ArrowRight") {
@@ -419,6 +441,16 @@ export function initCreatorMenu({ onShow, getBackdropRoom } = {}) {
   }
 
   function syncKeyboard() {
+    const overlay = overlayEl();
+    const covered = keyboardCovered();
+    const open = covered > 80;
+    const lift = open ? Math.min(0, -(covered - 8)) : 0;
+    if (phoneEditOpen()) {
+      overlay.classList.toggle("is-keyboard", open);
+      overlay.style.setProperty("--creator-kb", `${lift}px`);
+      // Never resize or translate the room when the phone editor is open.
+      return;
+    }
     if (!viewEl) return;
     if (document.body.dataset.view !== "creator") {
       viewEl.classList.remove("is-keyboard");
@@ -431,25 +463,64 @@ export function initCreatorMenu({ onShow, getBackdropRoom } = {}) {
     const dx = vv ? -(vv.offsetLeft || 0) : 0;
     const dy = vv ? -(vv.offsetTop || 0) : 0;
     viewEl.style.transform = `translate(${dx}px, ${dy}px)`;
-    const covered = keyboardCovered();
-    const open = covered > 80;
     viewEl.classList.toggle("is-keyboard", open);
     // Lift only the panel; do not resize the room or the character.
-    const lift = open ? Math.min(0, -(covered - 8)) : 0;
     viewEl.style.setProperty("--creator-kb", `${lift}px`);
   }
 
   function onLayout() {
-    if (document.body.dataset.view !== "creator") return;
+    if (!editorActive()) return;
     syncKeyboard();
-    const relocked = relockIfNeeded();
     paginate();
-    if (relocked || keyboardCovered() <= 80) {
-      if (relocked) {
-        room?.resize?.();
-        onShow?.();
+    if (phoneEditOpen()) return;
+    const relocked = relockIfNeeded();
+    if (relocked && keyboardCovered() <= 80) {
+      room?.resize?.();
+      onShow?.();
+    }
+  }
+
+  function openFromPhoneInner() {
+    const overlay = overlayEl();
+    const mount = document.querySelector("[data-testid='phone-character-editor']");
+    const screen = document.getElementById("phone-screen-edit-character");
+    if (!overlay || !mount || !windowEl || !screen) return false;
+    if (windowEl.parentElement !== mount) {
+      phoneHomeParent = windowEl.parentElement;
+      phoneHomeNext = windowEl.nextSibling;
+      mount.appendChild(windowEl);
+    }
+    document.getElementById("phone-home")?.classList.add("hidden");
+    document.querySelectorAll(".phone-app-screen").forEach((el) => {
+      el.classList.toggle("hidden", el !== screen);
+    });
+    screen.classList.remove("hidden");
+    overlay.classList.add("is-character-edit");
+    overlay.classList.remove("hidden");
+    requestAnimationFrame(() => {
+      pageIndex = 0;
+      paginate();
+    });
+    return true;
+  }
+
+  function closeFromPhoneInner() {
+    const overlay = overlayEl();
+    overlay?.classList.remove("is-character-edit");
+    overlay?.classList.remove("is-keyboard");
+    overlay?.style.setProperty("--creator-kb", "0px");
+    const screen = document.getElementById("phone-screen-edit-character");
+    screen?.classList.add("hidden");
+    if (windowEl && phoneHomeParent && windowEl.parentElement !== phoneHomeParent) {
+      if (phoneHomeNext && phoneHomeNext.parentElement === phoneHomeParent) {
+        phoneHomeParent.insertBefore(windowEl, phoneHomeNext);
+      } else {
+        phoneHomeParent.appendChild(windowEl);
       }
     }
+    phoneHomeParent = null;
+    phoneHomeNext = null;
+    return true;
   }
 
   tabsEl.addEventListener("click", onTabClick);
@@ -490,11 +561,18 @@ export function initCreatorMenu({ onShow, getBackdropRoom } = {}) {
   if (panelsEl && typeof MutationObserver !== "undefined") {
     new MutationObserver(() => {
       if (paging) return;
-      if (document.body.dataset.view === "creator") paginate();
+      if (editorActive()) paginate();
     }).observe(panelsEl, { childList: true, subtree: true, attributes: true, attributeFilter: ["class"] });
   }
 
   paintTabs();
+
+  const phoneFns = {
+    openFromPhone: openFromPhoneInner,
+    closeFromPhone: closeFromPhoneInner,
+    isOpen: phoneEditOpen,
+  };
+  phoneApi = phoneFns;
 
   window.__creatorMenu = {
     tabs: TABS.map((t) => t.id),
@@ -508,9 +586,12 @@ export function initCreatorMenu({ onShow, getBackdropRoom } = {}) {
     showOption,
     usingRoomBackdrop: () => usingRoom,
     furnitureCount: () => room?.getFurniture?.()?.length || 0,
+    openFromPhone: openFromPhoneInner,
+    closeFromPhone: closeFromPhoneInner,
+    isPhoneEdit: phoneEditOpen,
   };
 
-  return { show, hide, setTab: setTabById };
+  return { show, hide, setTab: setTabById, ...phoneFns };
 }
 
 export default { initCreatorMenu };

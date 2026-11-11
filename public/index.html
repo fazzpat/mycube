@@ -15,7 +15,7 @@
   <title>MyCube</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;700;800&family=Press+Start+2P&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;700;800&family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/css/styles.css" />
   <link rel="stylesheet" href="/css/startMenu.css" />
   <link rel="stylesheet" href="/css/creatorMenu.css" />
@@ -347,12 +347,16 @@
       </div>
   <div id="phone-overlay" class="phone-overlay hidden" data-testid="phone-overlay">
     <div class="phone-backdrop" data-testid="phone-backdrop"></div>
-    <div class="phone-device" data-testid="phone-device" role="dialog" aria-label="MyCube phone">
+    <div class="phone-device" data-testid="phone-device" role="dialog" aria-label="CUBE PHONE">
       <div class="phone-bezel">
         <div class="phone-earpiece" aria-hidden="true"></div>
         <div class="phone-screen">
           <div class="phone-status">
             <span id="phone-time">9:41</span>
+            <span class="phone-brand" data-testid="phone-brand">
+              <img class="phone-brand-mark" src="/img/cube-phone.svg" width="12" height="12" alt="" />
+              CUBE PHONE
+            </span>
             <span class="phone-status-icons" aria-hidden="true">
               <span class="sig s1"></span><span class="sig s2"></span><span class="sig s3"></span>
               <span class="batt"><i></i></span>
@@ -360,7 +364,10 @@
           </div>
           <div class="phone-screens">
             <div id="phone-home" class="phone-home" data-testid="phone-home">
-              <div class="phone-home-title">MyCube</div>
+              <div class="phone-home-title" data-testid="phone-home-title">
+                <img class="phone-brand-mark" src="/img/cube-phone.svg" width="14" height="14" alt="" />
+                CUBE PHONE
+              </div>
               <div class="phone-grid">
                 <button type="button" class="phone-app" data-testid="phone-app-edit" data-app="edit">
                   <span class="phone-app-icon" style="background:linear-gradient(180deg,#ffb089,#ff7a59)">
@@ -444,6 +451,9 @@
               </div>
             </div>
 
+            <div id="phone-screen-edit-character" class="phone-app-screen hidden" data-testid="phone-screen-edit-character">
+              <div class="phone-character-editor" data-testid="phone-character-editor"></div>
+            </div>
             <div id="phone-screen-edit" class="phone-app-screen hidden" data-testid="phone-screen-edit">
               <div class="phone-app-nav"><button type="button" class="phone-back" data-phone-back aria-label="Back">‹</button><h2>Edit Room</h2></div>
               <div class="phone-app-body" id="phone-edit-body"></div>

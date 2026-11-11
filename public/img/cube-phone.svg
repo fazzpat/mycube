@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" aria-hidden="true">
+  <g>
+    <polygon points="2.80,9.80 7.20,12.27 7.20,16.53 2.80,14.07" fill="#d4d4d4" stroke="#5e5e5e" stroke-width="0.45" stroke-linejoin="miter"/>
+    <polygon points="7.20,12.27 11.60,14.73 11.60,19.00 7.20,16.53" fill="#c4c4c4" stroke="#5e5e5e" stroke-width="0.45" stroke-linejoin="miter"/>
+    <polygon points="11.60,14.73 16.00,17.20 16.00,21.47 11.60,19.00" fill="#d4d4d4" stroke="#5e5e5e" stroke-width="0.45" stroke-linejoin="miter"/>
+    <polygon points="2.80,14.07 7.20,16.53 7.20,20.80 2.80,18.33" fill="#c4c4c4" stroke="#5e5e5e" stroke-width="0.45" stroke-linejoin="miter"/>
+    <polygon points="7.20,16.53 11.60,19.00 11.60,23.27 7.20,20.80" fill="#d4d4d4" stroke="#5e5e5e" stroke-width="0.45" stroke-linejoin="miter"/>
+    <polygon points="11.60,19.00 16.00,21.47 16.00,25.73 11.60,23.27" fill="#c4c4c4" stroke="#5e5e5e" stroke-width="0.45" stroke-linejoin="miter"/>
+    <polygon points="2.80,18.33 7.20,20.80 7.20,25.07 2.80,22.60" fill="#d4d4d4" stroke="#5e5e5e" stroke-width="0.45" stroke-linejoin="miter"/>
+    <polygon points="7.20,20.80 11.60,23.27 11.60,27.53 7.20,25.07" fill="#c4c4c4" stroke="#5e5e5e" stroke-width="0.45" stroke-linejoin="miter"/>
+    <polygon points="11.60,23.27 16.00,25.73 16.00,30.00 11.60,27.53" fill="#d4d4d4" stroke="#5e5e5e" stroke-width="0.45" stroke-linejoin="miter"/>
+    <polygon points="16.00,17.20 20.40,14.73 20.40,19.00 16.00,21.47" fill="#e8e8e8" stroke="#6a6a6a" stroke-width="0.45" stroke-linejoin="miter"/>
+    <polygon points="20.40,14.73 24.80,12.27 24.80,16.53 20.40,19.00" fill="#dadada" stroke="#6a6a6a" stroke-width="0.45" stroke-linejoin="miter"/>
+    <polygon points="24.80,12.27 29.20,9.80 29.20,14.07 24.80,16.53" fill="#e8e8e8" stroke="#6a6a6a" stroke-width="0.45" stroke-linejoin="miter"/>
+    <polygon points="16.00,21.47 20.40,19.00 20.40,23.27 16.00,25.73" fill="#dadada" stroke="#6a6a6a" stroke-width="0.45" stroke-linejoin="miter"/>
+    <polygon points="20.40,19.00 24.80,16.53 24.80,20.80 20.40,23.27" fill="#e8e8e8" stroke="#6a6a6a" stroke-width="0.45" stroke-linejoin="miter"/>
+    <polygon points="24.80,16.53 29.20,14.07 29.20,18.33 24.80,20.80" fill="#dadada" stroke="#6a6a6a" stroke-width="0.45" stroke-linejoin="miter"/>
+    <polygon points="16.00,25.73 20.40,23.27 20.40,27.53 16.00,30.00" fill="#e8e8e8" stroke="#6a6a6a" stroke-width="0.45" stroke-linejoin="miter"/>
+    <polygon points="20.40,23.27 24.80,20.80 24.80,25.07 20.40,27.53" fill="#dadada" stroke="#6a6a6a" stroke-width="0.45" stroke-linejoin="miter"/>
+    <polygon points="24.80,20.80 29.20,18.33 29.20,22.60 24.80,25.07" fill="#e8e8e8" stroke="#6a6a6a" stroke-width="0.45" stroke-linejoin="miter"/>
+    <polygon points="16.00,2.40 20.40,4.87 16.00,7.33 11.60,4.87" fill="#ffffff" stroke="#7a7a7a" stroke-width="0.45" stroke-linejoin="miter"/>
+    <polygon points="20.40,4.87 24.80,7.33 20.40,9.80 16.00,7.33" fill="#f0f0f0" stroke="#7a7a7a" stroke-width="0.45" stroke-linejoin="miter"/>
+    <polygon points="24.80,7.33 29.20,9.80 24.80,12.27 20.40,9.80" fill="#ffffff" stroke="#7a7a7a" stroke-width="0.45" stroke-linejoin="miter"/>
+    <polygon points="11.60,4.87 16.00,7.33 11.60,9.80 7.20,7.33" fill="#f0f0f0" stroke="#7a7a7a" stroke-width="0.45" stroke-linejoin="miter"/>
+    <polygon points="16.00,7.33 20.40,9.80 16.00,12.27 11.60,9.80" fill="#ffffff" stroke="#7a7a7a" stroke-width="0.45" stroke-linejoin="miter"/>
+    <polygon points="20.40,9.80 24.80,12.27 20.40,14.73 16.00,12.27" fill="#f0f0f0" stroke="#7a7a7a" stroke-width="0.45" stroke-linejoin="miter"/>
+    <polygon points="7.20,7.33 11.60,9.80 7.20,12.27 2.80,9.80" fill="#ffffff" stroke="#7a7a7a" stroke-width="0.45" stroke-linejoin="miter"/>
+    <polygon points="11.60,9.80 16.00,12.27 11.60,14.73 7.20,12.27" fill="#f0f0f0" stroke="#7a7a7a" stroke-width="0.45" stroke-linejoin="miter"/>
+    <polygon points="16.00,12.27 20.40,14.73 16.00,17.20 11.60,14.73" fill="#ffffff" stroke="#7a7a7a" stroke-width="0.45" stroke-linejoin="miter"/>
+    <polyline points="2.80,9.80 16.00,17.20 29.20,9.80" fill="none" stroke="#5a5a5a" stroke-width="0.7" stroke-linejoin="round"/><polyline points="16.00,17.20 16.00,30.00" fill="none" stroke="#5a5a5a" stroke-width="0.7"/>
+    <polygon points="16.00,2.40 29.20,9.80 29.20,22.60 16.00,30.00 2.80,22.60 2.80,9.80" fill="none" stroke="#4a4a4a" stroke-width="0.9" stroke-linejoin="round"/>
+  </g>
+</svg>

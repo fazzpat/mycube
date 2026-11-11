@@ -1,6 +1,6 @@
 import { createRoom3D, createAvatarPreview } from "./isoRoom.js";
 import { initStartMenu } from "./startMenu.js";
-import { initCreatorMenu, openFromPhone } from "./creatorMenu.js";
+import { initCreatorMenu, openFromPhone, closeFromPhone, isPhoneEditOpen } from "./creatorMenu.js";
 import { CLOTHING_STOCK, PET_STOCK, PUBLIC_PLACES, clothingSlot, CLOTHING_SLOTS, HAIR_STYLES as CAT_HAIR_STYLES, HAIR_LABELS, TOP_LABELS, BOTTOM_LABELS, ACC_LABELS, BASE_TOPS, BASE_BOTTOMS, BASE_ACCESSORIES, TOPS as CAT_TOPS, BOTTOMS as CAT_BOTTOMS, ACCESSORIES as CAT_ACCESSORIES } from "./storeCatalog.js";
 import { ART_PIECES, paintArtThumb, registerArtCatalog, installPaintings } from "./artPieces.js";
 import { installWallLayout, switchFloorTile } from "./wallLayout.js";
@@ -179,6 +179,7 @@ import { initChessUI } from "./chess-ui.js";
       state.preview3d = createAvatarPreview(box, { transparent: true });
     }
     state.preview3d.setAvatar(state.draft);
+    if (isPhoneEditOpen()) applyDraftLive();
     $("#creator-user").textContent = state.me?.username || "";
     if (!$("#display-name").value) {
       $("#display-name").value = state.draft.displayName || state.me?.username || "";
@@ -2243,6 +2244,12 @@ import { initChessUI } from "./chess-ui.js";
     $("#phone-overlay")?.classList.toggle("app-open", Boolean(on));
   }
   function showPhoneHome() {
+    if (isPhoneEditOpen()) {
+      persistDraft();
+      closeFromPhone();
+      state.creatorReturn = null;
+      HIDE($("#creator-back"));
+    }
     document.querySelectorAll(".phone-app-screen").forEach((el) => HIDE(el));
     SHOW($("#phone-home"));
     state.phoneApp = "home";
@@ -2250,6 +2257,12 @@ import { initChessUI } from "./chess-ui.js";
   }
 
   function closePhone() {
+    if (isPhoneEditOpen()) {
+      persistDraft();
+      closeFromPhone();
+      state.creatorReturn = null;
+      HIDE($("#creator-back"));
+    }
     const wasOpen = phoneOpen();
     HIDE($("#phone-overlay"));
     document.body.classList.remove("phone-open");
@@ -2319,7 +2332,7 @@ import { initChessUI } from "./chess-ui.js";
       app = "shop";
     }
     if (app === "edit-character" || app === "wardrobe") {
-      openCharacterEditor("room");
+      openCharacterEditor("phone");
       return;
     }
     if (app === "emotes") {
@@ -2534,19 +2547,59 @@ import { initChessUI } from "./chess-ui.js";
     if (state.phoneApp === "upgrade") paintUpgrade();
   }
 
+  function applyDraftLive() {
+    const draft = { ...state.draft };
+    if (state.me) state.me.avatar = draft;
+    const self = state.people.get(state.me?.username);
+    if (self) {
+      self.avatar = draft;
+      // Keep seat, action, facing, and tile exactly as they are.
+      renderPeople();
+    }
+  }
+
+  function persistDraft() {
+    if (!state.me) return;
+    state.draft.displayName = ($("#display-name")?.value || "").trim() || state.me.username;
+    applyDraftLive();
+    socket.emit("updateAvatar", { ...state.draft });
+  }
+
+  function closePhoneEditor() {
+    if (!isPhoneEditOpen()) return;
+    closeFromPhone();
+    state.creatorReturn = null;
+    HIDE($("#creator-back"));
+    showPhoneHome();
+  }
+
   function openCharacterEditor(returnTo = "room") {
-    if (!openFromPhone()) return;
-    closePhone();
-    state.creatorReturn = returnTo;
     state.draft = { ...HearthAvatar.defaults(), ...(state.me?.avatar || {}) };
     const nameEl = $("#display-name");
     if (nameEl) nameEl.value = state.draft.displayName || state.me?.username || "";
     paintCreator();
     SHOW($("#creator-back"));
+    if ((returnTo === "phone" || returnTo === "room") && state.view === "room" && state.room) {
+      state.creatorReturn = "phone";
+      // Reveal the handset without emitting usePhone, so a seated or mid-action
+      // avatar is not stood up or cancelled.
+      if (!phoneOpen()) SHOW($("#phone-overlay"));
+      if (!openFromPhone()) return;
+      applyDraftLive();
+      return;
+    }
+    // Lobby / leftover full-screen path (sign-out / You / new-flow).
+    closePhone();
+    state.creatorReturn = returnTo === "phone" ? "room" : returnTo;
     setView("creator");
   }
 
   function returnFromCreator() {
+    if (isPhoneEditOpen() || state.creatorReturn === "phone") {
+      persistDraft();
+      closePhoneEditor();
+      return;
+    }
     const dest = state.creatorReturn;
     state.creatorReturn = null;
     HIDE($("#creator-back"));
@@ -2568,14 +2621,17 @@ import { initChessUI } from "./chess-ui.js";
 
   $("#display-name").addEventListener("input", () => {
     state.draft.displayName = $("#display-name").value;
+    if (isPhoneEditOpen()) applyDraftLive();
   });
   $("#glasses-toggle").addEventListener("change", () => {
     state.draft.glasses = $("#glasses-toggle").checked;
     paintCreator();
   });
   $("#save-avatar").addEventListener("click", () => {
-    state.draft.displayName = $("#display-name").value.trim() || state.me.username;
-    socket.emit("updateAvatar", state.draft);
+    persistDraft();
+    if (isPhoneEditOpen() || state.creatorReturn === "phone") {
+      closePhoneEditor();
+    }
   });
   $("#edit-avatar").addEventListener("click", () => {
     state.creatorReturn = "lobby";
@@ -3611,7 +3667,29 @@ import { initChessUI } from "./chess-ui.js";
 
   paintLoginPreview();
 
-  window.__openCharacterEditor = () => openCharacterEditor("room");
+  window.__openCharacterEditor = () => openCharacterEditor("phone");
+  window.__closeCharacterEditor = () => {
+    if (isPhoneEditOpen()) closePhoneEditor();
+  };
+  window.__avatarPose = () => {
+    const name = state.me?.username;
+    const p = name ? state.people.get(name) : null;
+    const r3 = state.room3d;
+    return {
+      name,
+      tile: r3?.personTile?.(name) || (p ? { x: p.x, y: p.y } : null),
+      head: r3?.projectHead?.(name) || null,
+      flags: r3?.personFlags?.(name) || null,
+      sitting: p?.sitting ?? null,
+      stationId: p?.stationId ?? null,
+      facing: p?.facing ?? null,
+      actionEmote: p?.actionEmote ?? null,
+      cam: r3?.camState?.() || null,
+      zoom: r3?.visualZoom?.() ?? null,
+      view: state.view,
+      phoneEdit: isPhoneEditOpen(),
+    };
+  };
 
   let remembered = "";
   try { remembered = localStorage.getItem("hearthUser") || sessionStorage.getItem("hearthUser") || ""; } catch {}

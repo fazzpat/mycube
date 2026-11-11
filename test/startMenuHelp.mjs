@@ -37,10 +37,24 @@ export async function clickCreatorOption(page, testId) {
   await page.click(`[data-testid="${testId}"]`);
 }
 
+export async function closePhoneIfOpen(page) {
+  const open = await page.evaluate(() => {
+    const el = document.getElementById("phone-overlay");
+    return Boolean(el && !el.classList.contains("hidden"));
+  });
+  if (!open) return;
+  await page.evaluate(() => window.__closePhone?.());
+  await page.waitForFunction(() => {
+    const el = document.getElementById("phone-overlay");
+    return !el || el.classList.contains("hidden");
+  }, null, { timeout: 8000 }).catch(() => {});
+}
+
 export async function goToLobby(page) {
   const view = await page.evaluate(() => document.body.dataset.view);
   if (view === "lobby") return;
   if (view === "room") {
+    await closePhoneIfOpen(page);
     const btn = page.locator('[data-testid="leave-cube"]');
     if (await btn.isVisible().catch(() => false)) {
       await btn.click();
@@ -66,10 +80,11 @@ export async function seedAndLogin(page, username, baseUrl) {
 }
 
 export async function openCharacterEditor(page) {
-  const view = await page.evaluate(() => document.body.dataset.view);
-  if (view !== "creator") {
+  const open = await page.evaluate(() => window.__creatorMenu?.isPhoneEdit?.() || document.body.dataset.view === "creator");
+  if (!open) {
     await page.evaluate(() => window.__openCharacterEditor?.());
   }
-  await page.waitForSelector('body[data-view="creator"]', { timeout: 15000 });
+  await page.waitForFunction(() => window.__creatorMenu?.isPhoneEdit?.() || document.body.dataset.view === "creator", null, { timeout: 15000 });
   await page.waitForSelector('[data-testid="creator-window"]', { timeout: 10000 });
+  await page.waitForTimeout(320);
 }
