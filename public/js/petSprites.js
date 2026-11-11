@@ -1,6 +1,7 @@
 /* Hand-authored Habbo-style pixel pets. Original art only. */
 export const PET_W = 32;
 export const PET_H = 30;
+export const PET_GROUND_Y = 27;
 
 function hex(h) {
   const n = parseInt(String(h).replace("#", ""), 16);
@@ -679,20 +680,45 @@ function blit(buf, layer, pal, flip, ox = 0, oy = 0, blink = false) {
 function addOutline(buf) {
   const next = buf.slice();
   const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
-  const ink = hex("#1a1020");
   for (let y = 0; y < PET_H; y++) {
     for (let x = 0; x < PET_W; x++) {
       const i = y * PET_W + x;
       if (buf[i]) continue;
-      let n = false;
+      let neighbor = null;
       for (const [dx, dy] of dirs) {
         const xx = x + dx, yy = y + dy;
         if (xx < 0 || yy < 0 || xx >= PET_W || yy >= PET_H) continue;
         const c = buf[yy * PET_W + xx];
-        if (c && c.slot !== "ink") { n = true; break; }
+        if (c && c.slot !== "ink" && c.slot !== "shadow") { neighbor = c; break; }
       }
-      if (n) next[i] = { ...ink, slot: "ink" };
+      if (!neighbor) continue;
+      next[i] = {
+        r: Math.max(0, Math.round((neighbor.r || 20) * 0.4 + 8)),
+        g: Math.max(0, Math.round((neighbor.g || 12) * 0.34 + 6)),
+        b: Math.max(0, Math.round((neighbor.b || 16) * 0.3 + 5)),
+        a: 255,
+        slot: "ink",
+      };
     }
+  }
+  return next;
+}
+
+function plantPet(buf) {
+  let sole = -1;
+  for (let y = PET_H - 1; y >= 0 && sole < 0; y--) {
+    for (let x = 0; x < PET_W; x++) {
+      const p = buf[y * PET_W + x];
+      if (p && p.slot !== "ink" && p.slot !== "shadow") { sole = y; break; }
+    }
+  }
+  if (sole < 0 || sole === PET_GROUND_Y) return buf;
+  const dy = PET_GROUND_Y - sole;
+  const next = makeBuf();
+  for (let y = 0; y < PET_H; y++) {
+    const ny = y + dy;
+    if (ny < 0 || ny >= PET_H) continue;
+    for (let x = 0; x < PET_W; x++) next[ny * PET_W + x] = buf[y * PET_W + x];
   }
   return next;
 }
@@ -714,11 +740,11 @@ function bufToCanvas(buf) {
     img.data[o + 3] = p.a;
   }
   ctx.putImageData(img, 0, 0);
-  // floor shadow
+  // floor shadow just under the paws
   ctx.globalCompositeOperation = "destination-over";
-  ctx.fillStyle = "rgba(0,0,0,0.28)";
+  ctx.fillStyle = "rgba(20, 12, 10, 0.32)";
   ctx.beginPath();
-  ctx.ellipse(PET_W / 2, PET_H - 2.2, 8.5, 2, 0, 0, Math.PI * 2);
+  ctx.ellipse(PET_W / 2, PET_GROUND_Y + 1.1, 8, 1.8, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.globalCompositeOperation = "source-over";
   return { c, w: PET_W, h: PET_H };
@@ -745,7 +771,7 @@ export function drawPetSprite(kind, flags = {}, frame = 0) {
     ? (view.key === "e" || view.key === "se" ? (set.sitE || set.sitS) : (view.key === "n" ? set.n : set.sitS)) || set.s
     : set[view.key] || set.s;
 
-  const bob = walking ? (walkStep ? -1 : 0) : (k === "parrot" && !sit && frame % 2 ? -1 : 0);
+  const bob = 0;
   const legShift = walking && !sit ? (walkStep ? 1 : -1) : 0;
 
   // body
@@ -774,6 +800,7 @@ export function drawPetSprite(kind, flags = {}, frame = 0) {
     buf = next;
   }
 
+  buf = plantPet(buf);
   buf = addOutline(buf);
   const spr = bufToCanvas(buf);
   cache.set(key, spr);
@@ -854,4 +881,4 @@ if (typeof window !== "undefined") {
   window.__paintPetThumb = paintPetThumb;
 }
 
-export default { drawPetSprite, paintPetSheet, paintPetThumb, PET_W, PET_H, PET_SHEET_KINDS };
+export default { drawPetSprite, paintPetSheet, paintPetThumb, PET_W, PET_H, PET_GROUND_Y, PET_SHEET_KINDS };
