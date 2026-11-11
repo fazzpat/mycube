@@ -947,6 +947,55 @@ try {
   check("Both avatars appear in the same room", true);
   check("Avatars use paper-doll pixel sprites", await alice.evaluate(() => window.HouseRoom3D.personFlags("alice")?.paperDoll && window.HouseRoom3D.personFlags("bob")?.paperDoll));
 
+  const eyeFrames = await alice.evaluate(async () => {
+    const mod = await import("/js/avatar3d.js?eyes=1");
+    const look = { skin: "#f0c9a8", hair: "spiky", hairColor: "#e6d3a4", shirt: "#c45c4a", top: "tshirt", bottom: "jeans", bottomColor: "#3d4f7c", shoes: "white" };
+    const south = { x: 0, z: 1 };
+    const north = { x: 0, z: -1 };
+    const grab = (flags) => {
+      const spr = (window.__drawAvatarSprite || mod.drawAvatarSprite)(look, { facing: flags.facing, blink: flags.blink, lookX: flags.lookX || 0, lookY: flags.lookY || 0, bodyDir: flags.bodyDir, headDir: flags.headDir }, 0);
+      const ctx = spr.c.getContext("2d");
+      return ctx.getImageData(0, 0, spr.w, spr.h).data;
+    };
+    const diff = (a, b) => {
+      let n = 0;
+      for (let i = 0; i < a.length; i += 4) if (a[i] !== b[i] || a[i + 1] !== b[i + 1] || a[i + 2] !== b[i + 2] || a[i + 3] !== b[i + 3]) n++;
+      return n;
+    };
+    const open = grab({ facing: south, blink: "open" });
+    const half = grab({ facing: south, blink: "half" });
+    const closed = grab({ facing: south, blink: "closed" });
+    const left = grab({ facing: south, blink: "open", lookX: -1 });
+    const right = grab({ facing: south, blink: "open", lookX: 1 });
+    const up = grab({ facing: south, blink: "open", lookY: -1 });
+    const backOpen = grab({ facing: north, blink: "open", bodyDir: 5, headDir: 5 });
+    const backClosed = grab({ facing: north, blink: "closed", bodyDir: 5, headDir: 5 });
+    const turned = grab({ facing: south, blink: "open", bodyDir: 1, headDir: 0 });
+    const petMod = await import("/js/petSprites.js?eyes=1");
+    const pet = (blink, facing) => {
+      const spr = (window.__drawPetSprite || petMod.drawPetSprite)("cat", { facing, blink }, 0);
+      const ctx = spr.c.getContext("2d");
+      return ctx.getImageData(0, 0, spr.w, spr.h).data;
+    };
+    const petOpen = pet("open", south);
+    const petClosed = pet("closed", south);
+    const petBackOpen = pet("open", north);
+    const petBackClosed = pet("closed", north);
+    return {
+      blinkDiff: diff(open, half) > 4 && diff(half, closed) > 2 && diff(open, closed) > 6,
+      lookDiff: diff(left, right) > 4 && diff(open, left) > 2 && diff(open, up) > 2,
+      backSame: diff(backOpen, backClosed) === 0,
+      headTurn: diff(open, turned) > 8,
+      petBlink: diff(petOpen, petClosed) > 2,
+      petBackSame: diff(petBackOpen, petBackClosed) === 0,
+    };
+  });
+  check("Blink frames change the eyes (half and closed)", Boolean(eyeFrames.blinkDiff), JSON.stringify(eyeFrames));
+  check("Look-around frames shift the eyes left, right, and up", Boolean(eyeFrames.lookDiff), JSON.stringify(eyeFrames));
+  check("Back-facing avatars have no eye frames", Boolean(eyeFrames.backSame), JSON.stringify(eyeFrames));
+  check("The head can turn one step away from the body", Boolean(eyeFrames.headTurn), JSON.stringify(eyeFrames));
+  check("Pets have blink frames on the face, but not on the back", Boolean(eyeFrames.petBlink && eyeFrames.petBackSame), JSON.stringify(eyeFrames));
+
   log("Speech bubbles: visible in-room, then they rise in row order");
   await alice.evaluate(() => window.__clickTile(2, 3));
   await bob.evaluate(() => window.__clickTile(4, 3));
