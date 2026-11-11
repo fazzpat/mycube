@@ -652,6 +652,54 @@ function sliceFront(x, y, w, h, rot, depth) {
   return { x, y, w: d, h };
 }
 
+/** A front-facing ledge covering body-front U range [u0, u1], so it can match the screen width. */
+function sliceFrontRange(x, y, w, h, rot, depth, u0, u1) {
+  const r = normalizeFurnRot(rot);
+  const d = Math.min(depth, ((r % 2 === 0 ? h : w) * 0.9) || depth);
+  const a = Math.max(0, Math.min(u0, u1));
+  const b = Math.min(1, Math.max(u0, u1));
+  const span = Math.max(0.01, b - a);
+  if (r === 0) return { x: x + a * w, y: y + h - d, w: span * w, h: d };
+  if (r === 1) return { x: x + w - d, y: y + a * h, w: d, h: span * h };
+  if (r === 2) return { x: x + a * w, y: y, w: span * w, h: d };
+  return { x: x, y: y + a * h, w: d, h: span * h };
+}
+
+function panelTopFrontEdge(rect, rot, lift) {
+  const r = normalizeFurnRot(rot);
+  const t = diamond(rect.x, rect.y, rect.w, rect.h, lift);
+  if (r === 0) return { left: t.W, right: t.S };
+  if (r === 1) return { left: t.E, right: t.S };
+  if (r === 2) return { left: t.N, right: t.E };
+  return { left: t.N, right: t.W };
+}
+
+/** Tiny joystick + two 2–3px buttons in one iso-aligned row, group mid at midX, y on the edge. */
+function paintTinyControlRow(ctx, edgeLeft, edgeRight, midX, lights) {
+  const dx = edgeRight.x - edgeLeft.x;
+  const slope = Math.abs(dx) < 0.001 ? 0 : (edgeRight.y - edgeLeft.y) / dx;
+  const midY = edgeLeft.y + (midX - edgeLeft.x) * slope;
+  const ball = 3, btn = 2, gap = 2;
+  const total = ball + gap + btn + gap + btn;
+  const x0 = Math.round(midX - total / 2);
+  const yAt = (x) => Math.round(midY + (x - midX) * slope);
+  const shaft = lights ? "#4a4a52" : "#2a2a30";
+  const red = lights ? "#e82838" : "#4a1820";
+  const yellow = lights ? "#f4c15d" : "#4a3a18";
+  // All three sit ON the ledge in one row; shaft hangs 2px down so the ball stays off the CRT.
+  const jy = yAt(x0 + 1);
+  ctx.fillStyle = shaft;
+  ctx.fillRect(x0 + 1, jy + 1, 1, 2);
+  ctx.fillStyle = red;
+  ctx.fillRect(x0, jy - 2, 3, 3);
+  const rx = x0 + ball + gap;
+  ctx.fillStyle = red;
+  ctx.fillRect(rx, yAt(rx) - 1, 2, 2);
+  const yx = rx + btn + gap;
+  ctx.fillStyle = yellow;
+  ctx.fillRect(yx, yAt(yx) - 1, 2, 2);
+}
+
 function alongFront(rect, rot, t, inset, size) {
   const r = normalizeFurnRot(rot);
   const u = Math.max(0, Math.min(1, t));
@@ -909,11 +957,12 @@ function drawRetroArcade(ctx, tw, th, rot, lights, flicker = 0) {
     }
   }
 
-  // Control ledge sits directly below the screen, above the coin door.
+  // Control ledge sits directly under the screen and is slightly wider than the CRT.
+  const SCREEN_U0 = 0.13, SCREEN_U1 = 0.87;
+  const LEDGE_U0 = 0.10, LEDGE_U1 = 0.90;
   const panelLift = 15;
   const panelH = 6;
-  const grow = 0.04;
-  const panelBox = sliceFront(bx - grow * 0.25, by - grow * 0.25, bw + grow * 0.5, bh + grow * 0.5, r, 0.36);
+  const panelBox = sliceFrontRange(bx, by, bw, bh, r, 0.32, LEDGE_U0, LEDGE_U1);
   const panelPal = pal("#141418", lights);
   if (lights) {
     panelPal.top = "#2c2c34";
@@ -924,19 +973,23 @@ function drawRetroArcade(ctx, tw, th, rot, lights, flicker = 0) {
   box(ctx, panelBox.x, panelBox.y, panelBox.w, panelBox.h, panelLift, panelH, panelPal);
   if (front) {
     const pc = faceCorners(panelBox.x, panelBox.y, panelBox.w, panelBox.h, panelLift, panelH, front);
-    faceRect(ctx, pc, 0.06, 0.05, 0.94, 0.95, lights ? "#1a1a20" : "#101014", panelPal.outline);
-    faceRect(ctx, pc, 0.06, 0.86, 0.94, 0.95, neon, null);
+    faceRect(ctx, pc, 0.04, 0.05, 0.96, 0.95, lights ? "#1a1a20" : "#101014", panelPal.outline);
+    faceRect(ctx, pc, 0.04, 0.86, 0.96, 0.95, neon, null);
   }
-  // Joystick left of center, red + yellow buttons right of center; the group is centered.
-  // Shorter stick so it stays on the ledge instead of covering the CRT.
-  const joy = alongFrontCenter(panelBox, r, 0.24, 0.10, 0.12);
-  box(ctx, joy.x, joy.y, joy.w, joy.h, panelLift + panelH, 2, pal("#2a2a30", lights));
-  box(ctx, joy.x + 0.025, joy.y + 0.025, joy.w - 0.05, joy.h - 0.05, panelLift + panelH + 2, 3.2, pal(lights ? "#e82838" : "#4a1820", lights));
-  const btnColors = [lights ? "#e82838" : "#4a1820", lights ? "#f4c15d" : "#4a3a18"];
-  [0.60, 0.80].forEach((u, i) => {
-    const b = alongFrontCenter(panelBox, r, u, 0.10, 0.11);
-    box(ctx, b.x, b.y, b.w, b.h, panelLift + panelH, 2.2, pal(btnColors[i], true));
-  });
+  // Tiny joystick + red/yellow dots in one row, midpoint on the screen's front-face center.
+  const which = front || (r === 2 ? "-y" : r === 3 ? "-x" : r === 1 ? "+x" : "+y");
+  const sfc = faceCorners(bx, by, bw, bh, 0, BODY, which);
+  const [sbl, sbr, str, stl] = sfc;
+  const screenMid = lerp2(
+    lerp2(sbl, sbr, (SCREEN_U0 + SCREEN_U1) / 2),
+    lerp2(stl, str, (SCREEN_U0 + SCREEN_U1) / 2),
+    0.5
+  );
+  const edge = panelTopFrontEdge(panelBox, r, panelLift + panelH);
+  const topMid = pt(panelBox.x + panelBox.w / 2, panelBox.y + panelBox.h / 2, panelLift + panelH);
+  const insetEdge = (p) => lerp2(p, topMid, 0.42);
+  const left = insetEdge(edge.left), right = insetEdge(edge.right);
+  paintTinyControlRow(ctx, left, right, screenMid.x, lights);
 
   // Smaller, less overhanging marquee on top; CUBICS stays one readable line.
   // Keep a little width so the six letters still fit; shrink height and forward depth.

@@ -374,9 +374,9 @@
 <rect x="17" y="20" width="22" height="32" fill="#0c0c10" stroke="${ink}" stroke-width="1.5"/>
 <rect x="19" y="22" width="18" height="28" fill="#3ee01a"/>
 <rect x="21" y="24" width="7" height="5" fill="#e8ffe0"/>
-<rect x="14" y="52" width="28" height="10" fill="#141418" stroke="${ink}" stroke-width="1.5"/>
-<circle cx="24" cy="57" r="2.5" fill="#2a2a30"/><circle cx="24" cy="55.5" r="2" fill="#e82838"/>
-<circle cx="32" cy="57" r="2.1" fill="#e82838"/><circle cx="37" cy="57" r="2.1" fill="#f4c15d"/>
+<rect x="16" y="52" width="24" height="8" fill="#141418" stroke="${ink}" stroke-width="1.5"/>
+<rect x="24" y="55" width="1" height="2" fill="#4a4a52"/><rect x="23" y="53" width="3" height="3" fill="#e82838"/>
+<rect x="28" y="54" width="2" height="2" fill="#e82838"/><rect x="32" y="54" width="2" height="2" fill="#f4c15d"/>
 <rect x="18" y="66" width="18" height="14" fill="#2a2a32" stroke="${ink}" stroke-width="1.5"/>
 <rect x="18" y="66" width="18" height="2" fill="#39ff14"/>
 <rect x="24" y="72" width="8" height="3" fill="#f4c15d"/>
