@@ -556,7 +556,7 @@ function stripNeckGapStickers(buf) {
 }
 
 function shaveTorsoCrownOutlines(buf) {
-  // Used only if a seam is left between head and torso; otherwise the chin covers this edge.
+  // Keep shoulder ink; only clear stray collar ink in the 2px above the torso fill.
   const next = buf.slice();
   for (let x = 0; x < AV_W; x++) {
     let top = -1;
@@ -619,11 +619,11 @@ function shiftBufXY(buf, dx, dy) {
 }
 
 function blitBuf(dest, src) {
+  // Painter's algorithm: later layers fully cover earlier ones.
+  // Depth is only used while drawing inside a single layer, so a torso
+  // ink pixel (depth 80) must never punch through the face (depth 40).
   for (let i = 0; i < src.length; i++) {
-    const p = src[i];
-    if (!p) continue;
-    const x = i % AV_W, y = (i / AV_W) | 0;
-    plot(dest, x, y, p.color, p.kind, p.depth);
+    if (src[i]) dest[i] = src[i];
   }
 }
 
