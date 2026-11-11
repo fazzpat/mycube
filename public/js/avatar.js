@@ -1,7 +1,7 @@
 /* Chunky cute 2D chibi avatars with outlines (original SVG). */
 (function (global) {
   const SKINS = ["#ffdfc4", "#f1c27d", "#e0ac69", "#c68642", "#8d5524", "#5c3317"];
-  const HAIR_STYLES = ["short", "long", "curly", "bun", "spiky", "bangs"];
+  const HAIR_STYLES = ["short", "long", "curly", "bun", "spiky", "bangs", "undercut", "frosted", "buzz", "swoop", "cornrows", "shaggy", "ponytail", "spacebuns", "straightbangs", "afropuff", "bobclips"];
   const HAIR_COLORS = ["#2b1d16", "#6b3a2a", "#d4a017", "#f3e5c2", "#c0392b", "#4a90d9", "#7b4f9c", "#222222"];
   const SHIRTS = ["#ff7a59", "#7bc47f", "#6c7bff", "#f4c15d", "#ef476f", "#20b2aa", "#ff8fab", "#5c4d7d"];
   const TOPS = ["tshirt", "hoodie", "jacket"];
@@ -10,7 +10,7 @@
   const SHOES = ["white", "black", "red", "gum"];
   const ACCESSORIES = ["none", "cap", "beanie", "chain", "headphones"];
   const HEADPHONE_COLORS = ["#2a2a2e", "#ff7a59", "#7c5cff", "#f4c15d", "#ef476f", "#20b2aa", "#f6f3ee", "#3d4f7c"];
-  const INK = "#2a1810";
+  const INK = "#4a2a20";
 
   function shade(hex, amt) {
     const n = hex.replace("#", "");

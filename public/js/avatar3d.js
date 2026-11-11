@@ -34,10 +34,10 @@ function mix(a, b, t) {
 }
 function rgb(r, g, b) { return { r, g, b }; }
 function mute(hex) {
-  // Pull catalog colors toward a muted, warm, earthy ramp.
+  // Keep catalog colors lively with only a touch of warmth.
   const c = hexToRgb(hex);
-  const dust = rgb(168, 140, 110);
-  return mix(c, dust, 0.28);
+  const sun = rgb(255, 236, 210);
+  return mix(c, sun, 0.06);
 }
 
 const INK = rgb(42, 28, 24);
@@ -46,8 +46,8 @@ const TEAR = rgb(150, 186, 210);
 
 function tones(hex, warm = false) {
   const b = typeof hex === "string" ? (warm ? hexToRgb(hex) : mute(hex)) : hex;
-  const hi = warm ? mix(b, rgb(255, 236, 214), 0.28) : mix(b, rgb(255, 248, 236), 0.22);
-  const sh = warm ? mix(b, rgb(96, 54, 42), 0.28) : mix(b, rgb(36, 24, 22), 0.28);
+  const hi = mix(b, rgb(255, 248, 230), warm ? 0.32 : 0.26);
+  const sh = mix(b, rgb(70, 38, 32), warm ? 0.22 : 0.24);
   return { mid: b, hi, sh };
 }
 
@@ -174,7 +174,7 @@ function inkAround(tmp) {
         if (c && c.kind !== "ink" && c.kind !== "sticker" && c.kind !== "shadow") { n = c; break; }
       }
       if (!n) continue;
-      next[i] = { color: mix(n.color || INK, INK, 0.82), kind: "ink", depth: (n.depth || 0) + 0.4 };
+      next[i] = { color: mix(n.color || INK, rgb(48, 28, 24), 0.48), kind: "ink", depth: (n.depth || 0) + 0.4 };
     }
   }
   return next;
@@ -298,7 +298,7 @@ function addInkOutline(buf) {
         if (c && c.kind !== "ink" && c.kind !== "sticker" && c.kind !== "shadow") { n = c; break; }
       }
       if (!n) continue;
-      const col = mix(n.color || INK, INK, 0.72);
+      const col = mix(n.color || INK, rgb(48, 28, 24), 0.42);
       next[i] = { color: col, kind: "ink", depth: 80 };
     }
   }
@@ -320,6 +320,34 @@ function addStickerOutline(buf) {
         if (c && c.kind !== "shadow") { hit = true; break; }
       }
       if (hit) next[i] = { color: STICKER, kind: "sticker", depth: 90 };
+    }
+  }
+  return next;
+}
+
+function fillToward(buf, x, y, dx, dy, max = 3) {
+  for (let i = 1; i <= max; i++) {
+    const xx = x + dx * i, yy = y + dy * i;
+    if (xx < 0 || yy < 0 || xx >= AV_W || yy >= AV_H) return false;
+    const c = buf[yy * AV_W + xx];
+    if (!c || c.kind === "shadow") continue;
+    if (c.kind === "sticker" || c.kind === "ink") continue;
+    return true;
+  }
+  return false;
+}
+
+function stripInnerStickers(buf) {
+  // Drop white pixels trapped in 1-2px gaps (the U around torso, collar, and shoes).
+  const next = buf.slice();
+  for (let y = 0; y < AV_H; y++) {
+    for (let x = 0; x < AV_W; x++) {
+      const i = y * AV_W + x;
+      const p = buf[i];
+      if (!p || p.kind !== "sticker") continue;
+      const ns = fillToward(buf, x, y, 0, -1) && fillToward(buf, x, y, 0, 1);
+      const ew = fillToward(buf, x, y, -1, 0) && fillToward(buf, x, y, 1, 0);
+      if (ns || ew) next[i] = null;
     }
   }
   return next;
@@ -597,6 +625,90 @@ function hairClumps(style, key) {
       { dx: -6.8, dy: -3.8, len: 7.0, half: 2.2, ang: up - 0.75 },
       { dx: 6.8, dy: -3.8, len: 7.0, half: 2.2, ang: up + 0.75 },
     ],
+    frosted: [
+      { dx: 0, dy: -6.6, len: 11.0, half: 2.4, ang: up, frost: true },
+      { dx: -3.4, dy: -6.0, len: 10.0, half: 2.3, ang: up - 0.3, frost: true },
+      { dx: 3.4, dy: -6.0, len: 10.0, half: 2.3, ang: up + 0.3, frost: true },
+      { dx: -6.8, dy: -4.0, len: 8.4, half: 2.2, ang: up - 0.68, frost: true },
+      { dx: 6.8, dy: -4.0, len: 8.4, half: 2.2, ang: up + 0.68, frost: true },
+      { dx: -9.0, dy: -1.0, len: 6.0, half: 2.1, ang: up - 1.15, frost: true },
+      { dx: 9.0, dy: -1.0, len: 6.0, half: 2.1, ang: up + 1.15, frost: true },
+    ],
+    buzz: [
+      { dx: 0, dy: -5.0, len: 3.2, half: 3.6, ang: up, rounded: true },
+      { dx: -5.4, dy: -3.2, len: 2.6, half: 3.0, ang: up - 0.7, rounded: true },
+      { dx: 5.4, dy: -3.2, len: 2.6, half: 3.0, ang: up + 0.7, rounded: true },
+    ],
+    swoop: [
+      { dx: 0, dy: -5.8, len: 7.4, half: 2.8, ang: up },
+      { dx: -4.0, dy: -5.0, len: 6.6, half: 2.5, ang: up - 0.45 },
+      { dx: 4.6, dy: -5.2, len: 7.0, half: 2.6, ang: up + 0.4 },
+      { dx: -8.2, dy: -2.0, len: 5.4, half: 2.4, ang: up - 1.0 },
+      { dx: 8.6, dy: -1.6, len: 5.2, half: 2.3, ang: 0 },
+      { dx: -1.2, dy: 0.2, len: 7.8, half: 2.3, ang: Math.PI * 0.62, fringe: true },
+      { dx: 2.8, dy: 0.6, len: 8.4, half: 2.4, ang: Math.PI * 0.42, fringe: true },
+      { dx: 6.0, dy: 1.0, len: 7.0, half: 2.1, ang: Math.PI * 0.28, fringe: true },
+    ],
+    cornrows: [
+      { dx: -3.6, dy: -6.2, len: 8.4, half: 1.3, ang: up },
+      { dx: 0, dy: -6.4, len: 8.8, half: 1.3, ang: up },
+      { dx: 3.6, dy: -6.2, len: 8.4, half: 1.3, ang: up },
+      { dx: -6.6, dy: -4.0, len: 6.4, half: 1.2, ang: up - 0.35 },
+      { dx: 6.6, dy: -4.0, len: 6.4, half: 1.2, ang: up + 0.35 },
+      { dx: -8.4, dy: 0.4, len: 4.4, half: 1.3, ang: Math.PI },
+      { dx: 8.4, dy: 0.4, len: 4.4, half: 1.3, ang: 0 },
+    ],
+    shaggy: [
+      { dx: 0, dy: -6.0, len: 8.0, half: 2.6, ang: up },
+      { dx: -3.0, dy: -5.8, len: 9.2, half: 2.2, ang: up - 0.22 },
+      { dx: 4.2, dy: -5.4, len: 8.6, half: 2.4, ang: up + 0.38 },
+      { dx: -6.8, dy: -3.4, len: 7.4, half: 2.3, ang: up - 0.8 },
+      { dx: 7.6, dy: -2.8, len: 6.8, half: 2.2, ang: up + 0.9 },
+      { dx: -9.0, dy: 0.6, len: 5.6, half: 2.3, ang: Math.PI },
+      { dx: 9.2, dy: 1.2, len: 5.8, half: 2.4, ang: 0 },
+      { dx: -2.6, dy: -0.4, len: 5.6, half: 2.0, ang: Math.PI * 0.58, fringe: true },
+      { dx: 3.4, dy: 0.2, len: 5.0, half: 1.9, ang: Math.PI * 0.4, fringe: true },
+    ],
+    ponytail: [
+      { dx: 0, dy: -5.6, len: 6.8, half: 2.8, ang: up },
+      { dx: -4.6, dy: -4.6, len: 6.0, half: 2.5, ang: up - 0.55 },
+      { dx: 4.6, dy: -4.6, len: 6.0, half: 2.5, ang: up + 0.55 },
+      { dx: -8.0, dy: -1.2, len: 5.0, half: 2.3, ang: up - 1.05 },
+      { dx: 8.0, dy: -1.2, len: 5.0, half: 2.3, ang: up + 1.05 },
+    ],
+    spacebuns: [
+      { dx: 0, dy: -5.4, len: 6.4, half: 2.6, ang: up },
+      { dx: -4.4, dy: -4.4, len: 5.6, half: 2.4, ang: up - 0.55 },
+      { dx: 4.4, dy: -4.4, len: 5.6, half: 2.4, ang: up + 0.55 },
+      { dx: -8.0, dy: -1.0, len: 4.8, half: 2.3, ang: up - 1.05 },
+      { dx: 8.0, dy: -1.0, len: 4.8, half: 2.3, ang: up + 1.05 },
+    ],
+    straightbangs: [
+      { dx: 0, dy: -6.0, len: 7.6, half: 2.8, ang: up },
+      { dx: -4.4, dy: -5.2, len: 6.8, half: 2.5, ang: up - 0.5 },
+      { dx: 4.4, dy: -5.2, len: 6.8, half: 2.5, ang: up + 0.5 },
+      { dx: -8.2, dy: -2.2, len: 5.6, half: 2.4, ang: up - 1.0 },
+      { dx: 8.2, dy: -2.2, len: 5.6, half: 2.4, ang: up + 1.0 },
+      { dx: -4.4, dy: -0.4, len: 6.0, half: 2.0, ang: Math.PI * 0.55, fringe: true },
+      { dx: 0, dy: -0.8, len: 5.6, half: 2.0, ang: Math.PI * 0.5, fringe: true },
+      { dx: 4.4, dy: -0.4, len: 6.0, half: 2.0, ang: Math.PI * 0.45, fringe: true },
+    ],
+    afropuff: [
+      { dx: 0, dy: -7.4, len: 8.4, half: 4.6, ang: up, rounded: true },
+      { dx: -5.4, dy: -6.0, len: 7.2, half: 4.0, ang: up - 0.55, rounded: true },
+      { dx: 5.4, dy: -6.0, len: 7.2, half: 4.0, ang: up + 0.55, rounded: true },
+      { dx: -8.4, dy: -2.2, len: 5.6, half: 3.4, ang: up - 1.05, rounded: true },
+      { dx: 8.4, dy: -2.2, len: 5.6, half: 3.4, ang: up + 1.05, rounded: true },
+    ],
+    bobclips: [
+      { dx: 0, dy: -5.8, len: 7.0, half: 3.0, ang: up },
+      { dx: -4.8, dy: -4.8, len: 6.6, half: 2.8, ang: up - 0.55 },
+      { dx: 4.8, dy: -4.8, len: 6.6, half: 2.8, ang: up + 0.55 },
+      { dx: -8.6, dy: -1.0, len: 7.2, half: 2.6, ang: Math.PI * 0.85 },
+      { dx: 8.6, dy: -1.0, len: 7.2, half: 2.6, ang: Math.PI * 0.15 },
+      { dx: -3.0, dy: -0.6, len: 5.0, half: 2.0, ang: Math.PI * 0.55, fringe: true },
+      { dx: 3.0, dy: -0.6, len: 5.0, half: 2.0, ang: Math.PI * 0.45, fringe: true },
+    ],
   };
   let clumps = styles[style] || styles.short;
   if (key === "e") {
@@ -618,7 +730,7 @@ function hairClumps(style, key) {
 function drawHair(buf, av, key, pal, upper, hatOn) {
   const g = headGeom(key);
   const cy = g.cy + upper;
-  const style = hatOn && av.hair !== "long" ? "short" : av.hair;
+  const style = hatOn && av.hair !== "long" && av.hair !== "straightbangs" && av.hair !== "ponytail" ? "short" : av.hair;
   // Skull cap first so the scalp never shows, then distinct outlined spikes on top.
   ellipse(buf, g.cx, cy - 3.5, g.rx * 0.9, g.ry * 0.7, pal.hair, "hair-cap", 44, { shade: "flat" });
   for (const c of hairClumps(style, key)) {
@@ -629,7 +741,7 @@ function drawHair(buf, av, key, pal, upper, hatOn) {
     stampSpike(buf, g.cx - (key === "e" ? 0 : bx), cy + 2, 3.2, 3.2, Math.PI, pal.hair, "hair-bun", 46, true);
     stampSpike(buf, g.cx + bx, cy + 2, 3.2, 3.2, 0, pal.hair, "hair-bun", 46, true);
   }
-  if (av.hair === "long") {
+  if (av.hair === "long" || av.hair === "straightbangs") {
     if (key === "e") {
       stampSpike(buf, g.cx - 6, cy + 4, 18, 3.2, Math.PI * 0.52, pal.hair, "hair-lock", 43, true);
     } else {
@@ -637,6 +749,42 @@ function drawHair(buf, av, key, pal, upper, hatOn) {
       stampSpike(buf, g.cx - lx, cy + 3, 18, 3.3, Math.PI * 0.55, pal.hair, "hair-lock", 43, true);
       stampSpike(buf, g.cx + lx, cy + 3, 18, 3.3, Math.PI * 0.45, pal.hair, "hair-lock", 43, true);
     }
+  }
+  if (av.hair === "frosted") {
+    const tip = { hi: rgb(255, 248, 220), mid: rgb(243, 229, 194), sh: rgb(210, 190, 150) };
+    for (const c of hairClumps("frosted", key)) {
+      const tx = g.cx + c.dx + Math.cos(c.ang) * (c.len * 0.62);
+      const ty = cy + c.dy + Math.sin(c.ang) * (c.len * 0.62);
+      stampSpike(buf, tx, ty, c.len * 0.42, Math.max(1.4, c.half * 0.7), c.ang, tip, "hair-tip", 46, false);
+    }
+  }
+  if (av.hair === "bun" || av.hair === "spacebuns") {
+    // space buns sit high; classic bun also uses side buns from earlier
+  }
+  if (av.hair === "spacebuns") {
+    const bx = key === "e" ? 3 : 9;
+    const by = cy - 7;
+    stampSpike(buf, g.cx - (key === "e" ? 0 : bx), by, 4.2, 3.6, -Math.PI / 2, pal.hair, "hair-bun", 47, true);
+    if (key !== "e") stampSpike(buf, g.cx + bx, by, 4.2, 3.6, -Math.PI / 2, pal.hair, "hair-bun", 47, true);
+  }
+  if (av.hair === "ponytail") {
+    const px = key === "e" ? g.cx - 2 : g.cx;
+    const py = cy - 8;
+    stampSpike(buf, px, py, 3.2, 2.6, -Math.PI / 2, pal.hair, "hair-tie", 47, true);
+    const ang = key === "n" || key === "ne" ? Math.PI * 0.5 : (key === "e" ? Math.PI * 0.95 : -Math.PI / 2);
+    const ox = key === "e" ? -2 : 0;
+    stampSpike(buf, px + ox, py - 1, 11, 2.6, ang, pal.hair, "hair-tail", 46, true);
+  }
+  if (av.hair === "bobclips") {
+    const clip = rgb(255, 140, 190);
+    plot(buf, Math.round(g.cx - 6), Math.round(cy - 1), clip, "clip", 48);
+    plot(buf, Math.round(g.cx - 5), Math.round(cy - 1), clip, "clip", 48);
+    plot(buf, Math.round(g.cx + 6), Math.round(cy - 1), rgb(130, 210, 255), "clip", 48);
+    plot(buf, Math.round(g.cx + 5), Math.round(cy - 1), rgb(130, 210, 255), "clip", 48);
+  }
+  if (av.hair === "buzz") {
+    // Short stubble cap already drawn; add a tight edge so it reads as a buzz.
+    ellipse(buf, g.cx, cy - 2.2, g.rx * 0.86, g.ry * 0.52, pal.hair.sh || pal.hair, "hair-buzz", 44, { shade: "flat" });
   }
 }
 
@@ -648,12 +796,18 @@ function drawHat(buf, av, key, pal, upper) {
     ellipse(buf, g.cx, cy + 2, g.rx * 0.88, 5.2, acc, "hat", 55);
     ellipse(buf, g.cx, cy + 0.2, g.rx * 0.62, 3.2, acc, "hat", 56);
     circle(buf, g.cx, cy - 4, 2.0, acc, "hat-pom", 57);
-  } else if (av.accessory === "cap" || av.accessory === "trucker") {
+  } else if (av.accessory === "cap" || av.accessory === "trucker" || av.accessory === "fitted") {
     ellipse(buf, g.cx, cy + 2.2, g.rx * 0.88, 4.4, acc, "hat", 55);
     if (key !== "n") {
       const bx = key === "e" ? g.cx + 7 : g.cx;
-      ellipse(buf, bx, cy + 5.4, key === "e" ? 6.5 : 7.5, 1.6, acc, "hat-brim", 56);
+      ellipse(buf, bx, cy + 5.4, key === "e" ? 6.5 : 7.5, av.accessory === "fitted" ? 1.3 : 1.6, acc, "hat-brim", 56);
     }
+    if (av.accessory === "fitted") {
+      plot(buf, Math.round(g.cx), Math.round(cy + 1), rgb(255, 240, 200), "hat-logo", 57);
+    }
+  } else if (av.accessory === "bucket") {
+    ellipse(buf, g.cx, cy + 2.4, g.rx * 0.86, 4.0, acc, "hat", 55);
+    ellipse(buf, g.cx, cy + 5.6, g.rx * 1.15, 2.0, acc, "hat-brim", 56);
   }
 }
 
@@ -668,12 +822,16 @@ function ring(buf, cx, cy, rx, ry, color, kind, depth) {
   }
 }
 
-function drawGlasses(buf, key, upper) {
+function drawGlasses(buf, av, key, upper) {
   if (key === "n" || key === "ne") return;
-  const frame = rgb(48, 36, 32);
+  const tinted = av && (av.accessory === "shades");
+  const frame = tinted ? rgb(40, 24, 48) : rgb(48, 36, 32);
+  const lens = tinted ? rgb(72, 40, 80) : null;
   const anchors = eyeAnchors(key, upper, false);
   for (const a of anchors) {
+    if (lens) ellipse(buf, a.x, a.y, 3.2, 3.6, lens, "lens", 55, { shade: "flat" });
     ring(buf, a.x, a.y, 4.0, 4.4, frame, "glasses", 56);
+    if (tinted) plot(buf, Math.round(a.x) - 1, Math.round(a.y) - 2, rgb(255, 230, 240), "lens-hi", 57);
   }
   if (anchors.length === 2) {
     const left = anchors[0].x < anchors[1].x ? anchors[0] : anchors[1];
@@ -708,9 +866,7 @@ function torsoBox(key, sit) {
 function drawTorso(buf, av, key, pal, upper, sit) {
   const t = torsoBox(key, sit);
   const y0 = t.y0 + upper;
-  // Neck
-  rect(buf, t.cx - 2.2, y0 - 2, t.cx + 2.2, y0 + 2, pal.skin, "neck", 20, 1);
-  // Skin torso (in case sleeves/neckline show)
+  // Skin torso (in case sleeves/neckline show). No neck — the head floats with a gap.
   ellipse(buf, t.cx, y0 + t.h * 0.42, t.hw, t.h * 0.62, pal.skin, "skin-body", 18);
   // Shirt / hoodie / jacket — slightly rounder body bag so the torso is not boxy.
   const topPal = pal.shirt;
@@ -733,6 +889,54 @@ function drawTorso(buf, av, key, pal, upper, sit) {
   if (av.top === "bandtee") {
     const gx = key === "e" ? t.cx + 2 : t.cx;
     ellipse(buf, gx, y0 + 6, 3.2, 3.2, pal.gold, "graphic", 26);
+  }
+  if (av.top === "ziphoodie" || av.top === "crophoodie") {
+    ellipse(buf, t.cx, y0 + 1.5, t.hw * 0.95, 3.5, topPal, "hood", 24);
+    if (av.top === "ziphoodie") {
+      rect(buf, t.cx - 0.6, y0 + 2, t.cx + 0.6, y0 + t.h - 1, pal.gold, "zip", 26);
+    }
+    if (av.top === "crophoodie") {
+      // Crop the hem so a sliver of skin shows at the waist.
+      rect(buf, t.cx - t.hw, y0 + t.h - 3, t.cx + t.hw, y0 + t.h + 1, pal.skin, "midriff", 28);
+    }
+  }
+  if (av.top === "oversized") {
+    ellipse(buf, t.cx, y0 + t.h * 0.55, t.hw + 2.4, t.h * 0.8, topPal, "top", 22);
+  }
+  if (av.top === "velour") {
+    ellipse(buf, t.cx, y0 + 4, t.hw + 0.6, 1.2, { mid: mix(topPal.hi || topPal.mid, rgb(255, 255, 255), 0.5) }, "piping", 26, { shade: "flat" });
+    rect(buf, t.cx - 0.5, y0 + 2, t.cx + 0.5, y0 + t.h - 1, rgb(255, 240, 250), "stripe", 26);
+  }
+  if (av.top === "varsity") {
+    const sleeve = tones("#f4efe6");
+    ellipse(buf, t.cx - t.hw - 0.6, y0 + 4, 3.4, 3.6, sleeve, "var-sleeve", 23);
+    ellipse(buf, t.cx + t.hw + 0.6, y0 + 4, 3.4, 3.6, sleeve, "var-sleeve", 23);
+    ellipse(buf, t.cx, y0 + 6, 2.4, 2.4, pal.gold, "letter", 26);
+  }
+  if (av.top === "truckertee") {
+    const gx = key === "e" ? t.cx + 2 : t.cx;
+    rect(buf, gx - 3, y0 + 4, gx + 3, y0 + 8, rgb(255, 255, 255), "graphic", 26, 1);
+  }
+  if (av.top === "puffer") {
+    for (let i = 0; i < 3; i++) {
+      ellipse(buf, t.cx, y0 + 3 + i * 3.2, t.hw + 0.8, 2.0, topPal, "quilt", 26);
+    }
+  }
+  if (av.top === "polo") {
+    // Popped collar
+    ellipse(buf, t.cx - 3.2, y0 + 0.2, 3.0, 2.2, topPal, "collar", 26);
+    ellipse(buf, t.cx + 3.2, y0 + 0.2, 3.0, 2.2, topPal, "collar", 26);
+    if (key !== "n") rect(buf, t.cx - 1, y0 + 2, t.cx + 1, y0 + 5, pal.skin, "placket", 26);
+  }
+  if (av.top === "babytee") {
+    ellipse(buf, t.cx, y0 + t.h * 0.4, t.hw * 0.9, t.h * 0.55, topPal, "top", 23);
+  }
+  if (av.top === "jersey") {
+    if (key !== "n") {
+      rect(buf, t.cx - 2, y0 + 1, t.cx + 2, y0 + 5, pal.skin, "vneck", 25);
+    }
+    const gx = key === "e" ? t.cx + 2 : t.cx;
+    rect(buf, gx - 2, y0 + 6, gx + 2, y0 + 10, rgb(255, 250, 240), "number", 26, 1);
   }
   if (av.accessory === "chain" && key !== "n") {
     ellipse(buf, t.cx, y0 + 3, 3.5, 2.2, pal.gold, "chain", 27);
@@ -1090,25 +1294,47 @@ function drawCuffs(buf, av, key, pal, upper, sit) {
   const y0 = t.y0 + upper;
   const pants = pal.pants;
   const shorts = av.bottom === "shorts";
-  const cuffY = shorts ? y0 + t.h + 2 : 49 + (sit ? 2 : 0);
-  // Rounded hips with a flat cuff, leaving a 1-2px gap above the bigger shoes.
+  const skirt = av.bottom === "skirt";
+  const baggy = av.bottom === "baggy";
+  const flares = av.bottom === "flares";
+  const track = av.bottom === "track";
+  const cuffY = (shorts || skirt) ? y0 + t.h + (skirt ? 6 : 2) : 49 + (sit ? 2 : 0);
   const hem = y0 + t.h - 4;
-  rect(buf, t.cx - t.hw + 0.2, hem, t.cx + t.hw - 0.2, cuffY, pants, "pants", 12, 4);
-  ellipse(buf, t.cx, hem + 2, t.hw - 0.2, 3.4, pants, "pants", 12);
-  rect(buf, t.cx - t.hw + 0.4, cuffY - 2, t.cx + t.hw - 0.4, cuffY, pants.sh || pants.mid, "cuff", 13, 1);
-  if (av.bottom === "cargo") {
-    ellipse(buf, t.cx - t.hw + 1.5, cuffY - 5, 2.2, 2.0, pants, "cargo", 13, { shade: "flat" });
-    ellipse(buf, t.cx + t.hw - 1.5, cuffY - 5, 2.2, 2.0, pants, "cargo", 13, { shade: "flat" });
+  const hw = t.hw + (baggy ? 1.6 : 0);
+  if (skirt) {
+    // A-line denim / mini skirt, shoes still visible below.
+    rect(buf, t.cx - hw + 0.2, hem, t.cx + hw - 0.2, cuffY - 1, pants, "skirt", 12, 3);
+    ellipse(buf, t.cx, cuffY - 1, hw + 1.6, 3.2, pants, "skirt-hem", 12);
+  } else {
+    rect(buf, t.cx - hw + 0.2, hem, t.cx + hw - 0.2, cuffY, pants, "pants", 12, 4);
+    ellipse(buf, t.cx, hem + 2, hw - 0.2, 3.4, pants, "pants", 12);
+    const cuffW = flares ? hw + 2.2 : hw;
+    rect(buf, t.cx - cuffW + 0.4, cuffY - 2, t.cx + cuffW - 0.4, cuffY, pants.sh || pants.mid, "cuff", 13, 1);
+    if (flares) {
+      ellipse(buf, t.cx - hw, cuffY - 1, 3.4, 2.4, pants, "flare", 12);
+      ellipse(buf, t.cx + hw, cuffY - 1, 3.4, 2.4, pants, "flare", 12);
+    }
+  }
+  if (av.bottom === "cargo" || shorts) {
+    ellipse(buf, t.cx - hw + 1.5, cuffY - 5, 2.2, 2.0, pants, "cargo", 13, { shade: "flat" });
+    ellipse(buf, t.cx + hw - 1.5, cuffY - 5, 2.2, 2.0, pants, "cargo", 13, { shade: "flat" });
+  }
+  if (track) {
+    const stripe = rgb(255, 240, 160);
+    rect(buf, t.cx - hw + 1, hem + 1, t.cx - hw + 2, cuffY - 1, stripe, "stripe", 14);
+    rect(buf, t.cx + hw - 2, hem + 1, t.cx + hw - 1, cuffY - 1, stripe, "stripe", 14);
   }
   // Sleeve cuffs on the body
-  const long = av.top === "hoodie" || av.top === "jacket";
+  const long = ["hoodie", "jacket", "ziphoodie", "crophoodie", "velour", "varsity", "puffer"].includes(av.top);
   const sy = y0 + 4;
   const r = long ? 3.2 : 2.7;
-  if (key === "e") {
-    ellipse(buf, t.cx + t.hw + 0.4, sy, r, r, pal.shirt, "sleeve-cuff", 24, { shade: "flat" });
-  } else {
-    ellipse(buf, t.cx - t.hw - 0.2, sy, r, r, pal.shirt, "sleeve-cuff", 24, { shade: "flat" });
-    ellipse(buf, t.cx + t.hw + 0.2, sy, r, r, pal.shirt, "sleeve-cuff", 24, { shade: "flat" });
+  if (av.top !== "puffer" && av.top !== "babytee") {
+    if (key === "e") {
+      ellipse(buf, t.cx + t.hw + 0.4, sy, r, r, pal.shirt, "sleeve-cuff", 24, { shade: "flat" });
+    } else {
+      ellipse(buf, t.cx - t.hw - 0.2, sy, r, r, pal.shirt, "sleeve-cuff", 24, { shade: "flat" });
+      ellipse(buf, t.cx + t.hw + 0.2, sy, r, r, pal.shirt, "sleeve-cuff", 24, { shade: "flat" });
+    }
   }
 }
 
@@ -1125,6 +1351,21 @@ function drawSparkles(buf, x, y, phase) {
   }
 }
 
+function headMotion(frame, walk, sit) {
+  // 1-2px gap above the body, no neck. Walk bobble lags the body and overshoots.
+  const gap = -1;
+  if (sit) return { y: gap, x: 0 };
+  if (walk) {
+    const f = ((frame % 8) + 8) % 8;
+    const yTable = [0, 0, -1, -3, -1, 0, -1, -3];
+    const xTable = [0, -1, -1, 0, 0, 1, 1, 0];
+    return { y: gap + yTable[f], x: xTable[f] };
+  }
+  const t = ((frame % 24) + 24) % 24;
+  const floatY = t < 8 ? 0 : t < 16 ? -1 : 0;
+  return { y: gap + floatY, x: 0 };
+}
+
 function composeAvatar(av, flags, frame) {
   const { bodyDir, headDir, walk } = resolvedDirs(flags);
   const bodyView = viewOfDir(bodyDir);
@@ -1137,42 +1378,45 @@ function composeAvatar(av, flags, frame) {
   const breathe = (!walk && !sit) ? ((frame % 16) < 8 ? 0 : -1) : 0;
   const bob = walk ? (pose.bob || 0) : 0;
   const upper = sit ? AV_SEAT_DROP : (bob + breathe);
+  const motion = headMotion(frame, walk, sit);
+  const headUpper = (sit ? AV_SEAT_DROP : 0) + motion.y;
   const emote = flags.actionEmote || "";
-  const hatOn = av.accessory === "cap" || av.accessory === "beanie" || av.accessory === "trucker";
+  const hatOn = av.accessory === "cap" || av.accessory === "beanie" || av.accessory === "trucker" || av.accessory === "bucket" || av.accessory === "fitted";
   const bk = bodyView.key;
 
   let body = makeBuf();
   drawTorso(body, av, bk, pal, upper, sit);
   drawCuffs(body, av, bk, pal, upper, sit);
+  if (bodyView.flip) body = flipBuf(body, true);
+  body = addInkOutline(body);
+  body = addStickerOutline(body);
 
   let head = makeBuf();
   const hk = headView.key;
   if (hk === "n" || hk === "ne") {
-    drawHair(head, av, hk, pal, upper, hatOn);
-    drawHead(head, hk, pal, upper, emote);
-    drawHair(head, av, hk, pal, upper, hatOn);
+    drawHair(head, av, hk, pal, headUpper, hatOn);
+    drawHead(head, hk, pal, headUpper, emote);
+    drawHair(head, av, hk, pal, headUpper, hatOn);
   } else {
-    drawHead(head, hk, pal, upper, emote);
-    drawHair(head, av, hk, pal, upper, hatOn);
-    clearFaceWindow(head, hk, pal, upper);
-    drawFace(head, hk, pal, upper, emote);
+    drawHead(head, hk, pal, headUpper, emote);
+    drawHair(head, av, hk, pal, headUpper, hatOn);
+    clearFaceWindow(head, hk, pal, headUpper);
+    drawFace(head, hk, pal, headUpper, emote);
   }
-  if (av.glasses) drawGlasses(head, hk, upper);
-  if (hatOn) drawHat(head, av, hk, pal, upper);
-  if (av.accessory === "headphones") drawHeadphones(head, av, hk, pal, upper);
+  if (av.glasses || av.accessory === "shades") drawGlasses(head, av, hk, headUpper);
+  if (hatOn) drawHat(head, av, hk, pal, headUpper);
+  if (av.accessory === "headphones") drawHeadphones(head, av, hk, pal, headUpper);
   if (emote === "heart") {
     const g = headGeom(hk);
-    ellipse(head, g.cx + 8, g.cy + upper - 8, 2, 2, rgb(180, 70, 70), "heart", 70, { shade: "flat" });
-    ellipse(head, g.cx + 11, g.cy + upper - 8, 2, 2, rgb(180, 70, 70), "heart", 70, { shade: "flat" });
+    ellipse(head, g.cx + 8, g.cy + headUpper - 8, 2, 2, rgb(220, 80, 90), "heart", 70, { shade: "flat" });
+    ellipse(head, g.cx + 11, g.cy + headUpper - 8, 2, 2, rgb(220, 80, 90), "heart", 70, { shade: "flat" });
   }
   if (headView.flip) head = flipBuf(head, true);
-  drawEyes(head, hk, upper, headView.flip, flags, emote);
-  const dx = neckX(bodyView, upper) - neckX(headView, upper);
+  drawEyes(head, hk, headUpper, headView.flip, flags, emote);
+  const dx = neckX(bodyView, upper) - neckX(headView, headUpper) + (headView.flip ? -motion.x : motion.x);
   if (dx) head = shiftBufXY(head, dx, 0);
-  blitBuf(body, head);
-  if (bodyView.flip) body = flipBuf(body, true);
-  body = addInkOutline(body);
-  body = addStickerOutline(body);
+  head = addInkOutline(head);
+  head = addStickerOutline(head);
 
   const t = torsoBox(bk, sit);
   const aKind = pose.armKind || "idle";
@@ -1220,11 +1464,12 @@ function composeAvatar(av, flags, frame) {
   const nFoot = footSpr(nearFoot);
   const fHand = handSpr(farHand, false, holdingPhone);
   const nHand = handSpr(nearHand, holdingPhone, false);
-  if (backView) layers.push(fFoot, body, nFoot, fHand, nHand);
-  else layers.push(fFoot, fHand, body, nFoot, nHand);
+  if (backView) layers.push(fFoot, body, head, nFoot, fHand, nHand);
+  else layers.push(fFoot, fHand, body, head, nFoot, nHand);
 
   const out = makeBuf();
   for (const layer of layers) blitBuf(out, layer);
+  const cleaned = stripInnerStickers(out);
 
   const pop = Number(flags.shoePop);
   if (pop >= 0 && pop < 480) {
@@ -1237,7 +1482,7 @@ function composeAvatar(av, flags, frame) {
   const shadows = (planted.length ? planted : [farFoot, nearFoot]).map((f) => ({
     x: f.x, y: AV_GROUND_Y + 1.3, rx: 6.5, ry: 2.0,
   }));
-  return { buf: plantOnGround(out), shadows };
+  return { buf: plantOnGround(cleaned), shadows };
 }
 
 function bufToCanvas(buf, shadows) {
@@ -1688,6 +1933,93 @@ export function paintShoeLineup(canvas, scale = 5) {
 }
 
 
+export function paintBobbleStrip(canvas, look, scale = 5) {
+  look = look || AVATAR_SHEET_LOOKS[0];
+  const frames = 8;
+  const pad = 16, cap = 18, gap = 8, lab = 48;
+  const cw = AV_W * scale, ch = AV_H * scale;
+  const rows = [
+    { label: "Walk", walking: true },
+    { label: "Idle", walking: false },
+  ];
+  canvas.width = lab + pad * 2 + frames * cw + (frames - 1) * gap;
+  canvas.height = pad * 2 + rows.length * (ch + cap) + gap;
+  const ctx = canvas.getContext("2d");
+  ctx.imageSmoothingEnabled = false;
+  ctx.fillStyle = "#f4efe4";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.font = "11px Verdana, sans-serif";
+  ctx.fillStyle = "#2a1c16";
+  rows.forEach((row, r) => {
+    const y = pad + r * (ch + cap + gap);
+    ctx.fillText(row.label, 8, y + ch / 2);
+    for (let f = 0; f < frames; f++) {
+      const x = lab + pad + f * (cw + gap);
+      const spr = drawAvatarSprite(look, { walking: row.walking, bodyDir: 1, headDir: 1, blink: "open" }, f);
+      ctx.drawImage(spr.c, 0, 0, spr.w, spr.h, x, y + cap, cw, ch);
+      if (r === 0) ctx.fillText("f" + f, x + 8, y + 12);
+    }
+  });
+}
+
+export const HAIRCUT_LOOKS = [
+  { label: "Frosted tips", hair: "frosted", hairColor: "#2b1d16" },
+  { label: "Buzz cut", hair: "buzz", hairColor: "#2b1d16" },
+  { label: "Swoop emo", hair: "swoop", hairColor: "#222222" },
+  { label: "Cornrows", hair: "cornrows", hairColor: "#2b1d16" },
+  { label: "Shaggy skater", hair: "shaggy", hairColor: "#6b3a2a" },
+  { label: "High pony", hair: "ponytail", hairColor: "#d4a017" },
+  { label: "Space buns", hair: "spacebuns", hairColor: "#7b4f9c" },
+  { label: "Straight bangs", hair: "straightbangs", hairColor: "#2b1d16" },
+  { label: "Afro puff", hair: "afropuff", hairColor: "#2b1d16" },
+  { label: "Bob + clips", hair: "bobclips", hairColor: "#6b3a2a" },
+];
+
+export function paintHaircutSheet(canvas, scale = 5) {
+  const looks = HAIRCUT_LOOKS;
+  const pad = 16, cap = 18, gap = 12;
+  const cw = AV_W * scale, ch = AV_H * scale;
+  canvas.width = pad * 2 + looks.length * cw + (looks.length - 1) * gap;
+  canvas.height = pad * 2 + ch + cap;
+  const ctx = canvas.getContext("2d");
+  ctx.imageSmoothingEnabled = false;
+  ctx.fillStyle = "#f4efe4";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.font = "11px Verdana, sans-serif";
+  ctx.fillStyle = "#2a1c16";
+  const base = { skin: "#f0c9a8", shirt: "#6c7bff", top: "tshirt", bottom: "jeans", bottomColor: "#3d4f7c", shoes: "white", accessory: "none" };
+  looks.forEach((h, i) => {
+    const x = pad + i * (cw + gap);
+    const spr = drawAvatarSprite({ ...base, hair: h.hair, hairColor: h.hairColor }, { bodyDir: 1, headDir: 1, blink: "open" }, 0);
+    ctx.drawImage(spr.c, 0, 0, spr.w, spr.h, x, pad + cap, cw, ch);
+    ctx.fillText(h.label, x, pad + 12);
+  });
+}
+
+export function paintClothesCatalog(canvas, items, scale = 4) {
+  const pad = 14, cap = 28, gap = 10;
+  const cw = AV_W * scale, ch = AV_H * scale;
+  const cols = 8;
+  const rows = Math.ceil(items.length / cols);
+  canvas.width = pad * 2 + cols * cw + (cols - 1) * gap;
+  canvas.height = pad * 2 + rows * (ch + cap) + (rows - 1) * gap;
+  const ctx = canvas.getContext("2d");
+  ctx.imageSmoothingEnabled = false;
+  ctx.fillStyle = "#f4efe4";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.font = "10px Verdana, sans-serif";
+  ctx.fillStyle = "#2a1c16";
+  const base = { skin: "#f0c9a8", hair: "spiky", hairColor: "#2b1d16", shirt: "#6c7bff", top: "tshirt", bottom: "jeans", bottomColor: "#3d4f7c", shoes: "white", accessory: "none" };
+  items.forEach((it, i) => {
+    const c = i % cols, r = Math.floor(i / cols);
+    const x = pad + c * (cw + gap);
+    const y = pad + r * (ch + cap + gap);
+    const spr = drawAvatarSprite({ ...base, ...(it.item || {}) }, { bodyDir: 1, headDir: 1, blink: "open" }, 0);
+    ctx.drawImage(spr.c, 0, 0, spr.w, spr.h, x, y + cap, cw, ch);
+    ctx.fillText(it.label || it.id, x, y + 12);
+  });
+}
+
 if (typeof window !== "undefined") {
   window.__paintAvatarSheet = paintAvatarSheet;
   window.__paintStoreThumb = paintStoreThumb;
@@ -1700,6 +2032,9 @@ if (typeof window !== "undefined") {
   window.__paintHeadComboSheet = paintHeadComboSheet;
   window.__paintWalkStrip = paintWalkStrip;
   window.__paintShoeLineup = paintShoeLineup;
+  window.__paintBobbleStrip = paintBobbleStrip;
+  window.__paintHaircutSheet = paintHaircutSheet;
+  window.__paintClothesCatalog = paintClothesCatalog;
 }
 
 export default { drawAvatarSprite, paintAvatarSheet, paintStoreThumb, facingIndex8, tickChibiAnim, setChibiAnimOverride, getChibiAnim, AV_W, AV_H, AV_GROUND_Y, AV_HEAD_TOP, AVATAR_SHEET_LOOKS };

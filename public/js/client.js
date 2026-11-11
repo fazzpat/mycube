@@ -1,5 +1,5 @@
 import { createRoom3D, createAvatarPreview } from "./isoRoom.js";
-import { CLOTHING_STOCK, PET_STOCK, PUBLIC_PLACES } from "./storeCatalog.js";
+import { CLOTHING_STOCK, PET_STOCK, PUBLIC_PLACES, clothingSlot, CLOTHING_SLOTS, HAIR_STYLES as CAT_HAIR_STYLES, HAIR_LABELS, TOP_LABELS, BOTTOM_LABELS, ACC_LABELS, BASE_TOPS, BASE_BOTTOMS, BASE_ACCESSORIES, TOPS as CAT_TOPS, BOTTOMS as CAT_BOTTOMS, ACCESSORIES as CAT_ACCESSORIES } from "./storeCatalog.js";
 import { ART_PIECES, paintArtThumb, registerArtCatalog, installPaintings } from "./artPieces.js";
 import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, snapshot as cubicsSnap, drawCubics, jokeAt } from "./cubics.js";
 import { initChessUI } from "./chess-ui.js";
@@ -913,7 +913,15 @@ import { initChessUI } from "./chess-ui.js";
 
   function paintPhoneShopCatalog() {
     const kind = state.shopTab;
-    const list = storeStock(kind);
+    if (kind === "clothes" && !state.shopSlot) state.shopSlot = "all";
+    paintSlotTabs("phone-shop-slot-tabs", state.shopSlot || "all", (slot) => {
+      state.shopSlot = slot;
+      const list = storeStock("clothes", slot);
+      const still = list.some((it) => (it.id || it.type) === state.shopSel);
+      if (!still) state.shopSel = (list[0] && (list[0].id || list[0].type)) || null;
+      paintPhoneShopCatalog();
+    });
+    const list = storeStock(kind, kind === "clothes" ? state.shopSlot : null);
     if (!state.shopSel || !list.some((s) => (s.id || s.type) === state.shopSel)) {
       state.shopSel = (list[0] && (list[0].id || list[0].type)) || null;
     }
@@ -1224,7 +1232,7 @@ import { initChessUI } from "./chess-ui.js";
     }
     const root = $("#ward-controls");
     if (!root) return;
-    const swatch = (list, key, label, asColor) => {
+    const swatch = (list, key, label, asColor, names) => {
       const row = document.createElement("div");
       row.innerHTML = `<h4>${label}</h4>`;
       const wrap = document.createElement("div");
@@ -1234,7 +1242,7 @@ import { initChessUI } from "./chess-ui.js";
         b.type = "button";
         b.className = asColor ? "swatch" : "choice";
         if (asColor) b.style.background = val;
-        else b.textContent = val;
+        else b.textContent = (names && names[val]) || val;
         b.dataset.testid = `ward-${key}-${i}`;
         if (state.draft[key] === val) b.classList.add("selected");
         b.addEventListener("click", () => { state.draft[key] = val; paintWardrobe(); });
@@ -1244,22 +1252,26 @@ import { initChessUI } from "./chess-ui.js";
       return row;
     };
     root.innerHTML = "";
+    const ownedClothes = state.me?.collection?.clothes || [];
+    const merge = (base, field) => {
+      const list = [...base];
+      for (const it of ownedClothes) {
+        const val = it?.item?.[field];
+        if (val && !list.includes(val)) list.push(val);
+      }
+      if (state.draft?.[field] && !list.includes(state.draft[field])) list.push(state.draft[field]);
+      return list;
+    };
     root.appendChild(swatch(HearthAvatar.SKINS, "skin", "Skin", true));
-    root.appendChild(swatch(HearthAvatar.HAIR_STYLES, "hair", "Hair", false));
+    root.appendChild(swatch(CAT_HAIR_STYLES.length ? CAT_HAIR_STYLES : HearthAvatar.HAIR_STYLES, "hair", "Hair", false, HAIR_LABELS));
     root.appendChild(swatch(HearthAvatar.HAIR_COLORS, "hairColor", "Hair color", true));
     root.appendChild(swatch(HearthAvatar.SHIRTS, "shirt", "Shirt", true));
-    root.appendChild(swatch(HearthAvatar.TOPS, "top", "Top", false));
-    root.appendChild(swatch(HearthAvatar.BOTTOMS, "bottom", "Bottoms", false));
+    root.appendChild(swatch(merge(BASE_TOPS, "top"), "top", "Top", false, TOP_LABELS));
+    root.appendChild(swatch(merge(BASE_BOTTOMS, "bottom"), "bottom", "Bottoms", false, BOTTOM_LABELS));
     root.appendChild(swatch(HearthAvatar.BOTTOM_COLORS, "bottomColor", "Bottom color", true));
-    const shoeList = [...(HearthAvatar.SHOES || [])];
-    const extraShoes = ["skate", "hightop", "boots", "checker"];
-    const ownedClothes = state.me?.collection?.clothes || [];
-    for (const sh of extraShoes) {
-      const owned = ownedClothes.some((it) => it?.item?.shoes === sh) || (state.draft && state.draft.shoes === sh);
-      if (owned && !shoeList.includes(sh)) shoeList.push(sh);
-    }
+    const shoeList = merge(HearthAvatar.SHOES || [], "shoes");
     root.appendChild(swatch(shoeList, "shoes", "Shoes", false));
-    root.appendChild(swatch(HearthAvatar.ACCESSORIES, "accessory", "Accessory", false));
+    root.appendChild(swatch(merge(BASE_ACCESSORIES, "accessory"), "accessory", "Accessory", false, ACC_LABELS));
   }
 
   function enterEditMode() {
@@ -1578,9 +1590,13 @@ import { initChessUI } from "./chess-ui.js";
     if (prev) prev.innerHTML = "";
   }
 
-  function storeStock(kind) {
+  function storeStock(kind, slot) {
     if (kind === "pets") return PET_STOCK;
-    if (kind === "clothes") return CLOTHING_STOCK;
+    if (kind === "clothes") {
+      const s = slot || (kind === state.storeKind ? state.storeSlot : state.shopSlot) || "all";
+      if (!s || s === "all") return CLOTHING_STOCK;
+      return CLOTHING_STOCK.filter((item) => clothingSlot(item) === s);
+    }
     if (kind === "art") {
       const listed = CATALOG.filter((item) => item.surface === "wall").map((item) => {
         const extra = ART_PIECES.find((p) => p.type === item.type);
@@ -1645,11 +1661,36 @@ import { initChessUI } from "./chess-ui.js";
     });
   }
 
+  function paintSlotTabs(hostId, current, onPick) {
+    const host = document.getElementById(hostId);
+    if (!host) return;
+    const clothes = (hostId.includes("phone") ? state.shopTab : state.storeKind) === "clothes";
+    host.classList.toggle("hidden", !clothes);
+    if (!clothes) { host.innerHTML = ""; return; }
+    const slots = ["all", ...CLOTHING_SLOTS];
+    const labels = { all: "All", tops: "Tops", bottoms: "Bottoms", hats: "Hats", accessories: "Accessories", shoes: "Shoes" };
+    host.innerHTML = slots.map((slot) =>
+      `<button type="button" class="store-slot${current === slot ? " on" : ""}" data-testid="${hostId.replace("tabs","")}${slot}" data-slot="${slot}">${labels[slot]}</button>`
+    ).join("");
+    host.querySelectorAll("[data-slot]").forEach((b) => {
+      b.addEventListener("click", () => onPick(b.dataset.slot));
+    });
+  }
+
   function paintStorePanel() {
     const kind = state.storeKind || "clothes";
     const title = $("#store-panel-title");
     if (title) title.textContent = "Shop";
     paintStoreTabs();
+    if (!state.storeSlot) state.storeSlot = "all";
+    paintSlotTabs("store-slot-tabs", state.storeSlot, (slot) => {
+      state.storeSlot = slot;
+      const list = storeStock("clothes", slot);
+      const still = list.some((it) => (it.id || it.type) === state.storeSel);
+      if (!still) state.storeSel = (list[0] && (list[0].id || list[0].type)) || null;
+      paintStorePanel();
+      paintStorePreview();
+    });
     const grid = $("#store-grid");
     if (!grid) return;
     const coins = state.me?.coins ?? 0;
@@ -1693,11 +1734,17 @@ import { initChessUI } from "./chess-ui.js";
       tryon.style.display = kind === "clothes" || kind === "pets" ? "" : "none";
       tryon.textContent = kind === "pets" ? "Preview" : "Try on";
     }
+    const wear = $("#store-wear");
+    if (wear) {
+      wear.style.display = kind === "clothes" && owned ? "" : "none";
+      wear.disabled = !owned;
+    }
   }
 
   function openStorePanel(kind, sku) {
     const k = kind === "pets" ? "pets" : kind === "art" ? "art" : kind === "furniture" ? "furniture" : "clothes";
     state.storeKind = k;
+    if (k === "clothes") state.storeSlot = "all";
     const stock = storeStock(k);
     const idOf = (s) => s.id || s.type;
     state.storeSel = sku && stock.some((s) => idOf(s) === sku) ? sku : idOf(stock[0] || {});
@@ -1726,6 +1773,16 @@ import { initChessUI } from "./chess-ui.js";
       return;
     }
     socket.emit("buyStoreItem", { kind: state.storeKind, id: state.storeSel });
+  });
+  $("#store-wear")?.addEventListener("click", () => {
+    const stock = storeStock(state.storeKind).find((s) => (s.id || s.type) === state.storeSel);
+    const rec = (state.me?.collection?.clothes || []).find((c) => c.catalogId === stock?.id);
+    if (!rec) return;
+    socket.emit("equipClothes", { id: rec.id });
+    const me = state.people.get(state.me?.username);
+    if (me) me.avatar = { ...(me.avatar || {}), ...(rec.item || {}) };
+    if (state.me) state.me.avatar = { ...(state.me.avatar || {}), ...(rec.item || {}) };
+    renderPeople();
   });
 
   function handleFurnitureClick(id, type, extra = {}) {
@@ -3389,7 +3446,7 @@ import { initChessUI } from "./chess-ui.js";
   window.__leaveRoom = () => socket.emit("leaveRoom");
   window.__openStore = (kind, sku) => openStorePanel(kind, sku);
   window.__closeStore = () => closeStorePanel();
-  window.__storeState = () => ({ kind: state.storeKind, sel: state.storeSel, coins: state.me?.coins, collection: state.me?.collection, me: { inventory: state.me?.inventory || [], coins: state.me?.coins } });
+  window.__storeState = () => ({ kind: state.storeKind, sel: state.storeSel, slot: state.storeSlot, coins: state.me?.coins, collection: state.me?.collection, me: { inventory: state.me?.inventory || [], coins: state.me?.coins, avatar: state.me?.avatar } });
   window.__buyStoreSel = () => socket.emit("buyStoreItem", { kind: state.storeKind, id: state.storeSel });
 
   window.__closePhone = () => closePhone();

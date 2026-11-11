@@ -12,20 +12,20 @@ function mix(a, b, t) {
 }
 function tones(hexStr) {
   const mid = hex(hexStr);
-  return { mid, hi: mix(mid, { r: 255, g: 244, b: 228 }, 0.28), sh: mix(mid, { r: 40, g: 24, b: 20 }, 0.28) };
+  return { mid, hi: mix(mid, { r: 255, g: 248, b: 230 }, 0.32), sh: mix(mid, { r: 70, g: 38, b: 32 }, 0.22) };
 }
 
 const INK = { r: 42, g: 28, b: 24 };
 const STICKER = { r: 255, g: 250, b: 244 };
 
 const PALS = {
-  cat:     { fur: tones("#c8883a"), belly: tones("#ecd4b0"), accent: tones("#5a3a20"), nose: { r: 210, g: 120, b: 130 } },
-  dog:     { fur: tones("#b88958"), belly: tones("#efe0c4"), accent: tones("#5a3a1c"), nose: { r: 42, g: 28, b: 24 } },
-  bunny:   { fur: tones("#e8d8cc"), belly: tones("#fff6ee"), accent: tones("#d0b8aa"), nose: { r: 210, g: 120, b: 130 } },
-  fox:     { fur: tones("#c46a28"), belly: tones("#f0e4d4"), accent: tones("#f0e4d4"), nose: { r: 42, g: 28, b: 24 } },
-  hamster: { fur: tones("#c48a48"), belly: tones("#f0d8b0"), accent: tones("#f0d8b0"), nose: { r: 210, g: 120, b: 130 } },
-  parrot:  { fur: tones("#b8443a"), belly: tones("#d8b04a"), accent: tones("#3a7a40"), nose: { r: 216, g: 176, b: 74 } },
-  turtle:  { fur: tones("#5a7a3a"), belly: tones("#c8d080"), accent: tones("#4a6230"), nose: { r: 42, g: 28, b: 24 } },
+  cat:     { fur: tones("#e0a04a"), belly: tones("#ffe8c4"), accent: tones("#7a4a28"), nose: { r: 230, g: 130, b: 140 } },
+  dog:     { fur: tones("#d4a068"), belly: tones("#fff0d4"), accent: tones("#7a4a24"), nose: { r: 60, g: 36, b: 28 } },
+  bunny:   { fur: tones("#f4e6dc"), belly: tones("#fffaf4"), accent: tones("#e0c4b8"), nose: { r: 230, g: 130, b: 140 } },
+  fox:     { fur: tones("#e07830"), belly: tones("#fff0e0"), accent: tones("#fff0e0"), nose: { r: 60, g: 36, b: 28 } },
+  hamster: { fur: tones("#e09a58"), belly: tones("#ffe6c0"), accent: tones("#ffe6c0"), nose: { r: 230, g: 130, b: 140 } },
+  parrot:  { fur: tones("#e05048"), belly: tones("#f0c84a"), accent: tones("#48a050"), nose: { r: 236, g: 196, b: 90 } },
+  turtle:  { fur: tones("#6aaa48"), belly: tones("#e0ec90"), accent: tones("#5a8a3a"), nose: { r: 60, g: 36, b: 28 } },
 };
 
 function aliasKind(kind) {

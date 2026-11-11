@@ -1936,7 +1936,7 @@ input, textarea, select {
   padding: 10px 12px;
   box-shadow: 0 1px 0 #00f0ff33;
 }
-.store-panel-foot { box-shadow: 0 -1px 0 #00f0ff33; }
+.store-panel-foot { box-shadow: 0 -1px 0 #e8c878; }
 .store-panel-body { display: flex; gap: 10px; padding: 10px; min-height: 0; flex: 1; overflow: hidden; }
 .store-preview {
   width: 120px;
@@ -2529,3 +2529,27 @@ input, select, textarea, .chat-input, [data-testid="chat-input"] {
 }
 .phone-shop-tabs { padding: 2px 4px 6px; }
 .phone-shop-tabs .store-tab { font-size: 9px; padding: 3px 6px; }
+
+
+.store-slot-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px 10px 6px;
+}
+.store-slot-tabs.hidden { display: none; }
+.store-slot {
+  font-size: 10px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid #d8c4a0;
+  background: #fffaf0;
+  color: #4a3020;
+  cursor: pointer;
+}
+.store-slot.on {
+  background: #ff8fab;
+  border-color: #ef476f;
+  color: #2a1018;
+  font-weight: 700;
+}

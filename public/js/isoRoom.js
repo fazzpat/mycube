@@ -59,13 +59,13 @@ const NEON = {
 };
 
 const WALL_COLORS = {
-  "paint-cream": { base: "#b4b8c0", grout: "#5a5e64", cap: "#2a2c30", skirt: "#4a4e54", trim: "#3a3c40", accent: "#c4a35a", cyber: false },
-  "paint-sage": { base: "#8a9a86", grout: "#5a6a56", cap: "#2a3228", skirt: "#3a4a36", trim: "#4a5a46", accent: "#6a8a4a", cyber: false },
-  "paint-blush": { base: "#c4a8a6", grout: "#8a6a68", cap: "#4a3230", skirt: "#6a4a48", trim: "#5a3a38", accent: "#c48a80", cyber: false },
-  "paint-slate": { base: "#8a8e9a", grout: "#5a5e6a", cap: "#2a2c34", skirt: "#3a3e4a", trim: "#3a3e4a", accent: "#6a7a9a", cyber: false },
-  "stars-mint": { base: "#8a9a86", grout: "#5a6a56", cap: "#2a3228", skirt: "#3a4a36", trim: "#4a5a46", accent: "#6a8a4a", cyber: false },
-  "dots-peach": { base: "#c4a8a6", grout: "#8a6a68", cap: "#4a3230", skirt: "#6a4a48", trim: "#5a3a38", accent: "#c48a80", cyber: false },
-  "stripes-lilac": { base: "#8a8e9a", grout: "#5a5e6a", cap: "#2a2c34", skirt: "#3a3e4a", trim: "#3a3e4a", accent: "#6a7a9a", cyber: false },
+  "paint-cream": { base: "#efe4d2", grout: "#d4c4a8", cap: "#c4b090", skirt: "#e4d6c0", trim: "#c8b498", accent: "#f0c45a", cyber: false },
+  "paint-sage": { base: "#c5d8b8", grout: "#9ab48c", cap: "#6a8a62", skirt: "#b8ccac", trim: "#8aaa7a", accent: "#7ec05a", cyber: false },
+  "paint-blush": { base: "#f0c8c4", grout: "#d4a09c", cap: "#c48884", skirt: "#e8b8b4", trim: "#d49894", accent: "#f0a0a0", cyber: false },
+  "paint-slate": { base: "#c8d0e0", grout: "#9aa4b8", cap: "#7a8498", skirt: "#b8c0d0", trim: "#8a94a8", accent: "#8aa0d0", cyber: false },
+  "stars-mint": { base: "#c5d8b8", grout: "#9ab48c", cap: "#6a8a62", skirt: "#b8ccac", trim: "#8aaa7a", accent: "#7ec05a", cyber: false },
+  "dots-peach": { base: "#f0c8c4", grout: "#d4a09c", cap: "#c48884", skirt: "#e8b8b4", trim: "#d49894", accent: "#f0a0a0", cyber: false },
+  "stripes-lilac": { base: "#c8d0e0", grout: "#9aa4b8", cap: "#7a8498", skirt: "#b8c0d0", trim: "#8a94a8", accent: "#8aa0d0", cyber: false },
 };
 
 const FLOOR_KIND = { wood: "wood", tile: "tile", carpet: "carpet" };
@@ -108,7 +108,7 @@ function wallPt(wall, t, up) {
   return { sx: p.sx, sy: p.sy - up };
 }
 
-function addOutline(ctx, w, h, color = "#0a0612") {
+function addOutline(ctx, w, h, color = "#5a3a28") {
   const img = ctx.getImageData(0, 0, w, h);
   const d = img.data;
   const out = ctx.createImageData(w, h);
@@ -223,17 +223,17 @@ function floorTileSprite(kind, lights, variant) {
     const dim = lights ? 0 : -36;
     const cx = TW / 2 + 1, cy = 1;
     if (kind === "tile") {
-      const a = shade(variant % 2 ? "#b4b8c0" : "#a8acb4", dim);
-      drawDiamond(ctx, cx, cy, a, shade("#6d727a", dim));
-      ctx.strokeStyle = shade("#8a8e96", dim);
+      const a = shade(variant % 2 ? "#e8e4dc" : "#ddd6cc", dim);
+      drawDiamond(ctx, cx, cy, a, shade("#b8b0a4", dim));
+      ctx.strokeStyle = shade("#ccc4b8", dim);
       ctx.beginPath();
       ctx.moveTo(cx, cy + TH / 2);
       ctx.lineTo(cx + TW / 4, cy + TH / 4);
       ctx.stroke();
     } else if (kind === "carpet") {
-      const a = shade(variant % 3 === 0 ? "#9a2030" : (variant % 3 === 1 ? "#8a1c2a" : "#a42836"), dim);
-      drawDiamond(ctx, cx, cy, a, shade("#5a1018", dim));
-      ctx.strokeStyle = shade("#d4a04a", dim);
+      const a = shade(variant % 3 === 0 ? "#d44a5a" : (variant % 3 === 1 ? "#c43c4c" : "#e05666"), dim);
+      drawDiamond(ctx, cx, cy, a, shade("#8a2030", dim));
+      ctx.strokeStyle = shade("#f0c878", dim);
       ctx.beginPath();
       ctx.moveTo(cx, cy + 6);
       ctx.lineTo(cx + TW / 2 - 8, cy + TH / 2);
@@ -243,9 +243,9 @@ function floorTileSprite(kind, lights, variant) {
       ctx.stroke();
       pset(ctx, cx, cy + TH / 2, shade("#e8c878", dim));
     } else {
-      const woods = ["#8a5a32", "#9a6840", "#7a4e2a", "#a07048"];
-      drawDiamond(ctx, cx, cy, shade(woods[variant % 4], dim), shade("#4a2e18", dim));
-      ctx.strokeStyle = shade("#5a3818", dim);
+      const woods = ["#d4a05a", "#e0b068", "#c89448", "#e8bc78"];
+      drawDiamond(ctx, cx, cy, shade(woods[variant % 4], dim), shade("#a07038", dim));
+      ctx.strokeStyle = shade("#b88848", dim);
       ctx.lineWidth = 1;
       for (let i = 1; i <= 2; i++) {
         const t = i / 3;
@@ -254,7 +254,7 @@ function floorTileSprite(kind, lights, variant) {
         ctx.lineTo(cx + t * TW / 2, cy + t * TH);
         ctx.stroke();
       }
-      pset(ctx, cx - 6, cy + TH / 2, shade("#c4a070", dim));
+      pset(ctx, cx - 6, cy + TH / 2, shade("#f0d090", dim));
     }
   });
 }
@@ -697,9 +697,9 @@ export function createRoom3D(container) {
     const b = tileToScreen(n, n);
     const c = tileToScreen(n, 0);
     const down = (p) => ({ sx: p.sx, sy: p.sy + SLAB });
-    fillPoly(ctx, [a, b, down(b), down(a)], "#5a4030", "#2a1c14");
-    fillPoly(ctx, [b, c, down(c), down(b)], "#6e4e38", "#2a1c14");
-    ctx.strokeStyle = "#1a120c";
+    fillPoly(ctx, [a, b, down(b), down(a)], "#c49258", "#8a6038");
+    fillPoly(ctx, [b, c, down(c), down(b)], "#d4a468", "#8a6038");
+    ctx.strokeStyle = "#8a5a30";
     ctx.beginPath();
     ctx.moveTo(down(a).sx, down(a).sy);
     ctx.lineTo(down(b).sx, down(b).sy);

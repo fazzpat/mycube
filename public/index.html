@@ -272,12 +272,14 @@
           <button type="button" class="store-tab" data-store-tab="pets" data-testid="store-tab-pets">Pets</button>
           <button type="button" class="store-tab" data-store-tab="art" data-testid="store-tab-art">Wall art</button>
         </div>
+        <div class="store-slot-tabs hidden" data-testid="store-slot-tabs" id="store-slot-tabs"></div>
         <div class="store-panel-body">
           <div class="store-preview" id="store-preview" data-testid="store-preview"></div>
           <div class="store-grid" id="store-grid" data-testid="store-grid"></div>
         </div>
         <div class="store-panel-foot">
           <button type="button" class="btn" id="store-tryon" data-testid="store-tryon">Try on</button>
+          <button type="button" class="btn" id="store-wear" data-testid="store-wear" style="display:none">Wear</button>
           <button type="button" class="btn" id="store-buy" data-testid="store-buy" disabled>Buy</button>
         </div>
       </div>
@@ -393,6 +395,7 @@
                   <div class="shop-grid" id="shop-grid"></div>
                 </div>
                 <div id="shop-catalog-pane" class="hidden">
+                  <div class="store-slot-tabs hidden" data-testid="phone-shop-slot-tabs" id="phone-shop-slot-tabs"></div>
                   <div class="store-preview" id="phone-shop-preview" data-testid="phone-shop-preview"></div>
                   <div class="store-grid" id="phone-shop-grid" data-testid="phone-shop-grid"></div>
                   <div class="store-panel-foot">
