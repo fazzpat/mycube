@@ -661,34 +661,75 @@ function alongFront(rect, rot, t, inset, size) {
   return { x: rect.x + inset, y: rect.y + 0.08 + u * Math.max(0, rect.h - 0.16 - size), w: size, h: size };
 }
 
-function paintSideArt(ctx, corners, lights) {
+function paintTetrisSide(ctx, corners, lights) {
   if (!corners) return;
-  const teal = lights ? "#2ec4b6" : "#1a4a48";
-  const orange = lights ? "#ff7a3a" : "#5a2e18";
-  const purple = lights ? "#8a4dff" : "#3a2058";
-  const ink = lights ? "#1a1020" : "#0a0810";
-  faceRect(ctx, corners, 0, 0.00, 1, 1, lights ? "#2a1848" : "#181022", null);
-  faceRect(ctx, corners, 0, 0.10, 1, 0.22, teal, null);
-  faceRect(ctx, corners, 0, 0.22, 1, 0.30, orange, null);
-  faceRect(ctx, corners, 0, 0.30, 1, 0.36, purple, null);
-  faceRect(ctx, corners, 0.18, 0.46, 0.82, 0.78, lights ? "#1a1230" : "#0e0a18", ink);
-  faceRect(ctx, corners, 0.28, 0.54, 0.48, 0.72, lights ? "#ef476f" : "#4a2030", null);
-  faceRect(ctx, corners, 0.52, 0.54, 0.72, 0.72, lights ? "#f4c15d" : "#4a3a18", null);
-  faceRect(ctx, corners, 0, 0.86, 1, 0.94, teal, null);
+  const bg = lights ? "#141418" : "#0a0a0c";
+  const ink = lights ? "#050805" : "#000000";
+  const hi = lights ? "#b8ff6a" : "#2a4a28";
+  const mid = lights ? "#39ff14" : "#1c5a28";
+  const lo = lights ? "#1ebd3a" : "#143820";
+  faceRect(ctx, corners, 0, 0, 1, 1, bg, null);
+  // 4x12 cell pattern of stacked O/T/L/S/I squares (row 0 = top of art area).
+  // Leave a band at the bottom for vent slots.
+  const filled = new Set([
+    // O
+    "1,0", "2,0", "1,1", "2,1",
+    // L
+    "0,2", "0,3", "0,4", "1,4",
+    // T
+    "1,5", "0,6", "1,6", "2,6",
+    // S
+    "1,7", "2,7", "0,8", "1,8",
+    // I
+    "3,3", "3,4", "3,5", "3,6",
+    // O
+    "2,9", "3,9", "2,10", "3,10",
+    // extra square to finish the stack
+    "0,10",
+  ]);
+  const cols = 4, rows = 12;
+  const u0 = 0.12, u1 = 0.88, v0 = 0.20, v1 = 0.96;
+  const gap = 0.10;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (!filled.has(c + "," + r)) continue;
+      const cu0 = u0 + (c / cols) * (u1 - u0);
+      const cu1 = u0 + ((c + 1) / cols) * (u1 - u0);
+      const cv1 = v1 - (r / rows) * (v1 - v0);
+      const cv0 = v1 - ((r + 1) / rows) * (v1 - v0);
+      const du = (cu1 - cu0) * gap;
+      const dv = (cv1 - cv0) * gap;
+      faceRect(ctx, corners, cu0, cv0, cu1, cv1, ink, null);
+      faceRect(ctx, corners, cu0 + du, cv0 + dv, cu1 - du, cv1 - dv, mid, null);
+      // tiny highlight on the top-left of each square
+      faceRect(ctx, corners, cu0 + du, cv1 - dv - (cv1 - cv0 - dv * 2) * 0.35, cu0 + du + (cu1 - cu0 - du * 2) * 0.45, cv1 - dv, hi, null);
+      if (!lights) faceRect(ctx, corners, cu0 + du, cv0 + dv, cu1 - du, cv1 - dv, lo, null);
+    }
+  }
+  if (lights) {
+    ctx.globalAlpha = 0.16;
+    faceRect(ctx, corners, 0.08, 0.18, 0.92, 0.98, "#39ff14", null);
+    ctx.globalAlpha = 1;
+  }
+  // Vertical vent slots near the bottom of the side panel.
+  const vent = lights ? "#0a0a0c" : "#050506";
+  const ventEdge = lights ? "#3a3a42" : "#1a1a1e";
+  for (const u of [0.20, 0.42, 0.64]) {
+    faceRect(ctx, corners, u, 0.03, u + 0.12, 0.17, ventEdge, null);
+    faceRect(ctx, corners, u + 0.03, 0.05, u + 0.09, 0.15, vent, null);
+  }
 }
 
-/** Classic 80s upright cabinet for the Cubics game (id stays cubics). */
-function paintCubicsGlyphs(ctx, corners, text, color, u0, v0, u1, v1) {
+function paintCubicsGlyphs(ctx, corners, text, color, u0, v0, u1, v1, gap = 0.08) {
   const glyphs = {
     C: ["###","#  ","#  ","#  ","###"],
     U: ["# #","# #","# #","# #","###"],
     B: ["## ","# #","## ","# #","## "],
     I: ["###"," # "," # "," # ","###"],
     E: ["###","#  ","## ","#  ","###"],
-    S: [" ##","#  ","## ","  #","## "],
+    S: ["###","#  ","###","  #","###"],
   };
   const letters = String(text).split("");
-  const gap = 0.12;
   const slot = (1 - gap * (letters.length - 1) / Math.max(1, letters.length)) / letters.length;
   letters.forEach((ch, i) => {
     const rows = glyphs[ch];
@@ -709,58 +750,144 @@ function paintCubicsGlyphs(ctx, corners, text, color, u0, v0, u1, v1) {
   });
 }
 
+function cabinetFoot(full, rot, size) {
+  const r = normalizeFurnRot(rot);
+  const slackX = Math.max(0, full.w - size);
+  const slackY = Math.max(0, full.h - size);
+  // Park the cabinet at the back of the tile so a stool can sit in front.
+  let x = full.x + slackX / 2;
+  let y = full.y + slackY / 2;
+  if (r === 0) y = full.y;
+  else if (r === 1) x = full.x;
+  else if (r === 2) y = full.y + slackY;
+  else x = full.x + slackX;
+  return { x, y, w: size, h: size };
+}
+
+function stoolFoot(bx, by, bw, bh, rot, size) {
+  const r = normalizeFurnRot(rot);
+  const s = size;
+  const gap = 0.03;
+  if (r === 0) return { x: bx + 0.02, y: by + bh + gap, w: s, h: s };
+  if (r === 1) return { x: bx + bw + gap, y: by + 0.02, w: s, h: s };
+  if (r === 2) return { x: bx + bw - s - 0.02, y: by - s - gap, w: s, h: s };
+  return { x: bx - s - gap, y: by + bh - s - 0.02, w: s, h: s };
+}
+
+function drawArcadeStool(ctx, x, y, w, h, lights) {
+  const seat = pal("#3a3a42", lights);
+  const rim = pal("#2a2a30", lights);
+  const leg = pal("#e8e8ee", lights);
+  const foot = pal("#d0d0d6", lights);
+  const lw = Math.min(w, h) * 0.16;
+  // White tripod: three legs plus a tiny hub.
+  const legs = [
+    [x + w * 0.42, y + h * 0.08],
+    [x + w * 0.08, y + h * 0.70],
+    [x + w * 0.74, y + h * 0.62],
+  ];
+  for (const [lx, ly] of legs) box(ctx, lx, ly, lw, lw, 0, 8, leg);
+  box(ctx, x + w * 0.36, y + h * 0.36, w * 0.28, h * 0.28, 0, 2, foot);
+  box(ctx, x + 0.02, y + 0.02, w - 0.04, h - 0.04, 8, 2.4, rim);
+  box(ctx, x + 0.05, y + 0.05, w - 0.10, h - 0.10, 10.4, 1.6, seat);
+}
+
+/** Axis-aligned pixel letters so CUBICS stays readable after iso shear. */
+function paintUprightGlyphs(ctx, corners, text, color, u0 = 0, v0 = 0, u1 = 1, v1 = 1) {
+  const glyphs = {
+    C: ["###","#  ","#  ","#  ","###"],
+    U: ["# #","# #","# #","# #","###"],
+    B: ["## ","# #","## ","# #","## "],
+    I: ["###"," # "," # "," # ","###"],
+    S: ["###","#  ","###","  #","###"],
+  };
+  const [bl, br, tr, tl] = corners;
+  const p = (u, v) => lerp2(lerp2(bl, br, u), lerp2(tl, tr, u), v);
+  const mid = p((u0 + u1) / 2, (v0 + v1) / 2);
+  const letters = String(text).split("");
+  const letterW = 3, letterH = 5, gap = 1;
+  const totalW = letters.length * letterW + Math.max(0, letters.length - 1) * gap;
+  const startX = Math.round(mid.x - totalW / 2);
+  const startY = Math.round(mid.y - letterH / 2);
+  ctx.fillStyle = color;
+  letters.forEach((ch, i) => {
+    const rows = glyphs[ch];
+    if (!rows) return;
+    const ox = startX + i * (letterW + gap);
+    for (let r = 0; r < rows.length; r++) {
+      for (let c = 0; c < rows[r].length; c++) {
+        if (rows[r][c] !== "#") continue;
+        ctx.fillRect(ox + c, startY + r, 1, 1);
+      }
+    }
+  });
+}
+
+/** Classic upright cabinet for the Cubics game (id stays cubics). */
 function drawRetroArcade(ctx, tw, th, rot, lights, flicker = 0) {
-  const full = insetBox(tw, th);
-  const bw = full.w * 0.82;
-  const bh = full.h * 0.82;
-  const bx = full.x + (full.w - bw) / 2;
-  const by = full.y + (full.h - bh) / 2;
+  const area = { x: 0.04, y: 0.04, w: tw - 0.08, h: th - 0.08 };
+  const body = cabinetFoot(area, rot, 0.66);
+  const bx = body.x, by = body.y, bw = body.w, bh = body.h;
   const BODY = 52;
-  const MARQUEE_H = 18;
+  const MARQUEE_H = 16;
   const r = normalizeFurnRot(rot);
   const front = visibleFront(rot);
   const sideWhich = front === "+y" ? "+x" : front === "+x" ? "+y" : null;
-  const bodyPal = pal("#252033", lights);
-  shadow(ctx, full.x, full.y, full.w, full.h, 0.34);
+  const bodyPal = pal("#1a1a1e", lights, { top: "#3a3a42", left: "#242428", right: "#121214" });
+  // Force charcoal face contrast so the black cabinet doesn't read as a blob.
+  if (lights) {
+    bodyPal.top = "#3a3a44";
+    bodyPal.left = "#26262c";
+    bodyPal.right = "#101014";
+    bodyPal.outline = "#050508";
+  } else {
+    bodyPal.top = "#24242a";
+    bodyPal.left = "#18181c";
+    bodyPal.right = "#0c0c10";
+    bodyPal.outline = "#000000";
+  }
+  shadow(ctx, area.x, area.y, area.w, area.h, 0.36);
   box(ctx, bx, by, bw, bh, 0, BODY, bodyPal);
 
-  const sideFace = sideWhich
-    ? faceCorners(bx, by, bw, bh, 0, BODY, sideWhich)
-    : null;
-  if (sideFace) paintSideArt(ctx, sideFace, lights);
-  else {
-    paintSideArt(ctx, faceCorners(bx, by, bw, bh, 0, BODY, "+y"), lights);
-    paintSideArt(ctx, faceCorners(bx, by, bw, bh, 0, BODY, "+x"), lights);
+  const paintSides = sideWhich
+    ? [sideWhich]
+    : ["+y", "+x"];
+  for (const which of paintSides) {
+    paintTetrisSide(ctx, faceCorners(bx, by, bw, bh, 0, BODY, which), lights);
   }
+
+  const neon = lights ? "#39ff14" : "#1a4a22";
+  const neonHi = lights ? "#b8ff6a" : "#2a5a30";
+  const screenOn = lights
+    ? (flicker === 0 ? "#3ee01a" : flicker === 1 ? "#34c816" : "#4af026")
+    : "#14381a";
+  const bezel = lights ? "#0c0c10" : "#08080a";
+  const outline = bodyPal.outline;
 
   if (front) {
     const fc = faceCorners(bx, by, bw, bh, 0, BODY, front);
-    const outline = bodyPal.outline;
-    faceRect(ctx, fc, 0.08, 0.00, 0.92, 0.28, lights ? "#1a1624" : "#0c0a10", outline);
-    faceRect(ctx, fc, 0.28, 0.05, 0.72, 0.24, lights ? "#121018" : "#0a0810", outline);
-    faceRect(ctx, fc, 0.42, 0.12, 0.58, 0.18, lights ? "#f4c15d" : "#3a3018", null);
-    if (lights) faceRect(ctx, fc, 0.44, 0.135, 0.56, 0.165, "#ffe08a", null);
-    faceRect(ctx, fc, 0.62, 0.09, 0.70, 0.17, lights ? "#2a2430" : "#141018", outline);
+    // Lower front: coin door
+    faceRect(ctx, fc, 0.08, 0.00, 0.92, 0.28, lights ? "#16161a" : "#0c0c0e", outline);
+    faceRect(ctx, fc, 0.28, 0.04, 0.72, 0.24, lights ? "#2a2a32" : "#16161a", outline);
+    // Neon-green trim around the door
+    faceRect(ctx, fc, 0.28, 0.04, 0.72, 0.06, neon, null);
+    faceRect(ctx, fc, 0.28, 0.22, 0.72, 0.24, neon, null);
+    faceRect(ctx, fc, 0.42, 0.11, 0.58, 0.17, lights ? "#f4c15d" : "#3a3018", null);
+    if (lights) faceRect(ctx, fc, 0.44, 0.125, 0.56, 0.155, "#ffe08a", null);
+    // Coin return
+    faceRect(ctx, fc, 0.62, 0.08, 0.70, 0.16, lights ? "#1a1a1e" : "#0c0c10", outline);
 
-    faceRect(ctx, fc, 0.08, 0.46, 0.92, 0.98, lights ? "#14141c" : "#0a0a10", outline);
-    const screen = lights
-      ? (flicker === 0 ? "#10281c" : flicker === 1 ? "#0e2418" : "#14301f")
-      : "#0a100e";
-    faceRect(ctx, fc, 0.14, 0.52, 0.86, 0.93, screen, null);
-    const blocks = [
-      [0.20, 0.57, 0.36, 0.71, "#ef476f"],
-      [0.36, 0.57, 0.52, 0.71, "#f4c15d"],
-      [0.36, 0.71, 0.52, 0.85, "#3dcf8e"],
-      [0.52, 0.71, 0.68, 0.85, "#5ce1ff"],
-    ];
-    for (const b of blocks) {
-      let c = lights ? b[4] : shade(b[4], -55);
-      if (lights && flicker === 2) c = shade(c, -18);
-      faceRect(ctx, fc, b[0], b[1], b[2], b[3], c, null);
-    }
+    // Big CRT bezel + glossy green screen
+    faceRect(ctx, fc, 0.07, 0.40, 0.93, 0.98, bezel, outline);
+    faceRect(ctx, fc, 0.13, 0.46, 0.87, 0.93, screenOn, null);
     if (lights) {
-      ctx.globalAlpha = flicker === 1 ? 0.18 : 0.11;
-      faceRect(ctx, fc, 0.14, 0.52, 0.86, 0.93, "#7cffb0", null);
+      ctx.globalAlpha = flicker === 1 ? 0.14 : 0.22;
+      faceRect(ctx, fc, 0.13, 0.46, 0.87, 0.93, "#9aff70", null);
+      ctx.globalAlpha = 1;
+      // Glossy rounded-CRT highlight
+      faceRect(ctx, fc, 0.18, 0.78, 0.48, 0.90, "#e8ffe0", null);
+      ctx.globalAlpha = 0.45;
+      faceRect(ctx, fc, 0.20, 0.70, 0.36, 0.80, "#ffffff", null);
       ctx.globalAlpha = 1;
     }
   }
@@ -769,45 +896,64 @@ function drawRetroArcade(ctx, tw, th, rot, lights, flicker = 0) {
   const panelH = 7;
   const grow = 0.05;
   const panelBox = sliceFront(bx - grow * 0.25, by - grow * 0.25, bw + grow * 0.5, bh + grow * 0.5, r, 0.42);
-  const panelPal = pal("#1c1826", lights);
+  const panelPal = pal("#141418", lights);
+  if (lights) {
+    panelPal.top = "#2c2c34";
+    panelPal.left = "#1c1c22";
+    panelPal.right = "#0c0c10";
+    panelPal.outline = "#050508";
+  }
   box(ctx, panelBox.x, panelBox.y, panelBox.w, panelBox.h, panelLift, panelH, panelPal);
   if (front) {
     const pc = faceCorners(panelBox.x, panelBox.y, panelBox.w, panelBox.h, panelLift, panelH, front);
-    faceRect(ctx, pc, 0.06, 0.05, 0.94, 0.95, lights ? "#241e30" : "#141018", panelPal.outline);
+    faceRect(ctx, pc, 0.06, 0.05, 0.94, 0.95, lights ? "#1a1a20" : "#101014", panelPal.outline);
+    faceRect(ctx, pc, 0.06, 0.86, 0.94, 0.95, neon, null);
   }
-  const joy = alongFront(panelBox, r, 0.18, 0.10, 0.12);
-  box(ctx, joy.x, joy.y, joy.w, joy.h, panelLift + panelH, 3, pal("#c4b8a8", lights));
-  box(ctx, joy.x + 0.03, joy.y + 0.03, joy.w - 0.06, joy.h - 0.06, panelLift + panelH + 3, 4, pal(lights ? "#ef476f" : "#4a2030", lights));
-  const btnColors = [lights ? "#ff5a6a" : "#4a2028", lights ? "#2ec4b6" : "#1a4a48", lights ? "#f4c15d" : "#4a3a18"];
+  const joy = alongFront(panelBox, r, 0.18, 0.10, 0.13);
+  box(ctx, joy.x, joy.y, joy.w, joy.h, panelLift + panelH, 3, pal("#2a2a30", lights));
+  box(ctx, joy.x + 0.03, joy.y + 0.03, joy.w - 0.06, joy.h - 0.06, panelLift + panelH + 3, 5, pal(lights ? "#e82838" : "#4a1820", lights));
+  const btnColors = [lights ? "#e82838" : "#4a1820", lights ? "#f4c15d" : "#4a3a18"];
   btnColors.forEach((c, i) => {
-    const b = alongFront(panelBox, r, 0.52 + i * 0.18, 0.12, 0.10);
-    box(ctx, b.x, b.y, b.w, b.h, panelLift + panelH, 2, pal(c, true));
+    const b = alongFront(panelBox, r, 0.58 + i * 0.20, 0.12, 0.11);
+    box(ctx, b.x, b.y, b.w, b.h, panelLift + panelH, 2.2, pal(c, true));
   });
 
-  // Marquee hangs over the front of the screen rather than sitting as a second story.
-  const mqPad = 0.07;
-  const mq = sliceFront(bx - mqPad, by - mqPad, bw + mqPad * 2, bh + mqPad * 2, r, 0.48);
-  const mqPal = pal(lights ? "#6a1a7a" : "#2a1228", lights);
-  box(ctx, mq.x, mq.y, mq.w, mq.h, BODY, MARQUEE_H, mqPal);
+  // Marquee box on top, slightly wider than the body, CUBICS on one line.
+  const mqPad = 0.14;
+  const mq = sliceFront(bx - mqPad, by - mqPad, bw + mqPad * 2, bh + mqPad * 2, r, 0.50);
+  const mqPal = pal("#141418", lights);
   if (lights) {
-    ctx.globalAlpha = flicker === 0 ? 0.30 : flicker === 1 ? 0.20 : 0.36;
-    const glow = diamond(mq.x - 0.05, mq.y - 0.05, mq.w + 0.10, mq.h + 0.10, BODY + MARQUEE_H * 0.55);
-    fillPts(ctx, [glow.N, glow.E, glow.S, glow.W], "#ff4da6", null);
+    mqPal.top = "#3a3a44";
+    mqPal.left = "#242428";
+    mqPal.right = "#101014";
+    mqPal.outline = "#050508";
+  } else {
+    mqPal.top = "#222226";
+    mqPal.left = "#161618";
+    mqPal.right = "#0a0a0c";
+    mqPal.outline = "#000000";
+  }
+  if (lights) {
+    ctx.globalAlpha = flicker === 0 ? 0.22 : flicker === 1 ? 0.14 : 0.28;
+    const glow = diamond(mq.x - 0.08, mq.y - 0.08, mq.w + 0.16, mq.h + 0.16, BODY + MARQUEE_H * 0.5);
+    fillPts(ctx, [glow.N, glow.E, glow.S, glow.W], "#39ff14", null);
     ctx.globalAlpha = 1;
   }
+  box(ctx, mq.x, mq.y, mq.w, mq.h, BODY, MARQUEE_H, mqPal);
   if (front) {
     const mc = faceCorners(mq.x, mq.y, mq.w, mq.h, BODY, MARQUEE_H, front);
-    faceRect(ctx, mc, 0.05, 0.08, 0.95, 0.94, lights ? "#1a0820" : "#0c0610", mqPal.outline);
-    const word = lights ? (flicker === 1 ? "#ffb0de" : "#ff4da6") : "#5a3850";
-    // Two short rows so each letter is large enough to read in iso.
-    paintCubicsGlyphs(ctx, mc, "CUB", word, 0.12, 0.52, 0.88, 0.92);
-    paintCubicsGlyphs(ctx, mc, "ICS", word, 0.12, 0.10, 0.88, 0.48);
-    if (lights) {
-      ctx.globalAlpha = 0.25;
-      paintCubicsGlyphs(ctx, mc, "CUB", "#ffe8ff", 0.12, 0.52, 0.88, 0.92);
-      paintCubicsGlyphs(ctx, mc, "ICS", "#ffe8ff", 0.12, 0.10, 0.88, 0.48);
-      ctx.globalAlpha = 1;
-    }
+    faceRect(ctx, mc, 0.04, 0.10, 0.96, 0.90, lights ? "#0a0a0c" : "#060608", mqPal.outline);
+    // Neon-green sign plate with upright dark letters — readable at phone zoom.
+    faceRect(ctx, mc, 0.07, 0.18, 0.93, 0.82, neon, null);
+    if (lights) faceRect(ctx, mc, 0.07, 0.70, 0.93, 0.82, neonHi, null);
+    const word = lights ? "#06140a" : "#0a180c";
+    paintUprightGlyphs(ctx, mc, "CUBICS", word, 0.07, 0.18, 0.93, 0.82);
+  }
+
+  // Little arcade stool at the front-left, kept inside the 1x1 tile.
+  const st = stoolFoot(bx, by, bw, bh, r, 0.24);
+  if (st.x >= 0 && st.y >= 0 && st.x + st.w <= 1 && st.y + st.h <= 1) {
+    drawArcadeStool(ctx, st.x, st.y, st.w, st.h, lights);
   }
 }
 
