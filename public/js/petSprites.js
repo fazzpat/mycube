@@ -1,4 +1,4 @@
-/* Original MyCube chibi pets — sticker-outlined, muted, big-headed. */
+/* Original MyCube chibi pets — ink-outlined, muted, big-headed. */
 export const PET_W = 32;
 export const PET_H = 30;
 export const PET_GROUND_Y = 27;
@@ -16,7 +16,16 @@ function tones(hexStr) {
 }
 
 const INK = { r: 42, g: 28, b: 24 };
-const STICKER = { r: 255, g: 250, b: 244 };
+
+function partOutlineColor(c) {
+  const avg = (c.r + c.g + c.b) / 3;
+  const sat = 1.4, dark = 0.40;
+  return {
+    r: Math.max(0, Math.min(255, Math.round((avg + (c.r - avg) * sat) * dark))),
+    g: Math.max(0, Math.min(255, Math.round((avg + (c.g - avg) * sat) * dark))),
+    b: Math.max(0, Math.min(255, Math.round((avg + (c.b - avg) * sat) * dark))),
+  };
+}
 
 const PALS = {
   cat:     { fur: tones("#e0a04a"), belly: tones("#ffe8c4"), accent: tones("#7a4a28"), nose: { r: 230, g: 130, b: 140 } },
@@ -131,28 +140,24 @@ function addInk(buf) {
         if (c && c.slot !== "ink" && c.slot !== "sticker") { n = c; break; }
       }
       if (!n) continue;
-      const col = mix({ r: n.r, g: n.g, b: n.b }, INK, 0.72);
+      const col = partOutlineColor({ r: n.r, g: n.g, b: n.b });
+      next[y * PET_W + x] = { ...col, a: 255, slot: "ink", depth: 80 };
+    }
+  }
+  for (let y = 0; y < PET_H; y++) {
+    for (let x = 0; x < PET_W; x++) {
+      if (x > 0 && y > 0 && x < PET_W - 1 && y < PET_H - 1) continue;
+      const p = buf[y * PET_W + x];
+      if (!p || p.slot === "ink" || p.slot === "sticker" || p.slot === "shadow") continue;
+      const col = partOutlineColor({ r: p.r, g: p.g, b: p.b });
       next[y * PET_W + x] = { ...col, a: 255, slot: "ink", depth: 80 };
     }
   }
   return next;
 }
 function addSticker(buf) {
-  const next = buf.slice();
-  const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
-  for (let y = 0; y < PET_H; y++) {
-    for (let x = 0; x < PET_W; x++) {
-      if (buf[y * PET_W + x]) continue;
-      let hit = false;
-      for (const [dx, dy] of dirs) {
-        const xx = x + dx, yy = y + dy;
-        if (xx < 0 || yy < 0 || xx >= PET_W || yy >= PET_H) continue;
-        if (buf[yy * PET_W + xx]) { hit = true; break; }
-      }
-      if (hit) next[y * PET_W + x] = { ...STICKER, a: 255, slot: "sticker", depth: 90 };
-    }
-  }
-  return next;
+  // White sticker outlines are retired. Pets use a 1px part-colored ink outline only.
+  return buf;
 }
 
 function drawPet(buf, kind, key, pal, sit, walkStep, blink = "open") {
@@ -194,9 +199,9 @@ function drawPet(buf, kind, key, pal, sit, walkStep, blink = "open") {
   if (key !== "n") ellipse(buf, cx + (key === "e" ? 2 : 0), headY + 2.4, hrx * 0.62, hry * 0.5, pal.belly, "muzzle", 21);
   // Ears
   if (kind === "bunny") {
-    ellipse(buf, cx - (key === "e" ? 1 : 5), headY - 9, 2.4, 6.5, pal.fur, "ear", 18);
-    if (key !== "e") ellipse(buf, cx + 5, headY - 9, 2.4, 6.5, pal.fur, "ear", 18);
-    ellipse(buf, cx - (key === "e" ? 1 : 5), headY - 8, 1.1, 4, { r: 230, g: 160, b: 170 }, "ear-in", 19);
+    ellipse(buf, cx - (key === "e" ? 1 : 5), headY - 6.2, 2.2, 4.6, pal.fur, "ear", 18);
+    if (key !== "e") ellipse(buf, cx + 5, headY - 6.2, 2.2, 4.6, pal.fur, "ear", 18);
+    ellipse(buf, cx - (key === "e" ? 1 : 5), headY - 5.4, 1.0, 3.0, { r: 230, g: 160, b: 170 }, "ear-in", 19);
   } else if (kind === "cat" || kind === "fox") {
     // Pointed ears
     ellipse(buf, cx - (key === "e" ? 1 : 5.5), headY - 7.2, 3.0, 3.6, pal.fur, "ear", 18);
@@ -289,14 +294,13 @@ export function drawPetSprite(kind, flags = {}, frame = 0) {
   const view = petViewOfDir(dir);
   const walkStep = walking && !sit ? (frame % 2) : 0;
   const blink = flags.blink || "open";
-  const key = [k, view.key, view.flip ? 1 : 0, sit ? 1 : 0, walking ? 1 : 0, walkStep, blink].join(":");
+  const key = ["ink", k, view.key, view.flip ? 1 : 0, sit ? 1 : 0, walking ? 1 : 0, walkStep, blink].join(":");
   if (cache.has(key)) return cache.get(key);
   let buf = makeBuf();
   drawPet(buf, k, view.key, PALS[k], sit, walkStep, blink);
   if (view.flip) buf = flipBuf(buf, true);
   buf = plantPet(buf);
   buf = addInk(buf);
-  buf = addSticker(buf);
   const spr = bufToCanvas(buf);
   cache.set(key, spr);
   return spr;

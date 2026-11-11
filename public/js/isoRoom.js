@@ -1,9 +1,10 @@
 import { drawAvatarSprite, paintAvatarSheet, paintStoreThumb, AVATAR_SHEET_LOOKS, AV_W, AV_H, AV_GROUND_Y, AV_HEAD_TOP, facingIndex8, tickChibiAnim, setChibiAnimOverride, getChibiAnim } from "./avatar3d.js";
 import { drawPetSprite as drawPetPixel, paintPetSheet, paintPetThumb, PET_W, PET_H, PET_GROUND_Y } from "./petSprites.js";
 import { programAt } from "./cubechannel.js";
+import { getTvScreen, tvChannelName } from "./tvChannels.js";
 import {
   normalizeFurnRot, snapFacingToAxis, furnTileDims, furnSpriteMetrics, furnBlitPos,
-  drawFurnitureSprite, drawChessStoolSprite, paintFurnitureSheet, hitFurnitureAt, FURN_SHEET_TYPES,
+  drawFurnitureSprite, drawChessStoolSprite, paintFurnitureSheet, hitFurnitureAt, FURN_SHEET_TYPES, tvGlowColor,
 } from "./furnIso.js";
 import { doorSlot as layoutDoorSlot, switchSlot as layoutSwitchSlot, windowSlots as layoutWindowSlots } from "./wallLayout.js";
 import { chessSeatPose, chessBoardMetrics } from "./chessTable.js";
@@ -15,21 +16,24 @@ const TW = 64;
 const TH = 32;
 const WALL_H = 88;
 const FOLLOW_ZOOM_DEFAULT = 2;
-const ZOOMS = [1, 2, 3];
+const USER_ZOOM_MIN = 1;
+const USER_ZOOM_MAX = 4;
+const TAP_SLOP = 8;
 
 function isPhoneView() {
   if (typeof window === "undefined") return false;
   return window.innerWidth <= 820;
 }
 
+function clampUserZoom(z) {
+  const n = Number(z);
+  if (!Number.isFinite(n)) return FOLLOW_ZOOM_DEFAULT;
+  return Math.max(USER_ZOOM_MIN, Math.min(USER_ZOOM_MAX, n));
+}
+
 function snapZoom(z) {
-  const n = Number(z) || 1;
-  let best = 1, d = Infinity;
-  for (const v of ZOOMS) {
-    const dd = Math.abs(v - n);
-    if (dd < d) { best = v; d = dd; }
-  }
-  return best;
+  // Kept for older callers; new camera uses continuous 1x–4x zoom.
+  return clampUserZoom(z);
 }
 
 function hexToRgb(hex) {
@@ -466,7 +470,16 @@ export function createRoom3D(container) {
   let isFurnInteractive = null;
   let panStart = null;
   const pointers = new Map();
-  let pinchStart = 0, pinchZoom0 = 1;
+  let pinchStart = 0, pinchZoom0 = 1, pinchCamX = 0, pinchCamY = 0;
+  let pinchAnchor = null;
+  let zoomTarget = 1;
+  let followPaused = false;
+  let autoFit = !isPhoneView();
+  let panLocked = false;
+  let velX = 0, velY = 0;
+  let lastTapAt = 0, lastTapX = 0, lastTapY = 0;
+  let didPinch = false;
+  let movedThisGesture = false;
   let onTileClick = null, onTileHover = null, onFurnitureClick = null;
   let onSwitchClick = null, onSwitchTap = null, onWallClick = null, onWallHover = null;
   const personState = new Map();
@@ -535,25 +548,77 @@ export function createRoom3D(container) {
     const fit = Math.min(sx, sy);
     zoom = fit >= 1 ? 1 : Math.max(0.45, fit);
   }
+  function personWalking() {
+    const name = followName || (people[0] && people[0].username);
+    const st = name && personState.get(name);
+    const p = people.find((x) => x.username === name) || people[0];
+    return Boolean(st?.walking || p?.walking);
+  }
   function followCamera() {
+    if (personWalking()) followPaused = false;
+    if (followPaused) return;
     const name = followName || (people[0] && people[0].username);
     const p = people.find((x) => x.username === name) || people[0];
     const t = p ? tileToScreen((p.x ?? 0) + 0.5, (p.y ?? 0) + 0.5) : tileToScreen(gridSize / 2, gridSize / 2);
     camX += (t.sx - camX) * 0.18;
     camY += (t.sy - AV_H / 2 - camY) * 0.18;
-    zoom = snapZoom(userZoom);
+  }
+  function clampCamSoft() {
+    const b = roomWorldBounds();
+    const halfW = viewW / (2 * Math.max(0.2, zoom));
+    const halfH = viewH / (2 * Math.max(0.2, zoom));
+    const slackX = Math.min(80, Math.max(24, b.w * 0.2));
+    const slackY = Math.min(80, Math.max(24, b.h * 0.2));
+    const minX = b.minX - halfW + slackX;
+    const maxX = b.maxX + halfW - slackX;
+    const minY = b.minY - halfH + slackY;
+    const maxY = b.maxY + halfH - slackY;
+    const cx = camX < minX ? minX : camX > maxX ? maxX : camX;
+    const cy = camY < minY ? minY : camY > maxY ? maxY : camY;
+    camX += (cx - camX) * 0.22;
+    camY += (cy - camY) * 0.22;
+  }
+  function zoomAtClient(clientX, clientY, nextZoom, now = performance.now()) {
+    const world = worldFromClient(clientX, clientY, now);
+    zoom = nextZoom;
+    const rect = canvas.getBoundingClientRect();
+    const ox = (clientX - rect.left) / zoom - world.sx;
+    const oy = (clientY - rect.top) / zoom - world.sy;
+    camX = viewW / (2 * zoom) - ox;
+    camY = viewH / (2 * zoom) - oy + bobY(now);
+  }
+  function setUserZoomAt(z, clientX, clientY, immediate = false) {
+    const next = clampUserZoom(z);
+    autoFit = false;
+    if (camMode === "room" && isPhoneView()) {
+      camMode = "follow";
+      followPaused = true;
+    }
+    if (clientX != null && clientY != null) {
+      zoomAtClient(clientX, clientY, immediate ? next : zoom);
+    }
+    userZoom = next;
+    zoomTarget = next;
+    if (immediate) zoom = next;
   }
   function applyCamera() {
-    if (!isPhoneView() || camMode === "room") {
+    const fitting = (isPhoneView() && camMode === "room") || (!isPhoneView() && autoFit);
+    if (fitting) {
       fitRoomCamera();
-      if (!isPhoneView()) {
-        const b = roomWorldBounds();
-        const sx = Math.floor(viewW / Math.max(1, b.w + 8));
-        const sy = Math.floor(viewH / Math.max(1, b.h + 8));
-        zoom = Math.max(1, Math.min(3, Math.min(sx, sy) || 1));
-      }
+      zoomTarget = zoom;
+      velX = velY = 0;
     } else {
-      followCamera();
+      zoom += (zoomTarget - zoom) * 0.28;
+      if (Math.abs(zoomTarget - zoom) < 0.004) zoom = zoomTarget;
+      if (isPhoneView() && camMode === "follow") followCamera();
+      if (followPaused || !isPhoneView()) {
+        camX += velX;
+        camY += velY;
+        velX *= 0.88;
+        velY *= 0.88;
+        if (Math.hypot(velX, velY) < 0.04) { velX = 0; velY = 0; }
+        clampCamSoft();
+      }
     }
     if (overlay && overlay.style) overlay.style.setProperty("--iso-zoom", String(zoom));
   }
@@ -583,10 +648,19 @@ export function createRoom3D(container) {
     const phone = isPhoneView();
     if (phone && !lastPhone) {
       camMode = "follow";
-      if (userZoom < 1.15) userZoom = FOLLOW_ZOOM_DEFAULT;
+      followPaused = false;
+      autoFit = false;
+      if (userZoom < 1.15) {
+        userZoom = FOLLOW_ZOOM_DEFAULT;
+        zoomTarget = FOLLOW_ZOOM_DEFAULT;
+        zoom = FOLLOW_ZOOM_DEFAULT;
+      }
     }
     lastPhone = phone;
-    if (phone && camMode === "follow" && userZoom < 1.15) userZoom = FOLLOW_ZOOM_DEFAULT;
+    if (phone && camMode === "follow" && userZoom < 1.15 && !followPaused) {
+      userZoom = FOLLOW_ZOOM_DEFAULT;
+      zoomTarget = FOLLOW_ZOOM_DEFAULT;
+    }
     applyCamera();
   }
   function footOf(tx, ty) {
@@ -642,16 +716,30 @@ export function createRoom3D(container) {
       const m = furnSpriteMetrics(type, rot);
       const pos = furnBlitPos(f.x, f.y, type, rot, tileToScreen);
       const tv = tvs[f.id] || {};
+      const isTv = type === "tv" || type === "holotv";
+      const tvOn = isTv && Boolean(tv.on);
+      let screen = null;
+      let glow = false;
+      if (tvOn) {
+        const { ox, oy } = originAt(now);
+        const vx = (ox + pos.sx) * zoom, vy = (oy + pos.sy) * zoom;
+        const onScreen = vx < viewW + 8 && vy < viewH + 8 && vx + pos.w * zoom > -8 && vy + pos.h * zoom > -8;
+        if (onScreen) {
+          screen = getTvScreen(tv.channel || 0, nowServer(), tv.changedAt || 0);
+          glow = lightsOn;
+        }
+      }
       const spr = drawFurnitureSprite(type, {
         lights: lightsOn,
         rot,
-        on: type === "tv" || type === "holotv" ? Boolean(tv.on) : Boolean(uses[f.id]?.on),
+        on: isTv ? tvOn : Boolean(uses[f.id]?.on),
         open: type === "fridge" ? Boolean(uses[f.id]?.open) : false,
         sku: f.sku,
         brewing: type === "coffeemachine" && uses[f.id]?.phase === "brew",
         steamFrame: type === "coffeemachine" ? steamFrameAt(now) : 0,
+        screen,
       });
-      list.push({ kind: "furn", id: f.id, type, depth: f.x + f.y + (m.tw + m.th) / 2 + 0.2, sx: pos.sx, sy: pos.sy, w: pos.w, h: pos.h, spr, raw: f });
+      list.push({ kind: "furn", id: f.id, type, depth: f.x + f.y + (m.tw + m.th) / 2 + 0.2, sx: pos.sx, sy: pos.sy, w: pos.w, h: pos.h, spr, raw: f, glow });
       if (type === "chesstable") {
         for (const seat of [0, 1]) {
           const pose = chessSeatPose(f, seat);
@@ -1000,6 +1088,14 @@ export function createRoom3D(container) {
         fillPoly(ctx, [a, b, c, d], "rgba(212, 180, 106, 0.28)", "#d4b46a");
       }
       blit(it.spr, it.sx, it.sy, it.alpha ?? 1);
+      if (it.glow) {
+        ctx.save();
+        ctx.fillStyle = tvGlowColor();
+        ctx.beginPath();
+        ctx.ellipse(it.sx + it.w * 0.5, it.sy + it.h * 0.82, it.w * 0.42, 16, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
     }
     ctx.restore();
     requestAnimationFrame(render);
@@ -1065,55 +1161,130 @@ export function createRoom3D(container) {
   }
 
   canvas.addEventListener("pointerdown", (e) => {
-    canvas.setPointerCapture?.(e.pointerId);
+    try { canvas.setPointerCapture?.(e.pointerId); } catch {}
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    velX = velY = 0;
     if (pointers.size === 2) {
       const pts = [...pointers.values()];
       pinchStart = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
-      pinchZoom0 = userZoom;
+      pinchZoom0 = userZoom || zoom;
+      pinchCamX = camX; pinchCamY = camY;
+      pinchAnchor = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+      didPinch = true;
+      panStart = null;
     } else {
+      didPinch = false;
+      movedThisGesture = false;
       panStart = { x: e.clientX, y: e.clientY, camX, camY, t: performance.now() };
     }
   });
   canvas.addEventListener("pointermove", (e) => {
     if (pointers.has(e.pointerId)) pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (pointers.size === 2 && pinchStart) {
+    if (pointers.size >= 2 && pinchStart) {
       const pts = [...pointers.values()];
       const d = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
-      userZoom = snapZoom(pinchZoom0 * (d / Math.max(8, pinchStart)));
+      const midX = (pts[0].x + pts[1].x) / 2;
+      const midY = (pts[0].y + pts[1].y) / 2;
+      const next = pinchZoom0 * (d / Math.max(8, pinchStart));
+      setUserZoomAt(next, midX, midY, true);
+      followPaused = true;
+      didPinch = true;
       return;
     }
-    if (panStart && !isPhoneView()) {
-      camX = panStart.camX - (e.clientX - panStart.x) / zoom;
-      camY = panStart.camY - (e.clientY - panStart.y) / zoom;
+    if (panStart && pointers.size === 1 && !didPinch && !panLocked) {
+      const dx = e.clientX - panStart.x;
+      const dy = e.clientY - panStart.y;
+      if (Math.hypot(dx, dy) >= TAP_SLOP) {
+        movedThisGesture = true;
+        followPaused = true;
+        autoFit = false;
+        if (isPhoneView() && camMode === "room") camMode = "follow";
+        camX = panStart.camX - dx / Math.max(0.2, zoom);
+        camY = panStart.camY - dy / Math.max(0.2, zoom);
+      }
     }
-    handleHover(e);
+    if (!didPinch) handleHover(e);
   });
+  function maybeRecenterTap(e) {
+    const now = performance.now();
+    const dt = now - lastTapAt;
+    const dist = Math.hypot(e.clientX - lastTapX, e.clientY - lastTapY);
+    lastTapAt = now; lastTapX = e.clientX; lastTapY = e.clientY;
+    if (dt > 80 && dt < 340 && dist < 28) {
+      recenterView();
+      return true;
+    }
+    return false;
+  }
   function endPtr(e) {
+    const known = pointers.has(e.pointerId);
     const start = panStart;
     pointers.delete(e.pointerId);
     if (pointers.size < 2) pinchStart = 0;
     if (pointers.size === 0) {
       const dt = start ? performance.now() - start.t : 0;
       const dist = start ? Math.hypot(e.clientX - start.x, e.clientY - start.y) : 0;
+      if (!known && !start) return;
+      if (start && movedThisGesture && !didPinch && !panLocked && dt > 0) {
+        const inv = 1000 / Math.max(16, dt);
+        velX = -(e.clientX - start.x) / Math.max(0.2, zoom) * (16 / Math.max(16, dt)) * 0.85;
+        velY = -(e.clientY - start.y) / Math.max(0.2, zoom) * (16 / Math.max(16, dt)) * 0.85;
+      }
       panStart = null;
-      if (dist < 12 && dt < 500) handleTap(e);
+      const pinched = didPinch;
+      didPinch = false;
+      movedThisGesture = false;
+      // Two fingers never issue a walk/tap.
+      if (!pinched && start && dist < TAP_SLOP && dt < 500) {
+        if (maybeRecenterTap(e)) return;
+        handleTap(e);
+      }
     }
   }
   canvas.addEventListener("pointerup", endPtr);
   canvas.addEventListener("pointercancel", endPtr);
   canvas.addEventListener("wheel", (e) => {
-    if (!isPhoneView()) return;
     e.preventDefault();
-    const dir = e.deltaY > 0 ? -1 : 1;
-    const i = Math.max(0, Math.min(2, ZOOMS.indexOf(snapZoom(userZoom)) + dir));
-    userZoom = ZOOMS[i];
-    if (camMode !== "follow") setCamMode("follow");
+    const factor = Math.exp(-e.deltaY * 0.0018);
+    const base = zoomTarget || userZoom || zoom || 1;
+    setUserZoomAt(base * factor, e.clientX, e.clientY, false);
+    if (isPhoneView() && camMode !== "follow") camMode = "follow";
+    followPaused = true;
   }, { passive: false });
+
+  function recenterView() {
+    followPaused = false;
+    autoFit = !isPhoneView();
+    velX = velY = 0;
+    if (isPhoneView()) {
+      camMode = "room";
+    } else {
+      camMode = "room";
+      autoFit = true;
+    }
+    applyCamera();
+    return camMode;
+  }
 
   function setCamMode(mode) {
     camMode = mode === "room" ? "room" : "follow";
-    if (camMode === "follow" && isPhoneView() && userZoom < 1.15) userZoom = FOLLOW_ZOOM_DEFAULT;
+    followPaused = false;
+    velX = velY = 0;
+    if (camMode === "room") {
+      autoFit = true;
+      fitRoomCamera();
+      zoomTarget = zoom;
+    } else {
+      autoFit = false;
+      if (isPhoneView() && userZoom < 1.15) {
+        userZoom = FOLLOW_ZOOM_DEFAULT;
+        zoomTarget = FOLLOW_ZOOM_DEFAULT;
+        zoom = FOLLOW_ZOOM_DEFAULT;
+      } else {
+        zoomTarget = clampUserZoom(userZoom || zoom || FOLLOW_ZOOM_DEFAULT);
+        userZoom = zoomTarget;
+      }
+    }
     applyCamera();
     return camMode;
   }
@@ -1162,9 +1333,14 @@ export function createRoom3D(container) {
   if (isPhoneView()) {
     camMode = "follow";
     userZoom = FOLLOW_ZOOM_DEFAULT;
+    zoom = FOLLOW_ZOOM_DEFAULT;
+    zoomTarget = FOLLOW_ZOOM_DEFAULT;
+    autoFit = false;
   } else {
     camMode = "room";
     zoom = 1;
+    zoomTarget = 1;
+    autoFit = true;
   }
   resize();
   requestAnimationFrame(render);
@@ -1198,6 +1374,8 @@ export function createRoom3D(container) {
     setLights(on) { lightsOn = on !== false; },
     lightsOn() { return lightsOn; },
     tvOn(id) { return Boolean(tvs[id]?.on); },
+    tvChannel(id) { return tvs[id]?.on ? (tvs[id].channel || 0) : -1; },
+    tvChannelName(id) { return tvs[id]?.on ? tvChannelName(tvs[id].channel || 0) : ""; },
     fridgeOpen(id) { return Boolean(uses[id]?.open); },
     setUses(u) { uses = u || {}; },
     setChessMap(m) { chess = m || {}; },
@@ -1286,9 +1464,10 @@ export function createRoom3D(container) {
     camState() {
       return {
         mode: isPhoneView() ? camMode : "room",
-        zoom: (!isPhoneView() || camMode === "room") ? 1 : snapZoom(userZoom),
+        zoom: (!isPhoneView() || camMode === "room") ? 1 : zoom,
         phone: isPhoneView(),
         follow: followName,
+        paused: Boolean(followPaused),
         target: { x: camX, y: 0, z: camY },
       };
     },
@@ -1298,8 +1477,10 @@ export function createRoom3D(container) {
       return chessBoardMetrics();
     },
     setZoom(z) {
-      userZoom = snapZoom(z);
-      if (isPhoneView() && camMode === "follow") zoom = userZoom;
+      const next = clampUserZoom(z);
+      userZoom = next;
+      zoomTarget = next;
+      if (isPhoneView() && camMode === "follow") zoom = next;
     },
     tapAt(x, y) { handleTap({ clientX: x, clientY: y }); },
     roomFitsView() {
@@ -1319,7 +1500,9 @@ export function createRoom3D(container) {
       camX = saved.camX; camY = saved.camY; zoom = saved.zoom; camMode = saved.camMode; userZoom = saved.userZoom;
       return { ok: clipped.length === 0, clipped, rect: { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height } };
     },
-    setPlacing(type) { placing = type; if (!type) ghost = null; },
+    setPlacing(type) { placing = type; panLocked = Boolean(type); if (!type) ghost = null; },
+    setPanLocked(on) { panLocked = Boolean(on); if (panLocked) { panStart = null; velX = velY = 0; } },
+    recenterView,
     simulateTileClick(tx, ty) { onTileClick?.(tx, ty); },
     simulateFurnitureClick(id, type, extra) { onFurnitureClick?.(id, type, extra || {}); },
     simulateSwitchClick() { onSwitchClick?.(); },

@@ -1691,13 +1691,23 @@ io.on("connection", (socket) => {
     const user = getUser(socket);
     if (!user?.roomId) return;
     const room = rooms.get(user.roomId);
-    const furn = room?.furniture.find((f) => f.id === id && f.type === "tv");
+    const furn = room?.furniture.find((f) => f.id === id && (f.type === "tv" || f.type === "holotv"));
     if (!furn) return;
     ensureRoomExtras(room);
     const cur = room.tvs[id] || { on: false, channel: 0 };
-    cur.on = !cur.on;
+    const now = Date.now();
+    if (!cur.on) {
+      cur.on = true;
+      cur.channel = 0;
+    } else if ((cur.channel || 0) < 3) {
+      cur.channel = (cur.channel || 0) + 1;
+    } else {
+      cur.on = false;
+      cur.channel = 0;
+    }
+    cur.changedAt = now;
     room.tvs[id] = cur;
-    io.to(room.id).emit("tvUpdated", { id, tv: cur, serverTime: Date.now() });
+    io.to(room.id).emit("tvUpdated", { id, tv: cur, serverTime: now });
   });
 
   socket.on("standUp", () => {

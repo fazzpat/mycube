@@ -390,6 +390,68 @@ async function runAppShellFit(browser) {
   check("The chat box uses the full Say something... placeholder", ph === "Say something...", `placeholder=${JSON.stringify(ph)}`);
   await page.screenshot({ path: `${SHOT}/28-app-room.png` });
 
+  await page.evaluate(() => { window.__setCamMode("follow"); window.HouseRoom3D.setZoom(2); });
+  await page.waitForTimeout(120);
+  const beforePan = await page.evaluate(() => window.__camState());
+  const canvasBox = await page.locator(".room3d-root canvas").boundingBox();
+  const panX = Math.round((canvasBox.x + canvasBox.width * 0.55));
+  const panY = Math.round((canvasBox.y + canvasBox.height * 0.45));
+  await page.mouse.move(panX, panY);
+  await page.mouse.down();
+  await page.mouse.move(panX + 54, panY + 28, { steps: 8 });
+  await page.mouse.up();
+  await page.waitForTimeout(80);
+  const afterPan = await page.evaluate(() => window.__camState());
+  check(
+    "Dragging pans the room and pauses follow-cam",
+    Boolean(afterPan?.paused && (Math.abs((afterPan.target?.x ?? 0) - (beforePan.target?.x ?? 0)) > 2 || Math.abs((afterPan.target?.z ?? 0) - (beforePan.target?.z ?? 0)) > 2)),
+    JSON.stringify({ before: beforePan, after: afterPan })
+  );
+  const zoomBeforePinch = afterPan?.zoom;
+  await page.evaluate(({ x, y }) => {
+    const c = document.querySelector(".room3d-root canvas");
+    const fire = (type, id, px, py) => c.dispatchEvent(new PointerEvent(type, {
+      pointerId: id, pointerType: "touch", clientX: px, clientY: py, bubbles: true, cancelable: true, isPrimary: id === 1, width: 12, height: 12,
+    }));
+    fire("pointerdown", 1, x - 30, y);
+    fire("pointerdown", 2, x + 30, y);
+    fire("pointermove", 1, x - 78, y);
+    fire("pointermove", 2, x + 78, y);
+    fire("pointerup", 1, x - 78, y);
+    fire("pointerup", 2, x + 78, y);
+  }, { x: panX, y: panY });
+  await page.waitForTimeout(100);
+  const afterPinch = await page.evaluate(() => window.__camState());
+  check(
+    "Pinching zooms the room smoothly",
+    Boolean(afterPinch?.zoom >= (zoomBeforePinch || 0) + 0.25 && afterPinch.zoom <= 4.05),
+    JSON.stringify({ before: zoomBeforePinch, after: afterPinch })
+  );
+  const twoFingerWalk = await page.evaluate(({ x, y }) => {
+    window.HouseRoom3D.setMoveTarget?.(null, null);
+    const c = document.querySelector(".room3d-root canvas");
+    const fire = (type, id, px, py) => c.dispatchEvent(new PointerEvent(type, {
+      pointerId: id, pointerType: "touch", clientX: px, clientY: py, bubbles: true, cancelable: true, isPrimary: id === 1,
+    }));
+    fire("pointerdown", 1, x - 12, y);
+    fire("pointerdown", 2, x + 12, y);
+    fire("pointerup", 2, x + 12, y);
+    fire("pointerup", 1, x - 12, y);
+    return window.HouseRoom3D.getMoveTarget?.();
+  }, { x: panX, y: panY });
+  check("Two fingers never start a walk", twoFingerWalk == null, JSON.stringify(twoFingerWalk));
+  await page.evaluate(() => window.__setCamMode("follow"));
+  const walkTap = await page.evaluate(() => {
+    const p = window.HouseRoom3D.projectWorld(2, 4);
+    window.HouseRoom3D.tapAt(p.x, p.y);
+    return window.HouseRoom3D.getMoveTarget?.();
+  });
+  check("A short tap still walks to a tile", Boolean(walkTap && (walkTap.x === 2 || walkTap.y === 4 || walkTap.x != null)), JSON.stringify(walkTap));
+  await page.click('[data-testid="cam-recenter"]');
+  await page.waitForTimeout(80);
+  const rec = await page.evaluate(() => ({ cam: window.__camState(), fit: window.HouseRoom3D.roomFitsView() }));
+  check("The recenter button fits the cube on screen", Boolean(rec.cam?.mode === "room" && rec.fit?.ok && rec.cam.zoom <= 1.05), JSON.stringify(rec));
+
   const sizes = [
     { name: "iPhone SE", width: 375, height: 667 },
     { name: "iPhone 14 Pro Max", width: 430, height: 932 },
@@ -1023,6 +1085,46 @@ try {
   check("The head can turn one step away from the body", Boolean(eyeFrames.headTurn), JSON.stringify(eyeFrames));
   check("Pets have blink frames on the face, but not on the back", Boolean(eyeFrames.petBlink && eyeFrames.petBackSame), JSON.stringify(eyeFrames));
 
+  const outline = await alice.evaluate(async () => {
+    const avMod = await import("/js/avatar3d.js?outline=1");
+    const petMod = await import("/js/petSprites.js?outline=1");
+    const count = avMod.countNearWhiteEdgePixels;
+    const looks = [
+      { skin: "#f0c9a8", hair: "spiky", hairColor: "#f4d27a", shirt: "#ef5a5a", top: "tshirt", bottom: "jeans", bottomColor: "#3d4f7c", shoes: "white" },
+      { skin: "#c98a62", hair: "ponytail", hairColor: "#f4d27a", shirt: "#6c7bff", top: "hoodie", bottom: "baggy", bottomColor: "#3d4f7c", shoes: "black", accessory: "beanie" },
+      { skin: "#8d5524", hair: "afropuff", hairColor: "#2b1a12", shirt: "#3d8a3a", top: "varsity", bottom: "jeans", bottomColor: "#2a2a2e", shoes: "gum" },
+      { skin: "#f0c9a8", hair: "spacebuns", hairColor: "#b48cff", shirt: "#f4efe6", top: "tshirt", bottom: "skirt", bottomColor: "#c45a3a", shoes: "white", accessory: "cap" },
+    ];
+    const poses = [
+      { bodyDir: 1, headDir: 1, blink: "open" },
+      { bodyDir: 0, headDir: 0, walk: true },
+      { bodyDir: 7, headDir: 7, sitting: true },
+      { bodyDir: 5, headDir: 5, usingPhone: true },
+      { bodyDir: 3, headDir: 3, actionEmote: "wave" },
+    ];
+    const hits = [];
+    for (const look of looks) {
+      for (const flags of poses) {
+        for (const dir of [0, 1, 2, 3, 4, 5, 6, 7]) {
+          const spr = avMod.drawAvatarSprite(look, { ...flags, bodyDir: dir, headDir: dir }, flags.walk ? 3 : 0);
+          const n = count(spr.c);
+          if (n) hits.push({ kind: "avatar", hair: look.hair, dir, n, flags: Object.keys(flags).join(",") });
+        }
+      }
+    }
+    for (const pet of ["cat", "dog", "bunny", "fox", "parrot"]) {
+      for (const dir of [0, 1, 2, 3, 4, 5, 6, 7]) {
+        for (const sit of [false, true]) {
+          const spr = petMod.drawPetSprite(pet, { dir, sit, blink: "open" }, 0);
+          const n = count(spr.c);
+          if (n) hits.push({ kind: "pet", pet, dir, sit, n });
+        }
+      }
+    }
+    return { hits: hits.slice(0, 12), count: hits.length };
+  });
+  check("Avatar and pet silhouette edges have no white or cream outline", outline.count === 0, JSON.stringify(outline));
+
   log("Speech bubbles: visible in-room, then they rise in row order");
   await alice.evaluate(() => window.__clickTile(2, 3));
   await bob.evaluate(() => window.__clickTile(4, 3));
@@ -1208,6 +1310,34 @@ try {
   await alice.evaluate(() => window.__clickTile(1, 4));
   const walkedAway = await alice.waitForFunction(() => !window.HouseRoom3D.personFlags("alice")?.usingPhone && document.querySelector('[data-testid="phone-overlay"]')?.classList.contains("hidden"), null, { timeout: 8000 }).then(() => true).catch(() => false);
   check("Walking puts the phone away and closes the menu", walkedAway);
+  const dockPhone = await alice.evaluate(() => {
+    const dock = document.querySelector('[data-testid="chat-dock"]');
+    const phone = document.querySelector('[data-testid="phone-btn"]');
+    const emote = document.querySelector('[data-testid="emote-wheel-btn"]');
+    if (!dock || !phone || !emote) return { missing: true };
+    const kids = [...dock.children].map((el) => el.getAttribute("data-testid") || el.id);
+    const pr = phone.getBoundingClientRect();
+    const er = emote.getBoundingClientRect();
+    return {
+      inDock: dock.contains(phone) && dock.contains(emote),
+      order: kids,
+      phoneBeforeEmote: pr.right <= er.left + 1,
+      gap: Math.round(er.left - pr.right),
+    };
+  });
+  check(
+    "The phone button sits in the chat dock next to the emote button",
+    Boolean(dockPhone.inDock && dockPhone.phoneBeforeEmote && dockPhone.order[0] === "phone-btn" && dockPhone.order[1] === "emote-wheel-btn"),
+    JSON.stringify(dockPhone)
+  );
+  await alice.setViewportSize({ width: 360, height: 640 });
+  await alice.waitForTimeout(200);
+  const slim = await alice.evaluate(() => {
+    const input = document.querySelector('[data-testid="chat-input"]');
+    const r = input?.getBoundingClientRect();
+    return { w: r ? Math.round(r.width) : 0, font: input ? parseFloat(getComputedStyle(input).fontSize) : 0 };
+  });
+  check("The chat input stays wide enough on a 360px phone", Boolean(slim.w >= 120 && slim.font >= 16), JSON.stringify(slim));
   await alice.setViewportSize({ width: 1280, height: 800 });
   check("Room controls are packaged as apps on an in-game phone", true);
 
@@ -1393,6 +1523,14 @@ try {
   await alice.evaluate((id) => window.__clickFurniture(id, "tv"), tvId);
   await alice.waitForFunction((id) => window.HouseRoom3D.tvOn(id), tvId);
   check("Tapping the TV toggles a synced screen", await bob.evaluate((id) => window.HouseRoom3D.tvOn(id), tvId));
+  const ch0 = await alice.evaluate((id) => ({ on: window.HouseRoom3D.tvOn(id), ch: window.HouseRoom3D.tvChannel(id), name: window.HouseRoom3D.tvChannelName(id) }), tvId);
+  check("The first tap turns the TV on to channel 0", Boolean(ch0.on && ch0.ch === 0), JSON.stringify(ch0));
+  await alice.evaluate((id) => window.__clickFurniture(id, "tv"), tvId);
+  await alice.waitForFunction((id) => window.HouseRoom3D.tvOn(id) && window.HouseRoom3D.tvChannel(id) === 1, tvId);
+  const ch1 = await alice.evaluate((id) => ({ on: window.HouseRoom3D.tvOn(id), ch: window.HouseRoom3D.tvChannel(id), name: window.HouseRoom3D.tvChannelName(id) }), tvId);
+  const bobCh = await bob.evaluate((id) => ({ on: window.HouseRoom3D.tvOn(id), ch: window.HouseRoom3D.tvChannel(id), name: window.HouseRoom3D.tvChannelName(id) }), tvId);
+  check("A second tap changes the channel", Boolean(ch1.on && ch1.ch === 1 && ch1.name && ch1.name !== ch0.name), JSON.stringify({ ch0, ch1 }));
+  check("The new TV channel is synced to everyone in the cube", Boolean(bobCh.on && bobCh.ch === ch1.ch && bobCh.name === ch1.name), JSON.stringify({ ch1, bobCh }));
   const prog = await alice.evaluate(() => window.HouseRoom3D.tvProgram());
   check(
     "The Cube Channel plays a synced documentary episode",

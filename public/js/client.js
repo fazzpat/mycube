@@ -1322,6 +1322,7 @@ import { initChessUI } from "./chess-ui.js";
     $("#edit-inventory")?.classList.remove("collapsed");
     paintEditInventory();
     state.room3d?.setPlacing("edit");
+    state.room3d?.setPanLocked?.(true);
     closePhone();
   }
 
@@ -1335,6 +1336,7 @@ import { initChessUI } from "./chess-ui.js";
     state.movingId = null;
     state.room3d?.highlightFurniture(null);
     state.room3d?.setPlacing(null);
+    state.room3d?.setPanLocked?.(false);
   }
 
   function paintEditInventory() {
@@ -3014,6 +3016,10 @@ import { initChessUI } from "./chess-ui.js";
   $("#cubics-start")?.addEventListener("click", startCubicsPlay);
   $("#cam-toggle")?.addEventListener("click", () => {
     state.room3d?.toggleCamMode();
+    syncCamToggle();
+  });
+  $("#cam-recenter")?.addEventListener("click", () => {
+    state.room3d?.recenterView?.();
     syncCamToggle();
   });
   document.querySelectorAll("[data-cubic]").forEach((b) => {

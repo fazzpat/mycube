@@ -20,7 +20,7 @@ const TILES = {
 
 const BODY_H = {
   rug: 4, plant: 36, podplant: 38, lamp: 48, table: 18, coffeetable: 14, counter: 20,
-  couch: 26, capsulecouch: 26, chair: 24, hoverchair: 32, bed: 18, tv: 26, holotv: 26,
+  couch: 26, capsulecouch: 26, chair: 24, hoverchair: 32, bed: 18, tv: 38, holotv: 38,
   fridge: 44, kitchenette: 24, bookshelf: 42, chesstable: 14, chessstool: 14, punchbag: 46, heavybag: 46,
   benchpress: 22, treadmill: 30, cubics: 44, pinball: 40, clothescab: 42, coffeemachine: 48,
   djdeck: 18, sodavending: 46, neonsign: 46, rack: 36, mannequin: 42, petpen: 22, cage: 24,
@@ -176,6 +176,37 @@ function faceRect(ctx, corners, u0, v0, u1, v1, fill, stroke) {
   const [bl, br, tr, tl] = corners;
   const p = (u, v) => lerp2(lerp2(bl, br, u), lerp2(tl, tr, u), v);
   fillPts(ctx, [p(u0, v0), p(u1, v0), p(u1, v1), p(u0, v1)], fill, stroke);
+}
+
+function faceImage(ctx, corners, u0, v0, u1, v1, img) {
+  if (!img) return;
+  const [bl, br, tr, tl] = corners;
+  const p = (u, v) => lerp2(lerp2(bl, br, u), lerp2(tl, tr, u), v);
+  const A = p(u0, v0), B = p(u1, v0), D = p(u0, v1);
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
+  ctx.beginPath();
+  const C = p(u1, v1);
+  ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y); ctx.lineTo(C.x, C.y); ctx.lineTo(D.x, D.y); ctx.closePath();
+  ctx.clip();
+  ctx.transform(B.x - A.x, B.y - A.y, D.x - A.x, D.y - A.y, A.x, A.y);
+  ctx.drawImage(img, 0, 0, img.width, img.height, 0, 0, 1, 1);
+  ctx.restore();
+}
+
+function tvLayout(tw, th) {
+  const full = insetBox(tw, th);
+  const standH = 8;
+  const bodyH = 28;
+  const body = { x: full.x + 0.08, y: full.y + 0.1, w: full.w - 0.16, h: full.h - 0.2 };
+  return { full, standH, bodyH, body };
+}
+
+function tvFrontCorners(tw, th, rot) {
+  const L = tvLayout(tw, th);
+  const front = visibleFront(rot);
+  if (!front) return null;
+  return faceCorners(L.body.x, L.body.y, L.body.w, L.body.h, L.standH, L.bodyH, front);
 }
 
 function backRect(tw, th, rot, depth) {
@@ -485,25 +516,63 @@ function drawLamp(ctx, tw, th, lights, lava) {
   }
 }
 
-function drawTV(ctx, tw, th, rot, lights, on, holo) {
-  const full = insetBox(tw, th);
-  const stand = pal("#3a3228", lights);
-  const body = pal("#2a2a2e", lights);
-  shadow(ctx, full.x, full.y, full.w, full.h, 0.3);
-  box(ctx, full.x + 0.1, full.y + 0.1, full.w - 0.2, full.h - 0.2, 0, 6, stand);
-  const unit = { x: full.x, y: full.y, w: full.w, h: full.h };
-  box(ctx, unit.x, unit.y, unit.w, unit.h, 6, 18, body);
+function drawTV(ctx, tw, th, rot, lights, on, holo, screen) {
+  const L = tvLayout(tw, th);
+  const wood = pal("#5a3a28", lights);
+  const cream = pal(holo ? "#3a3a44" : "#e8dcc8", lights);
+  const bezel = pal("#2a2622", lights);
+  shadow(ctx, L.full.x, L.full.y, L.full.w, L.full.h, 0.32);
+  // Chunky stand
+  box(ctx, L.full.x + L.full.w * 0.28, L.full.y + L.full.h * 0.28, L.full.w * 0.44, L.full.h * 0.44, 0, L.standH, wood);
+  box(ctx, L.full.x + 0.18, L.full.y + 0.18, L.full.w - 0.36, L.full.h - 0.36, L.standH - 2, 3, wood);
+  // CRT cabinet
+  box(ctx, L.body.x, L.body.y, L.body.w, L.body.h, L.standH, L.bodyH, cream);
   const front = visibleFront(rot);
+  const r = normalizeFurnRot(rot);
   if (front) {
-    const fc = faceCorners(unit.x, unit.y, unit.w, unit.h, 6, 18, front);
-    const scr = on && lights ? (holo ? "#1a2840" : "#152238") : "#101014";
-    faceRect(ctx, fc, 0.1, 0.18, 0.9, 0.88, scr, "#1a1a1c");
-    if (on && lights) {
-      faceRect(ctx, fc, 0.14, 0.55, 0.9, 0.82, "#3a6aaa", null);
-      faceRect(ctx, fc, 0.14, 0.28, 0.42, 0.5, "#c4a070", null);
-      faceRect(ctx, fc, 0.48, 0.28, 0.86, 0.5, "#6a9a50", null);
+    const fc = faceCorners(L.body.x, L.body.y, L.body.w, L.body.h, L.standH, L.bodyH, front);
+    // Rounded bezel
+    faceRect(ctx, fc, 0.05, 0.08, 0.95, 0.86, lights ? "#2a2622" : "#161412", bezel.outline);
+    faceRect(ctx, fc, 0.10, 0.14, 0.78, 0.80, on && lights ? "#0a1020" : "#09090c", "#111");
+    if (screen && on && lights) {
+      faceImage(ctx, fc, 0.11, 0.15, 0.77, 0.79, screen);
+    } else if (on && lights) {
+      faceRect(ctx, fc, 0.11, 0.15, 0.77, 0.79, holo ? "#1a2840" : "#152238", null);
     }
+    // Glass highlight + slight curve
+    if (lights) {
+      ctx.save();
+      ctx.globalAlpha = 0.28;
+      faceRect(ctx, fc, 0.13, 0.52, 0.32, 0.76, "#e8f0ff", null);
+      ctx.globalAlpha = 0.16;
+      faceRect(ctx, fc, 0.14, 0.18, 0.72, 0.28, "#ffffff", null);
+      ctx.restore();
+    }
+    // CUBEVISION plate and buttons
+    faceRect(ctx, fc, 0.80, 0.18, 0.93, 0.34, lights ? "#c9a25a" : "#6a5a30", "#3a2a14");
+    faceGlyph(ctx, fc, "CUBE", lights ? "#2a1c10" : "#111", 0.805, 0.20, 0.925, 0.33);
+    faceRect(ctx, fc, 0.82, 0.42, 0.87, 0.50, lights ? "#d42838" : "#622", null);
+    faceRect(ctx, fc, 0.88, 0.42, 0.93, 0.50, lights ? "#3d8a3a" : "#242", null);
+    faceRect(ctx, fc, 0.82, 0.54, 0.87, 0.62, lights ? "#3a6aaa" : "#224", null);
+  } else {
+    // Back of the set: vents and a cable
+    const back = r === 2 ? "-y" : "-x";
+    const fc = faceCorners(L.body.x, L.body.y, L.body.w, L.body.h, L.standH, L.bodyH, back);
+    faceRect(ctx, fc, 0.15, 0.25, 0.85, 0.70, lights ? "#c8bca8" : "#5a5248", cream.outline);
+    faceRect(ctx, fc, 0.22, 0.32, 0.78, 0.40, lights ? "#3a3228" : "#1a1612", null);
+    faceRect(ctx, fc, 0.22, 0.44, 0.78, 0.52, lights ? "#3a3228" : "#1a1612", null);
+    faceRect(ctx, fc, 0.46, 0.10, 0.54, 0.22, "#2a2a2e", null);
   }
+  // Rabbit-ear antenna (visible on top for all orientations)
+  const ant = pal("#6a6460", lights);
+  const midX = L.body.x + L.body.w * 0.5, midY = L.body.y + L.body.h * 0.18;
+  box(ctx, midX - 0.04, midY, 0.08, 0.08, L.standH + L.bodyH, 8, ant);
+  box(ctx, midX - 0.22, midY, 0.08, 0.08, L.standH + L.bodyH + 6, 1, ant);
+  box(ctx, midX + 0.14, midY, 0.08, 0.08, L.standH + L.bodyH + 5, 1, ant);
+}
+
+export function tvGlowColor() {
+  return "rgba(120, 180, 255, 0.22)";
 }
 
 function drawFridge(ctx, tw, th, rot, lights, open) {
@@ -777,7 +846,7 @@ function paintPiece(ctx, type, rot, lights, on, open, opts = {}) {
     case "kitchenette": drawTable(ctx, tw, th, r, lights, type); break;
     case "bed": drawBed(ctx, tw, th, r, lights); break;
     case "tv":
-    case "holotv": drawTV(ctx, tw, th, r, lights, on, type === "holotv"); break;
+    case "holotv": drawTV(ctx, tw, th, r, lights, on, type === "holotv", opts.screen); break;
     case "fridge": drawFridge(ctx, tw, th, r, lights, open); break;
     case "chesstable": drawChessTableSmall(ctx, tw, th, r, lights, ISO_DRAW); break;
     case "chessstool": drawChessStool(ctx, tw, th, r, lights, ISO_DRAW); break;
@@ -805,6 +874,8 @@ function paintPiece(ctx, type, rot, lights, on, open, opts = {}) {
   }
 }
 
+const tvScratch = new Map();
+
 export function drawFurnitureSprite(type, opts = {}) {
   if (type === "shopkeeper") return null;
   const lights = opts.lights !== false;
@@ -813,14 +884,34 @@ export function drawFurnitureSprite(type, opts = {}) {
   const open = Boolean(opts.open);
   const brewing = Boolean(opts.brewing);
   const steamFrame = type === "coffeemachine" ? (opts.steamFrame ?? 0) : 0;
+  const screen = opts.screen || null;
   const key = "iso-furn:" + type + ":" + rot + ":" + lights + ":" + on + ":" + open + ":" + (opts.sku || "") + (type === "coffeemachine" ? (":brew" + brewing + ":st" + steamFrame) : "");
   const m = furnSpriteMetrics(type, rot);
-  return sprite(key, m.w, m.h, (ctx) => {
+  const body = sprite(key, m.w, m.h, (ctx) => {
     ctx.save();
     ctx.translate(m.ox, m.oy);
     paintPiece(ctx, type, rot, lights, on, open, { brewing, steamFrame, sku: opts.sku });
     ctx.restore();
   });
+  if (!screen || !on || (type !== "tv" && type !== "holotv")) return body;
+  const sk = m.w + "x" + m.h;
+  let s = tvScratch.get(sk);
+  if (!s) {
+    s = document.createElement("canvas");
+    s.width = body.c.width;
+    s.height = body.c.height;
+    tvScratch.set(sk, s);
+  }
+  const ctx = s.getContext("2d");
+  ctx.imageSmoothingEnabled = false;
+  ctx.clearRect(0, 0, s.width, s.height);
+  ctx.drawImage(body.c, 0, 0);
+  ctx.save();
+  ctx.translate(m.ox, m.oy);
+  const fc = tvFrontCorners(m.tw, m.th, rot);
+  if (fc) faceImage(ctx, fc, 0.11, 0.15, 0.77, 0.79, screen);
+  ctx.restore();
+  return { c: s, w: body.w, h: body.h };
 }
 
 export function drawChessStoolSprite(opts = {}) {

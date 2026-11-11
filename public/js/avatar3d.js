@@ -41,8 +41,20 @@ function mute(hex) {
 }
 
 const INK = rgb(42, 28, 24);
-const STICKER = rgb(255, 250, 244);
 const TEAR = rgb(150, 186, 210);
+
+function partOutlineColor(color) {
+  // 1px selective outline: a darker, more saturated shade of the part's own fill.
+  const c = color || INK;
+  const avg = (c.r + c.g + c.b) / 3;
+  const sat = 1.4;
+  const dark = 0.40;
+  return {
+    r: Math.max(0, Math.min(255, Math.round((avg + (c.r - avg) * sat) * dark))),
+    g: Math.max(0, Math.min(255, Math.round((avg + (c.g - avg) * sat) * dark))),
+    b: Math.max(0, Math.min(255, Math.round((avg + (c.b - avg) * sat) * dark))),
+  };
+}
 
 function tones(hex, warm = false) {
   const b = typeof hex === "string" ? (warm ? hexToRgb(hex) : mute(hex)) : hex;
@@ -102,12 +114,77 @@ function plot(buf, x, y, color, kind, depth = 0) {
   buf[i] = { color, kind, depth };
 }
 
+function plotInside(buf, x, y, color, kind, depth = 0) {
+  // Highlights must stay inside an existing fill so they never become silhouette pixels.
+  x = x | 0; y = y | 0;
+  if (x < 0 || y < 0 || x >= AV_W || y >= AV_H) return;
+  const cur = buf[y * AV_W + x];
+  if (!cur || cur.kind === "ink" || cur.kind === "sticker" || cur.kind === "shadow") return;
+  plot(buf, x, y, color, kind, depth);
+}
+
 function shadeAt(pal, lx, ly) {
   // Flat 2-3 tone cel bands. Light from above, no diagonal smears.
   if (!pal || !pal.hi) return pal;
   if (ly < -0.4) return pal.hi;
   if (ly > 0.46) return pal.sh;
   return pal.mid;
+}
+
+function shadeSide(pal, lx, ly) {
+  // Base, one highlight on the upper-left, one shadow on the right. Never a crown highlight U.
+  if (!pal || !pal.hi) return pal;
+  const lit = -0.62 * lx - 0.22 * ly;
+  if (lit > 0.38) return pal.hi;
+  if (lit < -0.22) return pal.sh;
+  return pal.mid;
+}
+
+function egg(buf, cx, cy, rx, ry, pal, kind, depth = 0, opts = {}) {
+  // Vertical egg: smooth oval, slightly wider below the middle. No square corners.
+  const rxi = Math.ceil(rx) + 2, ryi = Math.ceil(ry) + 2;
+  const flat = opts.shade === "flat" || !pal?.hi;
+  const widenBot = opts.widen == null ? 0.10 : opts.widen;
+  const flatten = opts.flatten == null ? 0.22 : opts.flatten;
+  for (let y = -ryi; y <= ryi; y++) {
+    for (let x = -rxi; x <= rxi; x++) {
+      const ny = y / ry;
+      let rxUse = rx;
+      if (flatten && ny < -0.28) {
+        const t = Math.min(1, (-ny - 0.28) / 0.72);
+        rxUse = rx * (1 + t * flatten);
+      }
+      const widen = 1 + Math.max(0, ny) * widenBot;
+      const nx = x / (rxUse * widen);
+      if (nx * nx + ny * ny > 1) continue;
+      const col = flat ? (pal.mid || pal) : shadeSide(pal, nx, ny);
+      plot(buf, Math.round(cx + x), Math.round(cy + y), col, kind, depth);
+    }
+  }
+}
+
+function eggBelow(buf, cx, cy, rx, ry, minY, pal, kind, depth, opts = {}) {
+  const rxi = Math.ceil(rx) + 2, ryi = Math.ceil(ry) + 2;
+  const flat = opts.shade === "flat" || !pal?.hi;
+  const widenBot = opts.widen == null ? 0.10 : opts.widen;
+  const flatten = opts.flatten == null ? 0.22 : opts.flatten;
+  for (let y = -ryi; y <= ryi; y++) {
+    const py = Math.round(cy + y);
+    if (py < minY) continue;
+    for (let x = -rxi; x <= rxi; x++) {
+      const ny = y / ry;
+      let rxUse = rx;
+      if (flatten && ny < -0.28) {
+        const t = Math.min(1, (-ny - 0.28) / 0.72);
+        rxUse = rx * (1 + t * flatten);
+      }
+      const widen = 1 + Math.max(0, ny) * widenBot;
+      const nx = x / (rxUse * widen);
+      if (nx * nx + ny * ny > 1) continue;
+      const col = flat ? (pal.mid || pal) : shadeSide(pal, nx, ny);
+      plot(buf, Math.round(cx + x), py, col, kind, depth);
+    }
+  }
 }
 
 function ellipse(buf, cx, cy, rx, ry, pal, kind, depth = 0, opts = {}) {
@@ -298,31 +375,45 @@ function addInkOutline(buf) {
         if (c && c.kind !== "ink" && c.kind !== "sticker" && c.kind !== "shadow") { n = c; break; }
       }
       if (!n) continue;
-      const col = mix(n.color || INK, rgb(48, 28, 24), 0.42);
-      next[i] = { color: col, kind: "ink", depth: 80 };
+      next[i] = { color: partOutlineColor(n.color || INK), kind: "ink", depth: 80 };
+    }
+  }
+  // Fills that touch the canvas border have no room for an outward ink pixel.
+  // Recolor those edge fills so a clipped ear or puff never shows a raw light silhouette.
+  for (let y = 0; y < AV_H; y++) {
+    for (let x = 0; x < AV_W; x++) {
+      if (x > 0 && y > 0 && x < AV_W - 1 && y < AV_H - 1) continue;
+      const i = y * AV_W + x;
+      const p = buf[i];
+      if (!p || p.kind === "ink" || p.kind === "sticker" || p.kind === "shadow") continue;
+      next[i] = { color: partOutlineColor(p.color || INK), kind: "ink", depth: 80 };
     }
   }
   return next;
 }
 
-function addStickerOutline(buf) {
+function addContactShade(buf) {
+  // Subtle darker pixels at the bottom of the torso and feet to help them sit on the floor.
   const next = buf.slice();
-  const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
-  for (let y = 0; y < AV_H; y++) {
-    for (let x = 0; x < AV_W; x++) {
-      const i = y * AV_W + x;
-      if (buf[i]) continue;
-      let hit = false;
-      for (const [dx, dy] of dirs) {
-        const xx = x + dx, yy = y + dy;
-        if (xx < 0 || yy < 0 || xx >= AV_W || yy >= AV_H) continue;
-        const c = buf[yy * AV_W + xx];
-        if (c && c.kind !== "shadow") { hit = true; break; }
-      }
-      if (hit) next[i] = { color: STICKER, kind: "sticker", depth: 90 };
+  for (let x = 0; x < AV_W; x++) {
+    let yHit = -1;
+    for (let y = AV_H - 1; y >= 0; y--) {
+      const p = buf[y * AV_W + x];
+      if (!isFill(p)) continue;
+      const k = p.kind || "";
+      if (isTorsoish(k) || /^(shoe|sole|boot)/.test(k)) { yHit = y; break; }
     }
+    if (yHit < 0) continue;
+    const p = next[yHit * AV_W + x];
+    if (!p || !p.color) continue;
+    next[yHit * AV_W + x] = { ...p, color: mix(p.color, rgb(36, 22, 16), 0.22) };
   }
   return next;
+}
+
+function addStickerOutline(buf) {
+  // White sticker outlines are retired. Characters use a 1px part-colored ink outline only.
+  return buf;
 }
 
 function fillToward(buf, x, y, dx, dy, max = 6) {
@@ -343,12 +434,12 @@ function isFill(p) {
 
 function isHeadish(kind) {
   const k = kind || "";
-  return /^(skin-head|skin-jaw|ear|hair|hat|glasses|lens|eye|blush|clip|heart|hp-)/.test(k);
+  return /^(skin-head|skin-jaw|skin-face|ear|hair|hat|glasses|lens|eye|blush|clip|heart|hp-|part)/.test(k);
 }
 
 function isTorsoish(kind) {
   const k = kind || "";
-  return /^(skin-body|top|hood|pouch|placket|collar|zip|midriff|quilt|var-|letter|graphic|number|piping|chain|belt|pants|skirt|cuff|cargo|sleeve|flare|stripe)/.test(k);
+  return /^(skin-body|top|hood|pouch|placket|collar|lapel|vneck|zip|midriff|quilt|var-|letter|graphic|number|piping|chain|belt|pants|skirt|cuff|cargo|sleeve|flare|stripe)/.test(k);
 }
 
 function shaveOpenEdgeStickers(buf, edge) {
@@ -413,7 +504,27 @@ function stripNeckGapStickers(buf) {
     if (hb < 0 || tt >= 99 || tt <= hb) continue;
     for (let y = hb + 1; y < tt; y++) {
       const i = y * AV_W + x;
+      // Keep the 1px dark chin and torso-crown ink; only leftover stickers are cleared.
       if (next[i] && next[i].kind === "sticker") next[i] = null;
+    }
+  }
+  return next;
+}
+
+function shaveTorsoCrownOutlines(buf) {
+  // No ink or sticker on the top edge of the torso (the edge facing the head).
+  // Side stickers stay so the oval keeps a clean outer silhouette.
+  const next = buf.slice();
+  for (let x = 0; x < AV_W; x++) {
+    let top = -1;
+    for (let y = 0; y < AV_H; y++) {
+      const p = buf[y * AV_W + x];
+      if (isFill(p) && isTorsoish(p.kind)) { top = y; break; }
+    }
+    if (top < 0) continue;
+    for (let y = Math.max(0, top - 2); y < top; y++) {
+      const i = y * AV_W + x;
+      if (next[i] && (next[i].kind === "sticker" || next[i].kind === "ink")) next[i] = null;
     }
   }
   return next;
@@ -432,11 +543,12 @@ function buildPalette(av) {
 
 /* ---------- geometry per view ---------- */
 function headGeom(key) {
-  // Head is ~45% of figure height (about 28px of 61).
-  if (key === "e") return { cx: 25, cy: 15.5, rx: 11.2, ry: 13.4 };
-  if (key === "se") return { cx: 21.4, cy: 15.2, rx: 12.2, ry: 13.6 };
-  if (key === "ne") return { cx: 23.5, cy: 15.2, rx: 12.6, ry: 13.6 };
-  return { cx: 24, cy: 15.2, rx: 13.2, ry: 13.8 };
+  // Rounded head with a few pixels of room above the skull for buns and puffs.
+  // Chin stays near y=29 so a torso starting at y=32 leaves a 2-3px neck gap.
+  if (key === "e") return { cx: 25, cy: 17.2, rx: 11.0, ry: 11.8 };
+  if (key === "se") return { cx: 21.4, cy: 17.0, rx: 11.8, ry: 12.0 };
+  if (key === "ne") return { cx: 23.5, cy: 17.0, rx: 12.2, ry: 12.0 };
+  return { cx: 24, cy: 17.0, rx: 12.6, ry: 12.0 };
 }
 
 function neckX(view, upper) {
@@ -507,9 +619,8 @@ function drawHead(buf, key, pal, upper, emote) {
   const g = headGeom(key);
   const cy = g.cy + upper;
   const flat = { shade: "flat" };
-  // Slightly squared jaw: ellipse plus a flatter lower third. Flat skin, no muddy ramps.
-  ellipse(buf, g.cx, cy, g.rx, g.ry, pal.skin, "skin-head", 40, flat);
-  ellipse(buf, g.cx, cy + g.ry * 0.28, g.rx * 0.92, g.ry * 0.78, pal.skin, "skin-jaw", 40, flat);
+  // Single rounded egg so the chin is a clean curved line, not a squared jaw.
+  egg(buf, g.cx, cy + 0.4, g.rx, g.ry, pal.skin, "skin-head", 40, { shade: "flat", widen: 0.04 });
   if (key === "s") {
     ellipse(buf, g.cx - g.rx + 1, cy + 1, 2.6, 3.1, pal.skin, "ear", 35, flat);
     ellipse(buf, g.cx + g.rx - 1, cy + 1, 2.6, 3.1, pal.skin, "ear", 35, flat);
@@ -547,9 +658,9 @@ function drawFace(buf, key, pal, upper, emote) {
     }
   }
   if (emote === "laugh") {
-    ellipse(buf, key === "e" ? g.cx + 4 : g.cx, cy + 10.4, 1.6, 1.2, rgb(90, 40, 40), "mouth", 54, { shade: "flat" });
+    ellipse(buf, key === "e" ? g.cx + 4 : g.cx, cy + 8.8, 1.6, 1.2, rgb(90, 40, 40), "mouth", 54, { shade: "flat" });
   } else if (emote === "cry") {
-    ellipse(buf, key === "e" ? g.cx + 4 : g.cx, cy + 10.6, 1.2, 0.8, rgb(120, 70, 70), "mouth", 54, { shade: "flat" });
+    ellipse(buf, key === "e" ? g.cx + 4 : g.cx, cy + 9.0, 1.2, 0.8, rgb(120, 70, 70), "mouth", 54, { shade: "flat" });
   }
 }
 
@@ -595,9 +706,9 @@ function stampEye(buf, cx, cy, blink) {
   for (const [dx, dy] of pat) plot(buf, x + dx, y + dy, EYE_INK, "eye", 54);
   if (mode === "open") {
     // 2px white highlight at top-left, 1px sparkle at bottom-right.
-    plot(buf, x - 1, y - 2, EYE_HI, "eye-hi", 55);
-    plot(buf, x, y - 2, EYE_HI, "eye-hi", 55);
-    plot(buf, x + 1, y + 2, EYE_HI, "eye-spark", 55);
+    plotInside(buf, x - 1, y - 2, EYE_HI, "eye-hi", 55);
+    plotInside(buf, x, y - 2, EYE_HI, "eye-hi", 55);
+    plotInside(buf, x + 1, y + 2, EYE_HI, "eye-spark", 55);
   }
 }
 
@@ -798,13 +909,14 @@ function drawHair(buf, av, key, pal, upper, hatOn) {
   const cy = g.cy + upper;
   const style = hatOn && av.hair !== "long" && av.hair !== "straightbangs" && av.hair !== "ponytail" ? "short" : av.hair;
   const special = style === "ponytail" || style === "spacebuns" || style === "afropuff";
-  // Skull cap first so the scalp never shows. Special styles get a tighter crown so extras can read.
-  ellipse(buf, g.cx, cy - (special ? 2.6 : 3.5), g.rx * (special ? 0.82 : 0.9), g.ry * (special ? 0.55 : 0.7), pal.hair, "hair-cap", 44, { shade: "flat" });
-  if (style !== "afropuff" && style !== "spacebuns") {
-    for (const c of hairClumps(style, key)) {
-      stampSpike(buf, g.cx + c.dx, cy + c.dy, c.len, c.half, c.ang, pal.hair, "hair", 45, Boolean(c.rounded));
-    }
+  // Tight scalp for special styles so buns/puff can sit separately on top. No connecting cap.
+  if (style === "spacebuns") {
+    ellipse(buf, g.cx, cy - 1.2, g.rx * 0.78, g.ry * 0.42, pal.hair, "hair-cap", 44, { shade: "flat" });
+  } else if (style === "afropuff") {
+    ellipse(buf, g.cx, cy - 2.0, g.rx * 0.7, g.ry * 0.36, pal.hair, "hair-cap", 44, { shade: "flat" });
   } else {
+    // Cap hugs the skull outline so no scalp gap shows under the clumps.
+    ellipse(buf, g.cx, cy - 0.8, g.rx * 0.98, g.ry * 0.84, pal.hair, "hair-cap", 44, { shade: "flat" });
     for (const c of hairClumps(style, key)) {
       stampSpike(buf, g.cx + c.dx, cy + c.dy, c.len, c.half, c.ang, pal.hair, "hair", 45, Boolean(c.rounded));
     }
@@ -832,17 +944,26 @@ function drawHair(buf, av, key, pal, upper, hatOn) {
     }
   }
   if (av.hair === "spacebuns") {
-    const by = cy - 9.8;
-    const rad = 4.8;
+    const rad = 3.2;
+    const by = cy - 10.2;
+    function bun(bx, by0, kind) {
+      // Own shading per bun, then a dark ring so they read as separate balls.
+      egg(buf, bx, by0, rad, rad, pal.hair, kind, 47, { widen: 0 });
+      const ink = mix(pal.hair.mid || pal.hair, rgb(32, 18, 16), 0.55);
+      for (let a = 0; a < 16; a++) {
+        const ang = (a / 16) * Math.PI * 2;
+        plot(buf, Math.round(bx + Math.cos(ang) * rad), Math.round(by0 + Math.sin(ang) * rad), ink, "hair-bun-ink", 48);
+      }
+    }
     if (key === "e") {
-      ellipse(buf, g.cx + 1.2, by, rad, rad, pal.hair, "hair-bun", 47);
-      ellipse(buf, g.cx - 6.2, by + 1.2, rad * 0.8, rad * 0.8, pal.hair, "hair-bun-far", 46);
+      bun(g.cx + 1.0, by, "hair-bun");
+      bun(g.cx - 6.4, by + 1.4, "hair-bun-far");
     } else {
-      const sep = (key === "se" || key === "ne") ? 6.6 : 7.4;
-      ellipse(buf, g.cx - sep, by, rad, rad, pal.hair, "hair-bun", 47);
-      ellipse(buf, g.cx + sep, by, rad, rad, pal.hair, "hair-bun", 47);
-      // Visible center part between the buns.
-      rect(buf, g.cx - 0.6, cy - 7, g.cx + 0.6, cy - 0.5, pal.skin, "part", 48);
+      const sep = (key === "se" || key === "ne") ? 6.4 : 6.8;
+      bun(g.cx - sep, by, "hair-bun");
+      bun(g.cx + sep, by, "hair-bun");
+      // Part and scalp between the buns, and a sliver of head below each bun.
+      rect(buf, g.cx - 1.0, cy - 8, g.cx + 1.0, cy - 1, pal.skin, "part", 49);
     }
   }
   if (av.hair === "ponytail") {
@@ -864,11 +985,25 @@ function drawHair(buf, av, key, pal, upper, hatOn) {
     plot(buf, Math.round(tx), Math.round(ty) - 1, tieHi, "hair-tie", 49);
   }
   if (av.hair === "afropuff") {
-    const py = cy - 10.2;
-    const prx = key === "e" ? 8.6 : 10.4;
-    const pry = 9.4;
-    ellipse(buf, g.cx + (key === "e" ? 1 : 0), py, prx, pry, pal.hair, "hair-puff", 47);
-    ellipse(buf, g.cx, cy - 5.2, 5.4, 1.7, pal.hair.sh || pal.hair, "hair-band", 48, { shade: "flat" });
+    const px = g.cx + (key === "e" ? 1 : 0);
+    const py = cy - 7.2;
+    const prx = key === "e" ? 8.2 : 9.6;
+    const pry = 6.4;
+    // Base puff stays inside the sprite (top ~ y=1). Bumpy clumps around the edge, side-lit.
+    egg(buf, px, py, prx, pry, pal.hair, "hair-puff", 46, { widen: 0 });
+    const n = 12;
+    for (let i = 0; i < n; i++) {
+      const ang = (i / n) * Math.PI * 2 - Math.PI / 2;
+      const bx = px + Math.cos(ang) * (prx * 0.82);
+      const by = py + Math.sin(ang) * (pry * 0.82);
+      const r = 2.1 + (i % 3) * 0.5;
+      ellipse(buf, bx, by, r, r, pal.hair, "hair-puff", 47);
+    }
+    // Highlight clumps on the upper-left, not a flat top block.
+    const hi = pal.hair.hi || pal.hair;
+    ellipse(buf, px - prx * 0.28, py - pry * 0.28, 3.0, 2.6, hi, "hair-puff-hi", 48, { shade: "flat" });
+    ellipse(buf, px - prx * 0.05, py - pry * 0.42, 2.2, 2.0, hi, "hair-puff-hi", 48, { shade: "flat" });
+    ellipse(buf, g.cx, cy - 3.6, 4.6, 1.4, pal.hair.sh || pal.hair, "hair-band", 49, { shade: "flat" });
   }
   if (av.hair === "bobclips") {
     const pink = rgb(255, 90, 160);
@@ -879,7 +1014,7 @@ function drawHair(buf, av, key, pal, upper, hatOn) {
       plot(buf, cx0 + 1, cy0, col, "clip", 48);
       plot(buf, cx0, cy0 + 1, col, "clip", 48);
       plot(buf, cx0 + 1, cy0 + 1, col, "clip", 48);
-      plot(buf, cx0 + 1, cy0 - 1, rgb(255, 255, 255), "clip-hi", 49);
+      plotInside(buf, cx0 + 1, cy0 - 1, rgb(255, 255, 255), "clip-hi", 49);
     }
     if (key === "n" || key === "ne") {
       clip(g.cx - 7, cy - 1, pink);
@@ -898,24 +1033,30 @@ function drawHair(buf, av, key, pal, upper, hatOn) {
 
 function drawHat(buf, av, key, pal, upper) {
   const g = headGeom(key);
-  const cy = g.cy + upper - 8.5;
+  // Sit snugly on the crown of the new round head (skull top ≈ cy - ry).
+  const crown = g.cy + upper - g.ry + 3.4;
   const acc = pal.acc;
   if (av.accessory === "beanie") {
-    ellipse(buf, g.cx, cy + 2, g.rx * 0.88, 5.2, acc, "hat", 55);
-    ellipse(buf, g.cx, cy + 0.2, g.rx * 0.62, 3.2, acc, "hat", 56);
-    circle(buf, g.cx, cy - 4, 2.0, acc, "hat-pom", 57);
+    ellipse(buf, g.cx, crown + 1.2, g.rx * 0.96, 5.6, acc, "hat", 55);
+    ellipse(buf, g.cx, crown - 0.4, g.rx * 0.7, 3.4, acc, "hat", 56);
+    circle(buf, g.cx, crown - 4.4, 2.0, acc, "hat-pom", 57);
   } else if (av.accessory === "cap" || av.accessory === "trucker" || av.accessory === "fitted") {
-    ellipse(buf, g.cx, cy + 2.2, g.rx * 0.88, 4.4, acc, "hat", 55);
-    if (key !== "n") {
-      const bx = key === "e" ? g.cx + 7 : g.cx;
-      ellipse(buf, bx, cy + 5.4, key === "e" ? 6.5 : 7.5, av.accessory === "fitted" ? 1.3 : 1.6, acc, "hat-brim", 56);
+    ellipse(buf, g.cx, crown + 1.6, g.rx * 0.94, 4.6, acc, "hat", 55);
+    if (key !== "n" && key !== "ne") {
+      const bx = key === "e" ? g.cx + 7.2 : g.cx + (key === "se" ? 3.2 : 0);
+      const brimW = key === "e" ? 6.6 : 7.6;
+      const brimH = av.accessory === "fitted" ? 1.35 : (av.accessory === "bucket" ? 2.0 : 1.7);
+      const brimY = crown + (av.accessory === "fitted" ? 5.0 : 5.4);
+      ellipse(buf, bx, brimY, brimW, brimH, acc, "hat-brim", 56);
+    } else if (key === "ne") {
+      ellipse(buf, g.cx - 2, crown + 5.0, 5.5, 1.3, acc, "hat-brim", 54);
     }
     if (av.accessory === "fitted") {
-      plot(buf, Math.round(g.cx), Math.round(cy + 1), rgb(255, 240, 200), "hat-logo", 57);
+      plot(buf, Math.round(g.cx), Math.round(crown + 0.6), rgb(255, 240, 200), "hat-logo", 57);
     }
   } else if (av.accessory === "bucket") {
-    ellipse(buf, g.cx, cy + 2.4, g.rx * 0.86, 4.0, acc, "hat", 55);
-    ellipse(buf, g.cx, cy + 5.6, g.rx * 1.15, 2.0, acc, "hat-brim", 56);
+    ellipse(buf, g.cx, crown + 1.8, g.rx * 0.9, 4.2, acc, "hat", 55);
+    ellipse(buf, g.cx, crown + 5.4, g.rx * 1.18, 2.1, acc, "hat-brim", 56);
   }
 }
 
@@ -963,94 +1104,97 @@ function drawHeadphones(buf, av, key, pal, upper) {
 
 /* Body / clothes / limbs */
 function torsoBox(key, sit) {
-  // Short stubby torso under the big head.
-  const y0 = 29 + (sit ? 0 : 0);
-  if (key === "e") return { cx: 25, y0, hw: 6.2, h: 13 };
-  if (key === "se") return { cx: 22.4, y0, hw: 7.2, h: 13 };
-  if (key === "ne") return { cx: 23.8, y0, hw: 7.4, h: 13 };
-  return { cx: 24, y0, hw: 8.0, h: 13 };
+  // Clean egg starting 2-3px below the chin (head bottom ~29 when upper=0).
+  const y0 = 31;
+  const h = 18;
+  if (key === "e") return { cx: 25, y0, hw: 6.6, h };
+  if (key === "se") return { cx: 22.4, y0, hw: 7.6, h };
+  if (key === "ne") return { cx: 23.8, y0, hw: 7.7, h };
+  return { cx: 24, y0, hw: 8.3, h };
 }
 
 function drawTorso(buf, av, key, pal, upper, sit) {
   const t = torsoBox(key, sit);
   const y0 = t.y0 + upper;
-  // Skin torso (in case sleeves/neckline show). No neck — the head floats with a gap.
-  ellipse(buf, t.cx, y0 + t.h * 0.42, t.hw, t.h * 0.62, pal.skin, "skin-body", 18);
-  // Shirt / hoodie / jacket — slightly rounder body bag so the torso is not boxy.
+  const cy = y0 + t.h * 0.52;
+  const rx = t.hw + (av.top === "oversized" ? 0.6 : 0);
+  const ry = t.h * 0.52;
   const topPal = pal.shirt;
-  ellipse(buf, t.cx, y0 + t.h * 0.48, t.hw + 1.1, t.h * 0.72, topPal, "top", 22);
-  ellipse(buf, t.cx, y0 + t.h * 0.72, t.hw + 0.4, t.h * 0.42, topPal, "top", 22);
-  if (av.top === "hoodie") {
-    // Hood ring and pouch
-    ellipse(buf, t.cx, y0 + 1.5, t.hw * 0.95, 3.5, topPal, "hood", 24);
-    ellipse(buf, t.cx, y0 + t.h * 0.7, t.hw * 0.7, 3.2, { hi: topPal.sh, mid: topPal.sh, sh: mix(topPal.sh, INK, 0.2) }, "pouch", 24);
+  const shorts = av.bottom === "shorts";
+  const skirt = av.bottom === "skirt";
+  // One clean egg: skin, then shirt, then pants as the lower band. No stacked blobs or collar rings.
+  egg(buf, t.cx, cy, rx, ry, pal.skin, "skin-body", 18);
+  egg(buf, t.cx, cy, rx, ry, topPal, "top", 22);
+  if (av.top === "babytee" || av.top === "crophoodie") {
+    eggBelow(buf, t.cx, cy, rx, ry, y0 + t.h * 0.62, pal.skin, "midriff", 23);
+  }
+  const hemT = shorts ? 0.78 : skirt ? 0.68 : (av.top === "babytee" || av.top === "crophoodie" ? 0.72 : 0.58);
+  eggBelow(buf, t.cx, cy, rx, ry, y0 + t.h * hemT, pal.pants, skirt ? "skirt" : "pants", 24);
+  // Subtle darker hem across the oval, not a light collar arc.
+  const hemY = Math.round(y0 + t.h * hemT);
+  for (let x = Math.round(t.cx - rx); x <= Math.round(t.cx + rx); x++) {
+    const p = buf[hemY * AV_W + x];
+    if (p && (p.kind === "pants" || p.kind === "skirt")) {
+      plot(buf, x, hemY, pal.pants.sh || pal.pants.mid, "cuff", 25);
+    }
+  }
+
+  if (av.top === "hoodie" || av.top === "ziphoodie" || av.top === "crophoodie") {
+    ellipse(buf, t.cx, y0 + t.h * 0.62, rx * 0.62, 2.6, { hi: topPal.sh, mid: topPal.sh, sh: mix(topPal.sh, INK, 0.2) }, "pouch", 26);
+    if (av.top === "ziphoodie") {
+      rect(buf, t.cx - 0.6, y0 + 4, t.cx + 0.6, y0 + t.h * hemT - 1, pal.gold, "zip", 27);
+    }
   }
   if (av.top === "jacket") {
-    // Open placket down the center
     if (key !== "n") {
-      rect(buf, t.cx - 1, y0 + 1, t.cx + 1, y0 + t.h - 1, pal.skin, "placket", 25);
-      rect(buf, t.cx - 1.8, y0 + 1, t.cx - 0.6, y0 + t.h - 1, topPal.sh, "lapel", 26);
-      rect(buf, t.cx + 0.6, y0 + 1, t.cx + 1.8, y0 + t.h - 1, topPal.sh, "lapel", 26);
+      rect(buf, t.cx - 1, y0 + 4, t.cx + 1, y0 + t.h * hemT - 1, pal.skin, "placket", 26);
+      rect(buf, t.cx - 1.8, y0 + 4, t.cx - 0.6, y0 + t.h * hemT - 1, topPal.sh, "lapel", 27);
+      rect(buf, t.cx + 0.6, y0 + 4, t.cx + 1.8, y0 + t.h * hemT - 1, topPal.sh, "lapel", 27);
     }
-    ellipse(buf, t.cx, y0 + 1, t.hw + 0.4, 2.8, topPal, "collar", 26);
   }
   if (av.top === "bandtee") {
     const gx = key === "e" ? t.cx + 2 : t.cx;
-    ellipse(buf, gx, y0 + 6, 3.2, 3.2, pal.gold, "graphic", 26);
-  }
-  if (av.top === "ziphoodie" || av.top === "crophoodie") {
-    ellipse(buf, t.cx, y0 + 1.5, t.hw * 0.95, 3.5, topPal, "hood", 24);
-    if (av.top === "ziphoodie") {
-      rect(buf, t.cx - 0.6, y0 + 2, t.cx + 0.6, y0 + t.h - 1, pal.gold, "zip", 26);
-    }
-    if (av.top === "crophoodie") {
-      // Crop the hem so a sliver of skin shows at the waist.
-      rect(buf, t.cx - t.hw, y0 + t.h - 3, t.cx + t.hw, y0 + t.h + 1, pal.skin, "midriff", 28);
-    }
-  }
-  if (av.top === "oversized") {
-    ellipse(buf, t.cx, y0 + t.h * 0.55, t.hw + 2.4, t.h * 0.8, topPal, "top", 22);
+    ellipse(buf, gx, y0 + 7, 3.0, 3.0, pal.gold, "graphic", 26);
   }
   if (av.top === "velour") {
-    ellipse(buf, t.cx, y0 + 4, t.hw + 0.6, 1.2, { mid: mix(topPal.hi || topPal.mid, rgb(255, 255, 255), 0.5) }, "piping", 26, { shade: "flat" });
-    rect(buf, t.cx - 0.5, y0 + 2, t.cx + 0.5, y0 + t.h - 1, rgb(255, 240, 250), "stripe", 26);
+    rect(buf, t.cx - 0.5, y0 + 5, t.cx + 0.5, y0 + t.h * hemT - 1, rgb(255, 240, 250), "stripe", 26);
   }
   if (av.top === "varsity") {
-    const sleeve = tones("#f4efe6");
-    ellipse(buf, t.cx - t.hw - 0.6, y0 + 4, 3.4, 3.6, sleeve, "var-sleeve", 23);
-    ellipse(buf, t.cx + t.hw + 0.6, y0 + 4, 3.4, 3.6, sleeve, "var-sleeve", 23);
-    ellipse(buf, t.cx, y0 + 6, 2.4, 2.4, pal.gold, "letter", 26);
+    ellipse(buf, t.cx, y0 + 8, 2.4, 2.4, pal.gold, "letter", 26);
   }
   if (av.top === "truckertee") {
     const gx = key === "e" ? t.cx + 2 : t.cx;
-    rect(buf, gx - 3, y0 + 4, gx + 3, y0 + 8, rgb(255, 255, 255), "graphic", 26, 1);
+    rect(buf, gx - 3, y0 + 6, gx + 3, y0 + 10, rgb(255, 255, 255), "graphic", 26, 1);
   }
   if (av.top === "puffer") {
     for (let i = 0; i < 3; i++) {
-      ellipse(buf, t.cx, y0 + 3 + i * 3.2, t.hw + 0.8, 2.0, topPal, "quilt", 26);
+      const qy = y0 + 5 + i * 3.2;
+      for (let x = Math.round(t.cx - rx + 1); x <= Math.round(t.cx + rx - 1); x++) {
+        const p = buf[Math.round(qy) * AV_W + x];
+        if (p && p.kind === "top") plot(buf, x, Math.round(qy), topPal.sh || topPal.mid, "quilt", 26);
+      }
     }
   }
-  if (av.top === "polo") {
-    // Popped collar
-    ellipse(buf, t.cx - 3.2, y0 + 0.2, 3.0, 2.2, topPal, "collar", 26);
-    ellipse(buf, t.cx + 3.2, y0 + 0.2, 3.0, 2.2, topPal, "collar", 26);
-    if (key !== "n") rect(buf, t.cx - 1, y0 + 2, t.cx + 1, y0 + 5, pal.skin, "placket", 26);
-  }
-  if (av.top === "babytee") {
-    ellipse(buf, t.cx, y0 + t.h * 0.4, t.hw * 0.9, t.h * 0.55, topPal, "top", 23);
+  if (av.top === "polo" && key !== "n") {
+    rect(buf, t.cx - 1, y0 + 4, t.cx + 1, y0 + 7, pal.skin, "placket", 26);
   }
   if (av.top === "jersey") {
     if (key !== "n") {
-      rect(buf, t.cx - 2, y0 + 1, t.cx + 2, y0 + 5, pal.skin, "vneck", 25);
+      rect(buf, t.cx - 1.6, y0 + 3, t.cx + 1.6, y0 + 7, pal.skin, "vneck", 25);
     }
     const gx = key === "e" ? t.cx + 2 : t.cx;
-    rect(buf, gx - 2, y0 + 6, gx + 2, y0 + 10, rgb(255, 250, 240), "number", 26, 1);
+    rect(buf, gx - 2, y0 + 8, gx + 2, y0 + 12, rgb(255, 250, 240), "number", 26, 1);
   }
   if (av.accessory === "chain" && key !== "n") {
-    ellipse(buf, t.cx, y0 + 3, 3.5, 2.2, pal.gold, "chain", 27);
+    ellipse(buf, t.cx, y0 + 5, 3.2, 2.0, pal.gold, "chain", 27);
   }
   if (av.accessory === "belt") {
-    rect(buf, t.cx - t.hw, y0 + t.h - 2, t.cx + t.hw, y0 + t.h, pal.gold, "belt", 27);
+    for (let x = Math.round(t.cx - rx); x <= Math.round(t.cx + rx); x++) {
+      const p = buf[hemY * AV_W + x];
+      if (p && (p.kind === "pants" || p.kind === "skirt" || p.kind === "cuff")) {
+        plot(buf, x, hemY, pal.gold.mid || pal.gold, "belt", 27);
+      }
+    }
   }
 }
 
@@ -1303,16 +1447,15 @@ function drawShoe(buf, cx, cy, key, style, pal, side) {
   // Highlight shine on the toe / vamp
   const hx = Math.round(toeX - (profile ? 0 : 2));
   const hy = Math.round(cy - 6);
-  plot(buf, hx, hy, rgb(255, 252, 245), "shine", 19);
-  plot(buf, hx + 1, hy, rgb(255, 252, 245), "shine", 19);
-  plot(buf, hx, hy - 1, rgb(255, 252, 245), "shine", 19);
+  plotInside(buf, hx, hy, rgb(255, 252, 245), "shine", 19);
+  plotInside(buf, hx + 1, hy, rgb(255, 252, 245), "shine", 19);
+  plotInside(buf, hx, hy - 1, rgb(255, 252, 245), "shine", 19);
 }
 
 function stickerSprite(draw) {
   const buf = makeBuf();
   draw(buf);
-  const inked = addInkOutline(buf);
-  return addStickerOutline(inked);
+  return addInkOutline(buf);
 }
 
 function walkPose(frame, walking, sit) {
@@ -1398,50 +1541,27 @@ function handPose(kind, side, pose, t, upper, key, frame) {
 }
 
 function drawCuffs(buf, av, key, pal, upper, sit) {
+  // Pockets and stripes only — the oval silhouette is already drawn in drawTorso.
   const t = torsoBox(key, sit);
   const y0 = t.y0 + upper;
   const pants = pal.pants;
   const shorts = av.bottom === "shorts";
   const skirt = av.bottom === "skirt";
-  const baggy = av.bottom === "baggy";
-  const flares = av.bottom === "flares";
-  const track = av.bottom === "track";
-  const cuffY = (shorts || skirt) ? y0 + t.h + (skirt ? 6 : 2) : 49 + (sit ? 2 : 0);
-  const hem = y0 + t.h - 4;
-  const hw = t.hw + (baggy ? 1.6 : 0);
-  if (skirt) {
-    // A-line denim / mini skirt, shoes still visible below.
-    rect(buf, t.cx - hw + 0.2, hem, t.cx + hw - 0.2, cuffY - 1, pants, "skirt", 12, 3);
-    ellipse(buf, t.cx, cuffY - 1, hw + 1.6, 3.2, pants, "skirt-hem", 12);
-  } else {
-    rect(buf, t.cx - hw + 0.2, hem, t.cx + hw - 0.2, cuffY, pants, "pants", 12, 4);
-    ellipse(buf, t.cx, hem + 2, hw - 0.2, 3.4, pants, "pants", 12);
-    const cuffW = flares ? hw + 2.2 : hw;
-    rect(buf, t.cx - cuffW + 0.4, cuffY - 2, t.cx + cuffW - 0.4, cuffY, pants.sh || pants.mid, "cuff", 13, 1);
-    if (flares) {
-      ellipse(buf, t.cx - hw, cuffY - 1, 3.4, 2.4, pants, "flare", 12);
-      ellipse(buf, t.cx + hw, cuffY - 1, 3.4, 2.4, pants, "flare", 12);
-    }
-  }
+  const hemT = shorts ? 0.78 : skirt ? 0.68 : 0.58;
+  const pocketY = y0 + t.h * Math.min(0.86, hemT + 0.16);
   if (av.bottom === "cargo" || shorts) {
-    ellipse(buf, t.cx - hw + 1.5, cuffY - 5, 2.2, 2.0, pants, "cargo", 13, { shade: "flat" });
-    ellipse(buf, t.cx + hw - 1.5, cuffY - 5, 2.2, 2.0, pants, "cargo", 13, { shade: "flat" });
+    ellipse(buf, t.cx - t.hw + 2.2, pocketY, 2.0, 1.8, pants, "cargo", 26, { shade: "flat" });
+    ellipse(buf, t.cx + t.hw - 2.2, pocketY, 2.0, 1.8, pants, "cargo", 26, { shade: "flat" });
   }
-  if (track) {
+  if (av.bottom === "track") {
     const stripe = rgb(255, 240, 160);
-    rect(buf, t.cx - hw + 1, hem + 1, t.cx - hw + 2, cuffY - 1, stripe, "stripe", 14);
-    rect(buf, t.cx + hw - 2, hem + 1, t.cx + hw - 1, cuffY - 1, stripe, "stripe", 14);
-  }
-  // Sleeve cuffs on the body
-  const long = ["hoodie", "jacket", "ziphoodie", "crophoodie", "velour", "varsity", "puffer"].includes(av.top);
-  const sy = y0 + 4;
-  const r = long ? 3.2 : 2.7;
-  if (av.top !== "puffer" && av.top !== "babytee") {
-    if (key === "e") {
-      ellipse(buf, t.cx + t.hw + 0.4, sy, r, r, pal.shirt, "sleeve-cuff", 24, { shade: "flat" });
-    } else {
-      ellipse(buf, t.cx - t.hw - 0.2, sy, r, r, pal.shirt, "sleeve-cuff", 24, { shade: "flat" });
-      ellipse(buf, t.cx + t.hw + 0.2, sy, r, r, pal.shirt, "sleeve-cuff", 24, { shade: "flat" });
+    const y1 = y0 + t.h * hemT + 1;
+    const y2 = y0 + t.h - 2;
+    for (let y = Math.round(y1); y <= Math.round(y2); y++) {
+      const L = buf[y * AV_W + Math.round(t.cx - t.hw + 2)];
+      const R = buf[y * AV_W + Math.round(t.cx + t.hw - 2)];
+      if (L && (L.kind === "pants" || L.kind === "skirt")) plot(buf, Math.round(t.cx - t.hw + 2), y, stripe, "stripe", 26);
+      if (R && (R.kind === "pants" || R.kind === "skirt")) plot(buf, Math.round(t.cx + t.hw - 2), y, stripe, "stripe", 26);
     }
   }
 }
@@ -1459,19 +1579,19 @@ function drawSparkles(buf, x, y, phase) {
   }
 }
 
-function headMotion(frame, walk, sit) {
-  // 1-2px gap above the body, no neck. Walk bobble lags the body and overshoots.
-  const gap = -1;
-  if (sit) return { y: gap, x: 0 };
+function headMotion(frame, walk, sit, bodyUpper = 0) {
+  // Head follows the body so the 2-3px neck gap never closes. Bobble varies the gap by ~1px.
+  const base = bodyUpper || 0;
+  if (sit) return { y: base, x: 0 };
   if (walk) {
     const f = ((frame % 8) + 8) % 8;
-    const yTable = [0, 0, -1, -3, -1, 0, -1, -3];
+    const yTable = [0, 0, -1, -1, 0, 0, -1, -1];
     const xTable = [0, -1, -1, 0, 0, 1, 1, 0];
-    return { y: gap + yTable[f], x: xTable[f] };
+    return { y: base + yTable[f], x: xTable[f] };
   }
   const t = ((frame % 24) + 24) % 24;
   const floatY = t < 8 ? 0 : t < 16 ? -1 : 0;
-  return { y: gap + floatY, x: 0 };
+  return { y: base + floatY, x: 0 };
 }
 
 function composeAvatar(av, flags, frame) {
@@ -1486,8 +1606,8 @@ function composeAvatar(av, flags, frame) {
   const breathe = (!walk && !sit) ? ((frame % 16) < 8 ? 0 : -1) : 0;
   const bob = walk ? (pose.bob || 0) : 0;
   const upper = sit ? AV_SEAT_DROP : (bob + breathe);
-  const motion = headMotion(frame, walk, sit);
-  const headUpper = (sit ? AV_SEAT_DROP : 0) + motion.y;
+  const motion = headMotion(frame, walk, sit, upper);
+  const headUpper = motion.y;
   const emote = flags.actionEmote || "";
   const hatOn = av.accessory === "cap" || av.accessory === "beanie" || av.accessory === "trucker" || av.accessory === "bucket" || av.accessory === "fitted";
   const bk = bodyView.key;
@@ -1497,7 +1617,6 @@ function composeAvatar(av, flags, frame) {
   drawCuffs(body, av, bk, pal, upper, sit);
   if (bodyView.flip) body = flipBuf(body, true);
   body = addInkOutline(body);
-  body = addStickerOutline(body);
 
   let head = makeBuf();
   const hk = headView.key;
@@ -1524,8 +1643,6 @@ function composeAvatar(av, flags, frame) {
   const dx = neckX(bodyView, upper) - neckX(headView, headUpper) + (headView.flip ? -motion.x : motion.x);
   if (dx) head = shiftBufXY(head, dx, 0);
   head = addInkOutline(head);
-  head = addStickerOutline(head);
-  head = shaveOpenEdgeStickers(head, "bottom");
 
   const t = torsoBox(bk, sit);
   const aKind = pose.armKind || "idle";
@@ -1578,7 +1695,7 @@ function composeAvatar(av, flags, frame) {
 
   const out = makeBuf();
   for (const layer of layers) blitBuf(out, layer);
-  const cleaned = stripNeckGapStickers(stripInnerStickers(out));
+  const cleaned = addContactShade(stripNeckGapStickers(stripInnerStickers(out)));
 
   const pop = Number(flags.shoePop);
   if (pop >= 0 && pop < 480) {
@@ -2139,6 +2256,100 @@ export function paintClothesCatalog(canvas, items, scale = 4) {
   });
 }
 
+
+export function paintHairHatFit(canvas, scale = 4) {
+  const hairs = HAIRCUT_LOOKS;
+  const hats = [
+    { accessory: "none", label: "No hat" },
+    { accessory: "beanie", label: "Beanie" },
+    { accessory: "cap", label: "Cap" },
+    { accessory: "fitted", label: "Fitted" },
+    { accessory: "bucket", label: "Bucket" },
+    { accessory: "trucker", label: "Trucker" },
+  ];
+  const dirs = [
+    { label: "Front", body: 1 },
+    { label: "3/4", body: 0 },
+    { label: "Side", body: 7 },
+    { label: "Back", body: 5 },
+  ];
+  const pad = 12, cap = 14, gap = 6, lab = 52;
+  const cw = AV_W * scale, ch = AV_H * scale;
+  const hairRows = dirs.length;
+  const hatLooks = hairs.slice(0, 4);
+  const hatRows = hats.length;
+  canvas.width = lab + pad * 2 + hairs.length * cw + (hairs.length - 1) * gap;
+  canvas.height = pad * 2 + (hairRows + hatRows) * (ch + cap) + (hairRows + hatRows) * gap + 24;
+  const ctx = canvas.getContext("2d");
+  ctx.imageSmoothingEnabled = false;
+  ctx.fillStyle = "#f4efe4";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.font = "11px Verdana, sans-serif";
+  ctx.fillStyle = "#2a1c16";
+  const base = { skin: "#f0c9a8", shirt: "#6c7bff", top: "tshirt", bottom: "jeans", bottomColor: "#3d4f7c", shoes: "white" };
+  ctx.fillText("Hair · 4 views", 8, pad);
+  dirs.forEach((d, r) => {
+    const y = pad + 8 + r * (ch + cap + gap);
+    ctx.fillText(d.label, 6, y + cap + ch / 2);
+    hairs.forEach((h, i) => {
+      const x = lab + pad + i * (cw + gap);
+      const spr = drawAvatarSprite({ ...base, hair: h.hair, hairColor: h.hairColor, accessory: "none" }, { bodyDir: d.body, headDir: d.body, blink: "open" }, 0);
+      ctx.drawImage(spr.c, 0, 0, spr.w, spr.h, x, y + cap, cw, ch);
+      if (r === 0) ctx.fillText(h.label, x, y + 10);
+    });
+  });
+  const hatOrigin = pad + 16 + hairRows * (ch + cap + gap);
+  ctx.fillText("Hats · a few hairs × 4 views (front, 3/4, side, back packed per cell)", 8, hatOrigin);
+  hats.forEach((hat, r) => {
+    const y = hatOrigin + 10 + r * (ch + cap + gap);
+    ctx.fillText(hat.label, 6, y + cap + ch / 2);
+    // 4 hairs, each drawn in 4 small views? User asked: every hat x a few hairs x 4 views.
+    // Layout: each column is a hair, and we draw 4 views in a 2x2 inside the cell if space is tight.
+    // Simpler: 4 columns of hairs, and we use 4 rows of views already... that's huge.
+    // Do: for each hat row, 4 hairs × 4 view thumbnails in a strip (view as 4 mini sprites).
+    const sub = Math.max(2, Math.floor(scale / 2) + 1);
+    hatLooks.forEach((h, i) => {
+      const x0 = lab + pad + i * (cw + gap);
+      dirs.forEach((d, v) => {
+        const spr = drawAvatarSprite({ ...base, hair: h.hair, hairColor: h.hairColor, accessory: hat.accessory }, { bodyDir: d.body, headDir: d.body, blink: "open" }, 0);
+        const sw = AV_W * 2, sh = AV_H * 2;
+        const vx = x0 + (v % 2) * (cw / 2);
+        const vy = y + cap + Math.floor(v / 2) * (ch / 2);
+        ctx.drawImage(spr.c, 0, 0, spr.w, spr.h, vx, vy, cw / 2, ch / 2);
+      });
+      ctx.fillText(h.label, x0, y + 10);
+    });
+  });
+}
+
+
+export function countNearWhiteEdgePixels(canvas, minR = 230, minG = 220, minB = 200) {
+  if (!canvas) return 0;
+  const ctx = canvas.getContext("2d");
+  const w = canvas.width, h = canvas.height;
+  const d = ctx.getImageData(0, 0, w, h).data;
+  const opaque = (x, y) => {
+    if (x < 0 || y < 0 || x >= w || y >= h) return false;
+    return d[(y * w + x) * 4 + 3] > 20;
+  };
+  let n = 0;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (!opaque(x, y)) continue;
+      const edge = !opaque(x - 1, y) || !opaque(x + 1, y) || !opaque(x, y - 1) || !opaque(x, y + 1);
+      if (!edge) continue;
+      const i = (y * w + x) * 4;
+      if (d[i] >= minR && d[i + 1] >= minG && d[i + 2] >= minB) n++;
+    }
+  }
+  return n;
+}
+
+export function avatarHasCleanOutline(av, flags = {}, frame = 0) {
+  const spr = drawAvatarSprite(av, flags, frame);
+  return countNearWhiteEdgePixels(spr.c) === 0;
+}
+
 if (typeof window !== "undefined") {
   window.__paintAvatarSheet = paintAvatarSheet;
   window.__paintStoreThumb = paintStoreThumb;
@@ -2153,6 +2364,8 @@ if (typeof window !== "undefined") {
   window.__paintShoeLineup = paintShoeLineup;
   window.__paintBobbleStrip = paintBobbleStrip;
   window.__paintHaircutSheet = paintHaircutSheet;
+  window.__countNearWhiteEdgePixels = countNearWhiteEdgePixels;
+  window.__paintHairHatFit = paintHairHatFit;
   window.__paintClothesCatalog = paintClothesCatalog;
 }
 

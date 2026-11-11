@@ -550,6 +550,8 @@ input:focus { border-color: var(--coral); }
   width: 100% !important;
   height: 100% !important;
   touch-action: none;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
 }
 .bubble-layer {
   position: absolute;
@@ -1026,6 +1028,7 @@ button.coin-chip {
 }
 .phone-fab:active { transform: translateY(2px); box-shadow: 0 4px 0 #1a1030, 0 6px 14px rgba(20, 10, 40, .3); }
 body.phone-open .phone-fab { visibility: hidden; }
+body.phone-open .dock .phone-dock-btn { visibility: visible; }
 .phone-fab-icon { display: grid; place-items: center; }
 .phone-fab-badge,
 .phone-app-badge {
@@ -2552,4 +2555,77 @@ input, select, textarea, .chat-input, [data-testid="chat-input"] {
   border-color: #ef476f;
   color: #2a1018;
   font-weight: 700;
+}
+
+
+/* Phone button lives in the tan chat dock, matching the emote button. */
+.phone-dock-btn {
+  position: relative;
+  flex: 0 0 auto;
+  padding: 0;
+  display: grid;
+  place-items: center;
+}
+.phone-dock-btn .phone-fab-icon {
+  display: grid;
+  place-items: center;
+  line-height: 0;
+}
+.phone-dock-btn .phone-fab-icon svg {
+  width: 20px;
+  height: 20px;
+  display: block;
+}
+.phone-dock-btn .phone-fab-badge {
+  top: -4px;
+  right: -4px;
+  z-index: 1;
+}
+body.phone-open .phone-dock-btn {
+  visibility: visible !important;
+  box-shadow: inset 0 2px 0 #8a6a4488, inset 0 -1px 0 #fff4, 0 1px 0 #8a6a44;
+}
+/* Retired floating phone FAB */
+.phone-fab:not(.phone-dock-btn) {
+  display: none !important;
+}
+@media (max-width: 400px) {
+  .dock {
+    gap: 6px;
+    padding-left: calc(8px + var(--safe-left, 0px));
+    padding-right: calc(8px + var(--safe-right, 0px));
+  }
+  .dock .emote-btn,
+  .dock .phone-dock-btn {
+    width: 40px;
+    height: 40px;
+    flex: 0 0 40px;
+  }
+  #chat-send {
+    padding-left: 10px;
+    padding-right: 10px;
+    flex: 0 0 auto;
+  }
+  .dock textarea {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+}
+
+.cam-recenter {
+  position: absolute;
+  top: 54px;
+  right: 10px;
+  z-index: 28;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: #0a0c12ee;
+  color: #f4e6cc;
+  box-shadow: 0 0 0 1px #8a6a44, 0 2px 0 #3a2a18;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
 }

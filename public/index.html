@@ -158,18 +158,14 @@
               <circle cx="12" cy="13.2" r="3.4"/>
             </svg>
           </button>
+          <button type="button" id="cam-recenter" class="cam-recenter" data-testid="cam-recenter" aria-label="Fit the cube on screen" title="Fit the cube on screen">
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round">
+              <path d="M9 4H5v4M15 4h4v4M9 20H5v-4M15 20h4v-4"/>
+              <circle cx="12" cy="12" r="2.2"/>
+            </svg>
+          </button>
         </div>
       </div>
-      <button class="phone-fab" data-testid="phone-btn" id="phone-btn" type="button" aria-label="Open phone menu" aria-expanded="false">
-        <span class="phone-fab-icon" aria-hidden="true">
-          <svg viewBox="0 0 32 32" width="28" height="28">
-            <rect x="8" y="2" width="16" height="28" rx="4" fill="#2a1c4a" stroke="#f4c15d" stroke-width="1.6"/>
-            <rect x="10" y="5" width="12" height="18" rx="1.4" fill="#9be7ff"/>
-            <circle cx="16" cy="26.2" r="1.5" fill="#f4c15d"/>
-          </svg>
-        </span>
-        <span class="phone-fab-badge hidden" data-testid="phone-badge">1</span>
-      </button>
       <div id="edit-inventory" class="edit-inventory hidden" data-testid="edit-inventory">
         <div class="edit-inv-head">
           <strong>Inventory</strong>
@@ -255,6 +251,16 @@
         </div>
       </div>
       <div class="dock" id="chat-dock" data-testid="chat-dock">
+        <button class="emote-btn phone-dock-btn" data-testid="phone-btn" id="phone-btn" type="button" title="Phone" aria-label="Open phone menu" aria-expanded="false">
+          <span class="phone-fab-icon" aria-hidden="true">
+            <svg viewBox="0 0 32 32" width="20" height="20">
+              <rect x="8" y="2" width="16" height="28" rx="4" fill="#2a1c4a" stroke="#3a2418" stroke-width="1.8"/>
+              <rect x="10" y="5" width="12" height="18" rx="1.4" fill="#9be7ff"/>
+              <circle cx="16" cy="26.2" r="1.5" fill="#3a2418"/>
+            </svg>
+          </span>
+          <span class="phone-fab-badge hidden" data-testid="phone-badge">1</span>
+        </button>
         <button class="emote-btn emote-wheel-btn" data-testid="emote-wheel-btn" id="emote-wheel-btn" type="button" title="Emotes" aria-expanded="false" aria-label="Open emotes">😀</button>
         <textarea id="chat-input" data-testid="chat-input" maxlength="80" rows="1" placeholder="Say something..." autocomplete="off"></textarea>
         <button class="btn small" data-testid="chat-send" id="chat-send" type="button">Say</button>
