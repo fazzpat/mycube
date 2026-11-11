@@ -3815,6 +3815,7 @@ import { initChessUI } from "./chess-ui.js";
       name,
       tile: r3?.personTile?.(name) || (p ? { x: p.x, y: p.y } : null),
       head: r3?.projectHead?.(name) || null,
+      box: r3?.personBox?.(name) || null,
       flags: r3?.personFlags?.(name) || null,
       sitting: p?.sitting ?? null,
       stationId: p?.stationId ?? null,

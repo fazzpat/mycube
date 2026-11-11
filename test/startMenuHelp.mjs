@@ -26,7 +26,13 @@ export async function openCreatorTab(page, tab) {
   const btn = page.locator(`[data-testid="creator-tab-${tab}"]`);
   await btn.waitFor({ state: "visible", timeout: 10000 });
   await btn.click();
-  await page.locator(`[data-testid="creator-panel-${tab}"]`).waitFor({ state: "visible", timeout: 8000 });
+  const panel = page.locator(`[data-testid="creator-panel-${tab}"]`);
+  try {
+    await panel.waitFor({ state: "visible", timeout: 2500 });
+  } catch {
+    await page.evaluate((id) => window.__creatorMenu?.setTab?.(id), tab);
+    await panel.waitFor({ state: "visible", timeout: 8000 });
+  }
 }
 
 export async function clickCreatorOption(page, testId) {

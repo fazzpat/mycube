@@ -111,9 +111,10 @@ export function initCreatorMenu({ onShow, getBackdropRoom } = {}) {
     const box = panelsEl || panelEl(currentId());
     const w = Math.max(120, (box?.clientWidth || 300) - 4);
     const h = Math.max(44, (box?.clientHeight || 120) - 2);
-    const swatchPerRow = Math.max(3, Math.floor((w + 4) / 52));
-    const choicePerRow = Math.max(3, Math.min(6, Math.floor((w + 4) / 56)));
-    return { w, h, swatchPerRow, choicePerRow, headingH: 22, itemH: 48 };
+    const compact = typeof compactEditViewport === "function" && compactEditViewport() && phoneEditOpen();
+    const swatchPerRow = compact ? 3 : Math.max(3, Math.floor((w + 4) / 52));
+    const choicePerRow = compact ? 3 : Math.max(3, Math.min(6, Math.floor((w + 4) / 56)));
+    return { w, h, swatchPerRow, choicePerRow, headingH: compact ? 0 : 22, itemH: compact ? 44 : 48 };
   }
 
   function perRowFor(items) {
@@ -234,15 +235,24 @@ export function initCreatorMenu({ onShow, getBackdropRoom } = {}) {
     if (dotsEl) {
       dotsEl.innerHTML = pages.map((_, i) => `<span class="${i === pageIndex ? "is-on" : ""}"></span>`).join("");
     }
+    document.querySelector(".creator-pager")?.classList.toggle("is-needed", pages.length > 1);
     paging = false;
   }
 
   function paginate() {
     const panel = panelEl(currentId());
-    pages = buildPages(panel);
-    if (pageIndex >= pages.length) pageIndex = pages.length - 1;
-    if (pageIndex < 0) pageIndex = 0;
+    const rebuild = () => {
+      pages = buildPages(panel);
+      if (pageIndex >= pages.length) pageIndex = Math.max(0, pages.length - 1);
+      if (pageIndex < 0) pageIndex = 0;
+    };
+    rebuild();
     applyPage();
+    // Pager show/hide changes panel height; rebuild once so a page never overflows.
+    const before = pages.length;
+    const beforeH = panel?.clientHeight;
+    rebuild();
+    if (pages.length !== before || panel?.clientHeight !== beforeH) applyPage();
     paintOptionCursor();
   }
 
@@ -471,12 +481,168 @@ export function initCreatorMenu({ onShow, getBackdropRoom } = {}) {
   function onLayout() {
     if (!editorActive()) return;
     syncKeyboard();
+    if (phoneEditOpen()) {
+      layoutPhoneAwayFromAvatar();
+      paginate();
+      return;
+    }
     paginate();
-    if (phoneEditOpen()) return;
     const relocked = relockIfNeeded();
     if (relocked && keyboardCovered() <= 80) {
       room?.resize?.();
       onShow?.();
+    }
+  }
+
+
+  function compactEditViewport() {
+    return window.innerWidth < 900;
+  }
+
+  function selfName() {
+    return window.__avatarPose?.()?.name || window.__camState?.()?.follow || null;
+  }
+
+  function rectsOverlap(a, b, pad = 0) {
+    if (!a || !b) return false;
+    return a.x < b.x + b.w - pad && a.x + a.w > b.x + pad && a.y < b.y + b.h - pad && a.y + a.h > b.y + pad;
+  }
+
+  let dockedSlotId = null;
+  let dockedViewport = "";
+
+  function clearPhoneDock(overlay) {
+    dockedSlotId = null;
+    dockedViewport = "";
+    overlay?.classList.remove("is-compact-edit");
+    overlay?.classList.remove("is-short-edit");
+    overlay?.style.removeProperty("--edit-phone-left");
+    overlay?.style.removeProperty("--edit-phone-top");
+    const device = overlay?.querySelector("[data-testid='phone-device']");
+    if (device) {
+      device.style.removeProperty("width");
+      device.style.removeProperty("height");
+      device.style.removeProperty("max-height");
+      device.style.removeProperty("max-width");
+    }
+    window.HouseRoom3D?.setEditViewShift?.(0, 0);
+  }
+
+  function layoutPhoneAwayFromAvatar() {
+    const overlay = overlayEl();
+    const device = overlay?.querySelector("[data-testid='phone-device']");
+    const r3 = window.HouseRoom3D;
+    if (!overlay || !device || !phoneEditOpen()) return;
+    if (!compactEditViewport()) {
+      clearPhoneDock(overlay);
+      return;
+    }
+    overlay.classList.add("is-compact-edit");
+
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const dockH = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--dock-h")) || 76;
+    const safeL = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--safe-left")) || 0;
+    const safeR = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--safe-right")) || 0;
+    const safeT = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--safe-top")) || 0;
+    const landscape = vw > vh || (vh - dockH - 8 - (64 + safeT)) < 320;
+    const area = {
+      left: 8 + safeL,
+      top: (landscape ? 8 : 64) + safeT,
+      right: vw - 8 - safeR,
+      bottom: vh - dockH - 8,
+    };
+    area.w = Math.max(0, area.right - area.left);
+    area.h = Math.max(0, area.bottom - area.top);
+
+    const name = selfName();
+    const box = name ? r3?.personBox?.(name) : null;
+    const gap = 8;
+    let pw = Math.max(1, landscape ? Math.min(300, area.w) : Math.min(188, area.w));
+    let ph = Math.max(1, landscape ? Math.min(280, area.h) : Math.min(348, area.h));
+    if (!landscape && box) {
+      const needW = box.w + gap * 2;
+      if (area.w - pw < needW) pw = Math.max(160, Math.min(pw, area.w - needW));
+      const needH = box.h + gap * 2;
+      if (area.h - ph < needH) ph = Math.max(240, Math.min(ph, area.h - needH));
+    }
+    overlay.classList.toggle("is-short-edit", landscape);
+    device.style.setProperty("width", `${Math.round(pw)}px`, "important");
+    device.style.setProperty("height", `${Math.round(ph)}px`, "important");
+    device.style.setProperty("max-width", `${Math.round(pw)}px`, "important");
+    device.style.setProperty("max-height", `${Math.round(ph)}px`, "important");
+
+    const slots = [
+      { id: "br", x: area.right - pw, y: area.bottom - ph },
+      { id: "bl", x: area.left, y: area.bottom - ph },
+      { id: "tr", x: area.right - pw, y: area.top },
+      { id: "tl", x: area.left, y: area.top },
+    ];
+    if (landscape) {
+      // Prefer a side dock so a short viewport keeps vertical room for the avatar.
+      slots.sort((a, b) => {
+        const side = (s) => (s.id.endsWith("r") || s.id.endsWith("l") ? 0 : 1);
+        return side(a) - side(b);
+      });
+    }
+    if (box) {
+      const cx = box.x + box.w / 2;
+      const cy = box.y + box.h / 2;
+      const preferRight = cx < (area.left + area.right) / 2;
+      const preferTop = cy > (area.top + area.bottom) / 2;
+      slots.sort((a, b) => {
+        const score = (s) => {
+          let n = 0;
+          if (preferRight ? s.x >= area.left + area.w / 2 - 1 : s.x <= area.left + 1) n += 2;
+          if (preferTop ? s.y <= area.top + 1 : s.y >= area.bottom - ph - 1) n += 1;
+          if (landscape && (s.id === "bl" || s.id === "br" || s.id === "tl" || s.id === "tr")) n += 0;
+          return -n;
+        };
+        return score(a) - score(b);
+      });
+    }
+
+    const pad = 8;
+    const clampSlot = (s) => ({
+      id: s.id,
+      x: Math.min(Math.max(s.x, area.left), Math.max(area.left, area.right - pw)),
+      y: Math.min(Math.max(s.y, area.top), Math.max(area.top, area.bottom - ph)),
+    });
+    const phoneAt = (s) => ({ x: s.x, y: s.y, w: pw, h: ph });
+    const vpKey = `${vw}x${vh}`;
+    let chosen = null;
+    if (dockedViewport === vpKey && dockedSlotId) {
+      const sticky = slots.find((s) => s.id === dockedSlotId);
+      if (sticky) chosen = clampSlot(sticky);
+    } else {
+      r3?.setEditViewShift?.(0, 0);
+    }
+    if (!chosen) {
+      chosen = slots.map(clampSlot).find((s) => !box || !rectsOverlap(box, phoneAt(s), pad));
+    }
+    if (!chosen) chosen = clampSlot(slots[0]);
+    dockedSlotId = chosen.id;
+    dockedViewport = vpKey;
+
+    const ov = overlay.getBoundingClientRect();
+    overlay.style.setProperty("--edit-phone-left", `${Math.round(chosen.x - ov.left)}px`);
+    overlay.style.setProperty("--edit-phone-top", `${Math.round(chosen.y - ov.top)}px`);
+
+    const phone = phoneAt(chosen);
+    if (box && rectsOverlap(box, phone, pad) && r3?.setEditViewShift) {
+      const regions = [
+        { x: area.left, y: area.top, w: area.w, h: Math.max(0, phone.y - area.top) },
+        { x: area.left, y: phone.y + phone.h, w: area.w, h: Math.max(0, area.bottom - (phone.y + phone.h)) },
+        { x: area.left, y: area.top, w: Math.max(0, phone.x - area.left), h: area.h },
+        { x: phone.x + phone.w, y: area.top, w: Math.max(0, area.right - (phone.x + phone.w)), h: area.h },
+      ].filter((r) => r.w >= box.w + pad * 2 && r.h >= box.h + pad * 2);
+      regions.sort((a, b) => b.w * b.h - a.w * a.h);
+      const region = regions[0];
+      if (region) {
+        const tx = Math.min(Math.max(box.x, region.x + pad), region.x + region.w - pad - box.w);
+        const ty = Math.min(Math.max(box.y, region.y + pad), region.y + region.h - pad - box.h);
+        r3.setEditViewShift(tx - box.x, ty - box.y);
+      }
     }
   }
 
@@ -497,9 +663,19 @@ export function initCreatorMenu({ onShow, getBackdropRoom } = {}) {
     screen.classList.remove("hidden");
     overlay.classList.add("is-character-edit");
     overlay.classList.remove("hidden");
+    if (compactEditViewport()) overlay.classList.add("is-compact-edit");
     requestAnimationFrame(() => {
       pageIndex = 0;
+      layoutPhoneAwayFromAvatar();
       paginate();
+      requestAnimationFrame(() => {
+        layoutPhoneAwayFromAvatar();
+        paginate();
+        setTimeout(() => {
+          layoutPhoneAwayFromAvatar();
+          paginate();
+        }, 200);
+      });
     });
     return true;
   }
@@ -508,7 +684,9 @@ export function initCreatorMenu({ onShow, getBackdropRoom } = {}) {
     const overlay = overlayEl();
     overlay?.classList.remove("is-character-edit");
     overlay?.classList.remove("is-keyboard");
+    overlay?.classList.remove("is-compact-edit");
     overlay?.style.setProperty("--creator-kb", "0px");
+    clearPhoneDock(overlay);
     const screen = document.getElementById("phone-screen-edit-character");
     screen?.classList.add("hidden");
     if (windowEl && phoneHomeParent && windowEl.parentElement !== phoneHomeParent) {
@@ -551,8 +729,9 @@ export function initCreatorMenu({ onShow, getBackdropRoom } = {}) {
   }
   if (typeof ResizeObserver !== "undefined") {
     ro = new ResizeObserver(() => {
-      if (document.body.dataset.view !== "creator") return;
+      if (!editorActive()) return;
       if (keyboardCovered() > 80) return;
+      if (phoneEditOpen()) layoutPhoneAwayFromAvatar();
       paginate();
     });
     ro.observe(panelsEl || windowEl || roomEl);

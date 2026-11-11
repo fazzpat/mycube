@@ -555,6 +555,7 @@ export function createRoom3D(container, opts = {}) {
   let pinchAnchor = null;
   let zoomTarget = 1;
   let followPaused = false;
+  let editViewShiftX = 0, editViewShiftY = 0;
   let autoFit = !isPhoneView();
   let panLocked = false;
   let velX = 0, velY = 0;
@@ -618,7 +619,10 @@ export function createRoom3D(container, opts = {}) {
     return { minX, maxX, minY, maxY, w: maxX - minX, h: maxY - minY };
   }
   function originAt(now) {
-    return { ox: viewW / (2 * zoom) - camX, oy: viewH / (2 * zoom) - camY + bobY(now) };
+    return {
+      ox: viewW / (2 * zoom) - camX + (editViewShiftX || 0) / zoom,
+      oy: viewH / (2 * zoom) - camY + bobY(now) + (editViewShiftY || 0) / zoom,
+    };
   }
   function fitRoomCamera() {
     const b = roomWorldBounds();
@@ -1587,6 +1591,27 @@ export function createRoom3D(container, opts = {}) {
       const rect = container.getBoundingClientRect();
       return { x: c.x - rect.left, y: c.y - rect.top, footY: f.y - rect.top, visible: c.visible };
     },
+    /* Viewport-space box of the visible figure, including a little room for the name tag. */
+    personBox(name) {
+      const st = personState.get(name);
+      const p = people.find((x) => x.username === name);
+      if (!st && !p) return null;
+      const x = (st?.x ?? p.x) + 0.5, y = (st?.y ?? p.y) + 0.5;
+      const foot = tileToScreen(x, y);
+      const top = (st?.figTop != null) ? st.figTop : (AV_HEAD_TOP || 2);
+      const namePad = 16;
+      const tl = clientFromWorld(foot.sx - AV_W / 2, foot.sy - AV_GROUND_Y + top - namePad);
+      const br = clientFromWorld(foot.sx + AV_W / 2, foot.sy + 4);
+      const left = Math.min(tl.x, br.x), right = Math.max(tl.x, br.x);
+      const topY = Math.min(tl.y, br.y), botY = Math.max(tl.y, br.y);
+      return { x: left, y: topY, w: right - left, h: botY - topY, left, top: topY, right, bottom: botY };
+    },
+    setEditViewShift(x, y) {
+      editViewShiftX = x || 0;
+      editViewShiftY = y || 0;
+      return { x: editViewShiftX, y: editViewShiftY };
+    },
+    getEditViewShift() { return { x: editViewShiftX, y: editViewShiftY }; },
     visualZoom() { return zoom; },
     syncPeople(list) { interpolatePeople(list || []); },
     setNpcs(list) { npcs = list || []; },

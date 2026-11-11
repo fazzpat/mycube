@@ -481,7 +481,7 @@ async function assertCreatorPageFit(page, viewportName, tab, pageNo) {
     chromeFail.length === 0 && info.optionFits.every((o) => o.ok && !o.missing),
     JSON.stringify({ chrome: chromeFail, options: info.optionFits.filter((o) => !o.ok || o.missing) })
   );
-  const minTap = viewportName === "844x390 landscape" ? 28 : 32;
+  const minTap = viewportName === "1280x800" ? 36 : 40;
   if (viewportName !== "1280x800") {
     const small = info.optionFits.filter((o) => !o.missing && o.minH < minTap);
     check(
@@ -685,6 +685,129 @@ async function runCreatorPhoneAndBoot(browser) {
   await cctx.close();
 
   await runPhoneEditPoseTests(browser);
+  await runMobileAvatarClearTests(browser);
+}
+
+
+function boxesOverlap(a, b) {
+  if (!a || !b) return true;
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+
+async function measureAvatarPhoneClearance(page) {
+  return page.evaluate(() => {
+    const phoneEl = document.querySelector("[data-testid=phone-device]");
+    const pr = phoneEl?.getBoundingClientRect();
+    const pose = window.__avatarPose?.();
+    const box = window.HouseRoom3D?.personBox?.(pose?.name) || pose?.box;
+    const phone = pr ? { x: pr.x, y: pr.y, w: pr.width, h: pr.height, right: pr.right, bottom: pr.bottom } : null;
+    const overlap = Boolean(box && phone && box.x < phone.x + phone.w && box.x + box.w > phone.x && box.y < phone.y + phone.h && box.y + box.h > phone.y);
+    const html = document.documentElement, body = document.body, room = document.getElementById("view-room");
+    const slack = 1.5;
+    const noScroll = (el) => !el || (el.scrollHeight <= el.clientHeight + slack && el.scrollWidth <= el.clientWidth + 8);
+    return {
+      phone,
+      box,
+      overlap,
+      compact: document.getElementById("phone-overlay")?.classList.contains("is-compact-edit"),
+      view: document.body.dataset.view,
+      sitting: Boolean(pose?.flags?.sitting || pose?.sitting),
+      tile: pose?.tile,
+      flags: pose?.flags,
+      html: noScroll(html),
+      body: noScroll(body),
+      room: noScroll(room),
+      phoneFits: phone && phone.x >= -1 && phone.y >= -1 && phone.x + phone.w <= innerWidth + 1 && phone.y + phone.h <= innerHeight + 1,
+      pose,
+    };
+  });
+}
+
+async function walkToTile(page, name, x, y) {
+  await page.evaluate(({ x, y }) => window.__clickTile?.(x, y), { x, y });
+  await page.waitForFunction(({ name, x, y }) => {
+    const t = window.HouseRoom3D?.personTile?.(name);
+    const walking = window.HouseRoom3D?.personFlags?.(name)?.walking;
+    return t && Math.abs(t.x - x) < 0.25 && Math.abs(t.y - y) < 0.25 && !walking;
+  }, { name, x, y }, { timeout: 12000 }).catch(() => {});
+  await page.waitForTimeout(250);
+}
+
+async function runMobileAvatarClearTests(browser) {
+  log("The compact phone editor never covers the avatar on mobile");
+  const viewports = [
+    { name: "360x640", width: 360, height: 640 },
+    { name: "375x667", width: 375, height: 667 },
+    { name: "390x844", width: 390, height: 844 },
+    { name: "414x896", width: 414, height: 896 },
+  ];
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const page = await ctx.newPage();
+  page.setDefaultTimeout(20000);
+  await login(page, "clearview");
+  await page.waitForFunction(() => window.HouseRoom3D && window.HouseRoom3D.ready);
+  const n = await page.evaluate(() => window.HouseRoom3D?.gridSize?.() || 6);
+  const left = { x: 0, y: Math.max(1, Math.floor(n / 2)) };
+  const center = { x: Math.floor((n - 1) / 2), y: Math.floor((n - 1) / 2) };
+  const right = { x: n - 1, y: Math.max(1, Math.floor(n / 2)) };
+
+  await page.evaluate(() => window.__debugKit?.({ furniture: ["capsulecouch"], coins: 400 }));
+  await page.evaluate(() => { window.__startPlace?.("capsulecouch"); window.__clickTile(4, 0); });
+  await page.waitForFunction(() => window.HouseRoom3D.getFurniture().some((f) => f.type === "capsulecouch"));
+  await page.evaluate(() => window.__exitEdit?.());
+  const couchId = await page.evaluate(() => window.HouseRoom3D.getFurniture().find((f) => f.type === "capsulecouch").id);
+
+  const placements = [
+    { label: "left", kind: "stand", tile: left },
+    { label: "center", kind: "stand", tile: center },
+    { label: "right", kind: "stand", tile: right },
+    { label: "seated", kind: "sit" },
+  ];
+
+  for (const vp of viewports) {
+    await page.setViewportSize({ width: vp.width, height: vp.height });
+    await page.waitForTimeout(200);
+    for (const place of placements) {
+      if (place.kind === "stand") {
+        const sitting = await page.evaluate(() => window.HouseRoom3D.personFlags("clearview")?.sitting);
+        if (sitting) {
+          await page.evaluate((id) => window.__sit(id, 0), couchId);
+          await page.waitForFunction(() => !window.HouseRoom3D.personFlags("clearview")?.sitting, null, { timeout: 8000 }).catch(() => {});
+        }
+        await walkToTile(page, "clearview", place.tile.x, place.tile.y);
+      } else {
+        const sitting = await page.evaluate(() => window.HouseRoom3D.personFlags("clearview")?.sitting);
+        if (!sitting) {
+          await page.evaluate((id) => window.__sit(id, 0), couchId);
+          await page.waitForFunction(() => window.HouseRoom3D.personFlags("clearview")?.sitting, null, { timeout: 12000 });
+          await page.waitForTimeout(300);
+        }
+      }
+      const before = await page.evaluate(() => window.__avatarPose?.());
+      await openCharacterEditor(page);
+      await page.waitForTimeout(360);
+      const mid = await measureAvatarPhoneClearance(page);
+      check(
+        `Edit Character at ${vp.name} (${place.label}) keeps the avatar fully visible beside the phone`,
+        mid.view === "room" && mid.compact && mid.box && mid.phone && !mid.overlap && mid.phone.w <= 220 && mid.phone.h <= 360 && (place.kind === "sit" ? mid.sitting : !mid.sitting),
+        JSON.stringify({ place, mid, beforeTile: before?.tile })
+      );
+      check(
+        `Edit Character at ${vp.name} (${place.label}) does not change pose or seat`,
+        samePose(before, mid.pose || { tile: mid.tile, flags: mid.flags, sitting: mid.sitting, view: mid.view, cam: before?.cam }) && mid.view === "room",
+        JSON.stringify({ before, mid })
+      );
+      check(
+        `Edit Character at ${vp.name} (${place.label}) does not scroll the page`,
+        mid.html && mid.body && mid.room && mid.phoneFits,
+        JSON.stringify({ scroll: { html: mid.html, body: mid.body, room: mid.room }, phone: mid.phone })
+      );
+      await page.click('[data-testid="creator-back"]');
+      await page.waitForFunction(() => !window.__creatorMenu?.isPhoneEdit?.(), null, { timeout: 8000 });
+      await page.waitForTimeout(200);
+    }
+  }
+  await ctx.close();
 }
 
 async function runPhoneEditPoseTests(browser) {
@@ -714,9 +837,11 @@ async function runPhoneEditPoseTests(browser) {
       JSON.stringify({ before, during, after })
     );
     if (homePhone && editPhone) {
+      const compact = editPhone.w <= 220 && editPhone.h <= 360;
+      const restored = after.restored && Math.abs(after.restored.w - homePhone.w) <= 4 && Math.abs(after.restored.h - homePhone.h) <= 4;
       check(
-        `${label}: the phone grows on open and restores on close`,
-        editPhone.w > homePhone.w + 8 && editPhone.h > homePhone.h + 8 && Math.abs(after.restored.w - homePhone.w) <= 2 && Math.abs(after.restored.h - homePhone.h) <= 2,
+        `${label}: the mobile editor stays compact and the phone restores on close`,
+        compact && restored,
         JSON.stringify({ homePhone, editPhone, restored: after.restored })
       );
     }
