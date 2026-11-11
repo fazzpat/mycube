@@ -1672,12 +1672,13 @@ io.on("connection", (socket) => {
       clearChessAway(game, user.username);
       if (game.white === user.username || game.black === user.username) {
         // returning player keeps their color
-      } else if (!game.white && !game.black) {
-        game.white = user.username;
-      } else if (!game.result && !game.black && game.white !== user.username) {
-        game.black = user.username;
-      } else if (!game.result && !game.white && game.black !== user.username) {
-        game.white = user.username;
+      } else if (!game.result) {
+        const canWhite = !game.white && game.black !== user.username;
+        const canBlack = !game.black && game.white !== user.username;
+        if (seatNum === 1 && canBlack) game.black = user.username;
+        else if (seatNum === 0 && canWhite) game.white = user.username;
+        else if (canWhite) game.white = user.username;
+        else if (canBlack) game.black = user.username;
       }
       user.stationId = id;
       user.sitting = true;

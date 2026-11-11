@@ -156,6 +156,7 @@ try {
   await black.evaluate((id) => window.__clickFurniture(id, "chesstable", { seat: 1 }), chessId);
   await waitPanel(white);
   await waitPanel(black);
+  await white.waitForFunction(() => document.querySelector('[data-testid="chess-status"]')?.textContent?.includes("your turn"), null, { timeout: 15000 });
   check("Both players see the chess panel after sitting", true);
 
   log("Square sizing on desktop, phone portrait, and landscape");
@@ -180,7 +181,7 @@ try {
   log("Legal moves, highlights, and two-client sync");
   // Black's board is flipped; both click via testids.
   await white.click('[data-testid="chess-sq-e2"]');
-  await white.waitForTimeout(150);
+  await white.waitForFunction(() => document.querySelector('.chess-sq.sel')?.dataset.square === "e2" && document.querySelectorAll(".chess-sq.legal").length >= 2, null, { timeout: 5000 }).catch(() => {});
   const highlights = await white.evaluate(() => {
     const legal = [...document.querySelectorAll(".chess-sq.legal")].map((el) => el.dataset.square);
     const sel = document.querySelector(".chess-sq.sel")?.dataset.square;
