@@ -10,6 +10,7 @@ import {
 import { doorSlot as layoutDoorSlot, switchSlot as layoutSwitchSlot, windowSlots as layoutWindowSlots } from "./wallLayout.js";
 import { chessSeatPose, chessBoardMetrics } from "./chessTable.js";
 import { steamFrameAt } from "./coffeeMaker.js";
+import { liePose, bedZeds, drawBedZeds } from "./bed.js";
 import {
   TYPE as RECORD_TYPE, spinFrameAt, notesAt, drawNotes, platterOffset, paintListenHint,
   isRecordListening,
@@ -931,11 +932,12 @@ export function createRoom3D(container, opts = {}) {
         lastSay,
         wallTime: Date.now(),
       });
+      const lying = Boolean(p.lying || st.lying);
       const flags = {
-        sitting: p.sitting, walking, facing: face, dirX: st.dirX, dirY: st.dirY,
-        usingPhone: p.usingPhone, boxing: p.boxing, actionEmote: p.actionEmote,
-        heldItem: p.heldItem, heldProp: p.heldProp, gym: p.gym,
-        blink: anim.blink, lookX: anim.lookX, lookY: anim.lookY,
+        sitting: p.sitting && !lying, walking: walking && !lying, facing: face, dirX: st.dirX, dirY: st.dirY,
+        usingPhone: p.usingPhone && !lying, boxing: p.boxing, actionEmote: p.actionEmote,
+        heldItem: lying ? null : p.heldItem, heldProp: p.heldProp, gym: p.gym,
+        blink: lying ? "closed" : anim.blink, lookX: anim.lookX, lookY: anim.lookY,
         bodyDir: anim.bodyDir, headDir: anim.headDir,
         shoePop: shoePopAt(p.username, (p.avatar || {}).shoes, now),
         mouth: mouthPhase(p.talkText, p.talkAt, Date.now()),
@@ -954,6 +956,17 @@ export function createRoom3D(container, opts = {}) {
         }
       }
       const personItem = { kind: "person", id: p.username, type: "person", depth, sx: foot.sx - AV_W / 2, sy: foot.sy - AV_GROUND_Y, w: AV_W, h: AV_H, spr, raw: p, tileX: x, tileY: y };
+      if (lying) {
+        const bed = furniture.find((f) => f.id === (p.stationId || st.stationId) && f.type === "bed");
+        const pose = liePose(bed || { x, y, rot: 0 });
+        const head = tileToScreen(pose.head.x, pose.head.y);
+        const footPt = tileToScreen(pose.foot.x, pose.foot.y);
+        const angle = Math.atan2(footPt.sy - head.sy, footPt.sx - head.sx) - Math.PI / 2;
+        personItem.lie = { angle, headSx: head.sx, headSy: head.sy - 6, zeds: bedZeds(p.lyingAt || st.lyingAt, Date.now()) };
+        personItem.depth = (bed ? (bed.x + bed.y + 1.0) : depth) + 0.12;
+        personItem.sx = head.sx - AV_W / 2;
+        personItem.sy = head.sy - 20;
+      }
       const heldKind = heldKindOf(p.heldItem);
       if (heldKind && !flags.usingPhone) {
         const anchor = heldItemHandAnchor(p.avatar || {}, flags, frame);
@@ -1339,7 +1352,34 @@ export function createRoom3D(container, opts = {}) {
         const d = tileToScreen(it.raw.x, it.raw.y + h);
         fillPoly(ctx, [a, b, c, d], "rgba(212, 180, 106, 0.28)", "#d4b46a");
       }
-      if (it.kind === "person" && it.held && it.held.item) {
+      if (it.kind === "person" && it.lie) {
+        const { angle, headSx, headSy, zeds } = it.lie;
+        ctx.save();
+        ctx.translate(headSx, headSy);
+        ctx.rotate(angle);
+        // Head of the sprite sits on the pillow; body runs toward the foot.
+        ctx.drawImage(it.spr.c, -AV_W / 2, -14);
+        // Blanket over the lower body (from mid-torso down)
+        ctx.fillStyle = "rgba(126, 160, 196, 0.92)";
+        ctx.strokeStyle = "#2a1c14";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        const bx = -11, by = 22, bw = 22, bh = 28;
+        ctx.moveTo(bx + 3, by);
+        ctx.lineTo(bx + bw - 3, by);
+        ctx.lineTo(bx + bw, by + 4);
+        ctx.lineTo(bx + bw - 2, by + bh);
+        ctx.lineTo(bx + 2, by + bh);
+        ctx.lineTo(bx, by + 4);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = "rgba(158, 184, 208, 0.9)";
+        ctx.fillRect(bx + 3, by, bw - 6, 3);
+        ctx.restore();
+        if (zeds) drawBedZeds(ctx, headSx, headSy - 8, zeds, lightsOn);
+      } else if (it.kind === "person" && it.held && it.held.item) {
+
         const { item, anchor, face, sip } = it.held;
         const lift = sip?.lift || 0;
         const hx = it.sx + anchor.x;
@@ -1654,7 +1694,7 @@ export function createRoom3D(container, opts = {}) {
       st.targetX = p.x;
       st.targetY = p.y;
       st.facing = p.facing;
-      Object.assign(st, { sitting: p.sitting, usingPhone: p.usingPhone, boxing: p.boxing, actionEmote: p.actionEmote, heldItem: p.heldItem, heldProp: p.heldProp, activePet: p.activePet, avatar: p.avatar, username: p.username });
+      Object.assign(st, { sitting: p.sitting, lying: p.lying, lyingAt: p.lyingAt, usingPhone: p.usingPhone, boxing: p.boxing, actionEmote: p.actionEmote, heldItem: p.heldItem, heldProp: p.heldProp, activePet: p.activePet, avatar: p.avatar, username: p.username, stationId: p.stationId });
     }
     for (const k of [...personState.keys()]) if (!seen.has(k)) personState.delete(k);
     people = list.map((p) => {
@@ -1778,7 +1818,7 @@ export function createRoom3D(container, opts = {}) {
       if (!p) return null;
       const st = personState.get(name) || {};
       return {
-        boxing: p.boxing || st.boxing || Object.values(uses || {}).some((u) => u && u.type === "punchbag" && u.user === name), sitting: p.sitting, heldItem: p.heldItem, gym: p.gym, facing: p.sitting ? snapFacingToAxis(p.facing) : p.facing,
+        boxing: p.boxing || st.boxing || Object.values(uses || {}).some((u) => u && u.type === "punchbag" && u.user === name), sitting: p.sitting, lying: p.lying, heldItem: p.heldItem, gym: p.gym, facing: p.sitting ? snapFacingToAxis(p.facing) : p.facing,
         actionEmote: p.actionEmote, walking: Boolean(st.walking || p.walking), usingPhone: p.usingPhone,
         sculpted: false, paperDoll: true, pixel: true,
         eyes: getChibiAnim(name),

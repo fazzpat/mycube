@@ -567,6 +567,8 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
       destY: p.y,
       path: existing.path || null,
       sitting: p.sitting,
+      lying: p.lying,
+      lyingAt: p.lyingAt,
       walking: false,
       emote: p.emote ?? existing.emote ?? null,
       actionEmote: p.actionEmote ?? existing.actionEmote ?? null,
@@ -592,11 +594,13 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     };
   }
 
-  function setPersonDest(p, x, y, sitting) {
+  function setPersonDest(p, x, y, sitting, lying) {
     p.destX = x;
     p.destY = y;
     p.sitting = sitting;
-    if (sitting) {
+    if (lying != null) p.lying = Boolean(lying);
+    if (sitting) p.lying = false;
+    if (sitting || lying) {
       p.x = x;
       p.y = y;
       p.path = null;
@@ -1881,7 +1885,7 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
       "couch", "chair", "hoverchair", "capsulecouch",
       "tv", "holotv", "chesstable", "fridge", "punchbag", "heavybag",
       "benchpress", "treadmill", "cubics", "clothescab", "coffeemachine",
-      "recordplayer",
+      "recordplayer", "bed",
     ].includes(type) || type === RECORD_TYPE;
   }
 
@@ -1889,9 +1893,10 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     const me = state.people.get(state.me?.username);
     // A regular floor walk cancels a pending "use this furniture when I arrive" job.
     state.pendingArrive = null;
-    if (me?.sitting) {
+    if (me?.sitting || me?.lying) {
       socket.emit("standUp");
       me.sitting = false;
+      me.lying = false;
     }
     const size = state.room?.size || 6;
     const from = { x: me?.x ?? tx, y: me?.y ?? ty };
@@ -2369,14 +2374,26 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
       });
       return;
     }
+    if (type === "bed") {
+      const me = state.people.get(state.me?.username);
+      if (me?.lying && me.stationId === id) {
+        socket.emit("standUp");
+        me.lying = false;
+        me.sitting = false;
+        return;
+      }
+      approachFurniture(furn, () => socket.emit("useBed", { id }));
+      return;
+    }
     // Decorative / unused furniture: walk to the nearest adjacent tile.
     const tiles = HouseIso.tilesFor(furn.type, furn.x, furn.y, furn.rot);
     const me = state.people.get(state.me?.username);
     const dest = nearestWalkable({ x: me?.x ?? furn.x, y: me?.y ?? furn.y }, furn.x, furn.y, blockedNow(), state.room?.size || 6, tiles);
     if (dest) {
-      if (me?.sitting) {
+      if (me?.sitting || me?.lying) {
         socket.emit("standUp");
         me.sitting = false;
+        me.lying = false;
       }
       if (phoneOpen()) closePhone();
       state.room3d?.setMoveTarget?.(dest.x, dest.y);
@@ -4003,13 +4020,15 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
       cur.facing = person.facing;
       cur.stationId = person.stationId;
       if (person.sitting != null) cur.sitting = person.sitting;
+      if (person.lying != null) cur.lying = person.lying;
+      if (person.lyingAt != null) cur.lyingAt = person.lyingAt;
       if (person.usingPhone != null) cur.usingPhone = person.usingPhone;
       renderPeople();
     }
     if (person.username === state.me?.username) refreshActivityUI();
   });
 
-  socket.on("userMoved", ({ username, x, y, sitting, facing, usingPhone }) => {
+  socket.on("userMoved", ({ username, x, y, sitting, lying, facing, usingPhone }) => {
     const p = state.people.get(username);
     if (!p) return;
     if (facing) p.facing = facing;
@@ -4020,7 +4039,7 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     if (job && Math.hypot(job.x - x, job.y - y) > 0.85) {
       setPersonDest(p, job.x, job.y, false);
     } else {
-      setPersonDest(p, x, y, sitting);
+      setPersonDest(p, x, y, sitting, lying);
     }
     if (username === state.me?.username && !sitting) closeChessPanel();
     if (username === state.me?.username) maybeFireArrive(p);

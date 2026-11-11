@@ -12,7 +12,7 @@
     lamp: { name: "Floor lamp", price: 25, w: 1, h: 1, blocks: true },
     table: { name: "Dining table", price: 30, w: 2, h: 1, blocks: true },
     couch: { name: "Couch", price: 40, w: 2, h: 1, blocks: true },
-    bed: { name: "Bed", price: 45, w: 2, h: 3, blocks: true },
+    bed: { name: "Bed", price: 45, w: 1, h: 2, blocks: true },
     coffeetable: { name: "Coffee table", price: 22, w: 2, h: 1, blocks: true },
     tv: { name: "TV stand", price: 35, w: 2, h: 1, blocks: true },
     fridge: { name: "Fridge", price: 30, w: 1, h: 1, blocks: true },
@@ -347,7 +347,7 @@
       </svg>`;
     }
     const icons = {
-      bed: `<svg class="furn-svg" width="90" height="70" viewBox="0 0 90 70"><rect x="8" y="22" width="74" height="36" rx="6" fill="#7ea0c4" stroke="${ink}" stroke-width="2"/><rect x="12" y="14" width="28" height="14" rx="4" fill="#f7f3ea" stroke="${ink}" stroke-width="2"/></svg>`,
+      bed: `<svg class="furn-svg" width="70" height="80" viewBox="0 0 70 80"><rect x="22" y="8" width="26" height="14" rx="2" fill="#6b4a32" stroke="${ink}" stroke-width="2"/><rect x="16" y="20" width="38" height="52" rx="4" fill="#7ea0c4" stroke="${ink}" stroke-width="2"/><rect x="20" y="22" width="30" height="14" rx="4" fill="#f7f3ea" stroke="${ink}" stroke-width="2"/><rect x="16" y="38" width="38" height="6" fill="#9eb8d0"/></svg>`,
       coffeetable: `<svg class="furn-svg" width="90" height="50" viewBox="0 0 90 50"><rect x="10" y="18" width="70" height="10" rx="3" fill="#8b5a2b" stroke="${ink}" stroke-width="2"/><rect x="16" y="28" width="6" height="16" fill="#5a3a1c"/><rect x="68" y="28" width="6" height="16" fill="#5a3a1c"/></svg>`,
       tv: `<svg class="furn-svg" width="90" height="110" viewBox="0 0 90 110"><rect x="8" y="86" width="74" height="16" rx="2" fill="#6b4a2c" stroke="${ink}" stroke-width="2"/><rect x="14" y="90" width="18" height="8" rx="1" fill="#4a3220"/><rect x="58" y="90" width="18" height="8" rx="1" fill="#4a3220"/><rect x="38" y="80" width="14" height="8" fill="#1a1c22"/><rect x="12" y="8" width="66" height="76" rx="2" fill="#1a1c22" stroke="${ink}" stroke-width="2"/><rect x="16" y="14" width="58" height="60" fill="#152238"/></svg>`,
       fridge: `<svg class="furn-svg" width="50" height="80" viewBox="0 0 50 80"><rect x="8" y="6" width="34" height="68" rx="4" fill="#ece7df" stroke="${ink}" stroke-width="2"/><rect x="34" y="22" width="4" height="16" fill="#b0a89c"/></svg>`,

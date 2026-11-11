@@ -26,6 +26,7 @@ import {
 import { ART_PIECES, artCatalogEntry, PAINTING_CATALOG } from "./public/js/artPieces.js";
 import { reservedWallSlots as layoutReservedWallSlots } from "./public/js/wallLayout.js";
 import { chessSeatTiles, chessSeatPose, migrateChessTable } from "./public/js/chessTable.js";
+import { liePose, migrateBed, bedTiles } from "./public/js/bed.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT) || 3000;
@@ -53,7 +54,7 @@ const FURNITURE_CATALOG = {
   lamp: { name: "Floor lamp", price: 25, w: 1, h: 1, blocks: true },
   table: { name: "Dining table", price: 30, w: 2, h: 1, blocks: true },
   couch: { name: "Couch", price: 40, w: 2, h: 1, blocks: true },
-  bed: { name: "Bed", price: 45, w: 2, h: 3, blocks: true },
+  bed: { name: "Bed", price: 45, w: 1, h: 2, blocks: true },
   coffeetable: { name: "Coffee table", price: 22, w: 2, h: 1, blocks: true },
   tv: { name: "TV stand", price: 35, w: 2, h: 1, blocks: true },
   fridge: { name: "Fridge", price: 30, w: 1, h: 1, blocks: true },
@@ -406,6 +407,8 @@ function snapshotPerson(u) {
     x: u.x,
     y: u.y,
     sitting: u.sitting,
+    lying: Boolean(u.lying),
+    lyingAt: u.lyingAt || null,
     emote: u.emote,
     actionEmote: u.actionEmote || null,
     actionEmoteAt: u.actionEmoteAt || null,
@@ -415,7 +418,7 @@ function snapshotPerson(u) {
     heldItem: u.heldItem || null,
     boxing: u.boxing || null,
     gym: u.gym || null,
-    facing: u.sitting ? snapFacingToAxis(u.facing) : (u.facing || null),
+    facing: (u.sitting || u.lying) ? snapFacingToAxis(u.facing) : (u.facing || null),
     stationId: u.stationId || null,
     seat: u.seat ?? null,
   };
@@ -671,6 +674,9 @@ function trySit(user, room, furn, seat, socket) {
 
 function furnitureInUse(room, id) {
   if (sittersOn(room, id).length) return "Someone is sitting there.";
+  for (const u of users.values()) {
+    if (u.roomId === room.id && u.stationId === id && u.lying) return "Someone is sleeping there.";
+  }
   const use = room.uses?.[id];
   if (use) return "Someone is using that.";
   if (room.arcade?.[id]?.user) return "Someone is playing Cubics.";
@@ -697,7 +703,22 @@ function migrateRoomChessTables(room) {
   }
 }
 
+function migrateRoomBeds(room) {
+  if (!Array.isArray(room.furniture)) return;
+  const n = roomSize(room);
+  for (const f of room.furniture) {
+    if (f.type !== "bed") continue;
+    const moved = migrateBed(f, n, (x, y, rot) => canPlaceOn(room, "bed", x, y, rot, f.id));
+    if (moved && (moved.x !== f.x || moved.y !== f.y || moved.rot !== f.rot)) {
+      f.x = moved.x;
+      f.y = moved.y;
+      f.rot = moved.rot;
+    }
+  }
+}
+
 function ensureRoomExtras(room) {
+
   if (!room.tvs) room.tvs = {};
   if (!room.recordPlayers) room.recordPlayers = {};
   if (!room.chess) room.chess = {};
@@ -710,6 +731,7 @@ function ensureRoomExtras(room) {
   if (Array.isArray(room.furniture)) {
     for (const f of room.furniture) f.rot = normalizeRot(f.rot);
     migrateRoomChessTables(room);
+    migrateRoomBeds(room);
     migrateWallArtOffReserved(room);
   }
   return room;
@@ -828,6 +850,8 @@ function clearUserActivities(user, room, { forfeit = true, keepChess = false } =
   clearBrewTimer(user);
   user.stationId = null;
   user.sitting = false;
+  user.lying = false;
+  user.lyingAt = null;
   user.seat = null;
   if (user.boxing) user.boxing = null;
   if (user.gym) user.gym = null;
@@ -971,6 +995,8 @@ function leaveRoom(user) {
   if (room) clearUserActivities(user, room, { forfeit: true });
   user.roomId = null;
   user.sitting = false;
+  user.lying = false;
+  user.lyingAt = null;
   user.emote = null;
   user.heldItem = null;
   clearHeldTimer(user);
@@ -1979,7 +2005,40 @@ io.on("connection", (socket) => {
     emitPerson(user);
   });
 
+  socket.on("useBed", ({ id } = {}) => {
+    const user = getUser(socket);
+    if (!user?.roomId) return;
+    const room = rooms.get(user.roomId);
+    const furn = room?.furniture.find((f) => f.id === id && f.type === "bed");
+    if (!furn) return;
+    ensureRoomExtras(room);
+    if (user.lying && user.stationId === id) {
+      clearUserActivities(user, room, { forfeit: true });
+      emitPerson(user);
+      io.to(room.id).emit("userMoved", { username: user.username, x: user.x, y: user.y, sitting: false, lying: false, facing: user.facing });
+      return;
+    }
+    for (const u of users.values()) {
+      if (u !== user && u.roomId === room.id && u.stationId === id && u.lying) {
+        socket.emit("errorMsg", { message: "Someone is sleeping there." });
+        return;
+      }
+    }
+    clearUserActivities(user, room, { forfeit: true });
+    const pose = liePose(furn);
+    user.x = pose.x;
+    user.y = pose.y;
+    user.facing = pose.facing;
+    user.lying = true;
+    user.lyingAt = Date.now();
+    user.sitting = false;
+    user.stationId = furn.id;
+    emitPerson(user);
+    io.to(room.id).emit("userMoved", { username: user.username, x: user.x, y: user.y, sitting: false, lying: true, facing: user.facing });
+  });
+
   socket.on("sitFurniture", ({ id, seat } = {}) => {
+
     const user = getUser(socket);
     if (!user?.roomId) return;
     const room = rooms.get(user.roomId);
