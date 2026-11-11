@@ -3,14 +3,14 @@ import { mkdir } from "fs/promises";
 import { spawn } from "child_process";
 import path from "path";
 import { fileURLToPath } from "url";
-import { ART_PIECES, PAINTING_CATALOG, PAINTING_IDS, ART_TILE_SPAN, ART_SIZE, ART_WORLD_UP } from "../public/js/artPieces.js";
+import { ART_PIECES, PAINTING_CATALOG, PAINTING_IDS, ART_TILE_SPAN } from "../public/js/artPieces.js";
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SHOT = process.env.SHOT_DIR || path.join(ROOT, "screenshots");
 const ART_SHOTS = process.env.ART_SHOT_DIR || "/workspace/art-shots";
-const PORT = Number(process.env.ART_TEST_PORT || 3018);
+const PORT = Number(process.env.ART_TEST_PORT || 3030);
+const BASE = process.env.BASE_URL || `http://127.0.0.1:${PORT}`;
 const START_SERVER = process.env.ART_E2E_START_SERVER !== "0";
-const BASE = START_SERVER ? `http://127.0.0.1:${PORT}` : (process.env.BASE_URL || `http://127.0.0.1:${PORT}`);
 
 const results = [];
 function log(msg) { console.log("[art-test]", msg); }
@@ -129,11 +129,11 @@ try {
     return got && got.name === exp.name && got.price === exp.price
       && got.w === 1 && got.h === 1 && got.surface === "wall";
   });
-  check("All 6 paintings are in the catalog as one-tile wall art with the right titles and prices", catalogOk, catalogOk ? "" : JSON.stringify(catalog));
+  check("All 10 paintings are in the catalog as one-tile wall art with the right titles and prices", catalogOk, catalogOk ? "" : JSON.stringify(catalog));
 
   log("Store Art category lists the new paintings");
   await alice.evaluate(() => window.__debugKit({ coins: 400 }));
-  await alice.evaluate(() => window.__openStore("art", "art_shore"));
+  await alice.evaluate(() => window.__openStore("art", "art_ocean"));
   await alice.waitForSelector('[data-testid="store-panel"]:not(.hidden)');
   const store = await alice.evaluate((ids) => {
     const listed = ids.filter((id) => document.querySelector(`[data-testid="store-item-${id}"]`));
@@ -145,9 +145,7 @@ try {
   }, IDS);
   const storeOk = store.tab && store.listed.length === IDS.length
     && IDS.every((id) => store.prices[id] === `${PAINTING_CATALOG[id].price}c`);
-  check("The Art tab lists all 6 paintings at their catalog coin prices", storeOk, storeOk ? "" : JSON.stringify(store));
-  await alice.waitForTimeout(250);
-  await alice.screenshot({ path: path.join(ART_SHOTS, "store-listing.png") });
+  check("The Art tab lists all 10 paintings at their catalog coin prices", storeOk, storeOk ? "" : JSON.stringify(store));
 
   log("Buy a painting from the store");
   await alice.locator('[data-testid="store-item-art_blocks"]').click();
@@ -161,12 +159,12 @@ try {
   await alice.waitForTimeout(200);
   await alice.evaluate(() => window.__enterEdit());
   const placements = [
-    ["art_shore", "back", 0],
+    ["art_ocean", "back", 0],
     ["art_peaks", "back", 1],
-    ["art_mesa", "back", 2],
-    ["art_blocks", "left", 0],
-    ["art_tide", "left", 1],
-    ["art_splash", "left", 5],
+    ["art_nightwood", "back", 2],
+    ["art_farm", "left", 0],
+    ["art_skyline", "left", 1],
+    ["art_gridsun", "left", 2],
   ];
   const blockedBefore = await alice.evaluate(() => [...(window.HouseIso.blockedSet(window.HouseRoom3D.getFurniture()) || [])]);
   for (const [type, wall, slot] of placements) {
@@ -206,8 +204,8 @@ try {
 
   log("Rotate / flip between walls");
   const oceanBefore = await alice.evaluate(() => {
-    const a = window.HouseRoom3D.getWallArt().find((x) => x.type === "art_shore");
-    window.__clickFurniture(a.id, "art_shore", { wallArt: true });
+    const a = window.HouseRoom3D.getWallArt().find((x) => x.type === "art_ocean");
+    window.__clickFurniture(a.id, "art_ocean", { wallArt: true });
     window.__rotatePending();
     return { wall: a.wall, slot: a.slot, id: a.id };
   });
@@ -220,8 +218,8 @@ try {
   check("Rotating a hung painting flips it to a free slot on the other wall", flipOk, JSON.stringify({ oceanBefore, flipped }));
 
   const farmBefore = await alice.evaluate(() => {
-    const a = window.HouseRoom3D.getWallArt().find((x) => x.type === "art_blocks");
-    window.__clickFurniture(a.id, "art_blocks", { wallArt: true });
+    const a = window.HouseRoom3D.getWallArt().find((x) => x.type === "art_farm");
+    window.__clickFurniture(a.id, "art_farm", { wallArt: true });
     window.__rotatePending();
     return { wall: a.wall, slot: a.slot, id: a.id };
   });
@@ -232,7 +230,7 @@ try {
   }, farmBefore, { timeout: 8000 }).then((h) => h.jsonValue()).catch(() => null);
   check("A second painting can also be flipped to the opposite wall", Boolean(farmAfter && farmAfter.wall !== farmBefore.wall), JSON.stringify({ farmBefore, farmAfter }));
 
-  const extras = [];
+  const extras = ["art_mesa", "art_swirl", "art_bloom", "art_blocks"];
   for (const type of extras) {
     const spot = await alice.evaluate((type) => {
       const size = 6;
@@ -262,7 +260,7 @@ try {
   const bobSees = await bob.waitForFunction(() => {
     const arts = window.HouseRoom3D.getWallArt() || [];
     const types = new Set(arts.map((a) => a.type));
-    return types.has("art_peaks") && types.has("art_shore") && types.has("art_splash") && arts.length >= 6;
+    return types.has("art_peaks") && types.has("art_farm") && types.has("art_skyline") && arts.length >= 6;
   }, null, { timeout: 10000 }).then(() => true).catch(() => false);
   check("A second player in the cube sees the hung paintings", bobSees);
 
@@ -277,15 +275,12 @@ try {
   }, beforeLeave, { timeout: 10000 }).then(() => true).catch(() => false);
   check("Paintings are still hung after the owner leaves and rejoins the cube", afterRejoin);
 
-  log("Desktop and phone in-room screenshots");
+  log("Phone viewport in-room screenshot");
   await alice.evaluate(() => {
     window.__exitEdit?.();
     const box = document.getElementById("toasts");
     if (box) box.innerHTML = "";
   });
-  await alice.evaluate(() => window.HouseRoom3D.setCamMode?.("room"));
-  await alice.waitForTimeout(400);
-  await alice.screenshot({ path: path.join(ART_SHOTS, "cube-all-six.png") });
   await alice.setViewportSize({ width: 390, height: 844 });
   await alice.waitForTimeout(700);
   const phonePath = path.join(ART_SHOTS, "in-room-phone.png");
