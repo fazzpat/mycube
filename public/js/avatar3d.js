@@ -919,15 +919,19 @@ function hairClumps(style, key) {
     ],
     cornrows: [],
     shaggy: [
-      // Messy long pointed layers that flare out at the sides and nape.
-      { dx: -1.2, dy: -6.8, len: 11.2, half: 2.8, ang: up - 0.10 },
-      { dx: 2.8, dy: -6.4, len: 10.6, half: 2.7, ang: up + 0.28 },
-      { dx: -5.4, dy: -5.4, len: 10.2, half: 2.6, ang: up - 0.48 },
-      { dx: 6.2, dy: -4.8, len: 9.6, half: 2.6, ang: up + 0.58 },
-      { dx: -9.2, dy: -1.6, len: 8.8, half: 2.5, ang: up - 1.12 },
-      { dx: 9.4, dy: -1.2, len: 8.8, half: 2.5, ang: up + 1.18 },
-      { dx: -10.2, dy: 2.4, len: 7.4, half: 2.3, ang: Math.PI * 0.92 },
-      { dx: 10.2, dy: 2.6, len: 7.4, half: 2.3, ang: Math.PI * 0.08 },
+      // Bold triangular spikes in a fixed messy pattern: up, up-left, up-right,
+      // sideways, and a few down-and-out at the sides and nape. Longest ~half a head.
+      { dx: -0.8, dy: -7.2, len: 12.4, half: 3.05, ang: up - 0.06 },
+      { dx: 3.6, dy: -6.2, len: 11.0, half: 2.85, ang: up + 0.44 },
+      { dx: -4.4, dy: -6.8, len: 11.8, half: 2.95, ang: up - 0.36 },
+      { dx: 6.4, dy: -4.8, len: 9.6, half: 2.70, ang: up + 0.78 },
+      { dx: -7.0, dy: -4.2, len: 10.2, half: 2.75, ang: up - 0.92 },
+      { dx: 9.4, dy: -1.6, len: 10.0, half: 2.70, ang: up + 1.28 },
+      { dx: -9.8, dy: -0.2, len: 9.4, half: 2.60, ang: up - 1.42 },
+      { dx: 10.6, dy: 2.4, len: 8.8, half: 2.55, ang: 0.18 },
+      { dx: -10.8, dy: 3.0, len: 9.0, half: 2.55, ang: Math.PI - 0.22 },
+      { dx: 8.2, dy: 5.4, len: 8.0, half: 2.45, ang: Math.PI * 0.30, nape: true },
+      { dx: -7.6, dy: 5.8, len: 8.4, half: 2.50, ang: Math.PI * 0.68, nape: true },
     ],
     ponytail: [
       { dx: -4.4, dy: -4.2, len: 5.4, half: 2.1, ang: up - 0.78 },
@@ -949,9 +953,24 @@ function hairClumps(style, key) {
   } else if (key === "se" || key === "ne") {
     clumps = clumps.map((c) => ({ ...c, dx: c.dx * 0.9 - 1, dy: c.dy }));
   }
+  if (style === "shaggy" && key === "e") {
+    // Profile: big triangles shoot forward, up, back, and down-and-out at the nape.
+    clumps = [
+      { dx: 0.4, dy: -7.2, len: 12.0, half: 3.0, ang: up - 0.08 },
+      { dx: 3.4, dy: -6.4, len: 11.2, half: 2.85, ang: up + 0.42 },
+      { dx: -3.0, dy: -6.8, len: 11.6, half: 2.95, ang: up - 0.50 },
+      { dx: 6.4, dy: -3.4, len: 10.0, half: 2.70, ang: up + 0.98 },
+      { dx: -6.6, dy: -3.6, len: 10.2, half: 2.70, ang: up - 1.08 },
+      { dx: 8.6, dy: 0.6, len: 8.8, half: 2.55, ang: 0.12 },
+      { dx: -8.8, dy: 0.8, len: 9.2, half: 2.55, ang: Math.PI - 0.10 },
+      { dx: -7.2, dy: 5.0, len: 8.2, half: 2.50, ang: Math.PI * 0.70, nape: true },
+      { dx: -4.0, dy: 6.0, len: 7.6, half: 2.40, ang: Math.PI * 0.55, nape: true },
+      { dx: 2.2, dy: -7.0, len: 10.4, half: 2.70, ang: up + 0.18 },
+    ];
+  }
   if (key === "n" || key === "ne") {
     clumps = clumps.filter((c) => !c.fringe);
-    if (!["buzz", "cornrows", "ponytail", "spacebuns", "afropuff"].includes(style)) {
+    if (!["buzz", "cornrows", "ponytail", "spacebuns", "afropuff", "shaggy"].includes(style)) {
       clumps = clumps.concat([
         { dx: -4.0, dy: 1.2, len: 7.0, half: 2.8, ang: Math.PI * 0.5 },
         { dx: 4.0, dy: 1.2, len: 7.0, half: 2.8, ang: Math.PI * 0.5 },
@@ -1068,12 +1087,8 @@ function bangSpecs(style, key) {
     ];
   }
   if (style === "afropuff") {
-    return [
-      { dx: -4.4, dy: 0.0, len: 3.2, half: 1.9, ang: PI * 0.58, rounded: true },
-      { dx: 4.6, dy: 0.0, len: 3.2, half: 1.9, ang: PI * 0.42, rounded: true },
-      { dx: -9.0, dy: 2.8, len: 6.2, half: 2.0, ang: PI * 0.58, rounded: true, frame: true },
-      { dx: 9.0, dy: 2.8, len: 6.2, half: 2.0, ang: PI * 0.42, rounded: true, frame: true },
-    ];
+    // Soft rounded hairline is cut into the cloud itself — no pointed bangs.
+    return [];
   }
   if (style === "spacebuns") {
     return [
@@ -1239,45 +1254,128 @@ function drawBobJaw(buf, g, cy, pal, key) {
   }
 }
 
-function drawAfroCloud(buf, g, cy, pal, key) {
-  // A BIG round cloud of soft pointed clumps, clearly wider and taller than the head.
-  // Centered on the skull and grown from the hairline — never a flat cap.
+function drawAfroCloud(buf, g, cy, pal, key, opts = {}) {
+  // A big, near-circular scalloped afro cloud centered on the skull.
+  // Hats pass { compressed: true } so the puff stays wide at the sides but shorter on top.
+  const compressed = Boolean(opts.compressed);
   const hy = cy + 0.4;
-  const px = g.cx + (key === "e" ? 1.0 : 0);
-  const prx = key === "e" ? g.rx * 1.36 : g.rx * 1.48;
-  const pry = g.ry * 1.38;
-  const cyPuff = hy - g.ry * 0.22;
-  const hairline = hy - g.ry * 0.10;
+  const px = g.cx + (key === "e" ? 0.4 : 0);
+  let pr = g.rx * (compressed ? 1.22 : 1.50);
+  let pry = compressed ? g.ry * 0.95 : pr;
+  let cyPuff = compressed ? (hy - g.ry * 0.20) : (hy - g.ry * 0.52);
+  // Side view: keep the full circle on-canvas so it reads as a round cloud, not a rear slab.
+  if (key === "e" && !compressed) {
+    pr = g.rx * 1.44;
+    pry = pr;
+    cyPuff = Math.max(pr + 1.0, hy - g.ry * 0.36);
+  }
   const mid = pal.hair.mid || pal.hair;
   const sh = pal.hair.sh || mid;
-  const hi = pal.hair.hi || mid;
-  const rxi = Math.ceil(prx) + 2, ryi = Math.ceil(pry) + 2;
-  for (let y = -ryi; y <= ryi; y++) {
-    for (let x = -rxi; x <= rxi; x++) {
-      if ((x / prx) * (x / prx) + (y / pry) * (y / pry) > 1) continue;
-      const py = cyPuff + y;
-      const px0 = px + x;
-      const faceNx = (px0 - g.cx) / g.rx;
-      if (key !== "n" && key !== "ne" && py > hairline + 0.6 && Math.abs(faceNx) < 0.58) continue;
-      // Keep the cloud round on the skull — don't hang a curtain past the nape.
-      if (py > hy + g.ry * 0.72) continue;
-      let col = mid;
-      if (y < -pry * 0.28 && x < 2) col = hi;
-      else if (y > pry * 0.22 || x > prx * 0.38) col = sh;
-      plot(buf, Math.round(px0), Math.round(py), col, "hair-puff", 46);
+  const hi = animeHairHi(pal);
+  // Keep puff pixels on or above y=40 so the back view stays compact and seated.
+  const yMax = 40;
+
+  function inFace(px0, py) {
+    if (key === "n" || key === "ne") return false;
+    const faceNx = (px0 - g.cx) / g.rx;
+    const hairline = hy - g.ry * 0.16;
+    const arch = hairline + faceNx * faceNx * 1.8;
+    if (key === "e") return py > arch && faceNx > 0.08;
+    return py > arch && Math.abs(faceNx) < 0.62;
+  }
+  function kindAt(py) {
+    return "hair-puff";
+  }
+  function colAt(x, y, px0, py) {
+    const nx = x / (pr || 1), ny = y / (pry || 1);
+    const faceNx = (px0 - g.cx) / g.rx;
+    const nearFace = (key !== "n" && key !== "ne") && py > hy - g.ry * 0.28 && Math.abs(faceNx) < 0.78;
+    if (ny > 0.30 || nearFace) return sh;
+    if (ny < -0.20 && nx < 0.12) return hi;
+    return mid;
+  }
+  function stampDot(cx0, cy0, br, depth) {
+    const rad = Math.ceil(br) + 1;
+    for (let y = -rad; y <= rad; y++) {
+      for (let x = -rad; x <= rad; x++) {
+        if (x * x + y * y > br * br) continue;
+        const py = cy0 + y, px0 = cx0 + x;
+        if (py > yMax || inFace(px0, py)) continue;
+        plot(buf, Math.round(px0), Math.round(py), colAt(cx0 - px + x, cy0 - cyPuff + y, px0, py), kindAt(py), depth);
+      }
     }
   }
-  const n = 10;
-  for (let i = 0; i < n; i++) {
-    const ang = (i / n) * Math.PI * 2 - Math.PI / 2;
-    if (key !== "n" && key !== "ne") {
-      const faceish = Math.sin(ang) > 0.18 && Math.abs(Math.cos(ang)) < 0.70;
-      if (faceish) continue;
+
+  // Inset base circle so the scalloped bumps, not a smooth ellipse, form the silhouette.
+  const baseRx = pr * 0.86, baseRy = pry * 0.86;
+  const rxi = Math.ceil(baseRx) + 1, ryi = Math.ceil(baseRy) + 1;
+  for (let y = -ryi; y <= ryi; y++) {
+    for (let x = -rxi; x <= rxi; x++) {
+      if ((x / baseRx) * (x / baseRx) + (y / baseRy) * (y / baseRy) > 1) continue;
+      const py = cyPuff + y, px0 = px + x;
+      if (py > yMax || inFace(px0, py)) continue;
+      plot(buf, Math.round(px0), Math.round(py), colAt(x, y, px0, py), kindAt(py), 46);
     }
-    const downish = Math.sin(ang) > 0.28;
-    const bx = px + Math.cos(ang) * (prx * 0.78);
-    const by = cyPuff + Math.sin(ang) * (pry * (downish ? 0.55 : 0.78));
-    stampSpike(buf, bx, by, downish ? 3.0 : 7.2, downish ? 2.4 : 3.0, ang, pal.hair, "hair-puff", 47, true);
+  }
+
+  // Soft bumpy outline: many small rounded scallops, never pointed spikes.
+  const bumps = 22;
+  for (let i = 0; i < bumps; i++) {
+    const ang = (i / bumps) * Math.PI * 2 - Math.PI / 2;
+    const wobble = ((i * 5 + 3) % 7) * 0.03;
+    const br = 2.85 + ((i * 3) % 5) * 0.12;
+    const bx = px + Math.cos(ang) * pr * (0.90 + wobble);
+    const by = cyPuff + Math.sin(ang) * pry * (0.90 + wobble);
+    if (inFace(bx, by)) continue;
+    stampDot(bx, by, br, 47);
+  }
+
+  // Short, soft, rounded hairline bumps across the forehead (front-facing views).
+  if (key !== "n" && key !== "ne") {
+    const nH = key === "e" ? 5 : 7;
+    for (let i = 0; i < nH; i++) {
+      const t = nH === 1 ? 0.5 : i / (nH - 1);
+      const faceNx = key === "e" ? (-0.05 + t * 0.50) : (t * 1.12 - 0.56);
+      const hx0 = g.cx + faceNx * g.rx;
+      const hy0 = (hy - g.ry * 0.16) + faceNx * faceNx * 1.8;
+      stampDot(hx0, hy0, 1.75 + (i % 3) * 0.12, 47);
+    }
+  }
+
+  // Interior curl clusters — small round clumps with local 3-tone cel shading.
+  const rings = compressed ? [0.28, 0.52] : [0.22, 0.42, 0.62];
+  for (let ri = 0; ri < rings.length; ri++) {
+    const n = 6 + ri * 3;
+    for (let i = 0; i < n; i++) {
+      const ang = (i / n) * Math.PI * 2 - Math.PI / 2 + ri * 0.31 + 0.12;
+      const cx0 = px + Math.cos(ang) * pr * rings[ri];
+      const cy0 = cyPuff + Math.sin(ang) * pry * rings[ri];
+      if (inFace(cx0, cy0)) continue;
+      const cr = 1.35 + ((i + ri * 2) % 3) * 0.25;
+      const rad = Math.ceil(cr) + 1;
+      for (let y = -rad; y <= rad; y++) {
+        for (let x = -rad; x <= rad; x++) {
+          if (x * x + y * y > cr * cr) continue;
+          const py = cy0 + y, px0 = cx0 + x;
+          if (inFace(px0, py)) continue;
+          let col = mid;
+          if (y < -0.2 && x < 0.4) col = hi;
+          else if (y > 0.4 || x > 0.8) col = sh;
+          plotInside(buf, Math.round(px0), Math.round(py), col, "hair-puff", 48);
+        }
+      }
+    }
+  }
+
+  // Soft highlight arc on the upper-left, plotted inside so it never becomes an edge.
+  if (!compressed) {
+    for (let a = -2.55; a <= -0.70; a += 0.04) {
+      const rr = 0.58;
+      const x = px + Math.cos(a) * pr * rr;
+      const y = cyPuff + Math.sin(a) * pry * rr;
+      plotInside(buf, Math.round(x), Math.round(y), hi, "hair-hi", 49);
+      plotInside(buf, Math.round(x + 1), Math.round(y), hi, "hair-hi", 49);
+    }
   }
 }
 
@@ -1352,15 +1450,26 @@ function drawCornrows(buf, g, cy, pal, key) {
 
 function drawHairUnderHat(buf, av, key, pal, g, cy) {
   // Tight scalp only — nothing tall enough to poke through the crown of the hat.
+  // Afro keeps a compressed cloud so the puff shows around the sides and under the brim.
+  if (av.hair === "afropuff") {
+    drawAfroCloud(buf, g, cy, pal, key, { compressed: true });
+    return;
+  }
   drawHairCap(buf, g, cy, pal, key, av.hair === "bobclips" ? "bobclips" : "buzz");
   const style = av.hair;
-  const showSides = ["shaggy", "long", "straightbangs", "bobclips", "swoop", "ponytail", "spacebuns", "frosted", "afropuff"].includes(style);
+  const showSides = ["shaggy", "long", "straightbangs", "bobclips", "swoop", "ponytail", "spacebuns", "frosted"].includes(style);
   if (showSides) {
     const { sx, sy } = hairScale(g);
     for (const c of hairClumps(style, key)) {
-      const side = Math.abs(Math.cos(c.ang)) > 0.72 && c.dy > -3.2;
+      let side = Math.abs(Math.cos(c.ang)) > 0.72 && c.dy > -3.2;
+      if (style === "shaggy") {
+        // Hat covers the top spikes; side and nape spikes still peek out.
+        side = c.nape || (Math.abs(Math.cos(c.ang)) > 0.55 && c.dy > -2.4) || (Math.sin(c.ang) > 0.35 && c.dy > 0.8);
+      }
       if (!side) continue;
-      stampSpike(buf, g.cx + c.dx * sx, cy + c.dy * sy, Math.min(c.len * sy, 6.0), c.half * sx, c.ang, pal.hair, "hair", 45, Boolean(c.rounded));
+      const maxLen = (style === "shaggy" && (c.nape || Math.sin(c.ang) > 0.35)) ? 8.4 : 6.0;
+      const kind = c.nape ? "hair-lock" : "hair";
+      stampSpike(buf, g.cx + c.dx * sx, cy + c.dy * sy, Math.min(c.len * sy, maxLen), c.half * sx, c.ang, pal.hair, kind, 45, Boolean(c.rounded));
     }
     if (style === "bobclips") drawBobJaw(buf, g, cy, pal, key);
   }
@@ -1379,12 +1488,13 @@ function drawHair(buf, av, key, pal, upper, hatOn) {
       const x0 = g.cx + c.dx * sx, y0 = cy + c.dy * sy, len = c.len * sy;
       if (hairSpikeCoversEye(key, g, upper, x0, y0, len, c.ang)) continue;
       const frost = (style === "frosted" || c.frost) ? { frost: frostTipPal() } : {};
-      stampSpike(buf, x0, y0, len, c.half * sx, c.ang, pal.hair, "hair", 45, Boolean(c.rounded), frost);
+      const kind = c.nape ? "hair-lock" : "hair";
+      stampSpike(buf, x0, y0, len, c.half * sx, c.ang, pal.hair, kind, 45, Boolean(c.rounded), frost);
     }
     if (style === "bobclips") drawBobJaw(buf, g, cy, pal, key);
     if (style === "afropuff") drawAfroCloud(buf, g, cy, pal, key);
     if (style === "cornrows") drawCornrows(buf, g, cy, pal, key);
-    if (style !== "buzz") drawAngelRing(buf, g, cy, pal);
+    if (style !== "buzz" && style !== "afropuff") drawAngelRing(buf, g, cy, pal);
     if (style === "shaggy" || style === "bobclips") stampAhoge(buf, g, cy, pal, key);
   }
   if (!hatOn && av.hair === "bun") {
