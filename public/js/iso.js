@@ -359,27 +359,27 @@
       benchpress: `<svg class="furn-svg" width="90" height="56" viewBox="0 0 90 56"><rect x="16" y="28" width="58" height="10" rx="2" fill="#d8c6a8" stroke="${ink}" stroke-width="2"/><rect x="12" y="14" width="8" height="28" fill="#6b6f78"/><rect x="70" y="14" width="8" height="28" fill="#6b6f78"/><rect x="8" y="12" width="74" height="6" rx="2" fill="#2a2a2e"/></svg>`,
       treadmill: `<svg class="furn-svg" width="70" height="70" viewBox="0 0 70 70"><rect x="16" y="36" width="40" height="18" rx="3" fill="#3d342c" stroke="${ink}" stroke-width="2"/><rect x="20" y="8" width="8" height="32" fill="#6b6f78"/><rect x="18" y="6" width="28" height="8" fill="#2a2a2e"/></svg>`,
       cubics: `<svg class="furn-svg" width="56" height="96" viewBox="0 0 56 96">
-<rect x="14" y="2" width="32" height="16" rx="2" fill="#1a1a1e" stroke="${ink}" stroke-width="2"/>
-<rect x="16" y="5" width="28" height="10" fill="#39ff14"/>
-<text x="30" y="13" text-anchor="middle" font-size="7" font-weight="700" fill="#06140a" font-family="monospace">CUBICS</text>
-<rect x="14" y="18" width="28" height="70" rx="2" fill="#1a1a1e" stroke="${ink}" stroke-width="2"/>
-<rect x="42" y="18" width="8" height="70" fill="#141418" stroke="${ink}" stroke-width="1.5"/>
-<rect x="44" y="22" width="2.2" height="2.2" fill="#39ff14"/><rect x="47" y="22" width="2.2" height="2.2" fill="#39ff14"/>
-<rect x="44" y="25" width="2.2" height="2.2" fill="#39ff14"/><rect x="47" y="25" width="2.2" height="2.2" fill="#39ff14"/>
-<rect x="44" y="30" width="2.2" height="2.2" fill="#39ff14"/><rect x="44" y="33" width="2.2" height="2.2" fill="#39ff14"/>
-<rect x="44" y="36" width="2.2" height="2.2" fill="#39ff14"/><rect x="47" y="36" width="2.2" height="2.2" fill="#39ff14"/>
-<rect x="47" y="42" width="2.2" height="2.2" fill="#39ff14"/>
-<rect x="44" y="45" width="2.2" height="2.2" fill="#39ff14"/><rect x="47" y="45" width="2.2" height="2.2" fill="#39ff14"/><rect x="50" y="45" width="2.2" height="2.2" fill="#39ff14"/>
+<rect x="16" y="6" width="26" height="10" rx="1.5" fill="#1a1a1e" stroke="${ink}" stroke-width="2"/>
+<rect x="18" y="8" width="22" height="6" fill="#39ff14"/>
+<text x="29" y="13" text-anchor="middle" font-size="5.5" font-weight="700" fill="#06140a" font-family="monospace">CUBICS</text>
+<rect x="14" y="16" width="28" height="70" rx="2" fill="#1a1a1e" stroke="${ink}" stroke-width="2"/>
+<rect x="42" y="16" width="8" height="70" fill="#141418" stroke="${ink}" stroke-width="1.5"/>
+<rect x="44" y="20" width="2.2" height="2.2" fill="#39ff14"/><rect x="47" y="20" width="2.2" height="2.2" fill="#39ff14"/>
+<rect x="44" y="23" width="2.2" height="2.2" fill="#39ff14"/><rect x="47" y="23" width="2.2" height="2.2" fill="#39ff14"/>
+<rect x="44" y="28" width="2.2" height="2.2" fill="#39ff14"/><rect x="44" y="31" width="2.2" height="2.2" fill="#39ff14"/>
+<rect x="44" y="34" width="2.2" height="2.2" fill="#39ff14"/><rect x="47" y="34" width="2.2" height="2.2" fill="#39ff14"/>
+<rect x="47" y="40" width="2.2" height="2.2" fill="#39ff14"/>
+<rect x="44" y="43" width="2.2" height="2.2" fill="#39ff14"/><rect x="47" y="43" width="2.2" height="2.2" fill="#39ff14"/><rect x="50" y="43" width="2.2" height="2.2" fill="#39ff14"/>
 <rect x="44" y="54" width="2.2" height="8" fill="#0a0a0c"/><rect x="47.4" y="54" width="2.2" height="8" fill="#0a0a0c"/>
-<rect x="17" y="22" width="22" height="28" fill="#0c0c10" stroke="${ink}" stroke-width="1.5"/>
-<rect x="19" y="24" width="18" height="24" fill="#3ee01a"/>
-<rect x="21" y="26" width="7" height="5" fill="#e8ffe0"/>
-<rect x="14" y="50" width="28" height="10" fill="#141418" stroke="${ink}" stroke-width="1.5"/>
-<circle cx="20" cy="55" r="2.5" fill="#2a2a30"/><circle cx="20" cy="53.5" r="2" fill="#e82838"/>
-<circle cx="30" cy="55" r="2.1" fill="#e82838"/><circle cx="36" cy="55" r="2.1" fill="#f4c15d"/>
-<rect x="18" y="64" width="18" height="16" fill="#2a2a32" stroke="${ink}" stroke-width="1.5"/>
-<rect x="18" y="64" width="18" height="2" fill="#39ff14"/>
-<rect x="24" y="71" width="8" height="3" fill="#f4c15d"/>
+<rect x="17" y="20" width="22" height="32" fill="#0c0c10" stroke="${ink}" stroke-width="1.5"/>
+<rect x="19" y="22" width="18" height="28" fill="#3ee01a"/>
+<rect x="21" y="24" width="7" height="5" fill="#e8ffe0"/>
+<rect x="14" y="52" width="28" height="10" fill="#141418" stroke="${ink}" stroke-width="1.5"/>
+<circle cx="24" cy="57" r="2.5" fill="#2a2a30"/><circle cx="24" cy="55.5" r="2" fill="#e82838"/>
+<circle cx="32" cy="57" r="2.1" fill="#e82838"/><circle cx="37" cy="57" r="2.1" fill="#f4c15d"/>
+<rect x="18" y="66" width="18" height="14" fill="#2a2a32" stroke="${ink}" stroke-width="1.5"/>
+<rect x="18" y="66" width="18" height="2" fill="#39ff14"/>
+<rect x="24" y="72" width="8" height="3" fill="#f4c15d"/>
 <ellipse cx="12" cy="84" rx="5" ry="3" fill="#3a3a42" stroke="${ink}" stroke-width="1"/>
 <rect x="10" y="84" width="1.6" height="7" fill="#e8e8ee"/><rect x="12.2" y="84" width="1.6" height="7" fill="#e8e8ee"/><rect x="14.4" y="84" width="1.6" height="7" fill="#e8e8ee"/>
 </svg>`,

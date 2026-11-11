@@ -23,7 +23,7 @@ const BODY_H = {
   rug: 4, plant: 36, podplant: 38, lamp: 48, table: 18, coffeetable: 14, counter: 20,
   couch: 26, capsulecouch: 26, chair: 24, hoverchair: 32, bed: 18, tv: 60, holotv: 60,
   fridge: 44, kitchenette: 24, bookshelf: 42, chesstable: 14, chessstool: 14, punchbag: 46, heavybag: 46,
-  benchpress: 22, treadmill: 30, cubics: 70, pinball: 40, clothescab: 42, coffeemachine: 48, recordplayer: 40,
+  benchpress: 22, treadmill: 30, cubics: 64, pinball: 40, clothescab: 42, coffeemachine: 48, recordplayer: 40,
   djdeck: 18, sodavending: 46, neonsign: 46, rack: 36, mannequin: 42, petpen: 22, cage: 24,
 };
 
@@ -661,6 +661,18 @@ function alongFront(rect, rot, t, inset, size) {
   return { x: rect.x + inset, y: rect.y + 0.08 + u * Math.max(0, rect.h - 0.16 - size), w: size, h: size };
 }
 
+/** Place an item by its center, 0-1 along the front, so a control group can be centered. */
+function alongFrontCenter(rect, rot, u, inset, size) {
+  const r = normalizeFurnRot(rot);
+  const t = Math.max(0, Math.min(1, u));
+  const span = r % 2 === 0 ? Math.max(0, rect.w - 0.16) : Math.max(0, rect.h - 0.16);
+  const mid = 0.08 + t * span;
+  if (r === 0) return { x: rect.x + mid - size / 2, y: rect.y + rect.h - inset - size, w: size, h: size };
+  if (r === 1) return { x: rect.x + rect.w - inset - size, y: rect.y + mid - size / 2, w: size, h: size };
+  if (r === 2) return { x: rect.x + mid - size / 2, y: rect.y + inset, w: size, h: size };
+  return { x: rect.x + inset, y: rect.y + mid - size / 2, w: size, h: size };
+}
+
 function paintTetrisSide(ctx, corners, lights) {
   if (!corners) return;
   const bg = lights ? "#141418" : "#0a0a0c";
@@ -834,7 +846,7 @@ function drawRetroArcade(ctx, tw, th, rot, lights, flicker = 0) {
   const body = cabinetFoot(area, rot, 0.66);
   const bx = body.x, by = body.y, bw = body.w, bh = body.h;
   const BODY = 52;
-  const MARQUEE_H = 16;
+  const MARQUEE_H = 12;
   const r = normalizeFurnRot(rot);
   const front = visibleFront(rot);
   const sideWhich = front === "+y" ? "+x" : front === "+x" ? "+y" : null;
@@ -871,18 +883,18 @@ function drawRetroArcade(ctx, tw, th, rot, lights, flicker = 0) {
 
   if (front) {
     const fc = faceCorners(bx, by, bw, bh, 0, BODY, front);
-    // Lower front: coin door
-    faceRect(ctx, fc, 0.08, 0.00, 0.92, 0.28, lights ? "#16161a" : "#0c0c0e", outline);
-    faceRect(ctx, fc, 0.28, 0.04, 0.72, 0.24, lights ? "#2a2a32" : "#16161a", outline);
+    // Lower front: coin door, under the control ledge
+    faceRect(ctx, fc, 0.08, 0.00, 0.92, 0.26, lights ? "#16161a" : "#0c0c0e", outline);
+    faceRect(ctx, fc, 0.28, 0.03, 0.72, 0.22, lights ? "#2a2a32" : "#16161a", outline);
     // Neon-green trim around the door
-    faceRect(ctx, fc, 0.28, 0.04, 0.72, 0.06, neon, null);
-    faceRect(ctx, fc, 0.28, 0.22, 0.72, 0.24, neon, null);
-    faceRect(ctx, fc, 0.42, 0.11, 0.58, 0.17, lights ? "#f4c15d" : "#3a3018", null);
-    if (lights) faceRect(ctx, fc, 0.44, 0.125, 0.56, 0.155, "#ffe08a", null);
+    faceRect(ctx, fc, 0.28, 0.03, 0.72, 0.05, neon, null);
+    faceRect(ctx, fc, 0.28, 0.20, 0.72, 0.22, neon, null);
+    faceRect(ctx, fc, 0.42, 0.09, 0.58, 0.16, lights ? "#f4c15d" : "#3a3018", null);
+    if (lights) faceRect(ctx, fc, 0.44, 0.105, 0.56, 0.14, "#ffe08a", null);
     // Coin return
-    faceRect(ctx, fc, 0.62, 0.08, 0.70, 0.16, lights ? "#1a1a1e" : "#0c0c10", outline);
+    faceRect(ctx, fc, 0.62, 0.07, 0.70, 0.14, lights ? "#1a1a1e" : "#0c0c10", outline);
 
-    // Big CRT bezel + glossy green screen
+    // Big CRT bezel + glossy green screen, fully visible below the marquee
     faceRect(ctx, fc, 0.07, 0.40, 0.93, 0.98, bezel, outline);
     faceRect(ctx, fc, 0.13, 0.46, 0.87, 0.93, screenOn, null);
     if (lights) {
@@ -897,10 +909,11 @@ function drawRetroArcade(ctx, tw, th, rot, lights, flicker = 0) {
     }
   }
 
-  const panelLift = 20;
-  const panelH = 7;
-  const grow = 0.05;
-  const panelBox = sliceFront(bx - grow * 0.25, by - grow * 0.25, bw + grow * 0.5, bh + grow * 0.5, r, 0.42);
+  // Control ledge sits directly below the screen, above the coin door.
+  const panelLift = 15;
+  const panelH = 6;
+  const grow = 0.04;
+  const panelBox = sliceFront(bx - grow * 0.25, by - grow * 0.25, bw + grow * 0.5, bh + grow * 0.5, r, 0.36);
   const panelPal = pal("#141418", lights);
   if (lights) {
     panelPal.top = "#2c2c34";
@@ -914,18 +927,21 @@ function drawRetroArcade(ctx, tw, th, rot, lights, flicker = 0) {
     faceRect(ctx, pc, 0.06, 0.05, 0.94, 0.95, lights ? "#1a1a20" : "#101014", panelPal.outline);
     faceRect(ctx, pc, 0.06, 0.86, 0.94, 0.95, neon, null);
   }
-  const joy = alongFront(panelBox, r, 0.18, 0.10, 0.13);
-  box(ctx, joy.x, joy.y, joy.w, joy.h, panelLift + panelH, 3, pal("#2a2a30", lights));
-  box(ctx, joy.x + 0.03, joy.y + 0.03, joy.w - 0.06, joy.h - 0.06, panelLift + panelH + 3, 5, pal(lights ? "#e82838" : "#4a1820", lights));
+  // Joystick left of center, red + yellow buttons right of center; the group is centered.
+  // Shorter stick so it stays on the ledge instead of covering the CRT.
+  const joy = alongFrontCenter(panelBox, r, 0.24, 0.10, 0.12);
+  box(ctx, joy.x, joy.y, joy.w, joy.h, panelLift + panelH, 2, pal("#2a2a30", lights));
+  box(ctx, joy.x + 0.025, joy.y + 0.025, joy.w - 0.05, joy.h - 0.05, panelLift + panelH + 2, 3.2, pal(lights ? "#e82838" : "#4a1820", lights));
   const btnColors = [lights ? "#e82838" : "#4a1820", lights ? "#f4c15d" : "#4a3a18"];
-  btnColors.forEach((c, i) => {
-    const b = alongFront(panelBox, r, 0.58 + i * 0.20, 0.12, 0.11);
-    box(ctx, b.x, b.y, b.w, b.h, panelLift + panelH, 2.2, pal(c, true));
+  [0.60, 0.80].forEach((u, i) => {
+    const b = alongFrontCenter(panelBox, r, u, 0.10, 0.11);
+    box(ctx, b.x, b.y, b.w, b.h, panelLift + panelH, 2.2, pal(btnColors[i], true));
   });
 
-  // Marquee box on top, slightly wider than the body, CUBICS on one line.
-  const mqPad = 0.14;
-  const mq = sliceFront(bx - mqPad, by - mqPad, bw + mqPad * 2, bh + mqPad * 2, r, 0.50);
+  // Smaller, less overhanging marquee on top; CUBICS stays one readable line.
+  // Keep a little width so the six letters still fit; shrink height and forward depth.
+  const mqPad = 0.10;
+  const mq = sliceFront(bx - mqPad, by - mqPad, bw + mqPad * 2, bh + mqPad * 2, r, 0.28);
   const mqPal = pal("#141418", lights);
   if (lights) {
     mqPal.top = "#3a3a44";
