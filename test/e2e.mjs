@@ -2146,6 +2146,113 @@ try {
   const fontSize = await alice.locator('[data-testid="chat-input"]').evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
   check("Chat input font is at least 16px", fontSize >= 16, `font=${fontSize}`);
 
+  log("Mobile keyboard keeps the room still and sending stays one step");
+  const hint = await alice.locator('[data-testid="chat-input"]').getAttribute("enterkeyhint");
+  check("The chat input uses enterkeyhint=send", hint === "send", `hint=${hint}`);
+  await alice.setViewportSize({ width: 1280, height: 800 });
+  await alice.waitForTimeout(200);
+  await alice.fill('[data-testid="chat-input"]', "enter sends in one step");
+  await alice.locator('[data-testid="chat-input"]').press("Enter");
+  await alice.waitForTimeout(250);
+  const afterEnter = await alice.evaluate(() => {
+    const input = document.querySelector('[data-testid="chat-input"]');
+    return {
+      value: input?.value || "",
+      focused: document.activeElement === input,
+    };
+  });
+  check("Pressing Enter sends the chat", afterEnter.value === "", JSON.stringify(afterEnter));
+  check("Focus stays in the chat input after Enter", afterEnter.focused, JSON.stringify(afterEnter));
+  const bobSawEnter = await bob.waitForFunction(() => (window.__lastSays || []).some((s) => s.text === "enter sends in one step"), null, { timeout: 6000 }).then(() => true).catch(() => false);
+  check("The other player sees the Enter-sent message", bobSawEnter);
+  await alice.fill('[data-testid="chat-input"]', "say keeps the keyboard");
+  await alice.click('[data-testid="chat-send"]');
+  await alice.waitForTimeout(200);
+  const afterSay = await alice.evaluate(() => {
+    const input = document.querySelector('[data-testid="chat-input"]');
+    return { value: input?.value || "", focused: document.activeElement === input };
+  });
+  check("Tapping Say sends the chat", afterSay.value === "", JSON.stringify(afterSay));
+  check("Focus stays in the chat input after Say", afterSay.focused, JSON.stringify(afterSay));
+
+  await alice.fill('[data-testid="chat-input"]', "thinking about it");
+  const bobSeesTyping = await bob.waitForFunction(() => Boolean(document.querySelector('[data-testid="typing-alice"]')), null, { timeout: 4000 }).then(() => true).catch(() => false);
+  check("Friends in the cube see a thinking bubble while you type", bobSeesTyping);
+  await alice.click('[data-testid="chat-send"]');
+  const typingGone = await bob.waitForFunction(() => !document.querySelector('[data-testid="typing-alice"]'), null, { timeout: 4000 }).then(() => true).catch(() => false);
+  check("The thinking bubble hides when the message is sent", typingGone);
+
+  async function assertKeyboardDoesNotMoveRoom(page, label, size) {
+    await page.setViewportSize(size);
+    await page.waitForTimeout(250);
+    await page.evaluate(() => window.__setKeyboardInset?.(0));
+    await page.waitForTimeout(50);
+    const before = await page.evaluate(() => {
+      const canvas = document.querySelector("#floor canvas, .room3d-root canvas, #floor");
+      const header = document.querySelector(".room-view .topbar") || document.querySelector('[data-testid="leave-cube"]');
+      const box = (el) => {
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) };
+      };
+      return { canvas: box(canvas), header: box(header), innerH: window.innerHeight };
+    });
+    await page.locator('[data-testid="chat-input"]').click();
+    await page.waitForTimeout(80);
+    const afterFocus = await page.evaluate(() => {
+      const canvas = document.querySelector("#floor canvas, .room3d-root canvas, #floor");
+      const header = document.querySelector(".room-view .topbar") || document.querySelector('[data-testid="leave-cube"]');
+      const box = (el) => {
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) };
+      };
+      return { canvas: box(canvas), header: box(header) };
+    });
+    check(
+      `${label}: focusing the chat does not move the canvas or header`,
+      Boolean(before.canvas && afterFocus.canvas && before.header && afterFocus.header
+        && before.canvas.x === afterFocus.canvas.x && before.canvas.y === afterFocus.canvas.y
+        && before.canvas.w === afterFocus.canvas.w && before.canvas.h === afterFocus.canvas.h
+        && before.header.x === afterFocus.header.x && before.header.y === afterFocus.header.y
+        && before.header.w === afterFocus.header.w && before.header.h === afterFocus.header.h),
+      JSON.stringify({ before, afterFocus })
+    );
+    const kb = 280;
+    await page.evaluate((h) => window.__setKeyboardInset?.(h), kb);
+    await page.waitForTimeout(80);
+    const afterKb = await page.evaluate(() => {
+      const canvas = document.querySelector("#floor canvas, .room3d-root canvas, #floor");
+      const header = document.querySelector(".room-view .topbar") || document.querySelector('[data-testid="leave-cube"]');
+      const dock = document.querySelector('[data-testid="chat-dock"]');
+      const box = (el) => {
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) };
+      };
+      const inset = getComputedStyle(document.documentElement).getPropertyValue("--kb-inset").trim();
+      return { canvas: box(canvas), header: box(header), dock: box(dock), inset };
+    });
+    check(
+      `${label}: a simulated keyboard does not move the canvas or header`,
+      Boolean(before.canvas && afterKb.canvas && before.header && afterKb.header
+        && before.canvas.x === afterKb.canvas.x && before.canvas.y === afterKb.canvas.y
+        && before.canvas.w === afterKb.canvas.w && before.canvas.h === afterKb.canvas.h
+        && before.header.x === afterKb.header.x && before.header.y === afterKb.header.y
+        && before.header.w === afterKb.header.w && before.header.h === afterKb.header.h),
+      JSON.stringify({ before, afterKb })
+    );
+    check(
+      `${label}: the chat dock lifts above the simulated keyboard`,
+      Boolean(afterKb.dock && before.innerH && afterKb.dock.y < size.height - afterKb.dock.h - 200
+        && afterKb.inset === "280px"),
+      JSON.stringify({ dock: afterKb.dock, inset: afterKb.inset, vh: size.height })
+    );
+    await page.evaluate(() => window.__setKeyboardInset?.(0));
+  }
+  await assertKeyboardDoesNotMoveRoom(alice, "iPhone 14", { width: 390, height: 844 });
+  await assertKeyboardDoesNotMoveRoom(alice, "Pixel 7", { width: 412, height: 915 });
+
   log("Edit mode inventory, ghost, rotate, move, pick up");
   await alice.setViewportSize({ width: 390, height: 844 });
   await alice.waitForTimeout(300);

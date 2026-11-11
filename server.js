@@ -1415,11 +1415,26 @@ io.on("connection", (socket) => {
     trySit(user, room, furn, seat, socket);
   });
 
+  socket.on("typing", ({ on } = {}) => {
+    const user = getUser(socket);
+    if (!user?.roomId) return;
+    user.typing = Boolean(on);
+    io.to(user.roomId).emit("userTyping", {
+      username: user.username,
+      on: Boolean(on),
+      at: Date.now(),
+    });
+  });
+
   socket.on("say", ({ text, shout } = {}) => {
     const user = getUser(socket);
     if (!user?.roomId) return;
     text = String(text || "").replace(/\s+/g, " ").trim().slice(0, 80);
     if (!text) return;
+    if (user.typing) {
+      user.typing = false;
+      io.to(user.roomId).emit("userTyping", { username: user.username, on: false, at: Date.now() });
+    }
     io.to(user.roomId).emit("userSaid", {
       username: user.username,
       text,

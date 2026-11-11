@@ -1,4 +1,4 @@
-import { drawAvatarSprite, paintAvatarSheet, paintStoreThumb, AVATAR_SHEET_LOOKS, AV_W, AV_H, AV_GROUND_Y, AV_HEAD_TOP, facingIndex8, tickChibiAnim, setChibiAnimOverride, getChibiAnim } from "./avatar3d.js";
+import { drawAvatarSprite, paintAvatarSheet, paintStoreThumb, AVATAR_SHEET_LOOKS, AV_W, AV_H, AV_GROUND_Y, AV_HEAD_TOP, facingIndex8, tickChibiAnim, setChibiAnimOverride, getChibiAnim, mouthPhase } from "./avatar3d.js";
 import { drawPetSprite as drawPetPixel, paintPetSheet, paintPetThumb, PET_W, PET_H, PET_GROUND_Y } from "./petSprites.js";
 import { programAt } from "./cubechannel.js";
 import { getTvScreen, tvChannelName } from "./tvChannels.js";
@@ -866,6 +866,7 @@ export function createRoom3D(container, opts = {}) {
         blink: anim.blink, lookX: anim.lookX, lookY: anim.lookY,
         bodyDir: anim.bodyDir, headDir: anim.headDir,
         shoePop: shoePopAt(p.username, (p.avatar || {}).shoes, now),
+        mouth: mouthPhase(p.talkText, p.talkAt, Date.now()),
       };
       const spr = drawAvatarSprite(p.avatar || {}, flags, frame);
       st.figTop = spr.top;

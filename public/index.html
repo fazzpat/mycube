@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-visual" />
   <meta name="theme-color" content="#000000" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -318,7 +318,7 @@
           <span class="phone-fab-badge hidden" data-testid="phone-badge">1</span>
         </button>
         <button class="emote-btn emote-wheel-btn" data-testid="emote-wheel-btn" id="emote-wheel-btn" type="button" title="Emotes" aria-expanded="false" aria-label="Open emotes">😀</button>
-        <textarea id="chat-input" data-testid="chat-input" maxlength="80" rows="1" placeholder="Say something..." autocomplete="off"></textarea>
+        <textarea id="chat-input" data-testid="chat-input" maxlength="80" rows="1" placeholder="Say something..." autocomplete="off" enterkeyhint="send" inputmode="text" autocapitalize="sentences"></textarea>
         <button class="btn small" data-testid="chat-send" id="chat-send" type="button">Say</button>
       </div>
       <div id="emote-wheel-backdrop" class="emote-wheel-backdrop hidden" data-testid="emote-wheel-backdrop"></div>

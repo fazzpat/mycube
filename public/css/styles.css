@@ -39,9 +39,9 @@
 * { box-sizing: border-box; }
 html, body {
   margin: 0;
+  width: 100%;
   height: 100%;
   height: 100dvh;
-  height: var(--app-h, 100dvh);
   overflow: hidden;
   overscroll-behavior: none;
   touch-action: manipulation;
@@ -49,13 +49,11 @@ html, body {
 }
 body, .app {
   position: fixed;
-  top: var(--app-top, 0px);
-  left: 0;
-  right: 0;
-  bottom: auto;
+  inset: 0;
   width: 100%;
   max-width: 100%;
-  height: var(--app-h, 100dvh);
+  height: 100%;
+  height: 100dvh;
   overflow: hidden;
   overscroll-behavior: none;
 }
@@ -1327,13 +1325,17 @@ body.phone-open .dock .phone-dock-btn { visibility: visible; }
 }
 
 
-/* ===== Keyboard-aware chat dock ===== */
+/* ===== Keyboard-aware chat dock =====
+   The room canvas and header stay put. Only the dock lifts by --kb-inset
+   (the on-screen keyboard height) via a transform, so the page never shifts. */
 .room-view { --kb-inset: 0px; }
 #chat-dock {
   position: relative;
   z-index: 40;
-  margin-bottom: var(--kb-inset, 0px);
+  margin-bottom: 0;
   align-items: flex-end;
+  transform: translateY(calc(-1 * var(--kb-inset, 0px)));
+  will-change: transform;
 }
 
 /* ===== Edit mode inventory ===== */
@@ -2628,4 +2630,69 @@ body.phone-open .phone-dock-btn {
   display: grid;
   place-items: center;
   cursor: pointer;
+}
+
+/* Chat input stays 16px so iOS will not zoom on focus. */
+#chat-input, [data-testid="chat-input"], .dock textarea, .dock input {
+  font-size: 16px !important;
+  line-height: 1.25;
+}
+
+/* 2000s-style thinking bubble: cream fill, dark edge, bouncing dots + trail. */
+.thinking-stack {
+  position: absolute;
+  pointer-events: none;
+  z-index: 12;
+  transform: translate(-50%, -100%);
+  transform-origin: bottom center;
+  padding-bottom: 16px;
+}
+.thinking-bubble {
+  position: relative;
+  background: #f4efe4;
+  color: #2a1c16;
+  border-radius: 16px;
+  padding: 7px 9px 6px;
+  box-shadow: 0 0 0 2px #5a3a28, 0 3px 0 rgba(42, 24, 16, 0.35);
+  line-height: 0;
+}
+.think-dots {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 9px;
+}
+.think-dots i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #3a2418;
+  display: block;
+  animation: thinkBounce 1s ease-in-out infinite;
+}
+.think-dots i:nth-child(2) { animation-delay: 0.16s; }
+.think-dots i:nth-child(3) { animation-delay: 0.32s; }
+.think-trail i {
+  position: absolute;
+  border-radius: 50%;
+  background: #f4efe4;
+  box-shadow: 0 0 0 2px #5a3a28;
+  display: block;
+  pointer-events: none;
+}
+.think-trail i:nth-child(1) {
+  width: 7px;
+  height: 7px;
+  left: 7px;
+  bottom: -7px;
+}
+.think-trail i:nth-child(2) {
+  width: 4px;
+  height: 4px;
+  left: 13px;
+  bottom: -13px;
+}
+@keyframes thinkBounce {
+  0%, 80%, 100% { transform: translateY(0); opacity: 0.55; }
+  40% { transform: translateY(-3px); opacity: 1; }
 }

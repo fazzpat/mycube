@@ -2,7 +2,7 @@
    Core figure is 48x64 (feet at y=61) with padding so a wide afro, tall
    spikes, and handlebar pigtails never clip the sprite canvas. Ground and
    body anchors stay put. */
-export const AV_PAD_X = 22;
+export const AV_PAD_X = 12;
 export const AV_PAD_TOP = 8;
 export const AV_W = 48 + AV_PAD_X * 2;
 export const AV_H = 64 + AV_PAD_TOP;
@@ -845,6 +845,55 @@ function drawEyes(buf, key, upper, flip, flags, emote) {
   }
 }
 
+
+export function mouthPhase(text, startedAt, now) {
+  const src = String(text || "");
+  const dur = Math.min(4000, Math.max(600, src.length * 60));
+  if (!startedAt || now < startedAt || now >= startedAt + dur) return "line";
+  let h = 2166136261;
+  for (let i = 0; i < src.length; i++) h = Math.imul(h ^ src.charCodeAt(i), 16777619);
+  const t = now - startedAt;
+  const step = 88 + (Math.abs(h) % 9) * 8;
+  const i = Math.floor(t / step);
+  // Irregular but deterministic rhythm: line, mid-open, and a small "o".
+  const seq = ["o", "mid", "line", "o", "mid", "o", "line", "mid", "o", "line", "mid"];
+  return seq[(i + (Math.abs(h) % seq.length)) % seq.length];
+}
+
+function drawMouth(buf, key, upper, flip, mouth, emote) {
+  if (key === "n" || key === "ne") return;
+  if (emote === "laugh" || emote === "cry") return;
+  const anchors = eyeAnchors(key, upper, flip);
+  if (!anchors.length) return;
+  // Center under the visible eyes, a few pixels below the pupils.
+  let mx = 0;
+  for (const a of anchors) mx += a.x;
+  mx = Math.round(mx / anchors.length);
+  if (key === "e") mx = Math.round(anchors[0].x);
+  const my = Math.round(anchors[0].y + 7);
+  const ink = EYE_INK;
+  const shape = mouth || "line";
+  if (shape === "o") {
+    // 3x3 rounded "o".
+    plot(buf, mx, my - 1, ink, "mouth", 56);
+    plot(buf, mx - 1, my, ink, "mouth", 56);
+    plot(buf, mx + 1, my, ink, "mouth", 56);
+    plot(buf, mx, my + 1, ink, "mouth", 56);
+  } else if (shape === "mid") {
+    // Mid-open: a short, slightly taller dash.
+    plot(buf, mx - 1, my, ink, "mouth", 56);
+    plot(buf, mx, my, ink, "mouth", 56);
+    plot(buf, mx + 1, my, ink, "mouth", 56);
+    plot(buf, mx, my + 1, ink, "mouth", 56);
+  } else {
+    // Rest: a short 3px black line.
+    plot(buf, mx - 1, my, ink, "mouth", 56);
+    plot(buf, mx, my, ink, "mouth", 56);
+    plot(buf, mx + 1, my, ink, "mouth", 56);
+  }
+}
+
+
 function hairScale(g) {
   return { sx: g.rx / 12.6, sy: g.ry / 12.0 };
 }
@@ -1612,15 +1661,14 @@ function drawHair(buf, av, key, pal, upper, hatOn, bob = 0, frame = 0, walk = fa
 }
 
 function drawPonyTail(buf, av, key, pal, upper, hatOn, bob = 0, frame = 0, walk = false) {
-  // Handlebar pigtails: long thick tubes shoot out horizontally from 10- and
-  // 2-o'clock bows, then hook down at the ends like bicycle grips. Clear air
-  // stays between each bar and the cheek, so they never read as a helmet.
+  // Smaller U-shaped pigtails: still shoot out from the high 10/2 bows with
+  // air beside the cheeks, then curve down and curl slightly back up at the tip.
   const g = headGeom(key);
   const cy = g.cy + upper;
   const hy = cy + 0.4;
   const mot = hairMotion(bob, frame, walk);
-  const stretchL = mot.spring * 1.00 + mot.idle * 0.45 + mot.bob * 0.12;
-  const stretchR = mot.spring * -0.72 + mot.idle * 0.35 - mot.bob * 0.08;
+  const stretchL = mot.spring * 1.15 + mot.idle * 0.55 + mot.bob * 0.16;
+  const stretchR = mot.spring * -0.82 + mot.idle * 0.42 - mot.bob * 0.10;
   const depth = hatOn ? 63 : 50;
   const headW = g.rx * 2;
 
@@ -1629,38 +1677,38 @@ function drawPonyTail(buf, av, key, pal, upper, hatOn, bob = 0, frame = 0, walk 
     y: hy + Math.sin(-5 * Math.PI / 6) * g.ry * 0.90,
     side: -1,
     stretch: stretchL,
-    out: headW * 0.70,
+    out: headW * 0.49,
   };
   const right = {
     x: g.cx + Math.cos(-Math.PI / 6) * g.rx * 0.92,
     y: hy + Math.sin(-Math.PI / 6) * g.ry * 0.88,
     side: 1,
     stretch: stretchR,
-    out: headW * 0.78,
+    out: headW * 0.55,
   };
   if (key === "e") {
     // Profile: far bar sticks out behind the head; near bar toward the viewer, above the face.
     left.x = g.cx - g.rx * 0.82;
     left.y = hy - g.ry * 0.52;
-    left.out = headW * 0.72;
+    left.out = headW * 0.50;
     right.x = g.cx + g.rx * 0.48;
     right.y = hy - g.ry * 0.70;
-    right.out = headW * 0.66;
+    right.out = headW * 0.46;
   } else if (key === "se") {
     // 3/4: near (right) toward the viewer; far (left) peeks behind.
     left.x = g.cx - g.rx * 0.78;
     left.y = hy - g.ry * 0.50;
-    left.out = headW * 0.62;
+    left.out = headW * 0.43;
     right.x = g.cx + g.rx * 0.98;
     right.y = hy - g.ry * 0.54;
-    right.out = headW * 0.72;
+    right.out = headW * 0.50;
   } else if (key === "ne") {
     left.x = g.cx - g.rx * 0.96;
     left.y = hy - g.ry * 0.50;
-    left.out = headW * 0.76;
+    left.out = headW * 0.53;
     right.x = g.cx + g.rx * 0.70;
     right.y = hy - g.ry * 0.52;
-    right.out = headW * 0.68;
+    right.out = headW * 0.48;
   }
 
   function lerp(a, b, t) { return a + (b - a) * t; }
@@ -1669,23 +1717,24 @@ function drawPonyTail(buf, av, key, pal, upper, hatOn, bob = 0, frame = 0, walk 
 
   function tail(t) {
     const s = t.stretch || 0;
-    // Long horizontal shaft, then a downward U hook at the far end. Tips bob with the spring.
-    const out = t.out + s * 1.6;
-    const shaftY = t.y + s * -0.25;
-    const hookDrop = 6.4 + s * -1.35;
-    const hookIn = 3.4 + s * 0.25;
+    // Out, down, and slightly back up at the tip — a round U / J hook. Tips bob.
+    const out = t.out + s * 1.15;
+    const shaftY = t.y + s * -0.35;
+    const hookDrop = 5.1 + s * -1.55;
+    const hookIn = 3.2 + s * 0.22;
+    const hookUp = 2.15 + s * 0.45;
     const p0 = { x: t.x, y: shaftY };
-    const p1 = { x: t.x + t.side * out * 0.48, y: shaftY - 0.15 };
-    const p2 = { x: t.x + t.side * out, y: shaftY + 0.35 };
-    const p3 = { x: t.x + t.side * (out + 0.4), y: shaftY + hookDrop * 0.55 };
-    const p4 = { x: t.x + t.side * (out - hookIn * 0.15), y: shaftY + hookDrop };
-    const p5 = { x: t.x + t.side * (out - hookIn), y: shaftY + hookDrop + 0.8 };
+    const p1 = { x: t.x + t.side * out * 0.50, y: shaftY - 0.35 };
+    const p2 = { x: t.x + t.side * out, y: shaftY + 0.20 };
+    const p3 = { x: t.x + t.side * (out + 0.15), y: shaftY + hookDrop * 0.62 };
+    const p4 = { x: t.x + t.side * (out - hookIn * 0.35), y: shaftY + hookDrop };
+    const p5 = { x: t.x + t.side * (out - hookIn * 0.95), y: shaftY + hookDrop - hookUp };
     function at(u) {
-      if (u < 0.62) return quad(p0, p1, p2, u / 0.62);
-      if (u < 0.84) return quad(p2, p3, p4, (u - 0.62) / 0.22);
-      return quad(p4, p4, p5, (u - 0.84) / 0.16);
+      if (u < 0.55) return quad(p0, p1, p2, u / 0.55);
+      if (u < 0.80) return quad(p2, p3, p4, (u - 0.55) / 0.25);
+      return quad(p4, { x: (p4.x + p5.x) / 2, y: p4.y - hookUp * 0.15 }, p5, (u - 0.80) / 0.20);
     }
-    const half = 3.05;
+    const half = 2.15;
     for (let i = 0; i <= 20; i++) {
       const u = i / 20;
       const p = at(u);
@@ -1695,7 +1744,7 @@ function drawPonyTail(buf, av, key, pal, upper, hatOn, bob = 0, frame = 0, walk 
       ellipse(buf, p.x, p.y, r, r * 0.90, pal.hair, "hair-tail", depth, {});
     }
     const tip = at(0.98), pre = at(0.88);
-    stampSpike(buf, pre.x, pre.y, 3.4, 1.25, Math.atan2(tip.y - pre.y, tip.x - pre.x), pal.hair, "hair-tail", depth, true);
+    stampSpike(buf, pre.x, pre.y, 2.4, 0.95, Math.atan2(tip.y - pre.y, tip.x - pre.x), pal.hair, "hair-tail", depth, true);
     // Highlight streak along the top of the shaft, never a near-white silhouette.
     const hi = animeHairHi(pal);
     for (let i = 2; i <= 14; i++) {
@@ -2481,6 +2530,7 @@ function composeAvatar(av, flags, frame) {
   }
   if (headView.flip) head = flipBuf(head, true);
   drawEyes(head, hk, headUpper, headView.flip, flags, emote);
+  drawMouth(head, hk, headUpper, headView.flip, flags.mouth, emote);
   const dx = neckX(bodyView, upper) - neckX(headView, headUpper) + (headView.flip ? -motion.x : motion.x);
   if (dx) head = shiftBufXY(head, dx, 0);
   head = addInkOutline(head);
@@ -2598,7 +2648,8 @@ export function drawAvatarSprite(avatar = {}, flags = {}, frame = 0) {
   const lookX = flags.lookX || 0;
   const lookY = flags.lookY || 0;
   const pop = flags.shoePop == null || flags.shoePop < 0 ? -1 : Math.floor(flags.shoePop / 80);
-  const key = "chibi:" + JSON.stringify(av) + ":" + bodyDir + ":" + headDir + ":" + Boolean(flags.sitting) + ":" + walk + ":" + phase + ":" + Boolean(flags.usingPhone) + ":" + Boolean(flags.boxing) + ":" + (flags.actionEmote || "") + ":" + held + ":" + Boolean(flags.gym) + ":" + blink + ":" + lookX + ":" + lookY + ":" + pop;
+  const mouth = flags.mouth || "line";
+  const key = "chibi:" + JSON.stringify(av) + ":" + bodyDir + ":" + headDir + ":" + Boolean(flags.sitting) + ":" + walk + ":" + phase + ":" + Boolean(flags.usingPhone) + ":" + Boolean(flags.boxing) + ":" + (flags.actionEmote || "") + ":" + held + ":" + Boolean(flags.gym) + ":" + blink + ":" + lookX + ":" + lookY + ":" + pop + ":" + mouth;
   const hit = cache.get(key);
   if (hit) return hit;
   const composed = composeAvatar(av, flags, frame);

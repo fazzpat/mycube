@@ -78,14 +78,40 @@ import { initChessUI } from "./chess-ui.js";
   const openChessPanel = (...args) => chessUI.openChessPanel(...args);
   const closeChessPanel = (...args) => chessUI.closeChessPanel(...args);
 
+
+  function syncForeignInputs() {
+    // Keep off-screen forms out of the iOS "next field" accessory so chat
+    // is a one-step type-and-send, with no arrow hopping.
+    const chat = document.getElementById("chat-input");
+    document.querySelectorAll("input, textarea, select").forEach((el) => {
+      if (el === chat) {
+        el.removeAttribute("tabindex");
+        return;
+      }
+      const host = el.closest(".view, .modal, .sheet, .store-panel, .wardrobe-panel, .phone-overlay, #password-modal, #rewards-sheet");
+      const buried = Boolean(el.closest(".hidden") || host?.classList.contains("hidden") || host?.inert);
+      if (buried) {
+        el.setAttribute("tabindex", "-1");
+      } else {
+        el.removeAttribute("tabindex");
+      }
+    });
+  }
+
   function setView(name) {
     state.view = name;
     document.body.dataset.view = name;
     ["login", "creator", "lobby", "room"].forEach((v) => {
       const el = document.getElementById("view-" + v);
-      if (v === name) SHOW(el);
-      else HIDE(el);
+      if (v === name) {
+        SHOW(el);
+        if (el) el.inert = false;
+      } else {
+        HIDE(el);
+        if (el) el.inert = true;
+      }
     });
+    syncForeignInputs();
     if (name === "login") startMenu.show();
     else startMenu.hide();
     if (name === "creator") creatorMenu.show();
@@ -510,6 +536,11 @@ import { initChessUI } from "./chess-ui.js";
       bubble: existing.bubble || null,
       bubbleUntil: existing.bubbleUntil || 0,
       bubbles: existing.bubbles || [],
+      typing: existing.typing || false,
+      typingAt: existing.typingAt || 0,
+      talkAt: existing.talkAt || 0,
+      talkText: existing.talkText || "",
+      talkUntil: existing.talkUntil || 0,
       heldProp: p.heldProp ?? existing.heldProp ?? null,
       activePet: p.activePet ?? existing.activePet ?? null,
       heldItem: p.heldItem ?? existing.heldItem ?? null,
@@ -760,17 +791,20 @@ import { initChessUI } from "./chess-ui.js";
         seen.add("e:" + p.username);
       }
 
-      if (p.typingPreview && p.username === state.me?.username && !active.length) {
+      const typingLive = Boolean(p.typing) && now - (p.typingAt || 0) < 4000;
+      if (typingLive) {
         let typ = layer.querySelector(`[data-testid="typing-${cssEscape(p.username)}"]`);
         if (!typ) {
           typ = document.createElement("div");
-          typ.className = "speech-stack";
+          typ.className = "thinking-stack";
           typ.dataset.testid = "typing-" + p.username;
+          typ.innerHTML = '<div class="thinking-bubble" aria-label="typing"><span class="think-dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="think-trail" aria-hidden="true"><i></i><i></i></span></div>';
           layer.appendChild(typ);
         }
-        typ.innerHTML = bubbleMarkup(p, p.typingPreview, false).replace('speech-bubble', 'speech-bubble typing-bubble');
+        const nameH = nameEl.offsetHeight || 16;
         typ.style.left = Math.min(Math.max(pos.x, 48), W - 48) + "px";
-        typ.style.top = Math.max(PAD + 36, Math.round(H * 0.1) + 8) + "px";
+        typ.style.top = Math.round(ny - nameH - 2) + "px";
+        typ.style.zIndex = "12";
         seen.add("t:" + p.username);
       }
 
@@ -2079,31 +2113,99 @@ import { initChessUI } from "./chess-ui.js";
     }
   }
 
-  function syncAppShell() {
+  function lockPageScroll() {
+    window.scrollTo(0, 0);
+    if (document.documentElement) document.documentElement.scrollTop = 0;
+    if (document.body) document.body.scrollTop = 0;
+  }
+
+  function keyboardHeight() {
+    if (state.testKbInset != null) return Math.max(0, Math.round(state.testKbInset));
     const vv = window.visualViewport;
-    const visible = Math.max(1, Math.round((vv && vv.height) || window.innerHeight));
-    const offsetTop = Math.max(0, Math.round((vv && vv.offsetTop) || 0));
+    if (!vv) return 0;
+    const layoutH = window.innerHeight;
+    return Math.max(0, Math.round(layoutH - vv.height - (vv.offsetTop || 0)));
+  }
+
+  function syncAppShell() {
+    const layoutH = Math.max(1, Math.round(window.innerHeight));
     const root = document.documentElement;
-    root.style.setProperty("--app-h", visible + "px");
-    root.style.setProperty("--app-top", offsetTop + "px");
-    // The shell already tracks the visual viewport, so don't double-apply a keyboard inset.
-    root.style.setProperty("--kb-inset", "0px");
-    document.querySelector(".room-view")?.style.setProperty("--kb-inset", "0px");
+    // Layout size stays locked to the layout viewport. The visual viewport
+    // (on-screen keyboard) must not shrink or shift the room or header.
+    root.style.setProperty("--app-h", layoutH + "px");
+    root.style.setProperty("--app-top", "0px");
+    root.style.setProperty("--layout-h", layoutH + "px");
     const dock = document.getElementById("chat-dock");
     if (dock && state.view === "room") {
+      const lifted = keyboardHeight();
+      // Measure the dock's layout height, not the translated box.
+      const prev = dock.style.transform;
+      dock.style.transform = "none";
       const h = Math.round(dock.getBoundingClientRect().height);
+      dock.style.transform = prev;
       if (h > 0) root.style.setProperty("--dock-h", h + "px");
+      void lifted;
     }
     const chat = document.getElementById("chat-input");
-    root.style.setProperty("--layout-h", window.innerHeight + "px");
     if (chat) {
       const next = "Say something...";
       if (chat.placeholder !== next) chat.placeholder = next;
     }
     if (state.view === "room") state.room3d?.resize();
   }
+
   function syncKeyboardInset() {
-    syncAppShell();
+    lockPageScroll();
+    const kb = keyboardHeight();
+    const root = document.documentElement;
+    const px = kb + "px";
+    root.style.setProperty("--kb-inset", px);
+    document.querySelector(".room-view")?.style.setProperty("--kb-inset", px);
+    // Do not resize the room canvas — only the dock lifts.
+    const dock = document.getElementById("chat-dock");
+    if (dock && state.view === "room") {
+      const prev = dock.style.transform;
+      dock.style.transform = "none";
+      const h = Math.round(dock.getBoundingClientRect().height);
+      dock.style.transform = prev;
+      if (h > 0) root.style.setProperty("--dock-h", h + "px");
+    }
+  }
+
+  let typingOn = false;
+  let lastTypingEmit = 0;
+  let typingIdleTimer = 0;
+  function emitTyping(on) {
+    if (on) {
+      const now = Date.now();
+      if (typingOn && now - lastTypingEmit < 350) {
+        clearTimeout(typingIdleTimer);
+        typingIdleTimer = setTimeout(() => emitTyping(false), 4000);
+        return;
+      }
+      lastTypingEmit = now;
+      typingOn = true;
+      socket.emit("typing", { on: true });
+      const me = state.people.get(state.me?.username);
+      if (me) {
+        me.typing = true;
+        me.typingAt = now;
+        paintOverlays();
+      }
+      clearTimeout(typingIdleTimer);
+      typingIdleTimer = setTimeout(() => emitTyping(false), 4000);
+    } else if (typingOn || state.people.get(state.me?.username)?.typing) {
+      typingOn = false;
+      lastTypingEmit = 0;
+      clearTimeout(typingIdleTimer);
+      socket.emit("typing", { on: false });
+      const me = state.people.get(state.me?.username);
+      if (me) {
+        me.typing = false;
+        me.typingAt = 0;
+        paintOverlays();
+      }
+    }
   }
 
   function autosizeChat() {
@@ -2111,12 +2213,9 @@ import { initChessUI } from "./chess-ui.js";
     if (!el) return;
     el.style.height = "auto";
     el.style.height = Math.min(96, Math.max(44, el.scrollHeight)) + "px";
-    const me = state.people.get(state.me?.username);
-    if (me) {
-      const val = el.value.trim();
-      me.typingPreview = val || null;
-      paintOverlays();
-    }
+    const val = el.value.trim();
+    if (val) emitTyping(true);
+    else emitTyping(false);
   }
 
 
@@ -2984,17 +3083,31 @@ import { initChessUI } from "./chess-ui.js";
   function sendChat(e) {
     e?.preventDefault?.();
     e?.stopPropagation?.();
-    const text = $("#chat-input").value;
+    const input = $("#chat-input");
+    const text = input?.value || "";
     if (!text.trim()) {
       ignorePhoneTaps(400);
+      input?.focus?.({ preventScroll: true });
       return;
     }
+    emitTyping(false);
     socket.emit("say", { text });
-    $("#chat-input").value = "";
+    input.value = "";
     autosizeChat();
     ignorePhoneTaps(400);
+    // Keep the keyboard up so the next message is one tap away.
+    input.focus({ preventScroll: true });
+    lockPageScroll();
   }
-  $("#chat-send")?.addEventListener("click", (e) => {
+  const chatSend = $("#chat-send");
+  function holdChatFocus(e) {
+    // Prevent the Say button from blurring the input (which would drop the keyboard).
+    e.preventDefault();
+  }
+  chatSend?.addEventListener("pointerdown", holdChatFocus);
+  chatSend?.addEventListener("mousedown", holdChatFocus);
+  chatSend?.addEventListener("touchstart", holdChatFocus, { passive: false });
+  chatSend?.addEventListener("click", (e) => {
     e.preventDefault();
     e.stopPropagation();
     sendChat(e);
@@ -3010,7 +3123,10 @@ import { initChessUI } from "./chess-ui.js";
     }
   });
   $("#chat-input").addEventListener("input", autosizeChat);
-  $("#chat-input").addEventListener("focus", () => setTimeout(syncKeyboardInset, 50));
+  $("#chat-input").addEventListener("focus", () => {
+    lockPageScroll();
+    setTimeout(() => { lockPageScroll(); syncKeyboardInset(); }, 50);
+  });
   $("#chat-input").addEventListener("blur", () => {
     ignorePhoneTaps(400);
     setTimeout(syncKeyboardInset, 50);
@@ -3019,9 +3135,15 @@ import { initChessUI } from "./chess-ui.js";
     window.visualViewport.addEventListener("resize", syncKeyboardInset);
     window.visualViewport.addEventListener("scroll", syncKeyboardInset);
   }
-  window.addEventListener("resize", syncKeyboardInset);
-  window.addEventListener("orientationchange", () => setTimeout(syncKeyboardInset, 50));
+  window.addEventListener("resize", () => { lockPageScroll(); syncAppShell(); syncKeyboardInset(); });
+  window.addEventListener("orientationchange", () => setTimeout(() => { lockPageScroll(); syncAppShell(); syncKeyboardInset(); }, 50));
+  syncAppShell();
   syncKeyboardInset();
+  window.__setKeyboardInset = (px) => {
+    state.testKbInset = px == null ? null : Math.max(0, Number(px) || 0);
+    syncKeyboardInset();
+    return keyboardHeight();
+  };
 
   function handleTileClick(tx, ty) {
     if (state.pendingPlace) {
@@ -3327,6 +3449,14 @@ import { initChessUI } from "./chess-ui.js";
     toast(payload.kind === "pets" ? "New pet added to your collection." : "Added to your wardrobe.");
   });
 
+  socket.on("userTyping", ({ username, on, at }) => {
+    const p = state.people.get(username);
+    if (!p) return;
+    p.typing = Boolean(on);
+    p.typingAt = p.typing ? (at || Date.now()) : 0;
+    paintOverlays();
+  });
+
   socket.on("userSaid", ({ username, text, shout }) => {
     window.__lastSays.push({ username, text, at: Date.now(), roomId: state.room?.id });
     const p = state.people.get(username);
@@ -3337,6 +3467,12 @@ import { initChessUI } from "./chess-ui.js";
     p.bubbles = (p.bubbles || []).filter((b) => Date.now() < b.until);
     p.bubbles.push({ text, until, id: until + "-" + p.bubbles.length, shout: Boolean(shout) });
     if (p.bubbles.length > 4) p.bubbles.shift();
+    p.typing = false;
+    p.typingAt = 0;
+    const talkMs = Math.min(4000, Math.max(600, String(text || "").length * 60));
+    p.talkText = text;
+    p.talkAt = Date.now();
+    p.talkUntil = p.talkAt + talkMs;
     pushChatFloat(p, text);
     const others = [...state.people.values()].filter((o) => o.username !== p.username);
     if (others.length) {
