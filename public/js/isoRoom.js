@@ -540,10 +540,17 @@ export function createRoom3D(container, opts = {}) {
   let people = [];
   let npcs = [];
   let ghost = null;
+  let petGhost = null;
+  let placedPets = [];
   let wallGhost = null;
   let highlightId = null;
   let followName = null;
   let camMode = "follow";
+  function followZoomForStage() {
+    if (!isPhoneView() || viewH >= 400) return FOLLOW_ZOOM_DEFAULT;
+    const t = Math.max(0, Math.min(1, (400 - viewH) / 160));
+    return Math.round((FOLLOW_ZOOM_DEFAULT - t * 0.55) * 100) / 100;
+  }
   let userZoom = FOLLOW_ZOOM_DEFAULT;
   let zoom = 1;
   let camX = 0, camY = 0;
@@ -563,11 +570,13 @@ export function createRoom3D(container, opts = {}) {
   let editViewShiftX = 0, editViewShiftY = 0;
   let autoFit = !isPhoneView();
   let panLocked = false;
+  let grab = null;
+  let onGrabStart = null, onGrabMove = null, onGrabEnd = null;
   let velX = 0, velY = 0;
   let lastTapAt = 0, lastTapX = 0, lastTapY = 0;
   let didPinch = false;
   let movedThisGesture = false;
-  let onTileClick = null, onTileHover = null, onFurnitureClick = null;
+  let onTileClick = null, onTileHover = null, onFurnitureClick = null, onPetClick = null;
   let onSwitchClick = null, onSwitchTap = null, onWallClick = null, onWallHover = null;
   const personState = new Map();
 
@@ -590,6 +599,14 @@ export function createRoom3D(container, opts = {}) {
 
   function drawTileShadow(ctx, tx, ty, kind) {
     const pts = tileDiamond(tx, ty);
+    if (kind === "place-ok") {
+      fillPoly(ctx, pts, "rgba(62, 207, 142, 0.38)", "rgba(46, 180, 110, 0.95)");
+      return;
+    }
+    if (kind === "place-bad") {
+      fillPoly(ctx, pts, "rgba(255, 50, 50, 0.42)", "rgba(220, 30, 30, 0.95)");
+      return;
+    }
     const pulse = kind === "target" ? 0.22 + Math.sin(performance.now() / 180) * 0.06 : 0.28;
     fillPoly(ctx, pts, kind === "target" ? `rgba(20, 12, 8, ${0.34 + pulse * 0.15})` : "rgba(18, 10, 8, 0.30)", kind === "target" ? "rgba(40, 24, 16, 0.55)" : "rgba(20, 12, 10, 0.4)");
   }
@@ -741,16 +758,18 @@ export function createRoom3D(container, opts = {}) {
       camMode = "follow";
       followPaused = false;
       autoFit = false;
-      if (userZoom < 1.15) {
-        userZoom = FOLLOW_ZOOM_DEFAULT;
-        zoomTarget = FOLLOW_ZOOM_DEFAULT;
-        zoom = FOLLOW_ZOOM_DEFAULT;
+      if (userZoom <= FOLLOW_ZOOM_DEFAULT + 0.001) {
+        const z = followZoomForStage();
+        userZoom = z;
+        zoomTarget = z;
+        zoom = z;
       }
     }
     lastPhone = phone;
-    if (phone && camMode === "follow" && userZoom < 1.15 && !followPaused) {
-      userZoom = FOLLOW_ZOOM_DEFAULT;
-      zoomTarget = FOLLOW_ZOOM_DEFAULT;
+    if (phone && camMode === "follow" && userZoom <= FOLLOW_ZOOM_DEFAULT + 0.001 && !followPaused) {
+      const z = followZoomForStage();
+      userZoom = z;
+      zoomTarget = z;
     }
     applyCamera();
   }
@@ -799,6 +818,42 @@ export function createRoom3D(container, opts = {}) {
   }
 
 
+  function hashStr(str) {
+    let h = 2166136261;
+    const s = String(str || "");
+    for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
+    return h >>> 0;
+  }
+  function placedPetAnim(pet, now) {
+    const seed = hashStr(pet.id || pet.item);
+    const period = 8000;
+    const t = (now + (seed % period)) % period;
+    const dirs = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]];
+    const [dx, dy] = dirs[seed % 8];
+    const dist = 1 + (seed % 2);
+    let tx = pet.x + dx * dist;
+    let ty = pet.y + dy * dist;
+    tx = Math.max(0, Math.min(gridSize - 1, tx));
+    ty = Math.max(0, Math.min(gridSize - 1, ty));
+    const walkOut = 1600, sitAway = 4600, walkBack = 6200;
+    const faceTo = (ax, ay, bx, by) => {
+      const fx = Math.sign(bx - ax) || 0;
+      const fy = Math.sign(by - ay) || 0;
+      return { x: fx, z: fy };
+    };
+    if (t < walkOut) {
+      const u = t / walkOut;
+      return { x: pet.x + (tx - pet.x) * u, y: pet.y + (ty - pet.y) * u, walking: true, sit: false, facing: faceTo(pet.x, pet.y, tx, ty) };
+    }
+    if (t < sitAway) {
+      return { x: tx, y: ty, walking: false, sit: true, facing: faceTo(pet.x, pet.y, tx, ty) };
+    }
+    if (t < walkBack) {
+      const u = (t - sitAway) / (walkBack - sitAway);
+      return { x: tx + (pet.x - tx) * u, y: ty + (pet.y - ty) * u, walking: true, sit: false, facing: faceTo(tx, ty, pet.x, pet.y) };
+    }
+    return { x: pet.x, y: pet.y, walking: false, sit: true, facing: { x: 1, z: 0 } };
+  }
   function collectDrawList(now) {
     const list = [];
     for (const f of furniture) {
@@ -907,15 +962,30 @@ export function createRoom3D(container, opts = {}) {
         const wag = sit ? (Math.sin(now / 160) > 0.2 ? 1 : Math.sin(now / 160) < -0.2 ? -1 : 0) : 0;
         const bob = sit && Math.sin(now / 480) > 0.15 ? -1 : 0;
         const pspr = drawPetSprite(p.activePet, frame, petWalking, sit, facing, petAnim.blink, wag, bob);
-        list.push({ kind: "pet", id: p.username + "-pet", type: "pet", depth: pst.x + pst.y + 0.35, sx: pf.sx - PET_W / 2, sy: pf.sy - PET_GROUND_Y, w: PET_W, h: PET_H, spr: pspr });
+        list.push({ kind: "pet", id: p.username + "-pet", type: "pet", depth: pst.x + pst.y + 0.35, sx: pf.sx - PET_W / 2, sy: pf.sy - PET_GROUND_Y, w: PET_W, h: PET_H, spr: pspr, raw: { id: p.username + "-pet", item: p.activePet, owner: p.username, following: true } });
       }
+    }
+    const petFrame = Math.floor(now / 96) % 8;
+    for (const pet of placedPets) {
+      const anim = placedPetAnim(pet, now);
+      const pf = tileToScreen(anim.x + 0.5, anim.y + 0.5);
+      const petAnim = tickChibiAnim((pet.id || pet.item) + "-placed", now, { walking: anim.walking, targetDir: facingIndex8(anim.facing) });
+      const wag = anim.sit ? (Math.sin(now / 160) > 0.2 ? 1 : Math.sin(now / 160) < -0.2 ? -1 : 0) : 0;
+      const bob = anim.sit && Math.sin(now / 480) > 0.15 ? -1 : 0;
+      const pspr = drawPetSprite(pet.item, petFrame, anim.walking, anim.sit, anim.facing, petAnim.blink, wag, bob);
+      list.push({ kind: "pet", id: pet.id, type: "pet", depth: anim.x + anim.y + 0.3, sx: pf.sx - PET_W / 2, sy: pf.sy - PET_GROUND_Y, w: PET_W, h: PET_H, spr: pspr, raw: { ...pet, following: false, x: anim.x, y: anim.y } });
+    }
+    if (petGhost) {
+      const pf = tileToScreen(petGhost.tx + 0.5, petGhost.ty + 0.5);
+      const pspr = drawPetSprite(petGhost.item, petFrame, false, false, { x: 1, z: 0 }, "open", 0, 0);
+      list.push({ kind: "ghost", depth: petGhost.tx + petGhost.ty + 0.9, sx: pf.sx - PET_W / 2, sy: pf.sy - PET_GROUND_Y, w: PET_W, h: PET_H, spr: pspr, alpha: petGhost.ok ? 0.7 : 0.4, tx: petGhost.tx, ty: petGhost.ty, pet: true });
     }
     if (ghost) {
       const rot = normalizeFurnRot(ghost.rot);
       const m = furnSpriteMetrics(ghost.type, rot);
       const pos = furnBlitPos(ghost.tx, ghost.ty, ghost.type, rot, tileToScreen);
       const spr = drawFurnitureSprite(ghost.type, { lights: lightsOn, rot });
-      list.push({ kind: "ghost", depth: ghost.tx + ghost.ty + (m.tw + m.th) / 2 + 0.9, sx: pos.sx, sy: pos.sy, w: pos.w, h: pos.h, spr, alpha: 0.55 });
+      list.push({ kind: "ghost", depth: ghost.tx + ghost.ty + (m.tw + m.th) / 2 + 0.9, sx: pos.sx, sy: pos.sy, w: pos.w, h: pos.h, spr, alpha: ghost.ok ? 0.7 : 0.4, tx: ghost.tx, ty: ghost.ty });
       if (ghost.type === "chesstable") {
         for (const seat of [0, 1]) {
           const pose = chessSeatPose({ x: ghost.tx, y: ghost.ty, rot }, seat);
@@ -1233,6 +1303,15 @@ export function createRoom3D(container, opts = {}) {
         if (moveTarget && moveTarget.x === x && moveTarget.y === y) {
           drawTileShadow(ctx, x, y, "target");
         }
+        if (ghost && x >= ghost.tx && y >= ghost.ty) {
+          const dims = furnTileDims(ghost.type, normalizeFurnRot(ghost.rot));
+          if (x < ghost.tx + dims.w && y < ghost.ty + dims.h) {
+            drawTileShadow(ctx, x, y, ghost.ok ? "place-ok" : "place-bad");
+          }
+        }
+        if (petGhost && petGhost.tx === x && petGhost.ty === y) {
+          drawTileShadow(ctx, x, y, petGhost.ok ? "place-ok" : "place-bad");
+        }
       }
     }
     drawFloorSlab();
@@ -1295,12 +1374,25 @@ export function createRoom3D(container, opts = {}) {
     const list = collectDrawList(now);
     for (let i = list.length - 1; i >= 0; i--) {
       const it = list[i];
-      if (it.kind === "ghost" || it.kind === "person" || it.kind === "pet" || it.kind === "stool") continue;
+      if (it.kind === "person" || it.kind === "stool") continue;
+      if (it.kind === "ghost") {
+        if (!placing) continue;
+        if (wpt.sx >= it.sx && wpt.sx <= it.sx + it.w && wpt.sy >= it.sy && wpt.sy <= it.sy + it.h) {
+          return { kind: "ghost", id: it.id, floor, tx: it.tx, ty: it.ty, pet: it.pet };
+        }
+        continue;
+      }
+      if (it.kind === "pet") {
+        if (wpt.sx >= it.sx && wpt.sx <= it.sx + it.w && wpt.sy >= it.sy && wpt.sy <= it.sy + it.h) {
+          return { kind: "pet", id: it.id, pet: it.raw, floor };
+        }
+        continue;
+      }
       if (wpt.sx >= it.sx && wpt.sx <= it.sx + it.w && wpt.sy >= it.sy && wpt.sy <= it.sy + it.h) {
         if (it.kind === "furn" && it.raw && !hitFurnitureAt(it.raw, wpt.sx, wpt.sy, screenToTile)) continue;
         if (it.kind === "furn" || it.kind === "npc") {
           const interactive = typeof isFurnInteractive === "function" ? isFurnInteractive(it.type, it.raw) : true;
-          if (!interactive) continue;
+          if (!interactive && !placing) continue;
           return { ...it, floor };
         }
         return { ...it, floor };
@@ -1318,11 +1410,22 @@ export function createRoom3D(container, opts = {}) {
     return null;
   }
 
+  function grabHitFrom(hit) {
+    if (!placing || !hit) return null;
+    if (hit.kind === "ghost") return hit;
+    if (hit.kind === "furn" || hit.kind === "npc") return hit;
+    if (hit.kind === "pet" && hit.pet && !hit.pet.following) return hit;
+    if (hit.kind === "wall" && hit.art) return hit;
+    return null;
+  }
+
   function handleTap(ev) {
+
     const hit = hitAt(ev.clientX, ev.clientY);
     if (!hit) return;
     if (hit.kind === "switch") { (onSwitchTap || onSwitchClick)?.(); return; }
-    if (hit.kind === "wall") { onWallClick?.(hit.wall, hit.slot); return; }
+    if (hit.kind === "wall") { onWallClick?.(hit.wall, hit.slot, hit.art); return; }
+    if (hit.kind === "pet") { onPetClick?.(hit.pet || { id: hit.id }); return; }
     if (hit.kind === "furn" || hit.kind === "npc") { onFurnitureClick?.(hit.id, hit.type, hit.raw || {}); return; }
     if (hit.kind === "tile") onTileClick?.(hit.x, hit.y);
   }
@@ -1349,10 +1452,20 @@ export function createRoom3D(container, opts = {}) {
       pinchAnchor = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
       didPinch = true;
       panStart = null;
+      grab = null;
     } else {
       didPinch = false;
       movedThisGesture = false;
-      panStart = { x: e.clientX, y: e.clientY, camX, camY, t: performance.now() };
+      grab = null;
+      const hit = placing ? hitAt(e.clientX, e.clientY) : null;
+      const gh = grabHitFrom(hit);
+      if (gh) {
+        grab = { hit: gh, x: e.clientX, y: e.clientY, moved: false };
+        panStart = null;
+        onGrabStart?.(gh);
+      } else {
+        panStart = { x: e.clientX, y: e.clientY, camX, camY, t: performance.now() };
+      }
     }
   });
   canvas.addEventListener("pointermove", (e) => {
@@ -1366,6 +1479,16 @@ export function createRoom3D(container, opts = {}) {
       setUserZoomAt(next, midX, midY, true);
       followPaused = true;
       didPinch = true;
+      return;
+    }
+    if (grab && pointers.size === 1 && !didPinch) {
+      const dx = e.clientX - grab.x;
+      const dy = e.clientY - grab.y;
+      if (Math.hypot(dx, dy) >= TAP_SLOP || grab.moved) {
+        grab.moved = true;
+        movedThisGesture = true;
+        onGrabMove?.(e.clientX, e.clientY, grab.hit);
+      }
       return;
     }
     if (panStart && pointers.size === 1 && !didPinch && !panLocked) {
@@ -1407,10 +1530,18 @@ export function createRoom3D(container, opts = {}) {
         velX = -(e.clientX - start.x) / Math.max(0.2, zoom) * (16 / Math.max(16, dt)) * 0.85;
         velY = -(e.clientY - start.y) / Math.max(0.2, zoom) * (16 / Math.max(16, dt)) * 0.85;
       }
+      const grabbed = grab;
+      grab = null;
       panStart = null;
       const pinched = didPinch;
       didPinch = false;
+      const moved = movedThisGesture;
       movedThisGesture = false;
+      if (grabbed) {
+        if (grabbed.moved) onGrabEnd?.(e.clientX, e.clientY, grabbed.hit);
+        else handleTap(e);
+        return;
+      }
       // Two fingers never issue a walk/tap.
       if (!pinched && start && dist < TAP_SLOP && dt < 500) {
         if (maybeRecenterTap(e)) return;
@@ -1523,6 +1654,20 @@ export function createRoom3D(container, opts = {}) {
     setStyle(wp, fl) { if (wp) wallpaper = wp; if (fl) floorStyle = fl; },
     setGridSize(n) { gridSize = Math.max(4, Math.min(12, n || 6)); applyCamera(); },
     setFurniture(list) { furniture = (list || []).map((f) => ({ ...f, rot: normalizeFurnRot(f.rot) })); },
+    setPlacedPets(list) { placedPets = (list || []).map((p) => ({ ...p })); },
+    getPlacedPets() { return (placedPets || []).map((p) => ({ ...p })); },
+    setPetGhost(item, tx, ty, ok) {
+      petGhost = item == null ? null : { item, tx, ty, ok: Boolean(ok) };
+    },
+    getPetGhost() { return petGhost ? { ...petGhost } : null; },
+    onPetClick(fn) { onPetClick = fn; },
+    projectPet(id) {
+      const it = collectDrawList(performance.now()).find((x) => x.kind === "pet" && x.id === id);
+      if (!it) return null;
+      const c = clientFromWorld(it.sx + it.w / 2, it.sy);
+      return { x: c.x, y: c.y, visible: c.visible };
+    },
+
     addFurniture(f) { furniture = furniture.concat([{ ...f, rot: normalizeFurnRot(f.rot) }]); },
     getFurniture() { return furniture.slice(); },
     setGhost(type, tx, ty, ok, rot) {
@@ -1660,6 +1805,10 @@ export function createRoom3D(container, opts = {}) {
       const wpt = worldFromClient(cx, cy, performance.now());
       return pickFloorTile(wpt.sx, wpt.sy);
     },
+    pickHitAt(cx, cy) { return hitAt(cx, cy); },
+    onGrabStart(fn) { onGrabStart = fn; },
+    onGrabMove(fn) { onGrabMove = fn; },
+    onGrabEnd(fn) { onGrabEnd = fn; },
     projectWorld(tx, ty) {
       const p = tileToScreen(tx, ty);
       return clientFromWorld(p.sx, p.sy);
@@ -1716,7 +1865,7 @@ export function createRoom3D(container, opts = {}) {
       camX = saved.camX; camY = saved.camY; zoom = saved.zoom; camMode = saved.camMode; userZoom = saved.userZoom;
       return { ok: clipped.length === 0, clipped, rect: { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height } };
     },
-    setPlacing(type) { placing = type; panLocked = Boolean(type); if (!type) ghost = null; },
+    setPlacing(type) { placing = type; if (!type) { ghost = null; grab = null; } },
     setPanLocked(on) { panLocked = Boolean(on); if (panLocked) { panStart = null; velX = velY = 0; } },
     recenterView,
     simulateTileClick(tx, ty) { onTileClick?.(tx, ty); },

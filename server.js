@@ -438,6 +438,7 @@ function roomState(room) {
     chess: publicChessMap(room),
     uses: room.uses || {},
     wallArt: room.wallArt || [],
+    pets: (room.pets || []).map((p) => ({ ...p })),
     seats: publicSeats(room),
     arcade: publicArcade(room),
     serverTime: Date.now(),
@@ -704,6 +705,7 @@ function ensureRoomExtras(room) {
   if (!room.wallArt) room.wallArt = [];
   if (!room.seats) room.seats = {};
   if (!room.arcade) room.arcade = {};
+  if (!Array.isArray(room.pets)) room.pets = [];
   if (room.lightsOn === undefined) room.lightsOn = true;
   if (Array.isArray(room.furniture)) {
     for (const f of room.furniture) f.rot = normalizeRot(f.rot);
@@ -1751,11 +1753,106 @@ io.on("connection", (socket) => {
     if (user.roomId) io.to(user.roomId).emit("userUpdated", snapshotPerson(user));
   });
 
+  function petLabelFor(user, item) {
+    const c = (user.collection?.pets || []).find((p) => p.item === item);
+    return c?.label || item;
+  }
+  function emitRoomPets(room) {
+    io.to(room.id).emit("roomPets", { pets: room.pets || [] });
+  }
+  function placeFollowerWhereStanding(user, room, item) {
+    if (!room || !item) return;
+    room.pets = room.pets || [];
+    if (room.pets.some((p) => p.owner === user.username && p.item === item)) return;
+    const size = roomSize(room);
+    let x = Math.max(0, Math.min(size - 1, Math.round(Number(user.x) || 0)));
+    let y = Math.max(0, Math.min(size - 1, Math.round(Number(user.y) || 0)));
+    const taken = new Set(room.pets.map((p) => p.x + "," + p.y));
+    if (taken.has(x + "," + y)) {
+      const spots = [[1, 0], [0, 1], [-1, 0], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]];
+      for (const [dx, dy] of spots) {
+        const nx = x + dx, ny = y + dy;
+        if (nx >= 0 && ny >= 0 && nx < size && ny < size && !taken.has(nx + "," + ny)) { x = nx; y = ny; break; }
+      }
+    }
+    room.pets.push({
+      id: "pet-" + Date.now() + "-" + Math.floor(Math.random() * 1000),
+      item,
+      label: petLabelFor(user, item),
+      x, y,
+      owner: user.username,
+    });
+  }
+  function removeOwnedPetFromRoom(room, user, item, id) {
+    if (!room) return false;
+    const before = (room.pets || []).length;
+    room.pets = (room.pets || []).filter((p) => {
+      if (id && p.id === id && (!p.owner || p.owner === user.username)) return false;
+      if (item && p.item === item && (!p.owner || p.owner === user.username)) return false;
+      return true;
+    });
+    return room.pets.length !== before;
+  }
+
   socket.on("equipPet", ({ item } = {}) => {
     const user = getUser(socket);
     if (!user) return;
     if (item && !(user.collection?.pets || []).some((p) => p.item === item)) return;
+    const room = user.roomId ? rooms.get(user.roomId) : null;
+    if (room) ensureRoomExtras(room);
+    const prev = user.activePet;
+    if (prev && prev !== item && room) {
+      placeFollowerWhereStanding(user, room, prev);
+    }
+    if (item && room) removeOwnedPetFromRoom(room, user, item);
     user.activePet = item || null;
+    emitProfile(user);
+    if (user.roomId) io.to(user.roomId).emit("userUpdated", snapshotPerson(user));
+    if (room) emitRoomPets(room);
+  });
+
+  socket.on("placePet", ({ item, x, y } = {}) => {
+    const user = getUser(socket);
+    if (!user?.roomId) return;
+    if (!item || !(user.collection?.pets || []).some((p) => p.item === item)) return;
+    const room = rooms.get(user.roomId);
+    if (!room) return;
+    ensureRoomExtras(room);
+    const size = roomSize(room);
+    const tx = Math.max(0, Math.min(size - 1, Math.round(Number(x) || 0)));
+    const ty = Math.max(0, Math.min(size - 1, Math.round(Number(y) || 0)));
+    if ((room.pets || []).some((p) => p.x === tx && p.y === ty && !(p.owner === user.username && p.item === item))) {
+      socket.emit("errorMsg", { message: "A pal is already on that tile." });
+      return;
+    }
+    removeOwnedPetFromRoom(room, user, item);
+    if (user.activePet === item) user.activePet = null;
+    room.pets.push({
+      id: "pet-" + Date.now() + "-" + Math.floor(Math.random() * 1000),
+      item,
+      label: petLabelFor(user, item),
+      x: tx, y: ty,
+      owner: user.username,
+    });
+    emitProfile(user);
+    if (user.roomId) io.to(user.roomId).emit("userUpdated", snapshotPerson(user));
+    emitRoomPets(room);
+  });
+
+  socket.on("putAwayPet", ({ item, id } = {}) => {
+    const user = getUser(socket);
+    if (!user) return;
+    const room = user.roomId ? rooms.get(user.roomId) : null;
+    if (room) {
+      ensureRoomExtras(room);
+      removeOwnedPetFromRoom(room, user, item, id);
+      emitRoomPets(room);
+    }
+    if (item && user.activePet === item) user.activePet = null;
+    if (id && user.activePet) {
+      const still = (room?.pets || []).some((p) => p.id === id);
+      if (!still && !item) { /* id-only put away of a placed pet */ }
+    }
     emitProfile(user);
     if (user.roomId) io.to(user.roomId).emit("userUpdated", snapshotPerson(user));
   });
@@ -2341,13 +2438,16 @@ io.on("connection", (socket) => {
     const user = getUser(socket);
     if (!user) return;
     if (typeof kit.coins === "number") user.coins = Math.max(0, Math.round(kit.coins));
-    if (kit.pet) {
+    const grantPet = (name, follow) => {
+      if (!name) return;
       user.collection = user.collection || emptyCollection();
-      if (!user.collection.pets.some((p) => p.item === kit.pet)) {
-        user.collection.pets.push({ id: "debug-" + kit.pet, item: kit.pet, label: kit.pet[0].toUpperCase() + kit.pet.slice(1) });
+      if (!user.collection.pets.some((p) => p.item === name)) {
+        user.collection.pets.push({ id: "debug-" + name, item: name, label: name[0].toUpperCase() + name.slice(1) });
       }
-      user.activePet = kit.pet;
-    }
+      if (follow) user.activePet = name;
+    };
+    if (Array.isArray(kit.pets)) kit.pets.forEach((name, i) => grantPet(name, i === 0 && !kit.pet));
+    if (kit.pet) grantPet(kit.pet, true);
     if (Array.isArray(kit.furniture)) {
       for (const typ of kit.furniture) {
         if (FURNITURE_CATALOG[typ]) user.inventory.push(typ);

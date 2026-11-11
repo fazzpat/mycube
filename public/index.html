@@ -223,25 +223,15 @@
           </button>
         </div>
       </div>
-      <div id="edit-inventory" class="edit-inventory hidden" data-testid="edit-inventory">
-        <div class="edit-inv-head">
-          <strong>Inventory</strong>
-          <button type="button" class="btn tiny ghost" id="edit-inv-toggle" data-testid="edit-inv-toggle" aria-label="Collapse inventory">▾</button>
-          <button type="button" class="btn small sage" id="edit-done" data-testid="edit-done">Done</button>
-        </div>
-        <div class="edit-inv-body" id="edit-inv-body" data-testid="edit-inv-body">
-          <div id="edit-inv-items" class="edit-inv-items" data-testid="edit-inv-items"></div>
-          <div id="edit-styles" class="edit-styles"></div>
-          <div class="edit-place-tools hidden" id="edit-place-tools" data-testid="edit-place-tools">
-            <button type="button" class="btn small" id="rotate-place" data-testid="rotate-place">Rotate</button>
-            <button type="button" class="btn small sage hidden" id="confirm-place" data-testid="confirm-place">Place</button>
-          </div>
-        </div>
+      <div id="pet-actions" class="pet-actions hidden" data-testid="pet-actions">
+        <button type="button" class="btn small" data-testid="pet-follow" id="pet-follow">Follow me</button>
+        <button type="button" class="btn small" data-testid="pet-putaway" id="pet-putaway">Put away</button>
       </div>
       <div id="furn-actions" class="furn-actions hidden" data-testid="furn-actions">
         <button type="button" class="btn small" data-testid="furn-rotate" id="furn-rotate">Rotate</button>
         <button type="button" class="btn small" data-testid="furn-move" id="furn-move">Move</button>
-        <button type="button" class="btn small" data-testid="furn-pickup" id="furn-pickup">Pick Up</button>
+        <button type="button" class="btn small" data-testid="furn-pickup" id="furn-pickup">Put away</button>
+        <button type="button" class="btn small sage" data-testid="furn-place" id="furn-place">Place</button>
       </div>
       <div id="place-actions" class="place-actions hidden" data-testid="place-actions">
         <button type="button" class="btn secondary" id="place-cancel" data-testid="place-cancel">Cancel</button>
@@ -307,6 +297,11 @@
           <button type="button" class="btn secondary" id="ward-cancel" data-testid="ward-cancel">Cancel</button>
         </div>
       </div>
+      <div class="chat-frame" id="chat-frame" data-testid="chat-frame">
+      <div id="edit-inventory" class="edit-inventory hidden" data-testid="edit-inventory">
+        <div id="edit-inv-items" class="edit-inv-items" data-testid="edit-inv-items"></div>
+        <button type="button" class="btn tiny sage edit-done-btn" id="edit-done" data-testid="edit-done" aria-label="Done editing">✕</button>
+      </div>
       <div class="dock" id="chat-dock" data-testid="chat-dock">
         <button class="emote-btn phone-dock-btn" data-testid="phone-btn" id="phone-btn" type="button" title="Phone" aria-label="Open phone menu" aria-expanded="false">
           <span class="phone-fab-icon" aria-hidden="true">
@@ -319,8 +314,9 @@
           <span class="phone-fab-badge hidden" data-testid="phone-badge">1</span>
         </button>
         <button class="emote-btn emote-wheel-btn" data-testid="emote-wheel-btn" id="emote-wheel-btn" type="button" title="Emotes" aria-expanded="false" aria-label="Open emotes">😀</button>
-        <textarea id="chat-input" data-testid="chat-input" maxlength="80" rows="1" placeholder="Say something..." autocomplete="off" enterkeyhint="send" inputmode="text" autocapitalize="sentences"></textarea>
+        <textarea id="chat-input" data-testid="chat-input" maxlength="80" rows="1" wrap="off" placeholder="Say something..." autocomplete="off" enterkeyhint="send" inputmode="text" autocapitalize="sentences" spellcheck="false"></textarea>
         <button class="btn small" data-testid="chat-send" id="chat-send" type="button">Say</button>
+      </div>
       </div>
       <div id="emote-wheel-backdrop" class="emote-wheel-backdrop hidden" data-testid="emote-wheel-backdrop"></div>
       <div id="emote-wheel" class="emote-wheel hidden" data-testid="emote-wheel" aria-label="Emotes"></div>
@@ -453,14 +449,16 @@
             </div>
 
             <div id="phone-screen-edit-character" class="phone-app-screen hidden" data-testid="phone-screen-edit-character">
+              <div class="phone-app-nav"><button type="button" class="phone-back" data-phone-back data-testid="phone-back" aria-label="Back">‹</button><h2>Edit Character</h2></div>
+              <div class="phone-edit-preview" id="phone-edit-preview" data-testid="phone-edit-preview"></div>
               <div class="phone-character-editor" data-testid="phone-character-editor"></div>
             </div>
             <div id="phone-screen-edit" class="phone-app-screen hidden" data-testid="phone-screen-edit">
-              <div class="phone-app-nav"><button type="button" class="phone-back" data-phone-back aria-label="Back">‹</button><h2>Edit Room</h2></div>
+              <div class="phone-app-nav"><button type="button" class="phone-back" data-phone-back data-testid="phone-back" aria-label="Back">‹</button><h2>Edit Room</h2></div>
               <div class="phone-app-body" id="phone-edit-body"></div>
             </div>
             <div id="phone-screen-shop" class="phone-app-screen hidden" data-testid="phone-screen-shop">
-              <div class="phone-app-nav"><button type="button" class="phone-back" data-phone-back aria-label="Back">‹</button><h2>Shop</h2></div>
+              <div class="phone-app-nav"><button type="button" class="phone-back" data-phone-back data-testid="phone-back" aria-label="Back">‹</button><h2>Shop</h2></div>
               <div class="phone-app-body">
                 <div class="store-tabs phone-shop-tabs" data-testid="phone-shop-tabs" id="phone-shop-tabs">
                   <button type="button" class="store-tab" data-shop-tab="furniture" data-testid="shop-tab-furniture">Furniture</button>
@@ -485,7 +483,7 @@
               </div>
             </div>
             <div id="phone-screen-invite" class="phone-app-screen hidden" data-testid="phone-screen-invite">
-              <div class="phone-app-nav"><button type="button" class="phone-back" data-phone-back aria-label="Back">‹</button><h2>Invite</h2></div>
+              <div class="phone-app-nav"><button type="button" class="phone-back" data-phone-back data-testid="phone-back" aria-label="Back">‹</button><h2>Invite</h2></div>
               <div class="phone-app-body">
                 <p class="lede">They can walk into this locked cube without the password.</p>
                 <form id="invite-form">
@@ -501,27 +499,27 @@
               </div>
             </div>
             <div id="phone-screen-lock" class="phone-app-screen hidden" data-testid="phone-screen-lock">
-              <div class="phone-app-nav"><button type="button" class="phone-back" data-phone-back aria-label="Back">‹</button><h2>Lock</h2></div>
+              <div class="phone-app-nav"><button type="button" class="phone-back" data-phone-back data-testid="phone-back" aria-label="Back">‹</button><h2>Lock</h2></div>
               <div class="phone-app-body" id="phone-lock-body"></div>
             </div>
             <div id="phone-screen-pets" class="phone-app-screen hidden" data-testid="phone-screen-pets">
-              <div class="phone-app-nav"><button type="button" class="phone-back" data-phone-back aria-label="Back">‹</button><h2>Pets</h2></div>
+              <div class="phone-app-nav"><button type="button" class="phone-back" data-phone-back data-testid="phone-back" aria-label="Back">‹</button><h2>Pets</h2></div>
               <div class="phone-app-body" id="phone-pets-body"></div>
             </div>
             <div id="phone-screen-props" class="phone-app-screen hidden" data-testid="phone-screen-props">
-              <div class="phone-app-nav"><button type="button" class="phone-back" data-phone-back aria-label="Back">‹</button><h2>Props</h2></div>
+              <div class="phone-app-nav"><button type="button" class="phone-back" data-phone-back data-testid="phone-back" aria-label="Back">‹</button><h2>Props</h2></div>
               <div class="phone-app-body" id="phone-props-body"></div>
             </div>
             <div id="phone-screen-coins" class="phone-app-screen hidden" data-testid="phone-screen-coins">
-              <div class="phone-app-nav"><button type="button" class="phone-back" data-phone-back aria-label="Back">‹</button><h2>Coins</h2></div>
+              <div class="phone-app-nav"><button type="button" class="phone-back" data-phone-back data-testid="phone-back" aria-label="Back">‹</button><h2>Coins</h2></div>
               <div class="phone-app-body" id="phone-coins-body"></div>
             </div>
             <div id="phone-screen-upgrade" class="phone-app-screen hidden" data-testid="phone-screen-upgrade">
-              <div class="phone-app-nav"><button type="button" class="phone-back" data-phone-back aria-label="Back">‹</button><h2>Upgrade</h2></div>
+              <div class="phone-app-nav"><button type="button" class="phone-back" data-phone-back data-testid="phone-back" aria-label="Back">‹</button><h2>Upgrade</h2></div>
               <div class="phone-app-body" id="phone-upgrade-body"></div>
             </div>
             <div id="phone-screen-leave" class="phone-app-screen hidden" data-testid="phone-screen-leave">
-              <div class="phone-app-nav"><button type="button" class="phone-back" data-phone-back aria-label="Back">‹</button><h2>Leave</h2></div>
+              <div class="phone-app-nav"><button type="button" class="phone-back" data-phone-back data-testid="phone-back" aria-label="Back">‹</button><h2>Leave</h2></div>
               <div class="phone-app-body leave-confirm">
                 <div class="leave-door" aria-hidden="true">🚪</div>
                 <p class="lede">Leave this cube and go back to your contact list?</p>
@@ -530,8 +528,16 @@
                 <button class="btn secondary" type="button" data-phone-back>Stay</button>
               </div>
             </div>
+            <div id="phone-screen-emotes" class="phone-app-screen hidden" data-testid="phone-screen-emotes">
+              <div class="phone-app-nav"><button type="button" class="phone-back" data-phone-back data-testid="phone-back" aria-label="Back">‹</button><h2>Emotes</h2></div>
+              <div class="phone-app-body" id="phone-emotes-body" data-testid="phone-emotes-body"></div>
+            </div>
+            <div id="phone-screen-spin" class="phone-app-screen hidden" data-testid="phone-screen-spin">
+              <div class="phone-app-nav"><button type="button" class="phone-back" data-phone-back data-testid="phone-back" aria-label="Back">‹</button><h2>Daily Spin</h2></div>
+              <div class="phone-app-body" id="phone-spin-mount" data-testid="phone-spin-mount"></div>
+            </div>
             <div id="phone-screen-guest" class="phone-app-screen hidden" data-testid="phone-screen-guest">
-              <div class="phone-app-nav"><button type="button" class="phone-back" data-phone-back aria-label="Back">‹</button><h2 id="phone-guest-title">App</h2></div>
+              <div class="phone-app-nav"><button type="button" class="phone-back" data-phone-back data-testid="phone-back" aria-label="Back">‹</button><h2 id="phone-guest-title">App</h2></div>
               <div class="phone-app-body">
                 <p class="lede" id="phone-guest-copy">Only the cube owner can use this.</p>
               </div>

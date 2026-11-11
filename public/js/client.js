@@ -1,4 +1,5 @@
 import { createRoom3D, createAvatarPreview } from "./isoRoom.js";
+import { drawAvatarSprite, AV_W, AV_H } from "./avatar3d.js";
 import { initStartMenu } from "./startMenu.js";
 import { initCreatorMenu, openFromPhone, closeFromPhone, isPhoneEditOpen } from "./creatorMenu.js";
 import { CLOTHING_STOCK, PET_STOCK, PUBLIC_PLACES, clothingSlot, CLOTHING_SLOTS, HAIR_STYLES as CAT_HAIR_STYLES, HAIR_LABELS, TOP_LABELS, BOTTOM_LABELS, ACC_LABELS, BASE_TOPS, BASE_BOTTOMS, BASE_ACCESSORIES, TOPS as CAT_TOPS, BOTTOMS as CAT_BOTTOMS, ACCESSORIES as CAT_ACCESSORIES } from "./storeCatalog.js";
@@ -144,6 +145,10 @@ import {
     else startMenu.hide();
     if (name === "creator") creatorMenu.show();
     else creatorMenu.hide();
+    if (name === "room") {
+      lockPageScroll();
+      syncAppShell();
+    }
   }
 
   let lastTvToastKey = "";
@@ -198,7 +203,7 @@ import {
       el.appendChild(row);
     }
     $("#toasts").appendChild(el);
-    setTimeout(() => el.remove(), actions ? 14000 : 4200);
+    setTimeout(() => el.remove(), actions ? 8000 : 2000);
   }
 
   function escapeHtml(s) {
@@ -234,6 +239,7 @@ import {
     }
     state.preview3d.setAvatar(state.draft);
     if (isPhoneEditOpen()) applyDraftLive();
+    paintPhoneEditPreview();
     $("#creator-user").textContent = state.me?.username || "";
     if (!$("#display-name").value) {
       $("#display-name").value = state.draft.displayName || state.me?.username || "";
@@ -602,13 +608,22 @@ import {
     state.room3d = createRoom3D(el);
     window.HouseRoom3D = state.room3d;
     state.room3d.onTileClick(handleTileClick);
-    state.room3d.onTileHover((tx, ty) => updatePlaceHighlight(tx, ty));
+    state.room3d.onTileHover((tx, ty) => {
+      if (state._grabbing) {
+        if (state.pendingPet) updatePetPlaceHighlight(tx, ty);
+        else if (state.pendingPlace || state.movingId) updatePlaceHighlight(tx, ty);
+      }
+    });
+    state.room3d.onPetClick?.(handlePetClick);
     state.room3d.setFurnInteractive?.((type) => {
       if (state.editMode || state.pendingPlace || state.movingId) return true;
       if (state.room?.shop && isShopProp(type)) return true;
       return isUseableFurn(type);
     });
     state.room3d.onFurnitureClick(handleFurnitureClick);
+    state.room3d.onGrabStart?.(handleGrabStart);
+    state.room3d.onGrabMove?.(handleGrabMove);
+    state.room3d.onGrabEnd?.(handleGrabEnd);
     const toggleLights = () => {
       const on = !(state.room?.lightsOn !== false);
       socket.emit("setLights", { on });
@@ -671,6 +686,7 @@ import {
     r3.setGridSize(room.size || 6);
     r3.setStyle(room.wallpaper || "paint-cream", room.floorStyle || "wood");
     r3.setFurniture(room.furniture || []);
+    r3.setPlacedPets?.(room.pets || []);
     r3.setNpcs?.(room.npcs || []);
     r3.setLights(room.lightsOn !== false);
     r3.setUses(room.uses || {});
@@ -688,6 +704,7 @@ import {
     state.room.wallArt = room.wallArt || [];
     state.room.seats = room.seats || {};
     state.room.arcade = room.arcade || {};
+    state.room.pets = room.pets || [];
     hideAddSheet();
     setView("room");
     r3.setFollowName(state.me?.username || null);
@@ -699,6 +716,7 @@ import {
 
   function renderFloorStatic() {
     state.room3d?.setFurniture(state.room?.furniture || []);
+    state.room3d?.setPlacedPets?.(state.room?.pets || []);
   }
 
   function addFurnitureEl(f) {
@@ -1016,6 +1034,7 @@ import {
     if (changed) renderPeople();
     else if (state.view === "room") paintOverlays();
     updateFurnActionPos();
+    updatePlaceActionPos();
   }
   raf = requestAnimationFrame(tick);
 
@@ -1150,23 +1169,29 @@ import {
   function startPlace(type) {
     state.pendingPlace = type;
     state.movingId = null;
+    state.movingWallId = null;
+    state.pendingPet = null;
     state.placeRot = state.placeRot || 0;
     const banner = $("#place-banner");
-    banner.innerHTML = `Tap a tile to place your ${escapeHtml(labelFor(type))} <button class="btn small secondary" id="cancel-place" type="button">Cancel</button>`;
-    SHOW(banner);
+    if (banner && !state.editMode) {
+      banner.innerHTML = `Tap a tile to place your ${escapeHtml(labelFor(type))} <button class="btn small secondary" id="cancel-place" type="button">Cancel</button>`;
+      SHOW(banner);
+      $("#cancel-place")?.addEventListener("click", (e) => {
+        e.stopPropagation();
+        cancelPlace();
+      });
+    } else if (banner) HIDE(banner);
     $("#floor").classList.add("placing");
     state.room3d?.setPlacing(type);
-    closePhone();
+    if (state.phoneApp === "edit") paintEditRoom();
     if (state.editMode) paintEditInventory();
-    $("#cancel-place").addEventListener("click", (e) => {
-      e.stopPropagation();
-      cancelPlace();
-    });
-    seedPlaceGhost();
+    if (HouseIso.isWallArt(type)) seedWallGhost();
+    else seedPlaceGhost();
     showPlaceActions();
   }
 
   function cancelPlace() {
+    if (state.pendingPet) cancelPlacePet();
     state.pendingPlace = null;
     state.movingId = null;
     HIDE($("#place-banner"));
@@ -1206,41 +1231,132 @@ import {
   }
 
 
+  function currentPlaceOk() {
+    const g = state.room3d?.getGhost?.();
+    const wg = state.room3d?.getWallGhost?.();
+    const pg = state.room3d?.getPetGhost?.();
+    if (pendingWallType()) return Boolean(wg && wg.ok);
+    if (state.pendingPet) return Boolean(pg && pg.ok);
+    return Boolean(g && g.ok);
+  }
   function showPlaceActions() {
     const bar = $("#place-actions");
     if (!bar) return;
-    if (state.pendingPlace || state.movingId || state.movingWallId) SHOW(bar);
+    // Existing furniture uses the compact furn-actions bar (Rotate / Put away / Place).
+    // New inventory placements use place-actions (Cancel / Rotate / Place).
+    const furnBarOn = Boolean(state.movingId || state.movingWallId || (state.selectedFurnId && !$("#furn-actions")?.classList.contains("hidden")));
+    if (furnBarOn) HIDE(bar);
+    else if (state.pendingPlace || state.pendingPet) SHOW(bar);
     else HIDE(bar);
     const conf = $("#place-confirm");
+    const ok = currentPlaceOk();
     if (conf) {
-      const g = state.room3d?.getGhost?.();
-      const wg = state.room3d?.getWallGhost?.();
-      const ok = (g && g.ok) || (wg && wg.ok);
       conf.disabled = !ok;
       conf.classList.toggle("hidden", false);
+      conf.classList.toggle("disabled", !ok);
+    }
+    const rot = $("#place-rotate");
+    if (rot) rot.classList.toggle("hidden", Boolean(state.pendingPet));
+    updatePlaceActionPos();
+    const fp = $("#furn-place");
+    if (fp) {
+      fp.disabled = !ok;
+      fp.classList.toggle("disabled", !ok);
+    }
+  }
+  function updatePlaceActionPos() {
+    const bar = $("#place-actions");
+    if (!bar || bar.classList.contains("hidden")) return;
+    let pos = null;
+    const g = state.room3d?.getGhost?.();
+    const pg = state.room3d?.getPetGhost?.();
+    const wg = state.room3d?.getWallGhost?.();
+    if (g) pos = state.room3d?.projectTile?.(g.tx, g.ty);
+    else if (pg) pos = state.room3d?.projectTile?.(pg.tx, pg.ty);
+    else if (wg && state.selectedFurnId) pos = state.room3d?.projectFurniture?.(state.selectedFurnId);
+    else if (state.selectedFurnId) pos = state.room3d?.projectFurniture?.(state.selectedFurnId);
+    if (pos && pos.visible) {
+      bar.classList.add("in-room");
+      const w = bar.offsetWidth || 168;
+      const minX = 8 + w / 2;
+      const maxX = Math.max(minX, window.innerWidth - 8 - w / 2);
+      bar.style.left = Math.max(minX, Math.min(maxX, pos.x)) + "px";
+      bar.style.top = Math.max(28, pos.y) + "px";
+      bar.style.bottom = "auto";
+      bar.style.transform = "translate(-50%, -120%)";
+    } else {
+      bar.classList.remove("in-room");
+      bar.style.left = "";
+      bar.style.top = "";
+      bar.style.bottom = "";
+      bar.style.transform = "";
     }
   }
   function hidePlaceActions() {
     HIDE($("#place-actions"));
   }
-  function seedPlaceGhost() {
-    const type = currentPlaceType() || pendingWallType();
-    if (!type) return;
-    if (HouseIso.isWallArt(type)) return;
+  function nearestFreeFloor(type, rot, ignoreId) {
     const size = state.room?.size || 6;
-    const me = state.people.get(state.me?.username);
-    const ignore = state.movingId || undefined;
+    const cx = (size - 1) / 2;
     const spots = [];
     for (let y = 0; y < size; y++) {
       for (let x = 0; x < size; x++) {
-        if (HouseIso.canPlace(state.room?.furniture || [], type, x, y, size, state.placeRot || 0, ignore)) {
-          const d = Math.hypot(x - (me?.x ?? size / 2), y - (me?.y ?? size / 2));
-          spots.push({ x, y, d });
+        if (HouseIso.canPlace(state.room?.furniture || [], type, x, y, size, rot || 0, ignoreId)) {
+          spots.push({ x, y, d: Math.hypot(x - cx, y - cx) });
         }
       }
     }
     spots.sort((a, b) => a.d - b.d);
-    if (spots[0]) updatePlaceHighlight(spots[0].x, spots[0].y);
+    return spots[0] || null;
+  }
+  function seedPlaceGhost() {
+    const type = currentPlaceType();
+    if (!type) return;
+    if (HouseIso.isWallArt(type)) return;
+    const spot = nearestFreeFloor(type, state.placeRot || 0, state.movingId || undefined);
+    if (spot) updatePlaceHighlight(spot.x, spot.y);
+    showPlaceActions();
+  }
+  function preferredWalls() {
+    const size = state.room?.size || 6;
+    const mid = Math.round((size - 1) / 2);
+    const canvas = document.querySelector("#floor canvas, .room3d-root canvas");
+    const rect = canvas?.getBoundingClientRect();
+    const cx = rect ? rect.left + rect.width / 2 : 0;
+    const cy = rect ? rect.top + rect.height / 2 : 0;
+    const score = (wall) => {
+      const pt = wall === "back"
+        ? state.room3d?.projectTile?.(mid, 0)
+        : state.room3d?.projectTile?.(0, mid);
+      if (!pt) return 1e9;
+      return (pt.visible ? 0 : 1000) + Math.hypot((pt.x ?? 0) - cx, (pt.y ?? 0) - cy);
+    };
+    return ["back", "left"].sort((a, b) => score(a) - score(b));
+  }
+  function slotsFromMiddle(size) {
+    const mid = Math.round((size - 1) / 2);
+    const out = [mid];
+    for (let i = 1; i < size; i++) {
+      if (mid - i >= 0) out.push(mid - i);
+      if (mid + i < size) out.push(mid + i);
+    }
+    return out;
+  }
+  function seedWallGhost() {
+    const type = pendingWallType();
+    if (!type) return;
+    const size = state.room?.size || 6;
+    const ignore = state.movingWallId;
+    for (const wall of preferredWalls()) {
+      for (const slot of slotsFromMiddle(size)) {
+        if (HouseIso.canPlaceWall(type, wall, slot, size)
+            && !HouseIso.wallOccupied(state.room?.wallArt || [], wall, slot, ignore)) {
+          updateWallHighlight(wall, slot);
+          showPlaceActions();
+          return;
+        }
+      }
+    }
     showPlaceActions();
   }
 
@@ -1284,19 +1400,16 @@ import {
     return true;
   }
 
-  function handleWallClick(wall, slot) {
+  function handleWallClick(wall, slot, art) {
     const type = pendingWallType();
-    if (!type) return;
-    const ignore = state.movingWallId;
-    const ok = HouseIso.canPlaceWall(type, wall, slot, state.room?.size || 6)
-      && !HouseIso.wallOccupied(state.room?.wallArt || [], wall, slot, ignore);
-    const g = state.room3d?.getWallGhost?.();
-    if (ok && g && g.wall === wall && g.slot === slot && g.ok) {
-      confirmWallGhost();
+    if (type) {
+      updateWallHighlight(wall, slot);
       return;
     }
-    updateWallHighlight(wall, slot);
-    if (!ok) toast("That wall space is taken or blocked.");
+    if (state.editMode) {
+      const piece = art || (state.room?.wallArt || []).find((a) => a.wall === wall && a.slot === slot);
+      if (piece) beginMoveWall(piece);
+    }
   }
 
   function openCubics(id) {
@@ -1432,19 +1545,32 @@ import {
     root.appendChild(swatch(merge(BASE_ACCESSORIES, "accessory"), "accessory", "Accessory", false, ACC_LABELS));
   }
 
+  function showEditPhoneScreen() {
+    tickPhoneTime();
+    updatePhoneBadge();
+    SHOW($("#phone-overlay"));
+    document.body.classList.add("phone-open");
+    $("#phone-btn")?.setAttribute("aria-expanded", "true");
+    HIDE($("#phone-home"));
+    document.querySelectorAll(".phone-app-screen").forEach((el) => HIDE(el));
+    SHOW($("#phone-screen-edit"));
+    state.phoneApp = "edit";
+    setPhoneExpanded?.(true);
+  }
   function enterEditMode() {
     if (!isOwner()) {
       toast("Only the cube owner can decorate.");
       return;
     }
+    if (phoneOpen()) closePhone();
     state.editMode = true;
     document.body.classList.add("edit-mode");
     SHOW($("#edit-inventory"));
-    $("#edit-inventory")?.classList.remove("collapsed");
     paintEditInventory();
+    bindEditInvDrag();
     state.room3d?.setPlacing("edit");
-    state.room3d?.setPanLocked?.(true);
-    closePhone();
+    state.room3d?.setPanLocked?.(false);
+    syncAppShell();
   }
 
   function exitEditMode() {
@@ -1458,6 +1584,7 @@ import {
     state.room3d?.highlightFurniture(null);
     state.room3d?.setPlacing(null);
     state.room3d?.setPanLocked?.(false);
+    syncAppShell();
   }
 
   function paintEditInventory() {
@@ -1466,52 +1593,98 @@ import {
     const counts = {};
     for (const t of state.me?.inventory || []) counts[t] = (counts[t] || 0) + 1;
     const types = Object.keys(counts);
-    box.innerHTML = types.length
-      ? types
-          .map((typ) => {
-            const sel = state.pendingPlace === typ && !state.movingId ? " selected" : "";
-            return `<button type="button" class="edit-inv-item${sel}" data-testid="edit-item-${typ}" data-place="${typ}">
-              ${furnitureSVG(typ)}
+    const pets = (state.me?.collection?.pets || []).filter((c) => !placedPetFor(c.item) || state.me?.activePet === c.item);
+    const bits = [];
+    for (const typ of types) {
+      const sel = state.pendingPlace === typ && !state.movingId ? " selected" : "";
+      bits.push(`<button type="button" class="edit-inv-item${sel}" data-testid="edit-item-${typ}" data-place="${typ}">
+              ${typeof furnitureSVG === "function" ? furnitureSVG(typ) : ""}
               <span>${escapeHtml(labelFor(typ))}</span>
-              <span class="count" data-testid="edit-count-${typ}">${counts[typ]}</span>
-            </button>`;
-          })
-          .join("")
-      : `<span class="empty">Pocket's empty. Pick something up or buy from the shop.</span>`;
+              ${counts[typ] > 1 ? `<span class="count">${counts[typ]}</span>` : ""}
+            </button>`);
+    }
+    for (const c of pets) {
+      const sel = state.pendingPet === c.item ? " selected" : "";
+      bits.push(`<button type="button" class="edit-inv-item${sel}" data-testid="edit-item-pet-${c.item}" data-pet-place="${c.item}">
+              <span class="edit-inv-pet">🐾</span>
+              <span>${escapeHtml(c.label || c.item)}</span>
+            </button>`);
+    }
+    box.innerHTML = bits.length
+      ? bits.join("")
+      : `<span class="empty">Pocket's empty. Buy furniture or a pet in the shop.</span>`;
     box.querySelectorAll("canvas[data-art-thumb]").forEach((c) => paintArtThumb(c, c.dataset.artThumb));
     box.querySelectorAll("[data-place]").forEach((b) => {
       b.addEventListener("click", () => {
+        if (state._invDragging) return;
         state.movingId = null;
         state.selectedFurnId = null;
         hideFurnActions();
         startPlace(b.dataset.place);
       });
     });
-    const styles = $("#edit-styles");
-    if (styles) {
-      styles.innerHTML = `
-        <h4>Wallpaper</h4>
-        <div class="style-row">${HouseIso.WALLPAPERS.map(
-          (w) =>
-            `<button type="button" class="style-swatch${state.room?.wallpaper === w.id ? " selected" : ""}" data-wallpaper="${w.id}" style="background:${w.wall};color:#fff">${w.name}</button>`
-        ).join("")}</div>
-        <h4>Floor</h4>
-        <div class="style-row">${HouseIso.FLOORS.map(
-          (f) =>
-            `<button type="button" class="style-swatch${state.room?.floorStyle === f.id ? " selected" : ""}" data-floor="${f.id}">${f.name}</button>`
-        ).join("")}</div>`;
-      styles.querySelectorAll("[data-wallpaper]").forEach((b) =>
-        b.addEventListener("click", () => socket.emit("setRoomStyle", { wallpaper: b.dataset.wallpaper }))
-      );
-      styles.querySelectorAll("[data-floor]").forEach((b) =>
-        b.addEventListener("click", () => socket.emit("setRoomStyle", { floorStyle: b.dataset.floor }))
-      );
-    }
-    const tools = $("#edit-place-tools");
-    if (tools) {
-      if (state.pendingPlace || state.movingId) SHOW(tools);
-      else HIDE(tools);
-    }
+    box.querySelectorAll("[data-pet-place]").forEach((b) => {
+      b.addEventListener("click", () => {
+        if (state._invDragging) return;
+        startPlacePet(b.dataset.petPlace);
+      });
+    });
+  }
+
+  function bindEditInvDrag() {
+    const box = $("#edit-inv-items");
+    if (!box || box.dataset.dragBound) return;
+    box.dataset.dragBound = "1";
+    let drag = null;
+    const tileAt = (x, y) => state.room3d?.pickFloorTileAt?.(x, y);
+    box.addEventListener("pointerdown", (e) => {
+      const item = e.target.closest("[data-place], [data-pet-place]");
+      if (!item) return;
+      const typ = item.dataset.place;
+      const pet = item.dataset.petPlace;
+      state.movingId = null;
+      state.selectedFurnId = null;
+      hideFurnActions();
+      if (typ) startPlace(typ);
+      else if (pet) startPlacePet(pet);
+      drag = { x: e.clientX, y: e.clientY, moved: false, typ, pet };
+      try { item.setPointerCapture?.(e.pointerId); } catch {}
+    });
+    box.addEventListener("pointermove", (e) => {
+      if (!drag) return;
+      if (Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > 8) {
+        drag.moved = true;
+        state._invDragging = true;
+      }
+      if (!drag.moved) return;
+      const tile = tileAt(e.clientX, e.clientY);
+      if (!tile) return;
+      if (drag.pet) updatePetPlaceHighlight(tile.x, tile.y);
+      else updatePlaceHighlight(tile.x, tile.y);
+    });
+    const finish = (e) => {
+      if (!drag) return;
+      const wasDrag = drag.moved;
+      const pet = drag.pet;
+      drag = null;
+      if (!wasDrag) {
+        state._invDragging = false;
+        return;
+      }
+      const tile = tileAt(e.clientX, e.clientY);
+      if (tile) {
+        if (pet) {
+          updatePetPlaceHighlight(tile.x, tile.y);
+          confirmPlacePet();
+        } else {
+          updatePlaceHighlight(tile.x, tile.y);
+          confirmGhostPlace();
+        }
+      }
+      setTimeout(() => { state._invDragging = false; }, 0);
+    };
+    box.addEventListener("pointerup", finish);
+    box.addEventListener("pointercancel", () => { drag = null; state._invDragging = false; });
   }
 
   function currentPlaceType() {
@@ -1556,6 +1729,9 @@ import {
         return;
       }
       updateWallHighlight(flipped.wall, flipped.slot);
+      if (state.movingWallId) {
+        socket.emit("moveWallArt", { id: state.movingWallId, wall: flipped.wall, slot: flipped.slot });
+      }
       return;
     }
     if (state.pendingPlace || state.movingId) {
@@ -1563,6 +1739,11 @@ import {
       const g = state.room3d?.getGhost?.();
       if (g) updatePlaceHighlight(g.tx, g.ty);
       paintEditInventory();
+      if (state.movingId) {
+        const ng = state.room3d?.getGhost?.();
+        const f = (state.room?.furniture || []).find((x) => x.id === state.movingId);
+        if (f && ng?.ok) socket.emit("moveFurniture", { id: f.id, x: ng.tx, y: ng.ty, rot: state.placeRot });
+      }
       return;
     }
     if (state.selectedFurnId && state.editMode) {
@@ -1584,13 +1765,23 @@ import {
   }
 
   function confirmGhostPlace() {
+    if (state.pendingPet) { confirmPlacePet(); return; }
     if (pendingWallType()) {
       confirmWallGhost();
       return;
     }
     const g = state.room3d?.getGhost?.();
     if (!g || !g.ok) return;
-    handleTileClick(g.tx, g.ty);
+    if (state.movingId) {
+      const f = (state.room?.furniture || []).find((x) => x.id === state.movingId);
+      if (!f) { cancelPlace(); return; }
+      socket.emit("moveFurniture", { id: f.id, x: g.tx, y: g.ty, rot: state.placeRot });
+      return;
+    }
+    if (state.pendingPlace) {
+      if (HouseIso.isWallArt(state.pendingPlace)) return;
+      socket.emit("placeFurniture", { type: state.pendingPlace, x: g.tx, y: g.ty, rot: state.placeRot });
+    }
   }
 
   function hideFurnActions() {
@@ -1602,6 +1793,106 @@ import {
     state.room3d?.highlightFurniture(id);
     SHOW($("#furn-actions"));
     updateFurnActionPos();
+    HIDE($("#place-actions"));
+    const fp = $("#furn-place");
+    const ok = currentPlaceOk();
+    if (fp) {
+      fp.disabled = !ok;
+      fp.classList.toggle("disabled", !ok);
+    }
+  }
+
+  function beginMoveFurniture(f) {
+    if (!f) return;
+    hidePetActions();
+    state.selectedFurnId = f.id;
+    state.movingId = f.id;
+    state.pendingPlace = null;
+    state.pendingPet = null;
+    state.movingWallId = null;
+    state.placeRot = HouseIso.normalizeRot(f.rot);
+    state.room3d?.setPlacing(f.type);
+    showFurnActions(f.id);
+    updatePlaceHighlight(f.x, f.y);
+    if (state.editMode) paintEditInventory();
+  }
+
+  function beginMoveWall(art) {
+    if (!art) return;
+    hidePetActions();
+    state.selectedFurnId = art.id;
+    state.movingWallId = art.id;
+    state.movingId = null;
+    state.pendingPlace = null;
+    state.pendingPet = null;
+    state.room3d?.setPlacing(art.type);
+    state.room3d?.highlightFurniture(art.id);
+    SHOW($("#furn-actions"));
+    updateFurnActionPos();
+    updateWallHighlight(art.wall, art.slot);
+    showPlaceActions();
+  }
+
+  function beginMovePet(pet) {
+    if (!pet || !pet.item) return;
+    hideFurnActions();
+    state.selectedPet = pet;
+    state.pendingPet = pet.item;
+    state.pendingPlace = null;
+    state.movingId = null;
+    state.movingWallId = null;
+    state.room3d?.setPlacing("edit");
+    const x = Math.round(pet.x ?? 0);
+    const y = Math.round(pet.y ?? 0);
+    updatePetPlaceHighlight(x, y);
+    showPetActions(pet);
+    showPlaceActions();
+  }
+
+  function handleGrabStart(hit) {
+    state._grabbing = true;
+    if (!state.editMode) return;
+    if (hit?.kind === "ghost") return;
+    if (state.pendingPlace && !state.movingId && !state.movingWallId) return;
+    if (state.pendingPet && hit?.kind !== "pet") return;
+    if (hit?.kind === "furn" || hit?.kind === "npc") {
+      const f = (state.room?.furniture || []).find((x) => x.id === hit.id);
+      if (f) beginMoveFurniture(f);
+    } else if (hit?.kind === "pet" && hit.pet && !hit.pet.following) {
+      beginMovePet(hit.pet);
+    } else if (hit?.kind === "wall" && hit.art) {
+      beginMoveWall(hit.art);
+    }
+  }
+  function handleGrabMove(cx, cy, hit) {
+    state._grabbing = true;
+    if (pendingWallType()) {
+      const at = state.room3d?.pickHitAt?.(cx, cy);
+      if (at?.kind === "wall") updateWallHighlight(at.wall, at.slot);
+      return;
+    }
+    const tile = state.room3d?.pickFloorTileAt?.(cx, cy);
+    if (!tile) return;
+    if (state.pendingPet) updatePetPlaceHighlight(tile.x, tile.y);
+    else updatePlaceHighlight(tile.x, tile.y);
+  }
+  function handleGrabEnd(cx, cy, hit) {
+    handleGrabMove(cx, cy, hit);
+    state._grabbing = false;
+    if (pendingWallType()) {
+      const g = state.room3d?.getWallGhost?.();
+      if (g && g.ok) confirmWallGhost();
+      return;
+    }
+    if (state.pendingPet) {
+      const g = state.room3d?.getPetGhost?.();
+      if (g && g.ok) confirmPlacePet();
+      return;
+    }
+    if (state.pendingPlace || state.movingId) {
+      const g = state.room3d?.getGhost?.();
+      if (g && g.ok) confirmGhostPlace();
+    }
   }
 
   function updateFurnActionPos() {
@@ -1953,19 +2244,17 @@ import {
     }
     if (extra?.wallArt || HouseIso.isWallArt(type)) {
       if (!state.editMode) return;
-      if (state.pendingPlace) return;
-      state.selectedFurnId = id;
-      state.room3d?.highlightFurniture(id);
-      SHOW($("#furn-actions"));
-      updateFurnActionPos();
+      if (state.pendingPlace && !state.movingWallId) return;
+      const art = (state.room?.wallArt || []).find((x) => x.id === id);
+      if (art) beginMoveWall(art);
       return;
     }
     if (state.editMode || state.pendingPlace || state.movingId) {
       if (!state.editMode) return;
-      if (state.pendingPlace) return;
+      if (state.pendingPlace && !state.movingId) return;
       const f = (state.room?.furniture || []).find((x) => x.id === id);
       if (!f) return;
-      showFurnActions(id);
+      beginMoveFurniture(f);
       return;
     }
     const furn = (state.room?.furniture || []).find((x) => x.id === id);
@@ -2156,6 +2445,9 @@ import {
     if (document.body) document.body.scrollTop = 0;
   }
 
+  function isTouchChatLayout() {
+    return window.innerWidth <= 820;
+  }
   function keyboardHeight() {
     if (state.testKbInset != null) return Math.max(0, Math.round(state.testKbInset));
     const vv = window.visualViewport;
@@ -2163,26 +2455,31 @@ import {
     const layoutH = window.innerHeight;
     return Math.max(0, Math.round(layoutH - vv.height - (vv.offsetTop || 0)));
   }
+  try { localStorage.removeItem("mycubeKbReserve"); } catch {}
+  function measureChatFrame() {
+    const root = document.documentElement;
+    const dock = document.getElementById("chat-dock");
+    if (!dock) return;
+    const dockH = Math.round(dock.getBoundingClientRect().height);
+    const inv = document.getElementById("edit-inventory");
+    const invH = (inv && !inv.classList.contains("hidden")) ? Math.round(inv.getBoundingClientRect().height) : 0;
+    const h = dockH + invH;
+    if (h > 0) {
+      root.style.setProperty("--dock-h", h + "px");
+      document.querySelector(".room-view")?.style.setProperty("--dock-h", h + "px");
+    }
+  }
 
   function syncAppShell() {
     const layoutH = Math.max(1, Math.round(window.innerHeight));
     const root = document.documentElement;
-    // Layout size stays locked to the layout viewport. The visual viewport
-    // (on-screen keyboard) must not shrink or shift the room or header.
+    // Layout size stays locked to the layout viewport so a software
+    // keyboard (visual viewport) does not shrink or shift the room.
     root.style.setProperty("--app-h", layoutH + "px");
     root.style.setProperty("--app-top", "0px");
     root.style.setProperty("--layout-h", layoutH + "px");
-    const dock = document.getElementById("chat-dock");
-    if (dock && state.view === "room") {
-      const lifted = keyboardHeight();
-      // Measure the dock's layout height, not the translated box.
-      const prev = dock.style.transform;
-      dock.style.transform = "none";
-      const h = Math.round(dock.getBoundingClientRect().height);
-      dock.style.transform = prev;
-      if (h > 0) root.style.setProperty("--dock-h", h + "px");
-      void lifted;
-    }
+    root.style.setProperty("--kb-reserve", "0px");
+    measureChatFrame();
     const chat = document.getElementById("chat-input");
     if (chat) {
       const next = "Say something...";
@@ -2196,17 +2493,10 @@ import {
     const kb = keyboardHeight();
     const root = document.documentElement;
     const px = kb + "px";
+    // Lift only the chat frame (dock + edit row). Do not change --dock-h,
+    // pan, scale, or resize the room; the keyboard overlays it.
     root.style.setProperty("--kb-inset", px);
     document.querySelector(".room-view")?.style.setProperty("--kb-inset", px);
-    // Do not resize the room canvas — only the dock lifts.
-    const dock = document.getElementById("chat-dock");
-    if (dock && state.view === "room") {
-      const prev = dock.style.transform;
-      dock.style.transform = "none";
-      const h = Math.round(dock.getBoundingClientRect().height);
-      dock.style.transform = prev;
-      if (h > 0) root.style.setProperty("--dock-h", h + "px");
-    }
   }
 
   let typingOn = false;
@@ -2248,8 +2538,7 @@ import {
   function autosizeChat() {
     const el = $("#chat-input");
     if (!el) return;
-    el.style.height = "auto";
-    el.style.height = Math.min(96, Math.max(44, el.scrollHeight)) + "px";
+    el.style.height = "44px";
     const val = el.value.trim();
     if (val) emitTyping(true);
     else emitTyping(false);
@@ -2386,6 +2675,8 @@ import {
       state.creatorReturn = null;
       HIDE($("#creator-back"));
     }
+    if (state.editMode) exitEditMode();
+    dockSpinInPhone(false);
     document.querySelectorAll(".phone-app-screen").forEach((el) => HIDE(el));
     SHOW($("#phone-home"));
     state.phoneApp = "home";
@@ -2400,6 +2691,7 @@ import {
       HIDE($("#creator-back"));
     }
     const wasOpen = phoneOpen();
+    dockSpinInPhone(false);
     HIDE($("#phone-overlay"));
     document.body.classList.remove("phone-open");
     setPhoneExpanded(false);
@@ -2408,7 +2700,87 @@ import {
     if (wasOpen) socket.emit("usePhone", { on: false });
   }
 
-  const OWNER_APPS = new Set(["edit", "invite", "lock", "upgrade"]);
+  function paintPhoneEditPreview() {
+    const box = $("#phone-edit-preview");
+    if (!box) return;
+    const screen = $("#phone-screen-edit-character");
+    if (!screen || screen.classList.contains("hidden") || !state.draft) {
+      box.innerHTML = "";
+      return;
+    };
+    const spr = drawAvatarSprite(state.draft, { bodyDir: 1, headDir: 1, blink: "open" }, 0);
+    const scale = 2;
+    let c = box.querySelector("canvas");
+    if (!c) {
+      c = document.createElement("canvas");
+      box.innerHTML = "";
+      box.appendChild(c);
+    }
+    c.width = spr.w * scale;
+    c.height = spr.h * scale;
+    c.style.width = c.width + "px";
+    c.style.height = c.height + "px";
+    const ctx = c.getContext("2d");
+    ctx.imageSmoothingEnabled = false;
+    ctx.clearRect(0, 0, c.width, c.height);
+    ctx.drawImage(spr.c, 0, 0, spr.w, spr.h, 0, 0, c.width, c.height);
+  }
+  function paintPhoneEmotes() {
+    const body = $("#phone-emotes-body");
+    if (!body) return;
+    body.innerHTML = `<div class="phone-emote-grid">` + ACTION_EMOTE_LIST.map((e) =>
+      `<button type="button" data-testid="phone-emote-${e.id}" data-emote="${e.id}"><span>${e.icon}</span><span>${e.label}</span></button>`
+    ).join("") + `</div>`;
+    body.querySelectorAll("[data-emote]").forEach((b) => {
+      b.addEventListener("click", () => {
+        playActionEmote(b.dataset.emote);
+      });
+    });
+  }
+  function dockSpinInPhone(on) {
+    const card = document.querySelector("#spin-modal .card, #spin-modal .modal, #spin-modal > div") || document.querySelector("#phone-spin-mount .card, #phone-spin-mount > div");
+    const dest = on ? $("#phone-spin-mount") : $("#spin-modal");
+    if (!card || !dest) return;
+    if (card.parentElement !== dest) dest.appendChild(card);
+    if (!on) HIDE($("#spin-modal"));
+  }
+  function hidePetActions() {
+    HIDE($("#pet-actions"));
+    state.selectedPet = null;
+  }
+  function showPetActions(pet) {
+    state.selectedPet = pet;
+    const bar = $("#pet-actions");
+    if (!bar) return;
+    const followBtn = $("#pet-follow");
+    const awayBtn = $("#pet-putaway");
+    if (followBtn) {
+      const already = state.me?.activePet === pet.item && pet.following;
+      followBtn.classList.toggle("hidden", Boolean(already));
+    }
+    SHOW(bar);
+    const pos = state.room3d?.projectPet?.(pet.id);
+    if (pos && pos.visible) {
+      bar.style.left = pos.x + "px";
+      bar.style.top = pos.y + "px";
+    }
+  }
+  function handlePetClick(pet) {
+    if (!pet || !pet.item) return;
+    if (pet.owner && state.me?.username && pet.owner !== state.me.username) {
+      toast("That's not your pal.");
+      return;
+    }
+    if (state.editMode) {
+      if (state.pendingPlace && !state.pendingPet) return;
+      if (pet.following) { showPetActions(pet); return; }
+      beginMovePet(pet);
+      return;
+    }
+    showPetActions(pet);
+  }
+
+    const OWNER_APPS = new Set(["edit", "invite", "lock", "upgrade"]);
   const APP_TITLES = {
     edit: "Edit Room",
     shop: "Shop",
@@ -2472,14 +2844,24 @@ import {
       return;
     }
     if (app === "emotes") {
-      closePhone();
-      openEmoteWheel();
+      HIDE($("#phone-home"));
+      document.querySelectorAll(".phone-app-screen").forEach((el) => HIDE(el));
+      SHOW($("#phone-screen-emotes"));
+      state.phoneApp = "emotes";
+      paintPhoneEmotes();
       return;
     }
     if (app === "spin") {
-      closePhone();
+      HIDE($("#phone-home"));
+      document.querySelectorAll(".phone-app-screen").forEach((el) => HIDE(el));
+      SHOW($("#phone-screen-spin"));
+      state.phoneApp = "spin";
+      dockSpinInPhone(true);
       paintRewards();
-      SHOW($("#spin-modal"));
+      return;
+    }
+    if (app === "edit") {
+      enterEditMode();
       return;
     }
     HIDE($("#phone-home"));
@@ -2489,12 +2871,7 @@ import {
     SHOW(screen);
     state.phoneApp = app;
     setPhoneExpanded(true);
-    if (app === "edit") {
-      closePhone();
-      enterEditMode();
-      return;
-    }
-    if (app === "edit-legacy") paintEditRoom();
+    if (app === "edit-legacy") paintEditInventory();
     if (app === "shop") paintShop();
     if (app === "invite") {
       const input = $("#invite-name");
@@ -2511,38 +2888,7 @@ import {
   }
 
   function paintEditRoom() {
-    const body = $("#phone-edit-body");
-    if (!body || !state.room) return;
-    const items = state.me?.inventory || [];
-    const inv = items.length
-      ? items
-          .map((t, i) => `<button class="inv-chip" data-testid="inv-${t}-${i}" data-place="${t}" type="button">${labelFor(t)} — place</button>`)
-          .join("")
-      : `<span class="phone-empty">Buy furniture in Shop, then place it here.</span>`;
-    const size = state.room.size || 6;
-    body.innerHTML = `
-      <h3>Your furniture</h3>
-      <div class="inv-row">${inv}</div>
-      <h3>Wallpaper</h3>
-      <div class="style-row">${HouseIso.WALLPAPERS.map(
-        (w) =>
-          `<button type="button" class="style-swatch${state.room.wallpaper === w.id ? " selected" : ""}" data-wallpaper="${w.id}" style="background:${w.wall};color:#fff">${w.name}</button>`
-      ).join("")}</div>
-      <h3>Floor</h3>
-      <div class="style-row">${HouseIso.FLOORS.map(
-        (f) =>
-          `<button type="button" class="style-swatch${state.room.floorStyle === f.id ? " selected" : ""}" data-floor="${f.id}">${f.name}</button>`
-      ).join("")}</div>
-      <p class="item-sub">This cube is ${size}×${size} tiles.</p>`;
-    body.querySelectorAll("[data-place]").forEach((b) =>
-      b.addEventListener("click", () => startPlace(b.dataset.place))
-    );
-    body.querySelectorAll("[data-wallpaper]").forEach((b) =>
-      b.addEventListener("click", () => socket.emit("setRoomStyle", { wallpaper: b.dataset.wallpaper }))
-    );
-    body.querySelectorAll("[data-floor]").forEach((b) =>
-      b.addEventListener("click", () => socket.emit("setRoomStyle", { floorStyle: b.dataset.floor }))
-    );
+    if (state.editMode) paintEditInventory();
   }
 
   function paintLock() {
@@ -2569,6 +2915,13 @@ import {
     });
   }
 
+  function petLabel(item) {
+    const c = (state.me?.collection?.pets || []).find((p) => p.item === item);
+    return c?.label || item;
+  }
+  function placedPetFor(item) {
+    return (state.room?.pets || []).find((p) => p.item === item && (!p.owner || p.owner === state.me?.username));
+  }
   function paintPets() {
     const body = $("#phone-pets-body");
     if (!body) return;
@@ -2578,20 +2931,94 @@ import {
       return;
     }
     body.innerHTML =
-      `<p class="lede">Pets follow you into other cubes.</p>` +
-      pets
-        .map((c) => {
-          const on = state.me?.activePet === c.item;
-          return `<button type="button" class="inv-chip" data-pet="${c.item}">${on ? "Send home" : "Bring"} ${escapeHtml(c.label)}</button>`;
-        })
-        .join(" ");
-    body.querySelectorAll("[data-pet]").forEach((b) => {
-      b.addEventListener("click", () => {
-        const item = b.dataset.pet;
-        socket.emit("equipPet", { item: state.me?.activePet === item ? null : item });
-      });
+      `<p class="lede">One pal can follow you. Others can stay in this cube.</p>` +
+      pets.map((c) => {
+        const follow = state.me?.activePet === c.item;
+        const placed = placedPetFor(c.item);
+        const status = follow ? "Following you" : placed ? "In this cube" : "In inventory";
+        return `<div class="phone-pet-card" data-testid="pet-card-${c.item}">
+          <strong>${escapeHtml(c.label)}</strong>
+          <span class="item-sub">${status}</span>
+          <div>
+            ${follow ? "" : `<button type="button" class="btn small" data-pet-follow="${c.item}" data-testid="pet-follow-${c.item}">Follow me</button>`}
+            ${placed && !follow ? "" : `<button type="button" class="btn small" data-pet-place="${c.item}" data-testid="pet-place-${c.item}">Place in room</button>`}
+            ${(follow || placed) ? `<button type="button" class="btn small secondary" data-pet-away="${c.item}" data-testid="pet-away-${c.item}">Put away</button>` : ""}
+          </div>
+        </div>`;
+      }).join("");
+    body.querySelectorAll("[data-pet-follow]").forEach((b) => {
+      b.addEventListener("click", () => socket.emit("equipPet", { item: b.dataset.petFollow }));
+    });
+    body.querySelectorAll("[data-pet-place]").forEach((b) => {
+      b.addEventListener("click", () => startPlacePet(b.dataset.petPlace));
+    });
+    body.querySelectorAll("[data-pet-away]").forEach((b) => {
+      b.addEventListener("click", () => socket.emit("putAwayPet", { item: b.dataset.petAway }));
     });
   }
+  function startPlacePet(item) {
+    state.pendingPet = item;
+    state.pendingPlace = null;
+    const banner = $("#place-banner");
+    if (banner && !state.editMode) {
+      banner.innerHTML = `Tap a tile to place your ${escapeHtml(petLabel(item))} <button class="btn small secondary" id="cancel-place" type="button">Cancel</button>`;
+      SHOW(banner);
+      $("#cancel-place")?.addEventListener("click", (e) => { e.stopPropagation(); cancelPlacePet(); });
+    } else if (banner) HIDE(banner);
+    $("#floor")?.classList.add("placing");
+    state.room3d?.setPlacing(state.editMode ? "edit" : "pet");
+    seedPlacePetGhost();
+    showPlaceActions();
+    const conf = $("#place-confirm");
+    if (conf) conf.textContent = "Place";
+  }
+  function cancelPlacePet() {
+    state.pendingPet = null;
+    HIDE($("#place-banner"));
+    $("#floor")?.classList.remove("placing");
+    state.room3d?.setPetGhost?.(null);
+    if (!state.editMode) state.room3d?.setPlacing(null);
+    else state.room3d?.setPlacing("edit");
+    hidePlaceActions();
+  }
+  function seedPlacePetGhost() {
+    if (!state.pendingPet) return;
+    const size = state.room?.size || 6;
+    const cx = (size - 1) / 2;
+    const occupied = new Set((state.room?.pets || []).filter((p) => p.item !== state.pendingPet || p.owner !== state.me?.username).map((p) => p.x + "," + p.y));
+    const spots = [];
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const furnOk = HouseIso.canPlace(state.room?.furniture || [], "plant", x, y, size, 0);
+        if (furnOk && !occupied.has(x + "," + y)) {
+          spots.push({ x, y, d: Math.hypot(x - cx, y - cx) });
+        }
+      }
+    }
+    spots.sort((a, b) => a.d - b.d);
+    if (spots[0]) updatePetPlaceHighlight(spots[0].x, spots[0].y);
+  }
+  function updatePetPlaceHighlight(tx, ty) {
+    if (!state.pendingPet) {
+      state.room3d?.setPetGhost?.(null);
+      return;
+    }
+    const size = state.room?.size || 6;
+    const occupied = (state.room?.pets || []).some((p) => p.x === tx && p.y === ty && p.item !== state.pendingPet);
+    const furnOk = HouseIso.canPlace(state.room?.furniture || [], "plant", tx, ty, size, 0);
+    const ok = Boolean(furnOk) && !occupied && tx >= 0 && ty >= 0 && tx < size && ty < size;
+    state.room3d?.setPetGhost?.(state.pendingPet, tx, ty, ok);
+    showPlaceActions();
+    const conf = $("#place-confirm");
+    if (conf) conf.disabled = !ok;
+  }
+  function confirmPlacePet() {
+    const g = state.room3d?.getPetGhost?.();
+    if (!state.pendingPet || !g || !g.ok) return;
+    socket.emit("placePet", { item: state.pendingPet, x: g.tx, y: g.ty });
+    cancelPlacePet();
+  }
+
 
   function paintProps() {
     const body = $("#phone-props-body");
@@ -2722,6 +3149,7 @@ import {
       if (!phoneOpen()) SHOW($("#phone-overlay"));
       if (!openFromPhone()) return;
       applyDraftLive();
+      paintPhoneEditPreview();
       return;
     }
     // Lobby / leftover full-screen path (sign-out / You / new-flow).
@@ -3183,29 +3611,19 @@ import {
   };
 
   function handleTileClick(tx, ty) {
+    if (state.pendingPet) {
+      updatePetPlaceHighlight(tx, ty);
+      return;
+    }
     if (state.pendingPlace) {
       if (HouseIso.isWallArt(state.pendingPlace)) return;
-      const ok = HouseIso.canPlace(state.room?.furniture || [], state.pendingPlace, tx, ty, state.room?.size || 6, state.placeRot);
-      const g = state.room3d?.getGhost?.();
-      if (ok && g && g.tx === tx && g.ty === ty && g.ok) {
-        socket.emit("placeFurniture", { type: state.pendingPlace, x: tx, y: ty, rot: state.placeRot });
-        return;
-      }
       updatePlaceHighlight(tx, ty);
-      if (!ok) toast("That doesn't fit on those tiles.");
       return;
     }
     if (state.movingId) {
       const f = (state.room?.furniture || []).find((x) => x.id === state.movingId);
       if (!f) { cancelPlace(); return; }
-      const ok = HouseIso.canPlace(state.room?.furniture || [], f.type, tx, ty, state.room?.size || 6, state.placeRot, f.id);
-      const g = state.room3d?.getGhost?.();
-      if (ok && g && g.tx === tx && g.ty === ty && g.ok) {
-        socket.emit("moveFurniture", { id: f.id, x: tx, y: ty, rot: state.placeRot });
-        return;
-      }
       updatePlaceHighlight(tx, ty);
-      if (!ok) toast("That doesn't fit on those tiles.");
       return;
     }
     if (pendingWallType()) return;
@@ -3243,31 +3661,26 @@ import {
   $("#place-rotate")?.addEventListener("click", () => rotatePending(1));
   $("#place-confirm")?.addEventListener("click", confirmGhostPlace);
   $("#place-cancel")?.addEventListener("click", (e) => { e.stopPropagation(); cancelPlace(); });
+  $("#pet-follow")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (state.selectedPet?.item) socket.emit("equipPet", { item: state.selectedPet.item });
+    hidePetActions();
+  });
+  $("#pet-putaway")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (state.selectedPet?.item) socket.emit("putAwayPet", { item: state.selectedPet.item, id: state.selectedPet.id });
+    hidePetActions();
+  });
   $("#furn-rotate")?.addEventListener("click", () => rotatePending(1));
   $("#furn-move")?.addEventListener("click", () => {
     const art = (state.room?.wallArt || []).find((x) => x.id === state.selectedFurnId);
-    if (art) {
-      hideFurnActions();
-      state.movingWallId = art.id;
-      state.pendingPlace = null;
-      updateWallHighlight(art.wall, art.slot);
-      SHOW($("#place-banner"));
-      $("#place-banner").innerHTML = `Move your ${escapeHtml(labelFor(art.type))} <button class="btn small secondary" id="cancel-place" type="button">Cancel</button>`;
-      $("#cancel-place")?.addEventListener("click", (e) => { e.stopPropagation(); cancelPlace(); state.movingWallId = null; state.room3d?.setWallGhost(null); });
-      return;
-    }
+    if (art) { beginMoveWall(art); return; }
     const f = (state.room?.furniture || []).find((x) => x.id === state.selectedFurnId);
-    if (!f) return;
-    hideFurnActions();
-    state.movingId = f.id;
-    state.pendingPlace = null;
-    state.placeRot = HouseIso.normalizeRot(f.rot);
-    state.room3d?.setPlacing(f.type);
-    SHOW($("#place-banner"));
-    $("#place-banner").innerHTML = `Move your ${escapeHtml(labelFor(f.type))} <button class="btn small secondary" id="cancel-place" type="button">Cancel</button>`;
-    $("#cancel-place")?.addEventListener("click", (e) => { e.stopPropagation(); cancelPlace(); });
-    updatePlaceHighlight(f.x, f.y);
-    paintEditInventory();
+    if (f) beginMoveFurniture(f);
+  });
+  $("#furn-place")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    confirmGhostPlace();
   });
   $("#furn-pickup")?.addEventListener("click", () => {
     if (!state.selectedFurnId) return;
@@ -3350,6 +3763,8 @@ import {
       renderPeople();
     }
     if (state.editMode) paintEditInventory();
+    if (state.phoneApp === "pets") paintPets();
+    if (state.phoneApp === "edit") paintEditRoom();
     refreshActivityUI();
     if (state.view === "creator") {
       if (state.creatorReturn) {
@@ -3536,6 +3951,14 @@ import {
     renderPeople();
   });
 
+  socket.on("roomPets", ({ pets } = {}) => {
+    if (!state.room) return;
+    state.room.pets = pets || [];
+    state.room3d?.setPlacedPets?.(state.room.pets);
+    if (state.phoneApp === "pets") paintPets();
+    hidePetActions();
+  });
+
   socket.on("furniturePlaced", (piece) => {
     if (state.room) {
       state.room.furniture.push(piece);
@@ -3543,6 +3966,7 @@ import {
     }
     cancelPlace();
     if (state.editMode) paintEditInventory();
+    if (state.phoneApp === "edit") paintEditRoom();
   });
 
   socket.on("furnitureUpdated", (piece) => {
@@ -3707,7 +4131,11 @@ import {
   socket.on("bought", ({ name }) => {
     toast(`Bought a ${name}! Place it from your inventory.`);
     refreshPhoneScreens();
-    if (state.phoneApp === "shop" || !phoneOpen()) paintShop();
+    paintShop();
+    requestAnimationFrame(() => {
+      const chip = document.querySelector("#inventory-row [data-place], #phone-screen-shop [data-place]");
+      chip?.scrollIntoView({ block: "nearest" });
+    });
   });
 
   socket.on("inviteSent", ({ username, roomName }) => {
@@ -3774,6 +4202,10 @@ import {
   });
 
   window.__debugKit = (kit) => socket.emit("debugKit", kit);
+  window.__equipPet = (item) => socket.emit("equipPet", { item: item || null });
+  window.__placePet = (item, x, y) => socket.emit("placePet", { item, x, y });
+  window.__putAwayPet = (item) => socket.emit("putAwayPet", { item });
+
   window.__inventory = () => [...(state.me?.inventory || [])];
   window.__clickFurniture = (id, type, extra) => handleFurnitureClick(id, type, extra || {});
   window.__enterEdit = enterEditMode;
@@ -3782,6 +4214,7 @@ import {
   window.__highlightTile = (x, y) => updatePlaceHighlight(x, y);
   window.__rotatePending = () => rotatePending(1);
   window.__confirmPlace = confirmGhostPlace;
+  window.__cancelPlace = cancelPlace;
   window.__clickTile = (x, y) => {
     if (state.pendingPlace || state.movingId) {
       const g = state.room3d?.getGhost?.();

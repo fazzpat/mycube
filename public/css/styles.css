@@ -1003,7 +1003,6 @@ img.painting-thumb {
 /* ===== In-room phone menu ===== */
 .room-view {
   position: relative;
-  --dock-h: 76px;
 }
 button.coin-chip {
   font: inherit;
@@ -1059,7 +1058,7 @@ body.phone-open .dock .phone-dock-btn { visibility: visible; }
   right: 0;
   top: 0;
   bottom: var(--dock-h);
-  z-index: 35;
+  z-index: 45;
   display: flex;
   align-items: flex-end;
   justify-content: flex-end;
@@ -1082,10 +1081,6 @@ body.phone-open .dock .phone-dock-btn { visibility: visible; }
   max-height: calc(var(--app-h, 100dvh) - var(--dock-h) - 12px);
   filter: drop-shadow(0 10px 16px rgba(12, 6, 28, .4));
   animation: phoneUp .28s cubic-bezier(.2, 1.15, .3, 1);
-}
-.phone-overlay.app-open .phone-device {
-  width: min(340px, calc(100% - 16px));
-  height: min(520px, calc(var(--app-h, 100dvh) - var(--dock-h) - 12px));
 }
 @keyframes phoneUp {
   from { transform: translateY(18%) scale(.96); opacity: 0; }
@@ -1319,23 +1314,35 @@ body.phone-open .dock .phone-dock-btn { visibility: visible; }
 .phone-empty { color: var(--muted); font-weight: 700; }
 
 @media (max-width: 430px) {
-  :root, .room-view { --dock-h: 80px; }
+  :root { --dock-h: 80px; }
   .phone-app-icon { width: 32px; height: 32px; border-radius: 9px; }
   .phone-fab { width: 48px; height: 48px; right: 10px; }
 }
 
 
-/* ===== Keyboard-aware chat dock =====
-   The room canvas and header stay put. Only the dock lifts by --kb-inset
-   (the on-screen keyboard height) via a transform, so the page never shifts. */
+/* ===== Chat frame =====
+   The room fills from the top bar down to the chat bar. When a software
+   keyboard opens, the chat frame (dock + edit row) lifts by --kb-inset;
+   the room canvas does not move, resize, or pan — the keyboard overlays it. */
 .room-view { --kb-inset: 0px; }
+.chat-frame {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  z-index: 40;
+  position: relative;
+  pointer-events: none;
+  transform: translateY(calc(-1 * var(--kb-inset, 0px)));
+}
+.chat-frame #chat-dock,
+.chat-frame #edit-inventory { pointer-events: auto; }
+.kb-reserve { display: none !important; height: 0; flex: 0 0 0; }
 #chat-dock {
   position: relative;
   z-index: 40;
   margin-bottom: 0;
   align-items: flex-end;
-  transform: translateY(calc(-1 * var(--kb-inset, 0px)));
-  will-change: transform;
+  transform: none;
 }
 
 /* ===== Edit mode inventory ===== */
@@ -1486,7 +1493,7 @@ body.phone-open .dock .phone-dock-btn { visibility: visible; }
 .typing-bubble { opacity: .85; font-style: italic; }
 
 @media (max-width: 430px) {
-  :root, .room-view { --dock-h: 96px; }
+  :root { --dock-h: 96px; }
   .edit-inventory {
     width: min(168px, 44vw);
     max-height: min(220px, 26vh);
@@ -1533,23 +1540,25 @@ body.phone-open .dock .phone-dock-btn { visibility: visible; }
 .place-actions {
   position: absolute;
   left: 50%;
-  bottom: calc(var(--dock-h) + 12px + var(--kb-inset, 0px));
+  bottom: calc(var(--dock-h) + 10px + var(--kb-inset, 0px));
   transform: translateX(-50%);
   z-index: 36;
   display: flex;
-  gap: 8px;
-  padding: 8px 10px;
+  gap: 4px;
+  padding: 4px 6px;
   background: #2a1c4aee;
-  border-radius: 18px;
-  box-shadow: 0 8px 20px rgba(0,0,0,.28);
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0,0,0,.28);
   pointer-events: auto;
 }
 .place-actions.hidden { display: none !important; }
 .place-actions .btn {
-  min-height: 44px;
-  min-width: 72px;
+  min-height: 32px;
+  min-width: 0;
+  padding: 4px 8px;
+  font-size: 11px;
   font-weight: 800;
-  border-radius: 12px;
+  border-radius: 8px;
 }
 
 /* ===== Emote half-wheel ===== */
@@ -2414,18 +2423,21 @@ input, select, textarea, .chat-input, [data-testid="chat-input"] {
   overscroll-behavior: none;
   touch-action: manipulation;
 }
-.phone-overlay.app-open .phone-device {
-  width: min(340px, calc(100% - 16px));
-  height: min(520px, calc(var(--layout-h, 100dvh) - var(--dock-h) - 12px)) !important;
-  max-height: calc(var(--layout-h, 100dvh) - var(--dock-h) - 12px) !important;
-}
 .phone-home,
 .phone-screen,
-.phone-screens,
-.phone-app-screen {
+.phone-screens {
   overflow: hidden !important;
   overscroll-behavior: none !important;
   -webkit-overflow-scrolling: auto;
+}
+.phone-app-screen {
+  overflow: hidden;
+  overscroll-behavior: none;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+  height: 100%;
 }
 .phone-device {
   overflow: hidden !important;
@@ -2433,12 +2445,15 @@ input, select, textarea, .chat-input, [data-testid="chat-input"] {
   touch-action: manipulation;
 }
 .phone-app-body,
-.phone-grid {
+.phone-grid,
+.phone-character-editor {
   overflow-x: hidden !important;
   overflow-y: auto !important;
   overscroll-behavior: none !important;
   -webkit-overflow-scrolling: touch;
   touch-action: pan-y;
+  min-height: 0;
+  flex: 1;
 }
 .phone-grid {
   display: grid;
@@ -2696,3 +2711,354 @@ body.phone-open .phone-dock-btn {
   0%, 80%, 100% { transform: translateY(0); opacity: 0.55; }
   40% { transform: translateY(-3px); opacity: 1; }
 }
+
+
+/* In-handset apps stay at the home-screen size; content scrolls inside. */
+.phone-edit-preview {
+  flex: 0 0 auto;
+  height: 40px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: linear-gradient(180deg, #3b2760 0%, #1c1233 100%);
+  border-bottom: 1px solid #5a3a20;
+  overflow: hidden;
+}
+.phone-edit-preview canvas {
+  image-rendering: pixelated;
+  display: block;
+}
+#phone-screen-edit-character,
+#phone-screen-edit {
+  display: none;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+#phone-screen-edit-character:not(.hidden),
+#phone-screen-edit:not(.hidden),
+.phone-app-screen:not(.hidden) {
+  display: flex;
+}
+#phone-overlay.is-character-edit .phone-device,
+#phone-overlay.is-character-edit.is-compact-edit .phone-device,
+#phone-overlay.app-open .phone-device {
+  width: min(170px, 40vw) !important;
+  height: min(228px, calc(var(--layout-h, var(--app-h, 100dvh)) - var(--dock-h) - 12px)) !important;
+  max-width: min(170px, 40vw) !important;
+  max-height: min(228px, calc(var(--layout-h, var(--app-h, 100dvh)) - var(--dock-h) - 12px)) !important;
+  left: auto !important;
+  top: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  position: relative !important;
+}
+#phone-overlay.is-character-edit .creator-window {
+  position: relative !important;
+  inset: auto !important;
+  width: 100% !important;
+  height: auto !important;
+  min-height: 0 !important;
+  transform: none !important;
+  box-shadow: none !important;
+  border: 0 !important;
+  padding: 4px !important;
+  background: transparent !important;
+}
+.phone-edit-inv {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+.phone-edit-inv .edit-inv-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 2px;
+  font-size: 9px;
+  min-height: 44px;
+  border-radius: 8px;
+}
+.phone-edit-tools {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+.phone-edit-tools .btn { min-height: 32px; font-size: 11px; padding: 4px 8px; }
+.pet-actions {
+  position: absolute;
+  z-index: 33;
+  transform: translate(-50%, -110%);
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: #2a1c4aee;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0,0,0,.3);
+}
+.pet-actions.hidden { display: none !important; }
+.pet-actions .btn { font-size: 11px; padding: 5px 8px; min-height: 32px; }
+.phone-pet-card {
+  background: #1c1233;
+  border-radius: 8px;
+  padding: 6px;
+  margin-bottom: 6px;
+}
+.phone-pet-card strong { display: block; font-size: 11px; margin-bottom: 4px; }
+.phone-pet-card .btn { min-height: 30px; font-size: 10px; padding: 4px 6px; margin: 0 2px 2px 0; }
+.phone-emote-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+.phone-emote-grid button {
+  min-height: 40px;
+  font-size: 11px;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+#phone-spin-mount .card,
+#phone-spin-mount .modal {
+  width: 100%;
+  box-shadow: none;
+  border: 0;
+  padding: 4px;
+  background: transparent;
+}
+
+
+/* Always keep the in-game handset at the home-screen size. */
+#phone-overlay .phone-device,
+#phone-overlay.is-character-edit .phone-device,
+#phone-overlay.is-character-edit.is-compact-edit .phone-device,
+#phone-overlay.is-character-edit.is-short-edit .phone-device,
+#phone-overlay.app-open .phone-device {
+  width: min(170px, 40vw) !important;
+  height: min(228px, calc(var(--layout-h, var(--app-h, 100dvh)) - var(--dock-h) - 12px)) !important;
+  max-width: min(170px, 40vw) !important;
+  max-height: min(228px, calc(var(--layout-h, var(--app-h, 100dvh)) - var(--dock-h) - 12px)) !important;
+  min-height: 0 !important;
+  min-width: 0 !important;
+  flex: 0 0 auto !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+}
+
+/* Shop inventory chips stay visible under the tab row. */
+#phone-screen-shop #inventory-row,
+#shop-furniture-pane .inv-row {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #07060c;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px 0;
+  min-height: 24px;
+}
+
+/* Edit Room leaves the cube tappable and unobstructed outside the phone. */
+body.edit-mode .phone-backdrop,
+#phone-overlay.app-open-edit .phone-backdrop {
+  pointer-events: none !important;
+  background: transparent !important;
+}
+#phone-screen-edit .phone-app-body,
+#phone-screen-edit .phone-edit-inv,
+#phone-screen-edit [data-testid="edit-inventory"] {
+  min-height: 0;
+  max-height: 100%;
+  overflow-y: auto;
+}
+
+
+/* ===== Edit Room: horizontal inventory row above the chat bar ===== */
+.chat-frame #edit-inventory,
+#edit-inventory.edit-inventory,
+#edit-inventory {
+  position: relative;
+  left: auto;
+  right: auto;
+  bottom: auto;
+  width: 100%;
+  max-width: none;
+  max-height: none;
+  height: 64px;
+  min-height: 64px;
+  margin: 0;
+  padding: 4px 6px;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  background: linear-gradient(180deg, #efe3d0 0%, #e2c8a0 100%);
+  border-radius: 0;
+  box-shadow: inset 1px 1px 0 #fff8ee, inset -1px -1px 0 #6a4a28, 0 -1px 0 #5a3a20;
+  z-index: 40;
+  overflow: hidden;
+  pointer-events: auto;
+}
+#edit-inventory.hidden,
+.edit-inventory.hidden { display: none !important; }
+.chat-frame #edit-inventory { pointer-events: auto; }
+#edit-inventory .edit-inv-items,
+.edit-inv-items {
+  display: flex;
+  flex-direction: row;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  gap: 6px;
+  height: 100%;
+  align-items: center;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+#edit-inventory .edit-inv-item,
+.edit-inv-item {
+  flex: 0 0 auto;
+  width: 56px;
+  height: 56px;
+  padding: 2px 2px 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  font-size: 9px;
+  line-height: 1.1;
+  overflow: hidden;
+  touch-action: none;
+}
+#edit-inventory .edit-inv-item .furn-svg { width: 32px; height: 24px; }
+#edit-inventory .edit-inv-pet { font-size: 18px; line-height: 1; }
+#edit-inventory .edit-inv-item span {
+  max-width: 54px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#edit-done.edit-done-btn,
+#edit-done {
+  flex: 0 0 auto;
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 10px;
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1;
+}
+@media (max-width: 430px) {
+  .chat-frame #edit-inventory,
+  #edit-inventory.edit-inventory,
+  #edit-inventory {
+    width: 100%;
+    max-height: none;
+    left: auto;
+    bottom: auto;
+    height: 64px;
+  }
+}
+
+/* Compact in-room rotate / pick-up / remove handles */
+.furn-actions,
+.place-actions {
+  gap: 4px;
+  padding: 4px;
+  border-radius: 10px;
+}
+.furn-actions .btn,
+.place-actions .btn {
+  font-size: 11px;
+  padding: 4px 7px;
+  min-height: 28px;
+  border-radius: 8px;
+}
+
+/* Chat typability: readable, 16px, single line, horizontal scroll, visible caret */
+#chat-input,
+[data-testid="chat-input"],
+.dock textarea#chat-input,
+.dock textarea,
+.dock input {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
+  height: 44px !important;
+  min-height: 44px !important;
+  max-height: 44px !important;
+  resize: none;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  white-space: nowrap !important;
+  word-break: normal !important;
+  overflow-wrap: normal !important;
+  font-size: 16px !important;
+  line-height: 22px !important;
+  font-weight: 700;
+  color: #1a100c !important;
+  -webkit-text-fill-color: #1a100c !important;
+  caret-color: #1a100c;
+  background: #fffdf8 !important;
+  box-shadow: inset 1px 1px 0 #fff, 0 0 0 1.5px #5a3a20;
+  padding: 10px 12px;
+}
+#chat-input::placeholder,
+[data-testid="chat-input"]::placeholder {
+  color: #7a6558;
+  -webkit-text-fill-color: #7a6558;
+  opacity: 1;
+}
+
+
+/* Compact in-room placement handles, anchored to the ghost/item */
+.place-actions.in-room {
+  left: 0;
+  bottom: auto;
+  transform: translate(-50%, -120%);
+  z-index: 36;
+  pointer-events: auto;
+}
+#place-confirm:disabled,
+#furn-place:disabled,
+#place-confirm.disabled,
+#furn-place.disabled {
+  opacity: 0.4;
+  pointer-events: none;
+  filter: grayscale(0.3);
+}
+
+
+/* In-room toasts: small, top-left under the cube name, never over characters. */
+body[data-view="room"] #toasts {
+  position: fixed;
+  top: calc(var(--safe-top, 0px) + 52px + 44px);
+  left: calc(8px + var(--safe-left, 0px));
+  right: auto;
+  width: min(188px, 44vw);
+  max-width: 188px;
+  gap: 4px;
+  z-index: 34;
+  pointer-events: none;
+}
+body[data-view="room"] .toast {
+  padding: 4px 8px;
+  font-size: 11px;
+  line-height: 1.25;
+  border-radius: 6px;
+  font-weight: 600;
+  box-shadow: 0 2px 0 #2a1c4a22, 0 4px 10px rgba(0,0,0,.18);
+  pointer-events: auto;
+}
+body[data-view="room"] .toast .toast-actions { margin-top: 4px; gap: 4px; }
+body[data-view="room"] .toast .toast-actions .btn { font-size: 11px; padding: 2px 6px; min-height: 22px; }

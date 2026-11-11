@@ -531,8 +531,16 @@ export function initCreatorMenu({ onShow, getBackdropRoom } = {}) {
   function layoutPhoneAwayFromAvatar() {
     const overlay = overlayEl();
     const device = overlay?.querySelector("[data-testid='phone-device']");
-    const r3 = window.HouseRoom3D;
     if (!overlay || !device || !phoneEditOpen()) return;
+    // Keep the handset at the home-screen size and corner; the editor
+    // scrolls inside. Do not enlarge, dock, or pan the room.
+    clearPhoneDock(overlay);
+    overlay.classList.remove("is-compact-edit");
+    device.style.removeProperty("width");
+    device.style.removeProperty("height");
+    device.style.removeProperty("max-height");
+    device.style.removeProperty("max-width");
+    return;
     if (!compactEditViewport()) {
       clearPhoneDock(overlay);
       return;
@@ -563,8 +571,8 @@ export function initCreatorMenu({ onShow, getBackdropRoom } = {}) {
     if (!landscape && box) {
       const needW = box.w + gap * 2;
       if (area.w - pw < needW) pw = Math.max(160, Math.min(pw, area.w - needW));
-      const needH = box.h + gap * 2;
-      if (area.h - ph < needH) ph = Math.max(240, Math.min(ph, area.h - needH));
+      // Keep the editor tall enough that tab pages don't scroll. If the
+      // figure would be covered, setEditViewShift pans the room instead.
     }
     overlay.classList.toggle("is-short-edit", landscape);
     device.style.setProperty("width", `${Math.round(pw)}px`, "important");
@@ -663,7 +671,7 @@ export function initCreatorMenu({ onShow, getBackdropRoom } = {}) {
     screen.classList.remove("hidden");
     overlay.classList.add("is-character-edit");
     overlay.classList.remove("hidden");
-    if (compactEditViewport()) overlay.classList.add("is-compact-edit");
+    overlay.classList.remove("is-compact-edit");
     requestAnimationFrame(() => {
       pageIndex = 0;
       layoutPhoneAwayFromAvatar();
