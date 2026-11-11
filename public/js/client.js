@@ -37,8 +37,10 @@ import {
   installChessLayout(window.HouseIso);
   mountRecordPicker({
     onSelect(id, vinyl) {
+      // resume() must be called inside the tap, before any await, or iOS stays silent.
+      const unlocked = unlockRecordAudio();
       socket.emit("selectRecordPlayer", { id, vinyl });
-      unlockRecordAudio().then(() => syncRecordAudio({ on: true, vinyl }, { userGesture: true }));
+      Promise.resolve(unlocked).then(() => syncRecordAudio({ on: true, vinyl }, { userGesture: true }));
     },
     onStop(id) {
       socket.emit("selectRecordPlayer", { id, stop: true });
@@ -46,7 +48,8 @@ import {
     },
     onListen(id) {
       const rec = state.room?.recordPlayers?.[id];
-      unlockRecordAudio().then(() => {
+      const unlocked = unlockRecordAudio();
+      Promise.resolve(unlocked).then(() => {
         syncRecordAudio(rec, { userGesture: true });
         paintRecordPicker(rec);
       });
@@ -1621,7 +1624,8 @@ import {
       "couch", "chair", "hoverchair", "capsulecouch",
       "tv", "holotv", "chesstable", "fridge", "punchbag", "heavybag",
       "benchpress", "treadmill", "cubics", "clothescab", "coffeemachine",
-    ].includes(type);
+      "recordplayer",
+    ].includes(type) || type === RECORD_TYPE;
   }
 
   function requestWalkTo(tx, ty) {

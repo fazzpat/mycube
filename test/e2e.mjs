@@ -538,6 +538,24 @@ async function assertCreatorTabsFit(page, viewportName, viewport) {
 }
 
 
+async function tapPoint(page, x, y) {
+  const hasTouch = await page.evaluate(() => navigator.maxTouchPoints > 0);
+  if (hasTouch) await page.touchscreen.tap(x, y);
+  else await page.mouse.click(x, y);
+}
+
+async function tapFurnitureReal(page, id) {
+  const pt = await page.evaluate((fid) => window.HouseRoom3D.projectFurniture(fid), id);
+  if (!pt || pt.visible === false) throw new Error("furniture not on screen: " + id + " " + JSON.stringify(pt));
+  await tapPoint(page, pt.x, pt.y);
+}
+
+async function tapTestIdReal(page, testId) {
+  const box = await page.locator(`[data-testid="${testId}"]`).boundingBox();
+  if (!box) throw new Error("missing " + testId);
+  await tapPoint(page, box.x + box.width / 2, box.y + box.height / 2);
+}
+
 async function runRecordPlayerTests(browser) {
   log("Record table picker, vinyls, and synced lofi beats");
   const ctxA = await browser.newContext({ viewport: { width: 1280, height: 800 } });
@@ -594,7 +612,7 @@ async function runRecordPlayerTests(browser) {
     const recId = await recA.evaluate(() => window.HouseRoom3D.getFurniture().find((f) => f.type === "recordplayer").id);
     check("A 1-tile record table can be placed in the room", Boolean(recId));
 
-    await recA.evaluate((id) => window.__clickFurniture(id, "recordplayer"), recId);
+    await tapFurnitureReal(recA, recId);
     await recA.waitForSelector('[data-testid="record-picker"]:not(.hidden)', { timeout: 12000 });
     const vinylIds = await recA.evaluate(() => Array.from(document.querySelectorAll("[data-testid^=record-vinyl-]")).map((el) => el.getAttribute("data-testid").replace("record-vinyl-", "")));
     const pickerText = await recA.locator('[data-testid="record-picker"]').innerText();
@@ -615,7 +633,7 @@ async function runRecordPlayerTests(browser) {
     });
     check("Picker buttons are at least 40px tall for tapping", targets.every((t) => !t.missing && t.h >= 39.5), JSON.stringify(targets));
 
-    await recA.click('[data-testid="record-vinyl-neon-drift"]');
+    await tapTestIdReal(recA, "record-vinyl-neon-drift");
     await recA.waitForFunction((id) => window.HouseRoom3D.recordOn(id) && window.HouseRoom3D.recordVinyl(id) === "neon-drift", recId);
     await recB.waitForFunction((id) => window.HouseRoom3D.recordOn(id) && window.HouseRoom3D.recordVinyl(id) === "neon-drift", recId);
     await recA.waitForTimeout(450);
@@ -639,13 +657,28 @@ async function runRecordPlayerTests(browser) {
     await recB.waitForFunction(() => window.__recordAudioState()?.listening === true, null, { timeout: 5000 });
     check("Tapping the hint lets the guest hear the same beat", ((s) => s?.listening === true && (s?.vinyl === "neon-drift" || s?.playing === "neon-drift"))(await recB.evaluate(() => window.__recordAudioState())));
 
-    await recA.click('[data-testid="record-stop"]');
+    await tapTestIdReal(recA, "record-stop");
     await recA.waitForFunction((id) => !window.HouseRoom3D.recordOn(id), recId);
     await recB.waitForFunction((id) => !window.HouseRoom3D.recordOn(id), recId);
     const stoppedNotes = await recA.evaluate((id) => window.HouseRoom3D.recordNotes(id).length, recId);
     check("Stop turns the table off for everyone and the notes fade out", stoppedNotes === 0 && !(await recB.evaluate((id) => window.HouseRoom3D.recordOn(id), recId)));
 
-    await recA.click('[data-testid="record-vinyl-cube-city-nights"]');
+    if (await recA.locator('[data-testid="record-picker"]:not(.hidden)').count()) {
+      await recA.click('[data-testid="record-close"]');
+    }
+    await tapFurnitureReal(recB, recId);
+    await recB.waitForSelector('[data-testid="record-picker"]:not(.hidden)', { timeout: 12000 });
+    check("A guest can tap the record table in someone else's cube and open the picker", true);
+    await tapTestIdReal(recB, "record-vinyl-rainy-rooftop");
+    await recA.waitForFunction((id) => window.HouseRoom3D.recordVinyl(id) === "rainy-rooftop", recId);
+    await recB.waitForFunction((id) => window.HouseRoom3D.recordVinyl(id) === "rainy-rooftop", recId);
+    check("A guest's vinyl choice plays for everyone in the room", await recA.evaluate((id) => window.HouseRoom3D.recordVinyl(id) === "rainy-rooftop", recId));
+
+    if (!(await recA.locator('[data-testid="record-picker"]:not(.hidden)').count())) {
+      await tapFurnitureReal(recA, recId);
+      await recA.waitForSelector('[data-testid="record-picker"]:not(.hidden)', { timeout: 12000 });
+    }
+    await tapTestIdReal(recA, "record-vinyl-cube-city-nights");
     await recA.waitForFunction((id) => window.HouseRoom3D.recordVinyl(id) === "cube-city-nights", recId);
     await recB.waitForFunction((id) => window.HouseRoom3D.recordVinyl(id) === "cube-city-nights", recId);
     await recA.click('[data-testid="record-close"]');
@@ -663,6 +696,43 @@ async function runRecordPlayerTests(browser) {
   } finally {
     await ctxA.close();
     await ctxB.close();
+  }
+}
+
+
+async function runRecordPlayerTouchTests(browser) {
+  log("Record table phone tap opens the picker and plays a vinyl");
+  const i14 = devices["iPhone 14"] || devices["iPhone 13"] || { viewport: { width: 390, height: 844 } };
+  const ctx = await browser.newContext({ ...i14, hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
+  const page = await ctx.newPage();
+  page.setDefaultTimeout(20000);
+  try {
+    await login(page, "rectouch");
+    await page.waitForFunction(() => window.HouseRoom3D && window.HouseRoom3D.ready);
+    await page.evaluate(() => window.__debugKit?.({ furniture: ["recordplayer"], coins: 400 }));
+    await page.evaluate(() => { window.__startPlace("recordplayer"); window.__clickTile(3, 2); });
+    await page.waitForFunction(() => window.HouseRoom3D.getFurniture().some((f) => f.type === "recordplayer"));
+    await page.evaluate(() => window.__exitEdit?.());
+    const recId = await page.evaluate(() => window.HouseRoom3D.getFurniture().find((f) => f.type === "recordplayer").id);
+    await tapFurnitureReal(page, recId);
+    await page.waitForSelector('[data-testid="record-picker"]:not(.hidden)', { timeout: 12000 });
+    check("A phone tap on the record table opens the vinyl picker", true);
+    await tapTestIdReal(page, "record-vinyl-midnight-ramen");
+    await page.waitForFunction((id) => window.HouseRoom3D.recordOn(id) && window.HouseRoom3D.recordVinyl(id) === "midnight-ramen", recId);
+    await page.waitForTimeout(450);
+    const state = await page.evaluate((id) => ({
+      on: window.HouseRoom3D.recordOn(id),
+      vinyl: window.HouseRoom3D.recordVinyl(id),
+      notes: window.HouseRoom3D.recordNotes(id).length,
+      audio: window.__recordAudioState(),
+    }), recId);
+    check(
+      "A phone tap on a vinyl starts that beat, spins the platter, and floats notes",
+      Boolean(state.on && state.vinyl === "midnight-ramen" && state.notes >= 1 && state.audio?.listening && (state.audio.playing === "midnight-ramen" || state.audio.vinyl === "midnight-ramen")),
+      JSON.stringify(state)
+    );
+  } finally {
+    await ctx.close();
   }
 }
 
@@ -3020,6 +3090,7 @@ try {
 
   log("Record table picker and synced lofi beats");
   await runRecordPlayerTests(browser);
+  await runRecordPlayerTouchTests(browser);
 
   log("New avatar looks together in a cube");
   await ctxA.close();

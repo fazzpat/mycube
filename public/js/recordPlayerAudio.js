@@ -345,8 +345,10 @@ let live = null;
 
 function ensureLive() {
   if (live) return live;
-  if (typeof AudioContext === "undefined" && typeof webkitAudioContext === "undefined") return null;
-  const Ctx = AudioContext || webkitAudioContext;
+  const Ctx = (typeof globalThis !== "undefined" && (globalThis.AudioContext || globalThis.webkitAudioContext))
+    || (typeof window !== "undefined" && (window.AudioContext || window.webkitAudioContext))
+    || undefined;
+  if (!Ctx) return null;
   const ctx = new Ctx();
   const noise = makeNoiseBuffer(ctx, 1.5);
   const dummyFeel = VINYL_FEELS["neon-drift"];
@@ -390,14 +392,20 @@ function schedulerTick() {
   }
 }
 
-export async function unlockRecordAudio() {
+export function unlockRecordAudio() {
+  // Call resume() in this turn so iOS Safari treats it as a user gesture.
   const deck = ensureLive();
-  if (!deck) return false;
-  if (deck.ctx.state === "suspended") {
-    try { await deck.ctx.resume(); } catch { return false; }
-  }
+  if (!deck) return Promise.resolve(false);
   deck.listening = true;
-  return deck.ctx.state === "running";
+  if (deck.ctx.state === "suspended" || deck.ctx.state === "interrupted") {
+    try {
+      const p = deck.ctx.resume();
+      return Promise.resolve(p).then(() => deck.ctx.state === "running" || deck.ctx.state === "interrupted").catch(() => false);
+    } catch {
+      return Promise.resolve(false);
+    }
+  }
+  return Promise.resolve(deck.ctx.state === "running" || deck.ctx.state === "interrupted");
 }
 
 export function isRecordListening() {
@@ -455,7 +463,7 @@ export async function syncRecordAudio(rec, { userGesture = false } = {}) {
   }
   if (deck.playing === rec.vinyl && deck.timer) return getRecordAudioState();
   // Switch or start.
-  if (deck.ctx.state === "suspended") {
+  if (deck.ctx.state === "suspended" || deck.ctx.state === "interrupted") {
     if (!userGesture) return getRecordAudioState();
     try { await deck.ctx.resume(); } catch { return getRecordAudioState(); }
   }
