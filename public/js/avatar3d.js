@@ -325,7 +325,7 @@ function addStickerOutline(buf) {
   return next;
 }
 
-function fillToward(buf, x, y, dx, dy, max = 3) {
+function fillToward(buf, x, y, dx, dy, max = 6) {
   for (let i = 1; i <= max; i++) {
     const xx = x + dx * i, yy = y + dy * i;
     if (xx < 0 || yy < 0 || xx >= AV_W || yy >= AV_H) return false;
@@ -335,6 +335,42 @@ function fillToward(buf, x, y, dx, dy, max = 3) {
     return true;
   }
   return false;
+}
+
+function isFill(p) {
+  return p && p.kind !== "sticker" && p.kind !== "ink" && p.kind !== "shadow";
+}
+
+function isHeadish(kind) {
+  const k = kind || "";
+  return /^(skin-head|skin-jaw|ear|hair|hat|glasses|lens|eye|blush|clip|heart|hp-)/.test(k);
+}
+
+function isTorsoish(kind) {
+  const k = kind || "";
+  return /^(skin-body|top|hood|pouch|placket|collar|zip|midriff|quilt|var-|letter|graphic|number|piping|chain|belt|pants|skirt|cuff|cargo|sleeve|flare|stripe)/.test(k);
+}
+
+function shaveOpenEdgeStickers(buf, edge) {
+  // Drop the white outline on the open edge of a floating part (jaw underside or collar top).
+  const next = buf.slice();
+  for (let y = 0; y < AV_H; y++) {
+    for (let x = 0; x < AV_W; x++) {
+      const i = y * AV_W + x;
+      const p = buf[i];
+      if (!p || p.kind !== "sticker") continue;
+      let up = false, down = false;
+      for (let yy = y - 1; yy >= 0; yy--) {
+        if (isFill(buf[yy * AV_W + x])) { up = true; break; }
+      }
+      for (let yy = y + 1; yy < AV_H; yy++) {
+        if (isFill(buf[yy * AV_W + x])) { down = true; break; }
+      }
+      if (edge === "bottom" && up && !down) next[i] = null;
+      if (edge === "top" && down && !up) next[i] = null;
+    }
+  }
+  return next;
 }
 
 function stripInnerStickers(buf) {
@@ -348,6 +384,36 @@ function stripInnerStickers(buf) {
       const ns = fillToward(buf, x, y, 0, -1) && fillToward(buf, x, y, 0, 1);
       const ew = fillToward(buf, x, y, -1, 0) && fillToward(buf, x, y, 1, 0);
       if (ns || ew) next[i] = null;
+    }
+  }
+  return next;
+}
+
+function stripNeckGapStickers(buf) {
+  // The gap between the floating head and the torso must be empty — no jaw/collar sticker U.
+  const headBottom = new Array(AV_W).fill(-1);
+  const torsoTop = new Array(AV_W).fill(99);
+  for (let y = 0; y < AV_H; y++) {
+    for (let x = 0; x < AV_W; x++) {
+      const p = buf[y * AV_W + x];
+      if (!isFill(p)) continue;
+      if (isHeadish(p.kind) && y > headBottom[x]) headBottom[x] = y;
+      if (isTorsoish(p.kind) && y < torsoTop[x]) torsoTop[x] = y;
+    }
+  }
+  const next = buf.slice();
+  for (let x = 0; x < AV_W; x++) {
+    let hb = -1, tt = 99;
+    for (let k = -2; k <= 2; k++) {
+      const xx = x + k;
+      if (xx < 0 || xx >= AV_W) continue;
+      if (headBottom[xx] > hb) hb = headBottom[xx];
+      if (torsoTop[xx] < tt) tt = torsoTop[xx];
+    }
+    if (hb < 0 || tt >= 99 || tt <= hb) continue;
+    for (let y = hb + 1; y < tt; y++) {
+      const i = y * AV_W + x;
+      if (next[i] && next[i].kind === "sticker") next[i] = null;
     }
   }
   return next;
@@ -670,18 +736,16 @@ function hairClumps(style, key) {
       { dx: 3.4, dy: 0.2, len: 5.0, half: 1.9, ang: Math.PI * 0.4, fringe: true },
     ],
     ponytail: [
-      { dx: 0, dy: -5.6, len: 6.8, half: 2.8, ang: up },
-      { dx: -4.6, dy: -4.6, len: 6.0, half: 2.5, ang: up - 0.55 },
-      { dx: 4.6, dy: -4.6, len: 6.0, half: 2.5, ang: up + 0.55 },
-      { dx: -8.0, dy: -1.2, len: 5.0, half: 2.3, ang: up - 1.05 },
-      { dx: 8.0, dy: -1.2, len: 5.0, half: 2.3, ang: up + 1.05 },
+      { dx: -4.2, dy: -3.6, len: 4.4, half: 2.2, ang: up - 0.7 },
+      { dx: 4.2, dy: -3.6, len: 4.4, half: 2.2, ang: up + 0.7 },
+      { dx: -7.6, dy: -0.6, len: 4.2, half: 2.1, ang: up - 1.1 },
+      { dx: 7.6, dy: -0.6, len: 4.2, half: 2.1, ang: up + 1.1 },
     ],
     spacebuns: [
-      { dx: 0, dy: -5.4, len: 6.4, half: 2.6, ang: up },
-      { dx: -4.4, dy: -4.4, len: 5.6, half: 2.4, ang: up - 0.55 },
-      { dx: 4.4, dy: -4.4, len: 5.6, half: 2.4, ang: up + 0.55 },
-      { dx: -8.0, dy: -1.0, len: 4.8, half: 2.3, ang: up - 1.05 },
-      { dx: 8.0, dy: -1.0, len: 4.8, half: 2.3, ang: up + 1.05 },
+      { dx: -5.4, dy: -3.2, len: 4.0, half: 2.2, ang: up - 0.8 },
+      { dx: 5.4, dy: -3.2, len: 4.0, half: 2.2, ang: up + 0.8 },
+      { dx: -8.0, dy: 0.2, len: 4.2, half: 2.2, ang: Math.PI },
+      { dx: 8.0, dy: 0.2, len: 4.2, half: 2.2, ang: 0 },
     ],
     straightbangs: [
       { dx: 0, dy: -6.0, len: 7.6, half: 2.8, ang: up },
@@ -718,11 +782,13 @@ function hairClumps(style, key) {
   }
   if (key === "n" || key === "ne") {
     clumps = clumps.filter((c) => !c.fringe);
-    clumps = clumps.concat([
-      { dx: -3.2, dy: 1.4, len: 7.0, half: 2.8, ang: Math.PI * 0.5 },
-      { dx: 3.2, dy: 1.4, len: 7.0, half: 2.8, ang: Math.PI * 0.5 },
-      { dx: 0, dy: 0.6, len: 6.4, half: 3.0, ang: Math.PI * 0.5 },
-    ]);
+    if (!["buzz", "cornrows", "ponytail", "spacebuns", "afropuff"].includes(style)) {
+      clumps = clumps.concat([
+        { dx: -3.2, dy: 1.4, len: 7.0, half: 2.8, ang: Math.PI * 0.5 },
+        { dx: 3.2, dy: 1.4, len: 7.0, half: 2.8, ang: Math.PI * 0.5 },
+        { dx: 0, dy: 0.6, len: 6.4, half: 3.0, ang: Math.PI * 0.5 },
+      ]);
+    }
   }
   return clumps;
 }
@@ -731,10 +797,17 @@ function drawHair(buf, av, key, pal, upper, hatOn) {
   const g = headGeom(key);
   const cy = g.cy + upper;
   const style = hatOn && av.hair !== "long" && av.hair !== "straightbangs" && av.hair !== "ponytail" ? "short" : av.hair;
-  // Skull cap first so the scalp never shows, then distinct outlined spikes on top.
-  ellipse(buf, g.cx, cy - 3.5, g.rx * 0.9, g.ry * 0.7, pal.hair, "hair-cap", 44, { shade: "flat" });
-  for (const c of hairClumps(style, key)) {
-    stampSpike(buf, g.cx + c.dx, cy + c.dy, c.len, c.half, c.ang, pal.hair, "hair", 45, Boolean(c.rounded));
+  const special = style === "ponytail" || style === "spacebuns" || style === "afropuff";
+  // Skull cap first so the scalp never shows. Special styles get a tighter crown so extras can read.
+  ellipse(buf, g.cx, cy - (special ? 2.6 : 3.5), g.rx * (special ? 0.82 : 0.9), g.ry * (special ? 0.55 : 0.7), pal.hair, "hair-cap", 44, { shade: "flat" });
+  if (style !== "afropuff" && style !== "spacebuns") {
+    for (const c of hairClumps(style, key)) {
+      stampSpike(buf, g.cx + c.dx, cy + c.dy, c.len, c.half, c.ang, pal.hair, "hair", 45, Boolean(c.rounded));
+    }
+  } else {
+    for (const c of hairClumps(style, key)) {
+      stampSpike(buf, g.cx + c.dx, cy + c.dy, c.len, c.half, c.ang, pal.hair, "hair", 45, Boolean(c.rounded));
+    }
   }
   if (av.hair === "bun") {
     const bx = key === "e" ? 4 : 11;
@@ -758,32 +831,67 @@ function drawHair(buf, av, key, pal, upper, hatOn) {
       stampSpike(buf, tx, ty, c.len * 0.42, Math.max(1.4, c.half * 0.7), c.ang, tip, "hair-tip", 46, false);
     }
   }
-  if (av.hair === "bun" || av.hair === "spacebuns") {
-    // space buns sit high; classic bun also uses side buns from earlier
-  }
   if (av.hair === "spacebuns") {
-    const bx = key === "e" ? 3 : 9;
-    const by = cy - 7;
-    stampSpike(buf, g.cx - (key === "e" ? 0 : bx), by, 4.2, 3.6, -Math.PI / 2, pal.hair, "hair-bun", 47, true);
-    if (key !== "e") stampSpike(buf, g.cx + bx, by, 4.2, 3.6, -Math.PI / 2, pal.hair, "hair-bun", 47, true);
+    const by = cy - 9.8;
+    const rad = 4.8;
+    if (key === "e") {
+      ellipse(buf, g.cx + 1.2, by, rad, rad, pal.hair, "hair-bun", 47);
+      ellipse(buf, g.cx - 6.2, by + 1.2, rad * 0.8, rad * 0.8, pal.hair, "hair-bun-far", 46);
+    } else {
+      const sep = (key === "se" || key === "ne") ? 6.6 : 7.4;
+      ellipse(buf, g.cx - sep, by, rad, rad, pal.hair, "hair-bun", 47);
+      ellipse(buf, g.cx + sep, by, rad, rad, pal.hair, "hair-bun", 47);
+      // Visible center part between the buns.
+      rect(buf, g.cx - 0.6, cy - 7, g.cx + 0.6, cy - 0.5, pal.skin, "part", 48);
+    }
   }
   if (av.hair === "ponytail") {
-    const px = key === "e" ? g.cx - 2 : g.cx;
-    const py = cy - 8;
-    stampSpike(buf, px, py, 3.2, 2.6, -Math.PI / 2, pal.hair, "hair-tie", 47, true);
-    const ang = key === "n" || key === "ne" ? Math.PI * 0.5 : (key === "e" ? Math.PI * 0.95 : -Math.PI / 2);
-    const ox = key === "e" ? -2 : 0;
-    stampSpike(buf, px + ox, py - 1, 11, 2.6, ang, pal.hair, "hair-tail", 46, true);
+    const tie = rgb(36, 22, 28);
+    const tieHi = rgb(110, 64, 74);
+    let tx, ty, ang;
+    if (key === "e") {
+      tx = g.cx - 5.5; ty = cy - 7.5; ang = Math.PI * 0.82;
+    } else if (key === "n" || key === "ne") {
+      tx = g.cx + (key === "ne" ? -2 : 2); ty = cy - 8.5; ang = -Math.PI / 2 + 0.2;
+    } else if (key === "se") {
+      tx = g.cx - 4.5; ty = cy - 8.5; ang = -Math.PI / 2 - 0.65;
+    } else {
+      tx = g.cx + 4.5; ty = cy - 9.2; ang = -Math.PI / 2 + 0.62;
+    }
+    stampSpike(buf, tx, ty, 13, 3.1, ang, pal.hair, "hair-tail", 46, true);
+    stampSpike(buf, tx, ty, 10, 2.2, ang + 0.22, pal.hair, "hair-tail", 46, true);
+    ellipse(buf, tx, ty, 2.5, 2.1, tie, "hair-tie", 48, { shade: "flat" });
+    plot(buf, Math.round(tx), Math.round(ty) - 1, tieHi, "hair-tie", 49);
+  }
+  if (av.hair === "afropuff") {
+    const py = cy - 10.2;
+    const prx = key === "e" ? 8.6 : 10.4;
+    const pry = 9.4;
+    ellipse(buf, g.cx + (key === "e" ? 1 : 0), py, prx, pry, pal.hair, "hair-puff", 47);
+    ellipse(buf, g.cx, cy - 5.2, 5.4, 1.7, pal.hair.sh || pal.hair, "hair-band", 48, { shade: "flat" });
   }
   if (av.hair === "bobclips") {
-    const clip = rgb(255, 140, 190);
-    plot(buf, Math.round(g.cx - 6), Math.round(cy - 1), clip, "clip", 48);
-    plot(buf, Math.round(g.cx - 5), Math.round(cy - 1), clip, "clip", 48);
-    plot(buf, Math.round(g.cx + 6), Math.round(cy - 1), rgb(130, 210, 255), "clip", 48);
-    plot(buf, Math.round(g.cx + 5), Math.round(cy - 1), rgb(130, 210, 255), "clip", 48);
+    const pink = rgb(255, 90, 160);
+    const cyan = rgb(80, 200, 255);
+    function clip(x, y, col) {
+      const cx0 = Math.round(x), cy0 = Math.round(y);
+      plot(buf, cx0, cy0, col, "clip", 48);
+      plot(buf, cx0 + 1, cy0, col, "clip", 48);
+      plot(buf, cx0, cy0 + 1, col, "clip", 48);
+      plot(buf, cx0 + 1, cy0 + 1, col, "clip", 48);
+      plot(buf, cx0 + 1, cy0 - 1, rgb(255, 255, 255), "clip-hi", 49);
+    }
+    if (key === "n" || key === "ne") {
+      clip(g.cx - 7, cy - 1, pink);
+      clip(g.cx + 6, cy - 1, cyan);
+    } else if (key === "e") {
+      clip(g.cx + 6, cy + 1, pink);
+    } else {
+      clip(g.cx - 8, cy + 1, pink);
+      clip(g.cx + 7, cy + 1, cyan);
+    }
   }
   if (av.hair === "buzz") {
-    // Short stubble cap already drawn; add a tight edge so it reads as a buzz.
     ellipse(buf, g.cx, cy - 2.2, g.rx * 0.86, g.ry * 0.52, pal.hair.sh || pal.hair, "hair-buzz", 44, { shade: "flat" });
   }
 }
@@ -1417,6 +1525,7 @@ function composeAvatar(av, flags, frame) {
   if (dx) head = shiftBufXY(head, dx, 0);
   head = addInkOutline(head);
   head = addStickerOutline(head);
+  head = shaveOpenEdgeStickers(head, "bottom");
 
   const t = torsoBox(bk, sit);
   const aKind = pose.armKind || "idle";
@@ -1469,7 +1578,7 @@ function composeAvatar(av, flags, frame) {
 
   const out = makeBuf();
   for (const layer of layers) blitBuf(out, layer);
-  const cleaned = stripInnerStickers(out);
+  const cleaned = stripNeckGapStickers(stripInnerStickers(out));
 
   const pop = Number(flags.shoePop);
   if (pop >= 0 && pop < 480) {
@@ -1977,10 +2086,16 @@ export const HAIRCUT_LOOKS = [
 
 export function paintHaircutSheet(canvas, scale = 5) {
   const looks = HAIRCUT_LOOKS;
-  const pad = 16, cap = 18, gap = 12;
+  const dirs = [
+    { label: "Front", body: 1 },
+    { label: "3/4", body: 0 },
+    { label: "Side", body: 7 },
+    { label: "Back", body: 5 },
+  ];
+  const pad = 16, cap = 16, gap = 10, lab = 48;
   const cw = AV_W * scale, ch = AV_H * scale;
-  canvas.width = pad * 2 + looks.length * cw + (looks.length - 1) * gap;
-  canvas.height = pad * 2 + ch + cap;
+  canvas.width = lab + pad * 2 + looks.length * cw + (looks.length - 1) * gap;
+  canvas.height = pad * 2 + dirs.length * (ch + cap) + (dirs.length - 1) * gap;
   const ctx = canvas.getContext("2d");
   ctx.imageSmoothingEnabled = false;
   ctx.fillStyle = "#f4efe4";
@@ -1988,11 +2103,15 @@ export function paintHaircutSheet(canvas, scale = 5) {
   ctx.font = "11px Verdana, sans-serif";
   ctx.fillStyle = "#2a1c16";
   const base = { skin: "#f0c9a8", shirt: "#6c7bff", top: "tshirt", bottom: "jeans", bottomColor: "#3d4f7c", shoes: "white", accessory: "none" };
-  looks.forEach((h, i) => {
-    const x = pad + i * (cw + gap);
-    const spr = drawAvatarSprite({ ...base, hair: h.hair, hairColor: h.hairColor }, { bodyDir: 1, headDir: 1, blink: "open" }, 0);
-    ctx.drawImage(spr.c, 0, 0, spr.w, spr.h, x, pad + cap, cw, ch);
-    ctx.fillText(h.label, x, pad + 12);
+  dirs.forEach((d, r) => {
+    const y = pad + r * (ch + cap + gap);
+    ctx.fillText(d.label, 8, y + cap + ch / 2);
+    looks.forEach((h, i) => {
+      const x = lab + pad + i * (cw + gap);
+      const spr = drawAvatarSprite({ ...base, hair: h.hair, hairColor: h.hairColor }, { bodyDir: d.body, headDir: d.body, blink: "open" }, 0);
+      ctx.drawImage(spr.c, 0, 0, spr.w, spr.h, x, y + cap, cw, ch);
+      if (r === 0) ctx.fillText(h.label, x, y + 12);
+    });
   });
 }
 
