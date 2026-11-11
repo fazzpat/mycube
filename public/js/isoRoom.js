@@ -874,7 +874,7 @@ export function createRoom3D(container) {
       const st = personState.get(p.username) || p;
       const x = st.x ?? p.x, y = st.y ?? p.y;
       const walking = Boolean(st.walking || p.walking);
-      const frame = Math.floor(now / 140) % 4;
+      const frame = Math.floor(now / 96) % 8;
       const flags = {
         sitting: p.sitting, walking, facing: p.facing || st.facing, dirX: st.dirX, dirY: st.dirY,
         usingPhone: p.usingPhone, boxing: p.boxing, actionEmote: p.actionEmote,
