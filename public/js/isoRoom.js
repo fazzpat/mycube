@@ -444,12 +444,13 @@ export function petSitFacing(facing) {
 }
 
 
-export function createAvatarPreview(container) {
+export function createAvatarPreview(container, opts = {}) {
+  const transparent = Boolean(opts.transparent);
   container.innerHTML = "";
   container.style.position = "relative";
   container.style.imageRendering = "pixelated";
   const canvas = document.createElement("canvas");
-  canvas.style.cssText = "width:100%;height:100%;image-rendering:pixelated;display:block";
+  canvas.style.cssText = "width:100%;height:100%;image-rendering:pixelated;display:block;background:transparent";
   container.appendChild(canvas);
   let avatar = {};
   let facing = { x: 1, z: 1 };
@@ -470,8 +471,11 @@ export function createAvatarPreview(container) {
     const c = canvas.getContext("2d");
     const w = canvas.width, h = canvas.height;
     c.imageSmoothingEnabled = false;
-    c.fillStyle = "#efe6d4";
-    c.fillRect(0, 0, w, h);
+    if (transparent) c.clearRect(0, 0, w, h);
+    else {
+      c.fillStyle = "#efe6d4";
+      c.fillRect(0, 0, w, h);
+    }
     const scale = Math.max(2, Math.floor(Math.min(w / (AV_W + 8), h / (AV_H + 8))));
     const frame = Math.floor((now || 0) / 96) % 16;
     const targetDir = facingIndex8(facing);

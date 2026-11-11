@@ -7,3 +7,31 @@ export async function openStartForm(page, action = "start") {
   await page.locator(`[data-testid="start-option-${action}"]`).click();
   await input.waitFor({ state: "visible", timeout: 10000 });
 }
+
+const TAB_FOR = {
+  skin: "body",
+  hair: "hair",
+  hairColor: "hair",
+  glasses: "face",
+  accessory: "face",
+  headphoneColor: "face",
+  top: "top",
+  shirt: "top",
+  bottom: "bottom",
+  bottomColor: "bottom",
+  shoes: "shoes",
+};
+
+export async function openCreatorTab(page, tab) {
+  const btn = page.locator(`[data-testid="creator-tab-${tab}"]`);
+  await btn.waitFor({ state: "visible", timeout: 10000 });
+  await btn.click();
+  await page.locator(`[data-testid="creator-panel-${tab}"]`).waitFor({ state: "visible", timeout: 8000 });
+}
+
+export async function clickCreatorOption(page, testId) {
+  const key = String(testId).split("-")[0];
+  const tab = TAB_FOR[key];
+  if (tab) await openCreatorTab(page, tab);
+  await page.click(`[data-testid="${testId}"]`);
+}

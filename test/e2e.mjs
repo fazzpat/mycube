@@ -4,7 +4,7 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import path from "path";
 import { fileURLToPath } from "url";
-import { openStartForm } from "./startMenuHelp.mjs";
+import { openStartForm, openCreatorTab, clickCreatorOption } from "./startMenuHelp.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -26,13 +26,14 @@ async function login(page, username) {
 
 async function customize(page, { displayName, hair, shirt, skin, glasses, hairColor, top, accessory } = {}) {
   if (displayName != null) await page.fill('[data-testid="display-name"]', displayName);
-  if (hair != null) await page.click(`[data-testid="hair-${hair}"]`);
-  if (shirt != null) await page.click(`[data-testid="shirt-${shirt}"]`);
-  if (skin != null) await page.click(`[data-testid="skin-${skin}"]`);
-  if (hairColor != null) await page.click(`[data-testid="hairColor-${hairColor}"]`);
-  if (top != null) await page.click(`[data-testid="top-${top}"]`);
-  if (accessory != null) await page.click(`[data-testid="accessory-${accessory}"]`);
+  if (skin != null) await clickCreatorOption(page, `skin-${skin}`);
+  if (hair != null) await clickCreatorOption(page, `hair-${hair}`);
+  if (hairColor != null) await clickCreatorOption(page, `hairColor-${hairColor}`);
+  if (top != null) await clickCreatorOption(page, `top-${top}`);
+  if (shirt != null) await clickCreatorOption(page, `shirt-${shirt}`);
+  if (accessory != null) await clickCreatorOption(page, `accessory-${accessory}`);
   if (glasses != null) {
+    await openCreatorTab(page, "face");
     const box = page.locator('[data-testid="glasses-toggle"]');
     const on = await box.isChecked();
     if (glasses && !on) await box.check();
@@ -1009,9 +1010,52 @@ try {
 
   log("Alice and Bob create characters");
   await login(alice, "alice");
+  log("Arcade character creator");
+  await alice.waitForSelector('[data-testid="creator-window"]');
+  await alice.waitForTimeout(400);
+  const creatorLayout = await alice.evaluate(() => {
+    const room = document.querySelector('[data-testid="creator-room"]');
+    const canvas = room && room.querySelector("canvas");
+    const preview = document.querySelector('[data-testid="creator-preview"]');
+    const win = document.querySelector('[data-testid="creator-window"]');
+    const tabs = [...document.querySelectorAll("#creator-tabs [data-tab]")].map((el) => el.getAttribute("data-tab"));
+    const pr = preview.getBoundingClientRect();
+    const wr = win.getBoundingClientRect();
+    const rr = (canvas || room).getBoundingClientRect();
+    return {
+      hasRoom: Boolean(canvas && canvas.width > 8 && canvas.height > 8 && rr.width > 80 && rr.height > 80),
+      previewVisible: pr.width > 40 && pr.height > 40,
+      windowVisible: wr.width > 80 && wr.height > 80,
+      tab: window.__creatorMenu?.tab() || "",
+      tabs,
+      sideBySide: wr.left >= pr.right - 40,
+    };
+  });
+  check(
+    "The character creator shows the avatar in an empty cube beside an arcade option window",
+    Boolean(creatorLayout.hasRoom && creatorLayout.previewVisible && creatorLayout.windowVisible),
+    JSON.stringify(creatorLayout)
+  );
+  check(
+    "Creator options are grouped into BODY / HAIR / FACE / TOP / BOTTOM / SHOES tabs",
+    creatorLayout.tab === "body" && creatorLayout.tabs.join(",") === "body,hair,face,top,bottom,shoes",
+    JSON.stringify(creatorLayout)
+  );
+  await alice.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
+  await alice.locator('[data-testid="creator-tabs"]').click({ position: { x: 8, y: 8 } });
+  await alice.keyboard.press("ArrowRight");
+  const afterRight = await alice.evaluate(() => window.__creatorMenu?.tab());
+  check("Arrow keys move between creator tabs", afterRight === "hair", afterRight);
+  await alice.locator('[data-testid="hair-3"]').click();
+  const hairOn = await alice.evaluate(() => document.querySelector('[data-testid="hair-3"]')?.classList.contains("selected"));
+  check("Choosing a hair style in its tab updates the live selection", hairOn === true);
+  await alice.keyboard.press("ArrowLeft");
+  const backBody = await alice.evaluate(() => window.__creatorMenu?.tab());
+  check("Arrow left returns to the BODY tab", backBody === "body", backBody);
+
   await customize(alice, { displayName: "Alice", hair: 3, shirt: 0, skin: 1, glasses: false });
-  await alice.click('[data-testid="accessory-4"]');
-  await alice.click('[data-testid="headphoneColor-2"]');
+  await clickCreatorOption(alice, "accessory-4");
+  await clickCreatorOption(alice, "headphoneColor-2");
   await alice.waitForTimeout(300);
   await alice.setViewportSize({ width: 1280, height: 1100 });
   await alice.screenshot({ path: `${SHOT}/01-character-creator.png` });

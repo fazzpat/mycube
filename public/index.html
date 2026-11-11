@@ -18,6 +18,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;700;800&family=Press+Start+2P&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/css/styles.css" />
   <link rel="stylesheet" href="/css/startMenu.css" />
+  <link rel="stylesheet" href="/css/creatorMenu.css" />
   <link rel="stylesheet" href="/css/chess.css" />
   <script type="importmap">
   { "imports": { "three": "/vendor/three.module.js" } }
@@ -70,53 +71,78 @@
     </section>
 
     <!-- CREATOR -->
-    <section id="view-creator" class="view hidden">
-      <header class="topbar">
+    <section id="view-creator" class="view creator-view hidden">
+      <div id="creator-room" class="creator-room" data-testid="creator-room" aria-hidden="true"></div>
+      <header class="topbar creator-topbar">
         <div style="display:flex;align-items:center;gap:10px">
           <button class="btn secondary small hidden" data-testid="creator-back" id="creator-back" type="button">Back</button>
           <div class="brand"><div class="brand-mark cube-logo" aria-hidden="true"><svg viewBox="0 0 32 32" width="28" height="28"><path d="M16 3 L29 10.5 L16 18 L3 10.5 Z" fill="#d4c4ff"/><path d="M3 10.5 L16 18 L16 30 L3 22.5 Z" fill="#7c5cff"/><path d="M16 18 L29 10.5 L29 22.5 L16 30 Z" fill="#4e35c9"/></svg></div> MyCube</div>
         </div>
         <div class="user-chip" id="creator-user"></div>
       </header>
-      <div class="wrap">
-        <h1>Create your character</h1>
-        <p class="lede">Stylized, a little hip, and all yours. You can change this later.</p>
-        <div class="creator-grid">
-          <div class="card preview-card">
-            <div class="preview-stage" id="creator-preview" data-testid="creator-preview"></div>
-            <div class="field" style="text-align:left">
-              <label for="display-name">Character name</label>
+      <div class="creator-stage">
+        <div class="creator-hero">
+          <div class="preview-stage" id="creator-preview" data-testid="creator-preview"></div>
+        </div>
+        <div class="creator-window" data-testid="creator-window">
+          <div class="creator-logo">CREATE</div>
+          <p class="creator-tag">YOUR CHARACTER</p>
+          <div class="creator-tabs" id="creator-tabs" data-testid="creator-tabs" role="tablist" aria-label="Character options">
+            <button type="button" data-testid="creator-tab-body" data-tab="body" role="tab">BODY</button>
+            <button type="button" data-testid="creator-tab-hair" data-tab="hair" role="tab">HAIR</button>
+            <button type="button" data-testid="creator-tab-face" data-tab="face" role="tab">FACE</button>
+            <button type="button" data-testid="creator-tab-top" data-tab="top" role="tab">TOP</button>
+            <button type="button" data-testid="creator-tab-bottom" data-tab="bottom" role="tab">BOTTOM</button>
+            <button type="button" data-testid="creator-tab-shoes" data-tab="shoes" role="tab">SHOES</button>
+          </div>
+          <div class="creator-tab-panels" id="creator-tab-panels">
+            <div data-testid="creator-panel-body" data-panel="body" role="tabpanel">
+              <h3>Skin tone</h3>
+              <div class="swatch-row" id="skin-choices"></div>
+            </div>
+            <div class="hidden" data-testid="creator-panel-hair" data-panel="hair" role="tabpanel">
+              <h3>Hair style</h3>
+              <div class="swatch-row" id="hair-choices"></div>
+              <h3>Hair color</h3>
+              <div class="swatch-row" id="hair-color-choices"></div>
+            </div>
+            <div class="hidden" data-testid="creator-panel-face" data-panel="face" role="tabpanel">
+              <h3>Accessory</h3>
+              <div class="swatch-row" id="accessory-choices"></div>
+              <div id="headphone-color-field" class="hidden">
+                <h3>Headphone color</h3>
+                <div class="swatch-row" id="headphone-color-choices"></div>
+              </div>
+              <label class="check-row">
+                <input type="checkbox" id="glasses-toggle" data-testid="glasses-toggle" />
+                Sunglasses
+              </label>
+            </div>
+            <div class="hidden" data-testid="creator-panel-top" data-panel="top" role="tabpanel">
+              <h3>Top</h3>
+              <div class="swatch-row" id="top-choices"></div>
+              <h3>Top color</h3>
+              <div class="swatch-row" id="shirt-choices"></div>
+            </div>
+            <div class="hidden" data-testid="creator-panel-bottom" data-panel="bottom" role="tabpanel">
+              <h3>Bottom</h3>
+              <div class="swatch-row" id="bottom-choices"></div>
+              <h3>Bottom color</h3>
+              <div class="swatch-row" id="bottom-color-choices"></div>
+            </div>
+            <div class="hidden" data-testid="creator-panel-shoes" data-panel="shoes" role="tabpanel">
+              <h3>Shoes</h3>
+              <div class="swatch-row" id="shoes-choices"></div>
+            </div>
+          </div>
+          <div class="creator-footer">
+            <div class="field">
+              <label for="display-name">CHARACTER NAME</label>
               <input id="display-name" data-testid="display-name" type="text" maxlength="16" placeholder="Shown under your avatar" />
             </div>
-            <button class="btn" data-testid="save-avatar" id="save-avatar" type="button">Looks good!</button>
-          </div>
-          <div class="card">
-            <h3>Skin tone</h3>
-            <div class="swatch-row" id="skin-choices"></div>
-            <h3 style="margin-top:18px">Hair style</h3>
-            <div class="swatch-row" id="hair-choices"></div>
-            <h3 style="margin-top:18px">Hair color</h3>
-            <div class="swatch-row" id="hair-color-choices"></div>
-            <h3 style="margin-top:18px">Top</h3>
-            <div class="swatch-row" id="top-choices"></div>
-            <h3 style="margin-top:18px">Top color</h3>
-            <div class="swatch-row" id="shirt-choices"></div>
-            <h3 style="margin-top:18px">Bottom</h3>
-            <div class="swatch-row" id="bottom-choices"></div>
-            <h3 style="margin-top:18px">Bottom color</h3>
-            <div class="swatch-row" id="bottom-color-choices"></div>
-            <h3 style="margin-top:18px">Shoes</h3>
-            <div class="swatch-row" id="shoes-choices"></div>
-            <h3 style="margin-top:18px">Accessory</h3>
-            <div class="swatch-row" id="accessory-choices"></div>
-            <div id="headphone-color-field" class="hidden">
-              <h3 style="margin-top:18px">Headphone color</h3>
-              <div class="swatch-row" id="headphone-color-choices"></div>
+            <div class="creator-footer-actions">
+              <button class="btn" data-testid="save-avatar" id="save-avatar" type="button">LOOKS GOOD</button>
             </div>
-            <label class="check-row" style="margin-top:18px">
-              <input type="checkbox" id="glasses-toggle" data-testid="glasses-toggle" />
-              Sunglasses
-            </label>
           </div>
         </div>
       </div>

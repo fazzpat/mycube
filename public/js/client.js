@@ -1,5 +1,6 @@
 import { createRoom3D, createAvatarPreview } from "./isoRoom.js";
 import { initStartMenu } from "./startMenu.js";
+import { initCreatorMenu } from "./creatorMenu.js";
 import { CLOTHING_STOCK, PET_STOCK, PUBLIC_PLACES, clothingSlot, CLOTHING_SLOTS, HAIR_STYLES as CAT_HAIR_STYLES, HAIR_LABELS, TOP_LABELS, BOTTOM_LABELS, ACC_LABELS, BASE_TOPS, BASE_BOTTOMS, BASE_ACCESSORIES, TOPS as CAT_TOPS, BOTTOMS as CAT_BOTTOMS, ACCESSORIES as CAT_ACCESSORIES } from "./storeCatalog.js";
 import { ART_PIECES, paintArtThumb, registerArtCatalog, installPaintings } from "./artPieces.js";
 import { installWallLayout, switchFloorTile } from "./wallLayout.js";
@@ -14,6 +15,9 @@ import { initChessUI } from "./chess-ui.js";
   const HIDE = (el) => el && el.classList.add("hidden");
 
   const startMenu = initStartMenu();
+  const creatorMenu = initCreatorMenu({
+    onShow() { state.preview3d?.resize?.(); },
+  });
 
   window.__lastSays = [];
   window.__joinResults = [];
@@ -80,6 +84,8 @@ import { initChessUI } from "./chess-ui.js";
     });
     if (name === "login") startMenu.show();
     else startMenu.hide();
+    if (name === "creator") creatorMenu.show();
+    else creatorMenu.hide();
   }
 
   let lastTvToastKey = "";
@@ -166,7 +172,7 @@ import { initChessUI } from "./chess-ui.js";
     const box = $("#creator-preview");
     if (!state.preview3d) {
       box.innerHTML = "";
-      state.preview3d = createAvatarPreview(box);
+      state.preview3d = createAvatarPreview(box, { transparent: true });
     }
     state.preview3d.setAvatar(state.draft);
     $("#creator-user").textContent = state.me?.username || "";
@@ -181,7 +187,11 @@ import { initChessUI } from "./chess-ui.js";
         b.type = "button";
         b.className = asColor ? "swatch" : "choice";
         if (asColor) b.style.background = val;
-        else b.textContent = val;
+        else {
+          const labels = { hair: HAIR_LABELS, top: TOP_LABELS, bottom: BOTTOM_LABELS, accessory: ACC_LABELS };
+          const pretty = labels[key]?.[val] || (typeof val === "string" ? val : "");
+          b.textContent = pretty;
+        }
         b.dataset.testid = `${key}-${i}`;
         if (state.draft[key] === val) b.classList.add("selected");
         b.addEventListener("click", () => {

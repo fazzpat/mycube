@@ -4,7 +4,7 @@ import { spawn } from "child_process";
 import path from "path";
 import { fileURLToPath } from "url";
 import { once } from "events";
-import { openStartForm } from "./startMenuHelp.mjs";
+import { openStartForm, clickCreatorOption } from "./startMenuHelp.mjs";
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SHOT = process.env.SHOT_DIR || path.join(ROOT, "screenshots");
@@ -30,9 +30,9 @@ async function login(page, username) {
 
 async function customize(page, displayName) {
   await page.fill('[data-testid="display-name"]', displayName);
-  await page.click('[data-testid="hair-1"]');
-  await page.click('[data-testid="shirt-2"]');
-  await page.click('[data-testid="skin-2"]');
+  await clickCreatorOption(page, "hair-1");
+  await clickCreatorOption(page, "shirt-2");
+  await clickCreatorOption(page, "skin-2");
 }
 
 async function saveAvatar(page) {
