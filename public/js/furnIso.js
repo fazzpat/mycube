@@ -23,7 +23,7 @@ const BODY_H = {
   rug: 4, plant: 36, podplant: 38, lamp: 48, table: 18, coffeetable: 14, counter: 20,
   couch: 26, capsulecouch: 26, chair: 24, hoverchair: 32, bed: 18, tv: 60, holotv: 60,
   fridge: 44, kitchenette: 24, bookshelf: 42, chesstable: 14, chessstool: 14, punchbag: 46, heavybag: 46,
-  benchpress: 22, treadmill: 30, cubics: 44, pinball: 40, clothescab: 42, coffeemachine: 48, recordplayer: 40,
+  benchpress: 22, treadmill: 30, cubics: 70, pinball: 40, clothescab: 42, coffeemachine: 48, recordplayer: 40,
   djdeck: 18, sodavending: 46, neonsign: 46, rack: 36, mannequin: 42, petpen: 22, cage: 24,
 };
 
@@ -264,15 +264,16 @@ function glyph(ctx, x, y, text, color, size = 6) {
   ctx.fillText(text, x, y);
 }
 
-function faceGlyph(ctx, corners, text, color, u0, v0, u1, v1) {
+function faceGlyph(ctx, corners, text, color, u0, v0, u1, v1, gap = 0.15) {
   const glyphs = {
     C: ["#####","#    ","#    ","#    ","#####"],
     U: ["#   #","#   #","#   #","#   #","#####"],
     B: ["#### ","#   #","#### ","#   #","#### "],
+    I: ["###"," # "," # "," # ","###"],
     E: ["#####","#    ","#### ","#    ","#####"],
+    S: [" ####","#    "," ### ","    #","#### "],
   };
   const letters = String(text).split("");
-  const gap = 0.15;
   const slot = (1 - gap * (letters.length - 1) / letters.length) / letters.length;
   letters.forEach((ch, i) => {
     const rows = glyphs[ch];
@@ -641,6 +642,175 @@ function drawChessTable(ctx, tw, th, rot, lights) {
   fillPts(ctx, [rim.N, rim.E, rim.S, rim.W], null, lights ? "#2a2030" : "#111");
 }
 
+
+function sliceFront(x, y, w, h, rot, depth) {
+  const r = normalizeFurnRot(rot);
+  const d = Math.min(depth, ((r % 2 === 0 ? h : w) * 0.9) || depth);
+  if (r === 0) return { x, y: y + h - d, w, h: d };
+  if (r === 1) return { x: x + w - d, y, w: d, h };
+  if (r === 2) return { x, y, w, h: d };
+  return { x, y, w: d, h };
+}
+
+function alongFront(rect, rot, t, inset, size) {
+  const r = normalizeFurnRot(rot);
+  const u = Math.max(0, Math.min(1, t));
+  if (r === 0) return { x: rect.x + 0.08 + u * Math.max(0, rect.w - 0.16 - size), y: rect.y + rect.h - inset - size, w: size, h: size };
+  if (r === 1) return { x: rect.x + rect.w - inset - size, y: rect.y + 0.08 + u * Math.max(0, rect.h - 0.16 - size), w: size, h: size };
+  if (r === 2) return { x: rect.x + 0.08 + u * Math.max(0, rect.w - 0.16 - size), y: rect.y + inset, w: size, h: size };
+  return { x: rect.x + inset, y: rect.y + 0.08 + u * Math.max(0, rect.h - 0.16 - size), w: size, h: size };
+}
+
+function paintSideArt(ctx, corners, lights) {
+  if (!corners) return;
+  const teal = lights ? "#2ec4b6" : "#1a4a48";
+  const orange = lights ? "#ff7a3a" : "#5a2e18";
+  const purple = lights ? "#8a4dff" : "#3a2058";
+  const ink = lights ? "#1a1020" : "#0a0810";
+  faceRect(ctx, corners, 0, 0.00, 1, 1, lights ? "#2a1848" : "#181022", null);
+  faceRect(ctx, corners, 0, 0.10, 1, 0.22, teal, null);
+  faceRect(ctx, corners, 0, 0.22, 1, 0.30, orange, null);
+  faceRect(ctx, corners, 0, 0.30, 1, 0.36, purple, null);
+  faceRect(ctx, corners, 0.18, 0.46, 0.82, 0.78, lights ? "#1a1230" : "#0e0a18", ink);
+  faceRect(ctx, corners, 0.28, 0.54, 0.48, 0.72, lights ? "#ef476f" : "#4a2030", null);
+  faceRect(ctx, corners, 0.52, 0.54, 0.72, 0.72, lights ? "#f4c15d" : "#4a3a18", null);
+  faceRect(ctx, corners, 0, 0.86, 1, 0.94, teal, null);
+}
+
+/** Classic 80s upright cabinet for the Cubics game (id stays cubics). */
+function paintCubicsGlyphs(ctx, corners, text, color, u0, v0, u1, v1) {
+  const glyphs = {
+    C: ["###","#  ","#  ","#  ","###"],
+    U: ["# #","# #","# #","# #","###"],
+    B: ["## ","# #","## ","# #","## "],
+    I: ["###"," # "," # "," # ","###"],
+    E: ["###","#  ","## ","#  ","###"],
+    S: [" ##","#  ","## ","  #","## "],
+  };
+  const letters = String(text).split("");
+  const gap = 0.12;
+  const slot = (1 - gap * (letters.length - 1) / Math.max(1, letters.length)) / letters.length;
+  letters.forEach((ch, i) => {
+    const rows = glyphs[ch];
+    if (!rows) return;
+    const lu0 = i * (slot + gap / letters.length);
+    const lu1 = lu0 + slot;
+    const rowsN = rows.length, colsN = rows[0].length;
+    for (let r = 0; r < rowsN; r++) {
+      for (let c = 0; c < colsN; c++) {
+        if (rows[r][c] !== "#") continue;
+        const pu0 = u0 + (lu0 + (c / colsN) * (lu1 - lu0)) * (u1 - u0);
+        const pu1 = u0 + (lu0 + ((c + 1) / colsN) * (lu1 - lu0)) * (u1 - u0);
+        const pv1 = v1 - (r / rowsN) * (v1 - v0);
+        const pv0 = v1 - ((r + 1) / rowsN) * (v1 - v0);
+        faceRect(ctx, corners, pu0, pv0, pu1, pv1, color, null);
+      }
+    }
+  });
+}
+
+function drawRetroArcade(ctx, tw, th, rot, lights, flicker = 0) {
+  const full = insetBox(tw, th);
+  const bw = full.w * 0.82;
+  const bh = full.h * 0.82;
+  const bx = full.x + (full.w - bw) / 2;
+  const by = full.y + (full.h - bh) / 2;
+  const BODY = 52;
+  const MARQUEE_H = 18;
+  const r = normalizeFurnRot(rot);
+  const front = visibleFront(rot);
+  const sideWhich = front === "+y" ? "+x" : front === "+x" ? "+y" : null;
+  const bodyPal = pal("#252033", lights);
+  shadow(ctx, full.x, full.y, full.w, full.h, 0.34);
+  box(ctx, bx, by, bw, bh, 0, BODY, bodyPal);
+
+  const sideFace = sideWhich
+    ? faceCorners(bx, by, bw, bh, 0, BODY, sideWhich)
+    : null;
+  if (sideFace) paintSideArt(ctx, sideFace, lights);
+  else {
+    paintSideArt(ctx, faceCorners(bx, by, bw, bh, 0, BODY, "+y"), lights);
+    paintSideArt(ctx, faceCorners(bx, by, bw, bh, 0, BODY, "+x"), lights);
+  }
+
+  if (front) {
+    const fc = faceCorners(bx, by, bw, bh, 0, BODY, front);
+    const outline = bodyPal.outline;
+    faceRect(ctx, fc, 0.08, 0.00, 0.92, 0.28, lights ? "#1a1624" : "#0c0a10", outline);
+    faceRect(ctx, fc, 0.28, 0.05, 0.72, 0.24, lights ? "#121018" : "#0a0810", outline);
+    faceRect(ctx, fc, 0.42, 0.12, 0.58, 0.18, lights ? "#f4c15d" : "#3a3018", null);
+    if (lights) faceRect(ctx, fc, 0.44, 0.135, 0.56, 0.165, "#ffe08a", null);
+    faceRect(ctx, fc, 0.62, 0.09, 0.70, 0.17, lights ? "#2a2430" : "#141018", outline);
+
+    faceRect(ctx, fc, 0.08, 0.46, 0.92, 0.98, lights ? "#14141c" : "#0a0a10", outline);
+    const screen = lights
+      ? (flicker === 0 ? "#10281c" : flicker === 1 ? "#0e2418" : "#14301f")
+      : "#0a100e";
+    faceRect(ctx, fc, 0.14, 0.52, 0.86, 0.93, screen, null);
+    const blocks = [
+      [0.20, 0.57, 0.36, 0.71, "#ef476f"],
+      [0.36, 0.57, 0.52, 0.71, "#f4c15d"],
+      [0.36, 0.71, 0.52, 0.85, "#3dcf8e"],
+      [0.52, 0.71, 0.68, 0.85, "#5ce1ff"],
+    ];
+    for (const b of blocks) {
+      let c = lights ? b[4] : shade(b[4], -55);
+      if (lights && flicker === 2) c = shade(c, -18);
+      faceRect(ctx, fc, b[0], b[1], b[2], b[3], c, null);
+    }
+    if (lights) {
+      ctx.globalAlpha = flicker === 1 ? 0.18 : 0.11;
+      faceRect(ctx, fc, 0.14, 0.52, 0.86, 0.93, "#7cffb0", null);
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  const panelLift = 20;
+  const panelH = 7;
+  const grow = 0.05;
+  const panelBox = sliceFront(bx - grow * 0.25, by - grow * 0.25, bw + grow * 0.5, bh + grow * 0.5, r, 0.42);
+  const panelPal = pal("#1c1826", lights);
+  box(ctx, panelBox.x, panelBox.y, panelBox.w, panelBox.h, panelLift, panelH, panelPal);
+  if (front) {
+    const pc = faceCorners(panelBox.x, panelBox.y, panelBox.w, panelBox.h, panelLift, panelH, front);
+    faceRect(ctx, pc, 0.06, 0.05, 0.94, 0.95, lights ? "#241e30" : "#141018", panelPal.outline);
+  }
+  const joy = alongFront(panelBox, r, 0.18, 0.10, 0.12);
+  box(ctx, joy.x, joy.y, joy.w, joy.h, panelLift + panelH, 3, pal("#c4b8a8", lights));
+  box(ctx, joy.x + 0.03, joy.y + 0.03, joy.w - 0.06, joy.h - 0.06, panelLift + panelH + 3, 4, pal(lights ? "#ef476f" : "#4a2030", lights));
+  const btnColors = [lights ? "#ff5a6a" : "#4a2028", lights ? "#2ec4b6" : "#1a4a48", lights ? "#f4c15d" : "#4a3a18"];
+  btnColors.forEach((c, i) => {
+    const b = alongFront(panelBox, r, 0.52 + i * 0.18, 0.12, 0.10);
+    box(ctx, b.x, b.y, b.w, b.h, panelLift + panelH, 2, pal(c, true));
+  });
+
+  // Marquee hangs over the front of the screen rather than sitting as a second story.
+  const mqPad = 0.07;
+  const mq = sliceFront(bx - mqPad, by - mqPad, bw + mqPad * 2, bh + mqPad * 2, r, 0.48);
+  const mqPal = pal(lights ? "#6a1a7a" : "#2a1228", lights);
+  box(ctx, mq.x, mq.y, mq.w, mq.h, BODY, MARQUEE_H, mqPal);
+  if (lights) {
+    ctx.globalAlpha = flicker === 0 ? 0.30 : flicker === 1 ? 0.20 : 0.36;
+    const glow = diamond(mq.x - 0.05, mq.y - 0.05, mq.w + 0.10, mq.h + 0.10, BODY + MARQUEE_H * 0.55);
+    fillPts(ctx, [glow.N, glow.E, glow.S, glow.W], "#ff4da6", null);
+    ctx.globalAlpha = 1;
+  }
+  if (front) {
+    const mc = faceCorners(mq.x, mq.y, mq.w, mq.h, BODY, MARQUEE_H, front);
+    faceRect(ctx, mc, 0.05, 0.08, 0.95, 0.94, lights ? "#1a0820" : "#0c0610", mqPal.outline);
+    const word = lights ? (flicker === 1 ? "#ffb0de" : "#ff4da6") : "#5a3850";
+    // Two short rows so each letter is large enough to read in iso.
+    paintCubicsGlyphs(ctx, mc, "CUB", word, 0.12, 0.52, 0.88, 0.92);
+    paintCubicsGlyphs(ctx, mc, "ICS", word, 0.12, 0.10, 0.88, 0.48);
+    if (lights) {
+      ctx.globalAlpha = 0.25;
+      paintCubicsGlyphs(ctx, mc, "CUB", "#ffe8ff", 0.12, 0.52, 0.88, 0.92);
+      paintCubicsGlyphs(ctx, mc, "ICS", "#ffe8ff", 0.12, 0.10, 0.88, 0.48);
+      ctx.globalAlpha = 1;
+    }
+  }
+}
+
 function drawArcade(ctx, tw, th, rot, lights, kind) {
   const color = kind === "pinball" ? "#8a1520" : "#2a3040";
   const h = kind === "pinball" ? 28 : 40;
@@ -866,7 +1036,7 @@ function paintPiece(ctx, type, rot, lights, on, open, opts = {}) {
     case "fridge": drawFridge(ctx, tw, th, r, lights, open); break;
     case "chesstable": drawChessTableSmall(ctx, tw, th, r, lights, ISO_DRAW); break;
     case "chessstool": drawChessStool(ctx, tw, th, r, lights, ISO_DRAW); break;
-    case "cubics":
+    case "cubics": drawRetroArcade(ctx, tw, th, r, lights, opts.flicker || 0); break;
     case "pinball": drawArcade(ctx, tw, th, r, lights, type); break;
     case "sodavending": drawVending(ctx, tw, th, r, lights); break;
     case "bookshelf":
@@ -903,13 +1073,14 @@ export function drawFurnitureSprite(type, opts = {}) {
   const steamFrame = type === "coffeemachine" ? (opts.steamFrame ?? 0) : 0;
   const spinFrame = type === "recordplayer" ? (opts.spinFrame ?? 0) : 0;
   const vinyl = type === "recordplayer" ? (opts.vinyl || "") : "";
+  const flicker = type === "cubics" ? (opts.flicker ?? 0) : 0;
   const screen = opts.screen || null;
-  const key = "iso-furn:" + type + ":" + rot + ":" + lights + ":" + on + ":" + open + ":" + (opts.sku || "") + (type === "coffeemachine" ? (":brew" + brewing + ":st" + steamFrame) : "") + (type === "recordplayer" ? (":v" + vinyl + ":sp" + spinFrame + ":on" + on) : "");
+  const key = "iso-furn:" + type + ":" + rot + ":" + lights + ":" + on + ":" + open + ":" + (opts.sku || "") + (type === "coffeemachine" ? (":brew" + brewing + ":st" + steamFrame) : "") + (type === "recordplayer" ? (":v" + vinyl + ":sp" + spinFrame + ":on" + on) : "") + (type === "cubics" ? (":fk" + flicker) : "");
   const m = furnSpriteMetrics(type, rot);
   const body = sprite(key, m.w, m.h, (ctx) => {
     ctx.save();
     ctx.translate(m.ox, m.oy);
-    paintPiece(ctx, type, rot, lights, on, open, { brewing, steamFrame, sku: opts.sku, spinFrame, vinyl });
+    paintPiece(ctx, type, rot, lights, on, open, { brewing, steamFrame, sku: opts.sku, spinFrame, vinyl, flicker });
     ctx.restore();
   });
   if (!screen || !on || (type !== "tv" && type !== "holotv")) return body;

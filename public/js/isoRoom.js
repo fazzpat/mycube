@@ -888,6 +888,7 @@ export function createRoom3D(container, opts = {}) {
         steamFrame: type === "coffeemachine" ? steamFrameAt(now) : 0,
         spinFrame: isRec && recOn ? spinFrameAt(nowServer(), rec.startedAt) : 0,
         vinyl: isRec ? (rec.vinyl || null) : null,
+        flicker: type === "cubics" ? Math.floor(now / 220) % 3 : 0,
         screen,
       });
       const recNotes = isRec && recOn ? notesAt(f.id, rec, nowServer()) : null;

@@ -64,7 +64,7 @@ const FURNITURE_CATALOG = {
   punchbag: { name: "Punching bag", price: 30, w: 1, h: 1, blocks: true },
   benchpress: { name: "Bench press", price: 35, w: 2, h: 1, blocks: true },
   treadmill: { name: "Treadmill", price: 35, w: 1, h: 2, blocks: true },
-  cubics: { name: "Arcade cabinet", price: 40, w: 1, h: 1, blocks: true },
+  cubics: { name: "Retro Arcade", price: 40, w: 1, h: 1, blocks: true },
   clothescab: { name: "Clothes cabinet", price: 30, w: 1, h: 1, blocks: true },
   coffeemachine: { name: "Coffee maker", price: 25, w: 1, h: 1, blocks: true },
   recordplayer: { name: "Record table", price: 28, w: 1, h: 1, blocks: true },
