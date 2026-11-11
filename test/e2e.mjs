@@ -1136,8 +1136,10 @@ try {
     const samples = [];
     for (const look of looks) {
       for (const dir of [0, 1, 7, 5]) {
-        const g = avMod.inspectAvatarGeometry(look, { bodyDir: dir, headDir: dir, blink: "open" }, 0);
-        samples.push({ hair: look.hair, dir, ...g });
+        const idle = avMod.inspectAvatarGeometry(look, { bodyDir: dir, headDir: dir, blink: "open" }, 0);
+        samples.push({ hair: look.hair, dir, pose: "idle", ...idle });
+        const walk = avMod.inspectAvatarGeometry(look, { bodyDir: dir, headDir: dir, blink: "open", walking: true }, 2);
+        samples.push({ hair: look.hair, dir, pose: "walk", ...walk });
       }
     }
     const bad = samples.filter((s) => !s.seated || !s.squishy || !s.compact);

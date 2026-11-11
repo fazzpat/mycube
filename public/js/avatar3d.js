@@ -410,6 +410,32 @@ function addInkOutline(buf) {
   return next;
 }
 
+
+function shadeUnderChin(buf) {
+  // Soft contact shadow on the shirt just below the overlapping chin/jaw.
+  const next = buf.slice();
+  for (let y = 1; y < AV_H; y++) {
+    for (let x = 0; x < AV_W; x++) {
+      const p = buf[y * AV_W + x];
+      if (!isFill(p) || !isTorsoish(p.kind)) continue;
+      let under = false, dist = 99;
+      for (let dy = 1; dy <= 2; dy++) {
+        const n = buf[(y - dy) * AV_W + x];
+        if (n && isFill(n) && /^(skin-head|skin-jaw|skin-face|ear)/.test(n.kind || "")) {
+          under = true;
+          dist = dy;
+          break;
+        }
+      }
+      if (!under) continue;
+      const t = dist === 1 ? 0.34 : 0.18;
+      const col = mix(p.color || INK, rgb(40, 24, 20), t);
+      next[y * AV_W + x] = { color: col, kind: "collar", depth: Math.max(p.depth || 0, 28) };
+    }
+  }
+  return next;
+}
+
 function addContactShade(buf) {
   // Subtle darker pixels at the bottom of the torso and feet to help them sit on the floor.
   const next = buf.slice();
@@ -632,12 +658,45 @@ function resolvedDirs(flags) {
   return { bodyDir, headDir, walk, base };
 }
 
+
+function drawJawLine(buf, g, pal, upper) {
+  // Darker-skin outline around the chin and jaw so the head stays a round shape
+  // even where it overlaps the shirt.
+  const cx = g.cx, cy = g.cy + upper + 0.4, rx = g.rx, ry = g.ry;
+  const jaw = mix(pal.skin.sh || pal.skin.mid || pal.skin, rgb(52, 30, 24), 0.42);
+  const yMid = cy + ry * 0.12;
+  const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1]];
+  const rim = [];
+  const x0 = Math.floor(cx - rx - 2), x1 = Math.ceil(cx + rx + 2);
+  const y0 = Math.floor(yMid), y1 = Math.ceil(cy + ry + 2);
+  for (let y = y0; y <= y1; y++) {
+    for (let x = x0; x <= x1; x++) {
+      if (x < 0 || y < 0 || x >= AV_W || y >= AV_H) continue;
+      const p = buf[y * AV_W + x];
+      if (!p || !/^skin-head|^skin-face|^ear/.test(p.kind || "")) continue;
+      let edge = false;
+      for (const [dx, dy] of dirs) {
+        const xx = x + dx, yy = y + dy;
+        if (xx < 0 || yy < 0 || xx >= AV_W || yy >= AV_H) { edge = true; break; }
+        const n = buf[yy * AV_W + xx];
+        if (!n || n.kind === "ink" || n.kind === "sticker" || n.kind === "shadow") { edge = true; break; }
+      }
+      if (edge) rim.push([x, y]);
+    }
+  }
+  for (const [x, y] of rim) {
+    plot(buf, x, y, jaw, "skin-jaw", 51);
+    plot(buf, x, y + 1, jaw, "skin-jaw", 51);
+  }
+}
+
 function drawHead(buf, key, pal, upper, emote) {
   const g = headGeom(key);
   const cy = g.cy + upper;
   const flat = { shade: "flat" };
   // Soft squarish-round skull; flatten the crown a little so it reads like the reference.
   egg(buf, g.cx, cy + 0.4, g.rx, g.ry, pal.skin, "skin-head", 40, { shade: "flat", widen: 0.02, flatten: 0.32 });
+  drawJawLine(buf, g, pal, upper);
   if (key === "s") {
     ellipse(buf, g.cx - g.rx + 1, cy + 2.2, 2.8, 3.4, pal.skin, "ear", 35, flat);
     ellipse(buf, g.cx + g.rx - 1, cy + 2.2, 2.8, 3.4, pal.skin, "ear", 35, flat);
@@ -1030,7 +1089,8 @@ function drawHair(buf, av, key, pal, upper, hatOn) {
     } else if (key === "se") {
       tx = g.cx - g.rx * 0.32; ty = cy - g.ry * 0.64; ang = -Math.PI / 2 - 0.65;
     } else {
-      tx = g.cx + g.rx * 0.22; ty = cy - g.ry * 0.72; ang = -Math.PI / 2 + 1.05;
+      // Front: tie on the crown, tail hangs down behind the head (not a horn).
+      tx = g.cx + g.rx * 0.16; ty = cy - g.ry * 0.55; ang = Math.PI * 0.72;
     }
     if (hatOn) {
       // Exit from under the back of the hat, never up through the crown.
@@ -1048,8 +1108,9 @@ function drawHair(buf, av, key, pal, upper, hatOn) {
         ang = -Math.PI / 2 + 1.15;
       }
     }
-    stampSpike(buf, tx, ty, 13, 3.1, ang, pal.hair, "hair-tail", 46, true);
-    stampSpike(buf, tx, ty, 10, 2.2, ang + 0.22, pal.hair, "hair-tail", 46, true);
+    const tailDepth = (!hatOn && key === "s") ? 36 : 46;
+    stampSpike(buf, tx, ty, key === "s" && !hatOn ? 15 : 13, 3.1, ang, pal.hair, "hair-tail", tailDepth, true);
+    stampSpike(buf, tx, ty, key === "s" && !hatOn ? 12 : 10, 2.2, ang + 0.18, pal.hair, "hair-tail", tailDepth, true);
     ellipse(buf, tx, ty, 2.5, 2.1, tie, "hair-tie", 48, { shade: "flat" });
     plot(buf, Math.round(tx), Math.round(ty) - 1, tieHi, "hair-tie", 49);
   }
@@ -1210,10 +1271,11 @@ function drawHeadphones(buf, av, key, pal, upper) {
 
 /* Body / clothes / limbs */
 function torsoBox(key, sit) {
-  // Short squishy bean. Top overlaps the chin so the head sits on the shoulders.
+  // Short squishy bean. The chin overlaps the top of the torso by a few pixels
+  // so the round head sits on the shoulders, layered in front of the shirt.
   // Wider than it is tall, tucked onto the boots (~y=52).
-  const y0 = 37;
-  const h = 15;
+  const y0 = 36;
+  const h = 16;
   if (key === "e") return { cx: 25, y0, hw: 10.8, h };
   if (key === "se") return { cx: 22.6, y0, hw: 12.0, h };
   if (key === "ne") return { cx: 23.8, y0, hw: 12.1, h };
@@ -1223,7 +1285,7 @@ function torsoBox(key, sit) {
 function drawTorso(buf, av, key, pal, upper, sit, squash = 0) {
   const t = torsoBox(key, sit);
   const y0 = t.y0 + upper;
-  // Pin the collar to the chin; squash widens and shortens the bean without opening a gap.
+  // Pin the collar under the chin; squash widens and shortens the bean without breaking the overlap.
   const h = t.h * (1 - squash * 0.65);
   const cy = y0 + h * 0.50;
   const rx = (t.hw + (av.top === "oversized" ? 0.6 : 0)) * (1 + squash);
@@ -1794,7 +1856,7 @@ function composeAvatar(av, flags, frame) {
 
   const out = makeBuf();
   for (const layer of layers) blitBuf(out, layer);
-  const cleaned = addContactShade(stripNeckGapStickers(stripInnerStickers(out)));
+  const cleaned = addContactShade(shadeUnderChin(stripNeckGapStickers(stripInnerStickers(out))));
 
   const pop = Number(flags.shoePop);
   if (pop >= 0 && pop < 480) {
@@ -2474,7 +2536,7 @@ export function inspectAvatarGeometry(avatar = {}, flags = {}, frame = 0) {
   return {
     headTop, headBot, torsoTop, torsoBot, footY, figTop, figBot,
     headH, bodyH, torsoW, torsoH, gap, headsTall, headShare,
-    seated: gap <= 0,
+    seated: gap <= -1 && gap >= -6,
     squishy: torsoW > torsoH,
     compact: headsTall >= 1.5 && headsTall <= 1.95 && headShare >= 0.48,
   };
