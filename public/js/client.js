@@ -1,5 +1,6 @@
 import { createRoom3D, createAvatarPreview } from "./isoRoom.js";
 import { CLOTHING_STOCK, PET_STOCK, PUBLIC_PLACES } from "./storeCatalog.js";
+import { ART_PIECES, paintArtThumb, registerArtCatalog, installPaintings } from "./artPieces.js";
 import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, snapshot as cubicsSnap, drawCubics, jokeAt } from "./cubics.js";
 import { initChessUI } from "./chess-ui.js";
 
@@ -12,6 +13,8 @@ import { initChessUI } from "./chess-ui.js";
   window.__lastSays = [];
   window.__joinResults = [];
 
+  installPaintings(window.HouseIso);
+  registerArtCatalog(HouseIso);
   const CATALOG = Object.entries(HouseIso.CATALOG).map(([type, item]) => ({ type, ...item }));
 
   const state = {
@@ -928,8 +931,8 @@ import { initChessUI } from "./chess-ui.js";
         const label = s.label || s.name || s.type;
         const owned = ownsStoreItem(kind, s);
         const sel = state.shopSel === id ? " selected" : "";
-        const thumb = (kind === "clothes" || kind === "pets")
-          ? `<canvas class="store-thumb" width="28" height="28" data-thumb-id="${id}"></canvas>`
+        const thumb = (kind === "clothes" || kind === "pets" || kind === "art")
+          ? `<canvas class="store-thumb" width="28" height="28" data-thumb-id="${id}" style="image-rendering:pixelated"></canvas>`
           : "";
         return `<button type="button" class="store-item${sel}" data-testid="store-item-${id}" data-shop-id="${id}">${thumb}<span class="meta">${escapeHtml(label)}${owned ? " · owned" : ""}</span><span class="price">${owned ? "✓" : s.price + "c"}</span></button>`;
       }).join("");
@@ -941,7 +944,9 @@ import { initChessUI } from "./chess-ui.js";
       });
       grid.querySelectorAll("canvas.store-thumb").forEach((c) => {
         const stock = list.find((s) => (s.id || s.type) === c.dataset.thumbId);
-        if (stock && typeof window.__paintStoreThumb === "function") {
+        if (!stock) return;
+        if (kind === "art") paintArtThumb(c, stock.type || stock.id);
+        else if (typeof window.__paintStoreThumb === "function") {
           window.__paintStoreThumb(c, kind, stock.item || stock, state.me?.avatar || {});
         }
       });
@@ -956,6 +961,10 @@ import { initChessUI } from "./chess-ui.js";
         prev.innerHTML = `<canvas width="56" height="56" style="image-rendering:pixelated"></canvas>`;
         const c = prev.querySelector("canvas");
         if (c) window.__paintStoreThumb(c, "clothes", stock.item, state.me?.avatar || {});
+      } else if (kind === "art" && stock) {
+        prev.innerHTML = `<canvas width="96" height="96" style="image-rendering:pixelated"></canvas><div style="padding:6px;text-align:center;font-weight:700">${escapeHtml(stock.name || stock.label || stock.type)}</div>`;
+        const c = prev.querySelector("canvas");
+        if (c) paintArtThumb(c, stock.type || stock.id);
       } else {
         prev.innerHTML = stock ? `<strong>${escapeHtml(stock.label || stock.name || stock.type)}</strong>` : "";
       }
@@ -1296,6 +1305,7 @@ import { initChessUI } from "./chess-ui.js";
           })
           .join("")
       : `<span class="empty">Pocket's empty. Pick something up or buy from the shop.</span>`;
+    box.querySelectorAll("canvas[data-art-thumb]").forEach((c) => paintArtThumb(c, c.dataset.artThumb));
     box.querySelectorAll("[data-place]").forEach((b) => {
       b.addEventListener("click", () => {
         state.movingId = null;
@@ -1340,7 +1350,41 @@ import { initChessUI } from "./chess-ui.js";
     return null;
   }
 
+  function nextFreeWallSlot(type, wall, slot, ignoreId) {
+    const n = state.room?.size || 6;
+    const list = state.room?.wallArt || [];
+    const trySlot = (s) => HouseIso.canPlaceWall(type, wall, s, n)
+      && !HouseIso.wallOccupied(list, wall, s, ignoreId);
+    if (trySlot(slot)) return slot;
+    for (let i = 1; i < n; i++) {
+      const s = (slot + i) % n;
+      if (trySlot(s)) return s;
+    }
+    return null;
+  }
+
+  function flipWallTarget(type, wall, slot, ignoreId) {
+    const other = wall === "left" ? "back" : "left";
+    const next = nextFreeWallSlot(type, other, slot, ignoreId);
+    if (next == null) return null;
+    return { wall: other, slot: next };
+  }
+
   function rotatePending(dir = 1) {
+    const wallType = pendingWallType();
+    if (wallType) {
+      const g = state.room3d?.getWallGhost?.();
+      const art = state.movingWallId && (state.room?.wallArt || []).find((x) => x.id === state.movingWallId);
+      const curWall = g?.wall || art?.wall || "back";
+      const curSlot = g?.slot ?? art?.slot ?? 0;
+      const flipped = flipWallTarget(wallType, curWall, curSlot, state.movingWallId);
+      if (!flipped) {
+        toast("No free space on the other wall.");
+        return;
+      }
+      updateWallHighlight(flipped.wall, flipped.slot);
+      return;
+    }
     if (state.pendingPlace || state.movingId) {
       state.placeRot = HouseIso.normalizeRot((state.placeRot || 0) + dir);
       const g = state.room3d?.getGhost?.();
@@ -1349,6 +1393,16 @@ import { initChessUI } from "./chess-ui.js";
       return;
     }
     if (state.selectedFurnId && state.editMode) {
+      const art = (state.room?.wallArt || []).find((x) => x.id === state.selectedFurnId);
+      if (art) {
+        const flipped = flipWallTarget(art.type, art.wall, art.slot, art.id);
+        if (!flipped) {
+          toast("No free space on the other wall.");
+          return;
+        }
+        socket.emit("moveWallArt", { id: art.id, wall: flipped.wall, slot: flipped.slot });
+        return;
+      }
       const f = (state.room?.furniture || []).find((x) => x.id === state.selectedFurnId);
       if (!f) return;
       const rot = HouseIso.normalizeRot((f.rot || 0) + dir);
@@ -1507,7 +1561,14 @@ import { initChessUI } from "./chess-ui.js";
   function storeStock(kind) {
     if (kind === "pets") return PET_STOCK;
     if (kind === "clothes") return CLOTHING_STOCK;
-    if (kind === "art") return CATALOG.filter((item) => item.surface === "wall");
+    if (kind === "art") {
+      const listed = CATALOG.filter((item) => item.surface === "wall").map((item) => {
+        const extra = ART_PIECES.find((p) => p.type === item.type);
+        return extra ? { ...item, description: extra.description, label: extra.name, fresh: true } : item;
+      });
+      listed.sort((a, b) => Number(Boolean(b.fresh)) - Number(Boolean(a.fresh)));
+      return listed;
+    }
     return CATALOG.filter((item) => item.surface !== "wall");
   }
 
@@ -1538,7 +1599,13 @@ import { initChessUI } from "./chess-ui.js";
     }
     if (state.storeKind === "furniture" || state.storeKind === "art") {
       if (state.storePreview) { state.storePreview.dispose?.(); state.storePreview = null; }
-      el.innerHTML = `<div style="padding:12px;text-align:center;font-weight:700">${stock ? escapeHtml(stock.name || stock.label || stock.type) : ""}</div>`;
+      if (state.storeKind === "art" && stock) {
+        el.innerHTML = `<canvas width="128" height="128" data-testid="art-preview-canvas" style="image-rendering:pixelated;width:128px;height:128px"></canvas><div style="padding:6px;text-align:center;font-weight:700">${escapeHtml(stock.name || stock.label || stock.type)}</div><div class="item-sub" style="text-align:center;padding:0 8px 8px">${escapeHtml(stock.description || "")}</div>`;
+        const c = el.querySelector("canvas");
+        if (c) paintArtThumb(c, stock.type || stock.id);
+      } else {
+        el.innerHTML = `<div style="padding:12px;text-align:center;font-weight:700">${stock ? escapeHtml(stock.name || stock.label || stock.type) : ""}</div>`;
+      }
       return;
     }
     if (!state.storePreview) {
@@ -1573,8 +1640,8 @@ import { initChessUI } from "./chess-ui.js";
         const label = s.label || s.name || s.type;
         const owned = ownsStoreItem(kind, s);
         const sel = state.storeSel === id ? " selected" : "";
-        const thumb = (kind === "clothes" || kind === "pets")
-          ? `<canvas class="store-thumb" width="28" height="28" data-thumb-id="${id}"></canvas>`
+        const thumb = (kind === "clothes" || kind === "pets" || kind === "art")
+          ? `<canvas class="store-thumb" width="28" height="28" data-thumb-id="${id}" style="image-rendering:pixelated"></canvas>`
           : (typeof furnitureSVG === "function" ? furnitureSVG(s.type || id) : "");
         return `<button type="button" class="store-item${sel}" data-testid="store-item-${id}" data-store-id="${id}">${thumb}<span class="meta">${escapeHtml(label)}${owned ? " · owned" : ""}</span><span class="price">${owned ? "✓" : s.price + "c"}</span></button>`;
       })
@@ -1589,7 +1656,8 @@ import { initChessUI } from "./chess-ui.js";
     grid.querySelectorAll("canvas.store-thumb").forEach((c) => {
       const stock = stockList.find((s) => (s.id || s.type) === c.dataset.thumbId);
       if (!stock) return;
-      if (typeof window.__paintStoreThumb === "function") {
+      if (kind === "art") paintArtThumb(c, stock.type || stock.id);
+      else if (typeof window.__paintStoreThumb === "function") {
         window.__paintStoreThumb(c, kind, stock.item || stock, state.me?.avatar || {});
       }
     });
@@ -3264,6 +3332,7 @@ import { initChessUI } from "./chess-ui.js";
   });
 
   window.__debugKit = (kit) => socket.emit("debugKit", kit);
+  window.__inventory = () => [...(state.me?.inventory || [])];
   window.__clickFurniture = (id, type, extra) => handleFurnitureClick(id, type, extra || {});
   window.__enterEdit = enterEditMode;
   window.__exitEdit = exitEditMode;
@@ -3293,7 +3362,7 @@ import { initChessUI } from "./chess-ui.js";
   window.__leaveRoom = () => socket.emit("leaveRoom");
   window.__openStore = (kind, sku) => openStorePanel(kind, sku);
   window.__closeStore = () => closeStorePanel();
-  window.__storeState = () => ({ kind: state.storeKind, sel: state.storeSel, coins: state.me?.coins, collection: state.me?.collection });
+  window.__storeState = () => ({ kind: state.storeKind, sel: state.storeSel, coins: state.me?.coins, collection: state.me?.collection, me: { inventory: state.me?.inventory || [], coins: state.me?.coins } });
   window.__buyStoreSel = () => socket.emit("buyStoreItem", { kind: state.storeKind, id: state.storeSel });
 
   window.__closePhone = () => closePhone();

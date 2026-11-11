@@ -23,6 +23,7 @@ import {
   clothingById,
   petById,
 } from "./public/js/storeCatalog.js";
+import { ART_PIECES, artCatalogEntry, PAINTING_CATALOG } from "./public/js/artPieces.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT) || 3000;
@@ -81,7 +82,12 @@ const FURNITURE_CATALOG = {
   holotv: { name: "TV", price: 32, w: 2, h: 1, blocks: true },
   pinball: { name: "Pinball cabinet", price: 38, w: 1, h: 1, blocks: true },
 };
+Object.assign(FURNITURE_CATALOG, PAINTING_CATALOG);
 const WALL_ART_TYPES = new Set(["art_mona","art_starry","art_pop","art_sunset","art_cubism","art_poster","art_hang","art_neon"]);
+for (const piece of ART_PIECES) {
+  FURNITURE_CATALOG[piece.type] = artCatalogEntry(piece);
+  WALL_ART_TYPES.add(piece.type);
+}
 const WALLPAPERS = ["paint-cream", "paint-sage", "paint-blush", "paint-slate"];
 const FLOORS = ["wood", "tile", "carpet"];
 const START_COINS = 50;

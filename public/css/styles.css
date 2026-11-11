@@ -717,6 +717,14 @@ input:focus { border-color: var(--coral); }
 }
 .furn-rug { transform: translate(-50%, -50%); pointer-events: none; }
 .furn-svg { display: block; filter: drop-shadow(0 5px 0 rgba(42,24,16,.18)); }
+img.painting-thumb {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  width: 40px;
+  height: 53px;
+  object-fit: contain;
+}
+.edit-inv-item img.painting-thumb { width: 24px; height: 32px; }
 
 .style-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
 .style-swatch {

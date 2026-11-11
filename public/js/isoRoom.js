@@ -5,6 +5,8 @@ import {
   normalizeFurnRot, snapFacingToAxis, furnTileDims, furnSpriteMetrics, furnBlitPos,
   drawFurnitureSprite, paintFurnitureSheet, hitFurnitureAt, FURN_SHEET_TYPES,
 } from "./furnIso.js";
+import { isPainting, drawPaintingOnWall, preloadPaintings, ART_TILE_SPAN, ART_WORLD_UP, ART_HANG_UP, ART_SIZE } from "./artPieces.js";
+preloadPaintings();
 /* 2D isometric pixel room renderer — 2000s house style, HouseRoom3D API. */
 const TW = 64;
 const TH = 32;
@@ -140,6 +142,36 @@ function wallArtQuad(wall, slot) {
     wallPt(wall, t1, ART_V1),
     wallPt(wall, t0, ART_V1),
   ];
+}
+function pixelArtQuad(wall, slot) {
+  const t0 = slot, t1 = slot + ART_TILE_SPAN;
+  const v0 = ART_HANG_UP, v1 = ART_HANG_UP + ART_WORLD_UP;
+  // Same corner order as wallArtQuad: bottom-t0, bottom-t1, top-t1, top-t0
+  return [
+    wallPt(wall, t0, v0),
+    wallPt(wall, t1, v0),
+    wallPt(wall, t1, v1),
+    wallPt(wall, t0, v1),
+  ];
+}
+function artQuadFor(type, wall, slot) {
+  return isPainting(type) ? pixelArtQuad(wall, slot) : wallArtQuad(wall, slot);
+}
+function artMetrics(type, wall, slot) {
+  const wname = (wall === "z" || wall === "left") ? "left" : "back";
+  const q = artQuadFor(type, wname, slot | 0);
+  const [bl, br, tr, tl] = q;
+  return {
+    type,
+    wall: wname,
+    slot: slot | 0,
+    tileSpan: isPainting(type) ? ART_TILE_SPAN : (ART_U1 - ART_U0),
+    upHeight: isPainting(type) ? ART_WORLD_UP : (ART_V1 - ART_V0),
+    screenSpan: Math.hypot(br.sx - bl.sx, br.sy - bl.sy),
+    verticalEdge: Math.hypot(tl.sx - bl.sx, tl.sy - bl.sy),
+    artSize: isPainting(type) ? ART_SIZE : null,
+    pixelArt: isPainting(type),
+  };
 }
 function quadBounds(pts) {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -550,10 +582,10 @@ export function createRoom3D(container) {
     const p = wallPt("left", switchSlot() + 0.38, 42);
     return { sx: p.sx - 4, sy: p.sy - 5, w: 8, h: 11 };
   }
-  function wallSlotWorld(wall, slot) {
+  function wallSlotWorld(wall, slot, type) {
     const s = Math.max(0, Math.min(gridSize - 1, slot | 0));
     const wname = (wall === "z" || wall === "left") ? "left" : "back";
-    const b = quadBounds(wallArtQuad(wname, s));
+    const b = quadBounds(artQuadFor(type, wname, s));
     return { sx: b.minX, sy: b.minY, w: b.w, h: b.h, wall: wname, slot: s };
   }
 
@@ -749,9 +781,12 @@ export function createRoom3D(container) {
 
     for (const art of wallArt) {
       const wall = (art.wall === "z" || art.wall === "left") ? "left" : "back";
-      const q = wallArtQuad(wall, art.slot);
       const typ = String(art.type || "");
-      if (typ.includes("neon") || typ.includes("poster")) {
+      const q = artQuadFor(typ, wall, art.slot);
+      if (isPainting(typ)) {
+        drawPaintingOnWall(ctx, typ, q, { dim: lightsOn ? 1 : 0.42 });
+        if (highlightId && art.id === highlightId) fillPoly(ctx, q, null, "#d4b46a", 2);
+      } else if (typ.includes("neon") || typ.includes("poster")) {
         fillPoly(ctx, q, typ.includes("neon") ? "#c43a4a" : "#3a5a7a", "#2a2c30");
         const inner = [
           wallPt(wall, art.slot + 0.28, 36),
@@ -792,10 +827,14 @@ export function createRoom3D(container) {
     }
     if (wallGhost) {
       const wall = (wallGhost.wall === "z" || wallGhost.wall === "left") ? "left" : "back";
-      const q = wallArtQuad(wall, wallGhost.slot);
-      ctx.globalAlpha = 0.45;
-      fillPoly(ctx, q, wallGhost.ok === false ? "#ff2b2b" : "#7ac8ff", "#fff");
-      ctx.globalAlpha = 1;
+      const q = artQuadFor(wallGhost.type, wall, wallGhost.slot);
+      if (isPainting(wallGhost.type) && wallGhost.ok !== false) {
+        drawPaintingOnWall(ctx, wallGhost.type, q, { alpha: 0.55, dim: lightsOn ? 1 : 0.5 });
+      } else {
+        ctx.globalAlpha = 0.45;
+        fillPoly(ctx, q, wallGhost.ok === false ? "#ff2b2b" : "#7ac8ff", "#fff");
+        ctx.globalAlpha = 1;
+      }
     }
   }
 
@@ -863,7 +902,7 @@ export function createRoom3D(container) {
       return { kind: "switch", floor };
     }
     for (const art of wallArt) {
-      const pos = wallSlotWorld(art.wall, art.slot);
+      const pos = wallSlotWorld(art.wall, art.slot, art.type);
       if (wpt.sx >= pos.sx && wpt.sx <= pos.sx + (pos.w || 22) && wpt.sy >= pos.sy && wpt.sy <= pos.sy + (pos.h || 18)) {
         return { kind: "wall", wall: pos.wall, slot: pos.slot, art, floor };
       }
@@ -1059,6 +1098,8 @@ export function createRoom3D(container) {
     nowServer,
     findFurnMesh,
     getWallArt() { return wallArt.slice(); },
+    artMetrics(type, wall, slot) { return artMetrics(type, wall, slot); },
+    tileSize() { return { tw: TW, th: TH, floorTilePx: TH }; },
     petSitting(name) {
       const p = people.find((x) => x.username === name);
       const st = personState.get(name);
