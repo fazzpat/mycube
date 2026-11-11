@@ -35,3 +35,20 @@ export async function clickCreatorOption(page, testId) {
   if (tab) await openCreatorTab(page, tab);
   await page.click(`[data-testid="${testId}"]`);
 }
+
+export async function goToLobby(page) {
+  const view = await page.evaluate(() => document.body.dataset.view);
+  if (view === "lobby") return;
+  if (view === "room") {
+    const btn = page.locator('[data-testid="leave-cube"]');
+    if (await btn.isVisible().catch(() => false)) {
+      await btn.click();
+    } else {
+      await page.evaluate(() => window.__leaveRoom?.());
+    }
+    await page.waitForSelector('body[data-view="lobby"]', { timeout: 15000 });
+    return;
+  }
+  await page.evaluate(() => window.__leaveRoom?.());
+  await page.waitForSelector('body[data-view="lobby"]', { timeout: 15000 });
+}

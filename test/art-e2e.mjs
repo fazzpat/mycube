@@ -4,7 +4,7 @@ import { spawn } from "child_process";
 import path from "path";
 import { fileURLToPath } from "url";
 import { ART_PIECES, PAINTING_CATALOG, PAINTING_IDS, ART_TILE_SPAN } from "../public/js/artPieces.js";
-import { openStartForm, clickCreatorOption } from "./startMenuHelp.mjs";
+import { openStartForm, clickCreatorOption, goToLobby } from "./startMenuHelp.mjs";
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SHOT = process.env.SHOT_DIR || path.join(ROOT, "screenshots");
@@ -38,13 +38,14 @@ async function customize(page, displayName) {
 
 async function saveAvatar(page) {
   await page.click('[data-testid="save-avatar"]');
-  await page.waitForSelector('body[data-view="lobby"]', { timeout: 10000 });
+  await page.waitForSelector('body[data-view="room"]', { timeout: 15000 });
 }
 
 async function loginToNewRoom(page, username, displayName, roomName) {
   await login(page, username);
   await customize(page, displayName);
   await saveAvatar(page);
+  await goToLobby(page);
   await page.click('[data-testid="add-menu-btn"]');
   await page.waitForSelector('[data-testid="friend-name"]');
   await page.fill('[data-testid="room-name"]', roomName);
@@ -54,6 +55,7 @@ async function loginToNewRoom(page, username, displayName, roomName) {
 }
 
 async function joinPublicRoom(page, roomName) {
+  await goToLobby(page);
   await page.click('[data-testid="add-menu-btn"]');
   await page.waitForSelector('[data-testid="room-list"]');
   const item = page.locator('[data-testid^="room-item-"]').filter({ hasText: roomName });

@@ -187,20 +187,11 @@ body[data-view="creator"] .toast {
   -webkit-tap-highlight-color: transparent;
 }
 
-.creator-tabs button.is-selected {
-  color: #fffdf4;
-  border-color: #f4c15d;
-  background: rgba(255, 196, 80, 0.14);
-  text-shadow:
-    0 0 8px rgba(255, 230, 140, 0.95),
-    0 0 14px rgba(255, 122, 89, 0.55);
-  box-shadow: 0 0 10px rgba(244, 193, 93, 0.35);
-}
-
+.creator-window [data-panel] { overflow: hidden; }
 .creator-tab-panels {
   flex: 1 1 auto;
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
   overscroll-behavior: contain;
   text-align: left;
   padding: 2px 2px 8px;
@@ -243,10 +234,49 @@ body[data-view="creator"] .toast {
   box-shadow: 2px 2px 0 #1a1020;
 }
 
+.creator-window button.swatch,
+.creator-window button.choice {
+  position: relative;
+}
+.creator-window button.swatch {
+  box-shadow: 2px 2px 0 #1a1020, inset 0 0 0 1px rgba(255, 248, 232, 0.35);
+}
 .creator-window button.swatch.selected,
 .creator-window button.choice.selected {
-  border-color: #f4c15d;
-  box-shadow: 2px 2px 0 #1a1020, 0 0 10px rgba(244, 193, 93, 0.55);
+  border-color: #ffe47a;
+  box-shadow:
+    0 0 0 2px #fff4c4,
+    0 0 0 5px #f4c15d,
+    0 0 14px rgba(255, 228, 122, 0.85);
+  z-index: 1;
+}
+.creator-window button.swatch.selected::after,
+.creator-window button.choice.selected::after {
+  content: "✓";
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  width: 16px;
+  height: 16px;
+  border-radius: 0;
+  background: #f4c15d;
+  color: #1a1020;
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
+  font-family: "Press Start 2P", monospace;
+  box-shadow: 1px 1px 0 #1a1020;
+  pointer-events: none;
+}
+.creator-tabs button.is-selected {
+  color: #1a1020;
+  background: #f4c15d;
+  border-color: #fff4c4;
+  text-shadow: none;
+  box-shadow:
+    0 0 0 2px #3d2c29,
+    0 0 14px rgba(255, 228, 122, 0.9);
+  font-weight: 700;
 }
 
 .creator-window button.swatch.is-cursor,
@@ -327,22 +357,41 @@ body[data-view="creator"] .toast {
   color: #fff;
 }
 
+/* Phone: character sits in a shrinking hero; the window hugs its content
+   so every tab's options stay on screen with no scrolling. */
+/* Phone: 44px tap targets, every option on screen, no scrolling.
+   The window hugs its content; the hero band takes leftover height. */
 @media (max-width: 780px) {
   #view-creator.creator-view {
     display: grid;
-    grid-template-rows: auto minmax(200px, 34vh) minmax(0, 1fr);
+    grid-template-rows: auto minmax(72px, 1fr) auto;
     grid-template-areas:
       "topbar"
       "hero"
       "window";
+    height: 100%;
+    max-height: 100%;
+    overflow: hidden;
   }
   #view-creator.creator-view .topbar.creator-topbar {
     grid-area: topbar;
-    padding: 8px 10px;
-    padding-top: max(8px, var(--safe-top));
+    padding: 6px 8px;
+    padding-top: max(6px, var(--safe-top));
     background: #1a1424;
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
+    border-bottom-width: 2px;
+    box-shadow: 0 2px 0 #1a1020;
+  }
+  #view-creator.creator-view .creator-topbar .brand,
+  #view-creator.creator-view .creator-topbar .user-chip {
+    font-size: 8px;
+    max-width: 42vw;
+  }
+  #view-creator.creator-view .creator-topbar .btn {
+    min-height: 36px;
+    padding: 6px 8px;
+    font-size: 7px;
   }
   #view-creator.creator-view .creator-room {
     grid-area: hero;
@@ -353,9 +402,7 @@ body[data-view="creator"] .toast {
     z-index: 0;
     background: #000;
   }
-  .creator-stage {
-    display: contents;
-  }
+  .creator-stage { display: contents; }
   .creator-hero {
     grid-area: hero;
     position: relative;
@@ -370,45 +417,253 @@ body[data-view="creator"] .toast {
   }
   #view-creator.creator-view #creator-preview,
   #view-creator.creator-view .preview-stage {
-    width: min(200px, 58vw);
-    height: 92%;
+    width: min(180px, 52vw);
+    height: 94%;
   }
   .creator-window {
     grid-area: window;
-    flex: unset;
-    width: calc(100% - 16px);
+    flex: none;
+    width: calc(100% - 16px - var(--safe-left) - var(--safe-right));
     max-width: 420px;
     justify-self: center;
+    height: auto;
     min-height: 0;
-    max-height: 100%;
+    max-height: none;
     overflow: hidden;
-    margin: 0 8px 8px;
-    padding: 12px 10px 10px;
+    margin: 0 calc(8px + var(--safe-left)) calc(6px + var(--safe-bottom));
+    padding: 6px 6px 6px;
+    border-width: 3px;
+    box-shadow:
+      0 0 0 3px #3d2c29,
+      0 0 0 5px #f4c15d,
+      0 3px 0 #1a1020,
+      0 0 16px rgba(244, 193, 93, 0.28);
   }
-  .creator-logo { font-size: 11px; margin-bottom: 4px; }
-  .creator-tag { margin-bottom: 8px; }
+  .creator-logo { font-size: 10px; margin: 0 0 4px; }
+  .creator-tag { display: none; }
+  .creator-tabs {
+    flex-wrap: nowrap;
+    gap: 2px;
+    margin: 0 0 4px;
+  }
   .creator-tabs button {
-    min-height: 34px;
-    padding: 6px 6px;
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 44px;
+    padding: 4px 2px;
     font-size: 7px;
+    line-height: 1.15;
+    border-width: 2px;
+  }
+  .creator-tab-panels {
+    flex: 0 0 auto;
+    overflow: hidden;
+    padding: 2px 8px 0;
+  }
+  .creator-window h3 {
+    font-size: 7px;
+    margin: 4px 0 4px;
+    color: #efe6ff;
+  }
+  .creator-window .swatch-row { gap: 4px; }
+  .creator-window button.swatch {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    border-width: 3px;
+    box-shadow: 2px 2px 0 #1a1020, inset 0 0 0 1px rgba(255, 248, 232, 0.45);
+  }
+  .creator-window button.choice {
+    flex: 1 1 calc(16.66% - 4px);
+    min-width: 0;
+    max-width: calc(25% - 4px);
+    min-height: 44px;
+    padding: 4px 3px;
+    font-size: 7px;
+    line-height: 1.15;
+    border-width: 3px;
+    box-shadow: 2px 2px 0 #1a1020;
+  }
+  .creator-window button.swatch.selected::after,
+  .creator-window button.choice.selected::after {
+    top: -6px;
+    right: -6px;
+    width: 18px;
+    height: 18px;
+    font-size: 12px;
+    line-height: 18px;
+  }
+  .creator-window .check-row {
+    font-size: 8px;
+    min-height: 44px;
+    margin-top: 4px;
+    gap: 8px;
+  }
+  .creator-window .check-row input[type="checkbox"] {
+    width: 22px;
+    height: 22px;
+    accent-color: #f4c15d;
   }
   .creator-footer {
-    position: sticky;
-    bottom: 0;
-    background: rgba(8, 6, 16, 0.96);
-    z-index: 1;
+    display: flex;
+    align-items: stretch;
+    gap: 6px;
+    position: static;
+    padding-top: 6px;
+    margin-top: 4px;
+    background: transparent;
+  }
+  .creator-window .field {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin-bottom: 0;
+  }
+  .creator-window .field label { display: none; }
+  .creator-window input[type="text"] {
+    font-size: 16px;
+    padding: 8px 8px;
+    min-height: 44px;
+  }
+  .creator-footer-actions { flex: 0 0 auto; display: flex; }
+  #view-creator.creator-view .creator-window .btn {
+    font-size: 8px;
+    padding: 8px 10px;
+    min-height: 44px;
+    min-width: 44px;
+    box-shadow: 2px 2px 0 #1a1020;
   }
   body[data-view="creator"] #toasts {
-    left: 50%;
-    width: min(260px, calc(100% - 24px));
-    transform: translateX(-50%);
+    top: calc(var(--safe-top, 0px) + 4px);
+    left: 8px;
+    right: auto;
+    width: min(180px, 50vw);
+    transform: none;
+    z-index: 5;
+  }
+  body[data-view="creator"] .toast {
+    padding: 6px 8px;
+    font-size: 10px;
+  }
+  body[data-view="creator"]:has(#view-creator.is-keyboard) #toasts {
+    display: none;
+  }
+  #view-creator.creator-view.is-keyboard {
+    grid-template-rows: auto 0 auto;
+  }
+  #view-creator.creator-view.is-keyboard .creator-hero,
+  #view-creator.creator-view.is-keyboard .creator-room {
+    min-height: 0;
+    height: 0;
+    overflow: hidden;
+    visibility: hidden;
   }
 }
 
 @media (max-width: 780px) and (max-height: 720px) {
-  #view-creator.creator-view {
-    grid-template-rows: auto minmax(180px, 30vh) minmax(0, 1fr);
+  .creator-logo { display: none; }
+}
+
+/* Short landscape / short desktop: 44px targets, no scroll. */
+@media (max-height: 500px) {
+  #view-creator.creator-view .topbar.creator-topbar {
+    padding: 4px 8px;
+    padding-top: max(4px, var(--safe-top));
+    border-bottom-width: 2px;
+    box-shadow: 0 2px 0 #1a1020;
   }
-  .creator-logo { margin-bottom: 2px; }
+  #view-creator.creator-view .creator-topbar .btn {
+    min-height: 32px;
+    padding: 4px 8px;
+    font-size: 7px;
+  }
+  .creator-stage {
+    gap: 8px;
+    padding: 4px 8px calc(4px + var(--safe-bottom));
+  }
+  #view-creator.creator-view #creator-preview,
+  #view-creator.creator-view .preview-stage {
+    width: min(200px, 34vw);
+    height: min(280px, 78vh);
+  }
+  .creator-window {
+    padding: 4px 6px 4px;
+    border-width: 3px;
+    box-shadow:
+      0 0 0 3px #3d2c29,
+      0 0 0 5px #f4c15d,
+      0 3px 0 #1a1020,
+      0 0 16px rgba(244, 193, 93, 0.28);
+  }
+  .creator-logo,
   .creator-tag { display: none; }
+  .creator-tabs {
+    flex-wrap: nowrap;
+    gap: 2px;
+    margin: 0 0 2px;
+  }
+  .creator-tabs button {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 44px;
+    padding: 4px 4px;
+    font-size: 7px;
+  }
+  .creator-tab-panels {
+    flex: 0 0 auto;
+    overflow: hidden;
+    padding: 2px 8px 0;
+  }
+  .creator-window h3 {
+    font-size: 7px;
+    margin: 2px 0 2px;
+    color: #efe6ff;
+  }
+  .creator-window .swatch-row { gap: 4px; }
+  .creator-window button.swatch {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    border-width: 3px;
+  }
+  .creator-window button.choice {
+    flex: 1 1 calc(12.5% - 4px);
+    min-width: 0;
+    max-width: calc(14.28% - 4px);
+    min-height: 44px;
+    padding: 4px 4px;
+    font-size: 7px;
+    line-height: 1.15;
+    border-width: 3px;
+  }
+  .creator-window .check-row {
+    font-size: 8px;
+    min-height: 44px;
+    margin-top: 3px;
+  }
+  .creator-footer {
+    display: flex;
+    align-items: stretch;
+    gap: 6px;
+    padding-top: 2px;
+    margin-top: 2px;
+  }
+  .creator-window .field {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin-bottom: 0;
+  }
+  .creator-window .field label { display: none; }
+  .creator-window input[type="text"] {
+    font-size: 16px;
+    padding: 6px 8px;
+    min-height: 44px;
+  }
+  #view-creator.creator-view .creator-window .btn {
+    font-size: 8px;
+    padding: 8px 10px;
+    min-height: 44px;
+    box-shadow: 2px 2px 0 #1a1020;
+  }
 }

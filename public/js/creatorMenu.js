@@ -12,7 +12,7 @@ const TABS = [
   { id: "shoes", label: "SHOES" },
 ];
 
-export function initCreatorMenu({ onShow } = {}) {
+export function initCreatorMenu({ onShow, getBackdropRoom } = {}) {
   const roomEl = document.getElementById("creator-room");
   const viewEl = document.getElementById("view-creator");
   const tabsEl = document.getElementById("creator-tabs");
@@ -24,6 +24,7 @@ export function initCreatorMenu({ onShow } = {}) {
   let tabIndex = 0;
   let optIndex = 0;
   let room = null;
+  let usingRoom = false;
   let ro = null;
 
   function tabButtons() {
@@ -130,16 +131,35 @@ export function initCreatorMenu({ onShow } = {}) {
     if (i >= 0) setTab(i);
   }
 
-  function mountRoom() {
-    if (room) {
-      room.resize?.();
+  function applyBackdrop(snap) {
+    if (!room) return;
+    usingRoom = Boolean(snap);
+    if (!snap) {
+      room.setStyle?.("paint-cream", "wood");
+      room.setGridSize?.(6);
+      room.setLights?.(true);
+      room.clear?.();
+      room.syncPeople?.([]);
       return;
     }
-    room = createEmptyRoomBackdrop(roomEl);
-    room.setStyle?.("paint-cream", "wood");
-    room.setGridSize?.(6);
-    room.setLights?.(true);
-    room.clear?.();
+    room.setGridSize?.(snap.size || snap.grid || 6);
+    room.setStyle?.(snap.wallpaper || "paint-cream", snap.floorStyle || "wood");
+    room.setLights?.(snap.lightsOn !== false);
+    room.setFurniture?.(snap.furniture || []);
+    room.setWallArt?.(snap.wallArt || []);
+    room.setTvs?.(snap.tvs || {});
+    room.setChessMap?.(snap.chess || {});
+    room.setUses?.(snap.uses || {});
+    room.setArcade?.(snap.arcade || {});
+    room.syncPeople?.([]);
+  }
+
+  function mountRoom() {
+    const snap = getBackdropRoom?.() || null;
+    if (!room) {
+      room = createEmptyRoomBackdrop(roomEl);
+    }
+    applyBackdrop(snap);
     room.resize?.();
   }
 
@@ -162,6 +182,7 @@ export function initCreatorMenu({ onShow } = {}) {
     paintTabs();
     popPreview();
     requestAnimationFrame(() => {
+      syncKeyboard();
       room?.resize?.();
       onShow?.();
     });
@@ -175,12 +196,30 @@ export function initCreatorMenu({ onShow } = {}) {
 
   tabsEl.addEventListener("click", onTabClick);
   document.addEventListener("keydown", onKey);
+  function syncKeyboard() {
+    if (!viewEl) return;
+    if (document.body.dataset.view !== "creator") {
+      viewEl.classList.remove("is-keyboard");
+      return;
+    }
+    const vv = window.visualViewport;
+    const covered = vv ? Math.max(0, window.innerHeight - vv.height - (vv.offsetTop || 0)) : 0;
+    viewEl.classList.toggle("is-keyboard", covered > 80);
+    room?.resize?.();
+    onShow?.();
+  }
+
   window.addEventListener("resize", () => {
     if (document.body.dataset.view === "creator") {
+      syncKeyboard();
       room?.resize?.();
       onShow?.();
     }
   });
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", syncKeyboard);
+    window.visualViewport.addEventListener("scroll", syncKeyboard);
+  }
   if (typeof ResizeObserver !== "undefined") {
     ro = new ResizeObserver(() => {
       if (document.body.dataset.view === "creator") {
@@ -209,6 +248,8 @@ export function initCreatorMenu({ onShow } = {}) {
     setTab: setTabById,
     moveOption,
     activateOption,
+    usingRoomBackdrop: () => usingRoom,
+    furnitureCount: () => room?.getFurniture?.()?.length || 0,
   };
 
   return { show, hide, setTab: setTabById };

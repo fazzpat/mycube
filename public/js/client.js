@@ -17,6 +17,10 @@ import { initChessUI } from "./chess-ui.js";
   const startMenu = initStartMenu();
   const creatorMenu = initCreatorMenu({
     onShow() { state.preview3d?.resize?.(); },
+    getBackdropRoom() {
+      if (state.creatorReturn === "room" && state.room) return state.room;
+      return null;
+    },
   });
 
   window.__lastSays = [];
@@ -186,11 +190,16 @@ import { initChessUI } from "./chess-ui.js";
         const b = document.createElement("button");
         b.type = "button";
         b.className = asColor ? "swatch" : "choice";
-        if (asColor) b.style.background = val;
-        else {
+        if (asColor) {
+          b.style.background = val;
+          b.title = String(val);
+          b.setAttribute("aria-label", `${key} ${val}`);
+        } else {
           const labels = { hair: HAIR_LABELS, top: TOP_LABELS, bottom: BOTTOM_LABELS, accessory: ACC_LABELS };
           const pretty = labels[key]?.[val] || (typeof val === "string" ? val : "");
           b.textContent = pretty;
+          b.title = pretty;
+          b.setAttribute("aria-label", pretty);
         }
         b.dataset.testid = `${key}-${i}`;
         if (state.draft[key] === val) b.classList.add("selected");
@@ -3092,7 +3101,10 @@ import { initChessUI } from "./chess-ui.js";
   socket.on("loggedIn", ({ user, rooms }) => {
     state.me = user;
     ingestRooms(rooms);
-    sessionStorage.setItem("hearthUser", user.username);
+    try {
+      sessionStorage.setItem("hearthUser", user.username);
+      localStorage.setItem("hearthUser", user.username);
+    } catch {}
     if (!user.avatar) {
       state.draft = { ...HearthAvatar.defaults(), displayName: user.username };
       $("#display-name").value = user.username;
@@ -3100,8 +3112,7 @@ import { initChessUI } from "./chess-ui.js";
       setView("creator");
     } else {
       state.draft = { ...user.avatar };
-      paintLobby();
-      setView("lobby");
+      // Returning users with an avatar enter their cube via joinedRoom.
     }
   });
 
@@ -3125,14 +3136,14 @@ import { initChessUI } from "./chess-ui.js";
     if (state.editMode) paintEditInventory();
     refreshActivityUI();
     if (state.view === "creator") {
-      returnFromCreator();
+      if (state.creatorReturn) {
+        returnFromCreator();
+      }
+      // First-time creation: stay put until joinedRoom lands them in their cube.
     } else if (state.view === "lobby") {
       paintLobby();
     }
     refreshPhoneScreens();
-    if (wasCreating) {
-      /* stay in lobby */
-    }
   });
 
   socket.on("roomsUpdated", (rooms) => {
@@ -3481,7 +3492,11 @@ import { initChessUI } from "./chess-ui.js";
     if (state.phoneApp === "lock") paintLock();
   });
 
-  socket.on("errorMsg", ({ message }) => toast(message));
+  socket.on("errorMsg", ({ message }) => {
+    toast(message);
+    if (!state.me || !state.me.username) setView("login");
+  });
+
 
   socket.on("coinsEarned", ({ amount, reason, coins }) => {
     if (state.me) state.me.coins = coins;
@@ -3572,11 +3587,34 @@ import { initChessUI } from "./chess-ui.js";
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("/sw.js").catch(() => {});
   }
-  paintLoginPreview();
-  setView("login");
-
-  const remembered = sessionStorage.getItem("hearthUser");
-  if (remembered && !$("#username-input").value) {
-    /* don't auto-login during tests; user can type */
+  function signOut() {
+    try {
+      sessionStorage.removeItem("hearthUser");
+      localStorage.removeItem("hearthUser");
+    } catch {}
+    closePhone();
+    state.me = null;
+    state.room = null;
+    state.people.clear();
+    state.room3d?.clear?.();
+    socket.emit("logout");
+    setView("login");
   }
+  window.__signOut = signOut;
+  $("#sign-out-lobby")?.addEventListener("click", signOut);
+  $("#sign-out-phone")?.addEventListener("click", signOut);
+
+  paintLoginPreview();
+
+  let remembered = "";
+  try { remembered = localStorage.getItem("hearthUser") || sessionStorage.getItem("hearthUser") || ""; } catch {}
+  if (remembered) {
+    socket.emit("login", { username: remembered });
+  } else {
+    setView("login");
+  }
+
+  socket.on("loggedOut", () => {
+    setView("login");
+  });
 })();

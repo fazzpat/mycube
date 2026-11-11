@@ -1070,7 +1070,56 @@ setInterval(() => {
 }, 10000);
 
 io.on("connection", (socket) => {
-  socket.on("login", ({ username } = {}) => {
+  function makeCube(name, owner) {
+    return {
+      id: "r" + roomSeq++,
+      name,
+      owner,
+      locked: false,
+      password: "",
+      occupants: [],
+      furniture: [],
+      size: START_SIZE,
+      wallpaper: "paint-cream",
+      floorStyle: "wood",
+      lightsOn: true,
+      tvs: {},
+      chess: {},
+      uses: {},
+      wallArt: [],
+      seats: {},
+      arcade: {},
+      invites: new Set(),
+    };
+  }
+
+  function homeCubeName(user) {
+    const n = String(user.avatar?.displayName || user.username || "My").slice(0, 18);
+    return (n + "'s Cube").slice(0, 28);
+  }
+
+  function ensureHomeRoom(user) {
+    if (user.homeRoomId) {
+      const existing = rooms.get(user.homeRoomId);
+      if (existing) return existing;
+    }
+    const owned = [...rooms.values()].find((r) => r.owner && r.owner.toLowerCase() === user.username.toLowerCase() && !r.publicPlace);
+    if (owned) {
+      user.homeRoomId = owned.id;
+      return owned;
+    }
+    const room = makeCube(homeCubeName(user), user.username);
+    rooms.set(room.id, room);
+    user.homeRoomId = room.id;
+    return room;
+  }
+
+  function enterHomeRoom(user, sock) {
+    const room = ensureHomeRoom(user);
+    joinUserToRoom(user, room, sock);
+  }
+
+    socket.on("login", ({ username } = {}) => {
     username = String(username || "").trim();
     if (!/^[a-zA-Z0-9_]{2,16}$/.test(username)) {
       socket.emit("errorMsg", {
@@ -1122,7 +1171,7 @@ io.on("connection", (socket) => {
       daily = DAILY_LOGIN_BONUS;
     }
     const resumeRoom = user.roomId ? rooms.get(user.roomId) : null;
-    socket.emit("loggedIn", { user: publicUser(user), rooms: publicRooms(), resumeRoomId: resumeRoom ? resumeRoom.id : null });
+    socket.emit("loggedIn", { user: publicUser(user), rooms: publicRooms(), resumeRoomId: resumeRoom ? resumeRoom.id : null, homeRoomId: user.homeRoomId || null });
     if (daily) socket.emit("coinsEarned", { amount: daily, reason: "daily", coins: user.coins });
     if (resumeRoom) {
       socket.join(resumeRoom.id);
@@ -1132,6 +1181,8 @@ io.on("connection", (socket) => {
         emitRoom(resumeRoom, "chessUpdated", { id: playing.id, game: publicChess(playing.game) });
       }
       socket.emit("joinedRoom", roomState(resumeRoom));
+    } else if (user.avatar) {
+      enterHomeRoom(user, socket);
     }
     notifyFriendWatchers(user);
   });
@@ -1152,10 +1203,13 @@ io.on("connection", (socket) => {
         }
       }
     }
+    const firstAvatar = !user.avatar;
     user.avatar = next;
     if (!user.avatar.displayName) user.avatar.displayName = user.username;
     emitProfile(user);
-    if (user.roomId) {
+    if (firstAvatar && !user.roomId) {
+      enterHomeRoom(user, socket);
+    } else if (user.roomId) {
       io.to(user.roomId).emit("userUpdated", snapshotPerson(user));
     }
   });
@@ -1254,6 +1308,17 @@ io.on("connection", (socket) => {
     leaveRoom(user);
     socket.emit("leftRoom");
     emitProfile(user);
+  });
+
+  socket.on("logout", () => {
+    const user = getUser(socket);
+    if (user) {
+      leaveRoom(user);
+      user.socketId = null;
+      notifyFriendWatchers(user);
+    }
+    socket.data.userKey = null;
+    socket.emit("loggedOut");
   });
 
   socket.on("move", ({ x, y } = {}) => {

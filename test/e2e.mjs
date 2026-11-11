@@ -4,7 +4,7 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import path from "path";
 import { fileURLToPath } from "url";
-import { openStartForm, openCreatorTab, clickCreatorOption } from "./startMenuHelp.mjs";
+import { openStartForm, openCreatorTab, clickCreatorOption, goToLobby } from "./startMenuHelp.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -43,10 +43,11 @@ async function customize(page, { displayName, hair, shirt, skin, glasses, hairCo
 
 async function saveAvatar(page) {
   await page.click('[data-testid="save-avatar"]');
-  await page.waitForSelector('body[data-view="lobby"]', { timeout: 10000 });
+  await page.waitForSelector('body[data-view="room"]', { timeout: 15000 });
 }
 
 async function openAddSheet(page) {
+  await goToLobby(page);
   await page.click('[data-testid="add-menu-btn"]');
   await page.waitForSelector('[data-testid="friend-name"]');
 }
@@ -317,6 +318,184 @@ async function checkShellOverflow(page, label) {
   check(label, Boolean(info.ok), JSON.stringify(info));
 }
 
+
+const CREATOR_TABS = ["body", "hair", "face", "top", "bottom", "shoes"];
+const CREATOR_PHONES = [
+  { name: "360x640", width: 360, height: 640 },
+  { name: "375x667", width: 375, height: 667 },
+  { name: "390x844", width: 390, height: 844 },
+  { name: "414x896", width: 414, height: 896 },
+  { name: "844x390 landscape", width: 844, height: 390 },
+];
+
+async function measureCreatorFit(page, tab) {
+  return page.evaluate((tab) => {
+    const view = document.getElementById("view-creator");
+    const win = document.querySelector('[data-testid="creator-window"]');
+    const panels = document.getElementById("creator-tab-panels");
+    const panel = document.querySelector(`[data-testid="creator-panel-${tab}"]`);
+    const vv = window.visualViewport;
+    const vw = vv?.width ?? innerWidth;
+    const vh = vv?.height ?? innerHeight;
+    const pad = 2;
+    const inView = (el) => {
+      if (!el) return { missing: true };
+      const style = getComputedStyle(el);
+      if (style.display === "none" || style.visibility === "hidden" || el.classList.contains("hidden") || el.closest(".hidden")) {
+        return { missing: true };
+      }
+      const r = el.getBoundingClientRect();
+      if (r.width < 1 || r.height < 1) return { missing: true };
+      const ok = r.top >= -pad && r.left >= -pad && r.bottom <= vh + pad && r.right <= vw + pad;
+      return { ok, top: +r.top.toFixed(1), bottom: +r.bottom.toFixed(1), w: +r.width.toFixed(1), h: +r.height.toFixed(1) };
+    };
+    const noScroll = (el, name) => {
+      if (!el) return { name, ok: false, missing: true };
+      const slack = 1.5;
+      // Vertical overflow is the "must not scroll" rule. A few px of horizontal
+      // halo from the selected-state ring is allowed and is not user-scrollable.
+      return { name, ok: el.scrollHeight <= el.clientHeight + slack && el.scrollWidth <= el.clientWidth + 8, scrollH: el.scrollHeight, clientH: el.clientHeight, scrollW: el.scrollWidth, clientW: el.clientWidth };
+    };
+    const options = [...(panel?.querySelectorAll("button.swatch, button.choice, .check-row") || [])]
+      .filter((el) => !el.closest(".hidden"));
+    return {
+      scrolls: [
+        noScroll(document.documentElement, "html"),
+        noScroll(document.body, "body"),
+        noScroll(view, "view"),
+        noScroll(win, "window"),
+        noScroll(panels, "panels"),
+        noScroll(panel, "panel"),
+      ],
+      chrome: {
+        topbar: inView(document.querySelector(".topbar")),
+        back: inView(document.querySelector("[data-testid=creator-back]")),
+        tabs: inView(document.querySelector("[data-testid=creator-tabs]")),
+        tab: inView(document.querySelector(`[data-testid=creator-tab-${tab}]`)),
+        name: inView(document.querySelector("[data-testid=display-name]")),
+        save: inView(document.querySelector("[data-testid=save-avatar]")),
+        preview: inView(document.querySelector("[data-testid=creator-preview]")),
+      },
+      optionFits: options.map((el) => ({ id: el.dataset.testid || el.id || el.textContent.trim(), minH: Math.round(el.getBoundingClientRect().height), ...inView(el) })),
+    };
+  }, tab);
+}
+
+async function assertCreatorTabsFit(page, viewportName) {
+  await page.evaluate(() => document.getElementById("creator-back")?.classList.remove("hidden"));
+  for (const tab of CREATOR_TABS) {
+    await openCreatorTab(page, tab);
+    if (tab === "face") {
+      await clickCreatorOption(page, "accessory-4");
+      await page.waitForSelector("#headphone-color-field:not(.hidden)", { timeout: 4000 }).catch(() => {});
+    }
+    const info = await measureCreatorFit(page, tab);
+    const scrollFail = info.scrolls.filter((r) => !r.ok);
+    check(
+      `Creator ${viewportName} ${tab.toUpperCase()} does not scroll`,
+      scrollFail.length === 0,
+      JSON.stringify(scrollFail.length ? scrollFail : { ok: true })
+    );
+    const chromeFail = Object.entries(info.chrome).filter(([, v]) => v.missing || v.ok === false);
+    check(
+      `Creator ${viewportName} ${tab.toUpperCase()} chrome and options stay in view`,
+      chromeFail.length === 0 && info.optionFits.every((o) => o.ok && !o.missing),
+      JSON.stringify({ chrome: chromeFail, options: info.optionFits.filter((o) => !o.ok || o.missing) })
+    );
+    if (viewportName !== "844x390 landscape") {
+      const small = info.optionFits.filter((o) => !o.missing && o.minH < 44);
+      check(
+        `Creator ${viewportName} ${tab.toUpperCase()} tap targets are at least 44px`,
+        small.length === 0,
+        JSON.stringify(small)
+      );
+    }
+  }
+}
+
+async function runCreatorPhoneAndBoot(browser) {
+  log("New visitors see the arcade start menu; returning users enter their cube");
+  const fresh = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const fp = await fresh.newPage();
+  fp.setDefaultTimeout(20000);
+  await fp.goto(BASE, { waitUntil: "domcontentloaded" });
+  await fp.waitForSelector('[data-testid="start-menu"]', { timeout: 15000 });
+  const bootView = await fp.evaluate(() => document.body.dataset.view);
+  check("A new visitor with no account sees the arcade start menu", bootView === "login" && await fp.locator('[data-testid="start-menu"]').isVisible(), bootView);
+  await fresh.close();
+
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const page = await ctx.newPage();
+  page.setDefaultTimeout(20000);
+  await login(page, "returnee");
+  await customize(page, { displayName: "Returnee", hair: 2, shirt: 1, skin: 2, glasses: false });
+  await saveAvatar(page);
+  await page.waitForSelector('body[data-view="room"]');
+  const homeTitle = await page.evaluate(() => document.querySelector('[data-testid="room-title"]')?.textContent || "");
+  check("After creating a character, a new user lands in their own cube", /returnee/i.test(homeTitle) && await page.locator('body[data-view="room"]').count() === 1, homeTitle);
+
+  await page.evaluate(() => window.__debugKit?.({ furniture: ["capsulecouch", "holotv", "lamp"] }));
+  await page.waitForTimeout(150);
+  await page.evaluate(() => { window.__startPlace?.("capsulecouch"); window.__clickTile(2, 3); });
+  await page.waitForTimeout(120);
+  await page.evaluate(() => { window.__startPlace?.("holotv"); window.__clickTile(1, 1); });
+  await page.waitForTimeout(120);
+  await page.evaluate(() => { window.__startPlace?.("lamp"); window.__clickTile(4, 2); });
+  await page.waitForTimeout(200);
+  await page.evaluate(() => window.__exitEdit?.());
+  const placed = await page.evaluate(() => (window.HouseRoom3D?.getFurniture?.() || []).length);
+  check("Home cube accepted furniture for the in-room creator backdrop", placed >= 2, String(placed));
+  await openPhoneApp(page, "wardrobe");
+  await page.waitForSelector('[data-testid="creator-window"]');
+  await page.waitForTimeout(400);
+  const inRoomBd = await page.evaluate(() => ({
+    using: window.__creatorMenu?.usingRoomBackdrop?.(),
+    furn: window.__creatorMenu?.furnitureCount?.(),
+  }));
+  check(
+    "Editing a character from inside a cube uses that cube as the creator backdrop",
+    inRoomBd.using === true && inRoomBd.furn >= 2,
+    JSON.stringify(inRoomBd)
+  );
+  await page.click('[data-testid="creator-back"]');
+  await page.waitForSelector('body[data-view="room"]');
+
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.waitForSelector('body[data-view="room"]', { timeout: 20000 });
+  const afterReload = await page.evaluate(() => ({
+    view: document.body.dataset.view,
+    menu: Boolean(document.querySelector('[data-testid="start-menu"]') && !document.getElementById("view-login")?.classList.contains("hidden")),
+    title: document.querySelector('[data-testid="room-title"]')?.textContent || "",
+  }));
+  check(
+    "A returning user with a remembered login skips the start menu and boots into their own cube",
+    afterReload.view === "room" && !afterReload.menu && /returnee/i.test(afterReload.title),
+    JSON.stringify(afterReload)
+  );
+
+  await page.evaluate(() => window.__signOut?.());
+  await page.waitForSelector('[data-testid="start-menu"]', { timeout: 15000 });
+  check("Sign out returns the user to the arcade start menu", await page.locator('[data-testid="start-menu"]').isVisible());
+  await ctx.close();
+
+  log("Creator options fit every phone tab without scrolling");
+  const cctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const cp = await cctx.newPage();
+  cp.setDefaultTimeout(20000);
+  await login(cp, "fituser");
+  await cp.waitForSelector('[data-testid="creator-window"]');
+  await cp.waitForTimeout(400);
+  const emptyBd = await cp.evaluate(() => window.__creatorMenu?.usingRoomBackdrop?.());
+  check("A new user's creator uses the empty cube backdrop", emptyBd === false, String(emptyBd));
+  for (const vp of CREATOR_PHONES) {
+    await cp.setViewportSize({ width: vp.width, height: vp.height });
+    await cp.waitForTimeout(200);
+    await cp.evaluate(() => { window.__creatorMenu && 0; document.querySelector("[data-testid=creator-room]") && null; });
+    await assertCreatorTabsFit(cp, vp.name);
+  }
+  await cctx.close();
+}
+
 async function runAppShellFit(browser) {
   const i14 = devices["iPhone 14"] || devices["iPhone 13"];
   const ctx = await browser.newContext({ ...i14, hasTouch: true, isMobile: true });
@@ -364,8 +543,9 @@ async function runAppShellFit(browser) {
   await customize(page, { displayName: "Pia", hair: 1, shirt: 2, skin: 2, glasses: false });
   await saveAvatar(page);
   await page.setViewportSize(i14.viewport);
-  await page.waitForSelector('body[data-view="lobby"]');
+  await page.waitForSelector('body[data-view="room"]');
   await page.waitForTimeout(250);
+  await goToLobby(page);
   await assertInsideViewport(page, [".lobby-topbar", '[data-testid="friend-search"]', '[data-testid="add-menu-btn"]'], "Contact-list home fits the iPhone 14 viewport");
   await page.screenshot({ path: `${SHOT}/27-app-home.png` });
 
@@ -629,6 +809,7 @@ async function runStoresAndCyberShots(browser) {
       await pg.setViewportSize({ width: 390, height: 1100 });
       await customize(pg, { displayName: names[i].d, hair: i, shirt: i, skin: i % 5, glasses: i === 2 });
       await saveAvatar(pg);
+      await goToLobby(pg);
       await openAddSheet(pg);
       await pg.waitForSelector('[data-testid="room-list"] >> text=Lounge Cube', { timeout: 10000 });
       await pg.locator('[data-testid="room-list"] >> text=Lounge Cube').click();
@@ -1061,7 +1242,10 @@ try {
   await alice.screenshot({ path: `${SHOT}/01-character-creator.png` });
   await alice.setViewportSize({ width: 1280, height: 800 });
   await saveAvatar(alice);
-  check("Alice can create an avatar and reach the lobby", await alice.locator('body[data-view="lobby"]').count() === 1);
+  check("Alice can create an avatar and land in her own cube", await alice.locator('body[data-view="room"]').count() === 1);
+  const aliceHome = await alice.evaluate(() => document.querySelector('[data-testid="room-title"]')?.textContent || "");
+  check("Alice's home cube is her own", /alice/i.test(aliceHome), aliceHome);
+  await goToLobby(alice);
 
   await login(bob, "bob");
   const varietyLooks = [
@@ -1091,7 +1275,8 @@ try {
   await bob.locator('[data-testid="creator-preview"]').screenshot({ path: `${SHOT}/07-character-closeup.png` });
   await bob.locator('[data-testid="creator-preview"]').screenshot({ path: `${SHOT}/32-avatar-closeup.png` });
   await saveAvatar(bob);
-  check("Bob can create an avatar and reach the lobby", await bob.locator('body[data-view="lobby"]').count() === 1);
+  check("Bob can create an avatar and land in his own cube", await bob.locator('body[data-view="room"]').count() === 1);
+  await goToLobby(bob);
 
   log("They add each other as friends");
   await openAddSheet(alice);
@@ -2095,6 +2280,7 @@ try {
   await runMobileWalkAndPlace(browser, devices["Pixel 5"] ? "Pixel 5" : "Pixel 7");
 
   log("App shell, PWA, and short/tall phone viewports");
+  await runCreatorPhoneAndBoot(browser);
   await runAppShellFit(browser);
 
   log("Phone playtest: follow camera, chess seating, and touch interactions");
