@@ -160,10 +160,11 @@ function addSticker(buf) {
   return buf;
 }
 
-function drawPet(buf, kind, key, pal, sit, walkStep, blink = "open") {
+function drawPet(buf, kind, key, pal, sit, walkStep, blink = "open", wag = 0, bob = 0) {
   const cx = key === "e" ? 17 : 16;
-  const headY = sit ? 13 : 11;
-  const bodyY = sit ? 21 : 20;
+  const bobY = sit ? (bob || 0) : 0;
+  const headY = (sit ? 13 : 11) + bobY;
+  const bodyY = (sit ? 21 : 20) + bobY;
   const ground = PET_GROUND_Y;
   // Body first
   const bw = sit ? 8.5 : 7.2, bh = sit ? 5.5 : 6.2;
@@ -182,9 +183,9 @@ function drawPet(buf, kind, key, pal, sit, walkStep, blink = "open") {
       ellipse(buf, cx + 2, ground, 2.2, 1.5, pal.fur, "paw", 7);
     }
   }
-  // Tail
+  // Tail — when sitting, a small wag shifts the tail left/right (wag=0 matches the still pose).
   if (kind !== "parrot" && kind !== "turtle") {
-    const tx = key === "e" ? cx - 8 : cx - 8;
+    const tx = cx - 8 + (sit ? (wag || 0) : 0);
     const ty = bodyY;
     ellipse(buf, tx, ty + (kind === "cat" || kind === "fox" ? -2 : 1), kind === "bunny" ? 2 : 3.2, kind === "cat" || kind === "fox" ? 4.5 : 2.6, kind === "fox" ? pal.accent : pal.fur, "tail", 6);
   }
@@ -294,10 +295,12 @@ export function drawPetSprite(kind, flags = {}, frame = 0) {
   const view = petViewOfDir(dir);
   const walkStep = walking && !sit ? (frame % 2) : 0;
   const blink = flags.blink || "open";
-  const key = ["ink", k, view.key, view.flip ? 1 : 0, sit ? 1 : 0, walking ? 1 : 0, walkStep, blink].join(":");
+  const wag = sit ? (flags.wag | 0) : 0;
+  const bob = sit ? (flags.bob | 0) : 0;
+  const key = ["ink", k, view.key, view.flip ? 1 : 0, sit ? 1 : 0, walking ? 1 : 0, walkStep, blink, wag, bob].join(":");
   if (cache.has(key)) return cache.get(key);
   let buf = makeBuf();
-  drawPet(buf, k, view.key, PALS[k], sit, walkStep, blink);
+  drawPet(buf, k, view.key, PALS[k], sit, walkStep, blink, wag, bob);
   if (view.flip) buf = flipBuf(buf, true);
   buf = plantPet(buf);
   buf = addInk(buf);

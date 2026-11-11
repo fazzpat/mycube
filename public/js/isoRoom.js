@@ -369,9 +369,80 @@ function shoePopAt(id, shoes, now) {
   return dt;
 }
 
-function drawPetSprite(kind, frame, walking, sit, facing, blink) {
-  return drawPetPixel(kind, { walking, sit, facing, dir: facing ? facingIndex8(facing) : undefined, blink }, frame);
+
+function drawPetSprite(kind, frame, walking, sit, facing, blink, wag, bob) {
+  return drawPetPixel(kind, { walking, sit, facing, dir: facing ? facingIndex8(facing) : undefined, blink, wag: wag || 0, bob: bob || 0 }, frame);
 }
+
+function facingVec(facing) {
+  let fx = facing?.x || 0, fz = facing?.z || 0;
+  const len = Math.hypot(fx, fz);
+  if (len < 1e-6) return { fx: 1, fz: 0 };
+  return { fx: fx / len, fz: fz / len };
+}
+
+// Sit beside the owner's feet, slightly in front, on the iso-camera-visible side.
+// Camera looks from +x/+y, so the side that increases x+y is more visible.
+export function petSitTarget(ox, oy, facing, opts = {}) {
+  const { fx, fz } = facingVec(facing);
+  const rx = -fz, ry = fx;
+  const side = (rx + ry) >= 0 ? 1 : -1;
+  const front = (fx + fz) < 0 ? 0.08 : 0.20;
+  const SIDE = 0.40;
+  const gridSize = opts.gridSize || 6;
+  const blocked = opts.blocked || new Set();
+  const occupied = opts.occupied || new Set();
+  const ideal = { x: ox + rx * side * SIDE + fx * front, y: oy + ry * side * SIDE + fz * front };
+  const candidates = [ideal];
+  const push = (x, y) => candidates.push({ x, y });
+  push(ox + rx * side * 0.46, oy + ry * side * 0.46);
+  push(ox + rx * side * SIDE + 0.16, oy + ry * side * SIDE + 0.16);
+  push(ox + rx * (-side) * SIDE + fx * front, oy + ry * (-side) * SIDE + fz * front);
+  push(ox + 0.22, oy + 0.22);
+  const dirs = [
+    [rx * side, ry * side], [fx, fz], [1, 0], [0, 1], [1, 1],
+    [-1, 0], [0, -1], [1, -1], [-1, 1], [-1, -1],
+  ];
+  for (const dist of [0.50, 0.62, 0.75, 0.9, 1.05]) {
+    for (const [dx, dy] of dirs) {
+      const len = Math.hypot(dx, dy) || 1;
+      push(ox + (dx / len) * dist, oy + (dy / len) * dist);
+    }
+  }
+  function legal(x, y) {
+    const tx = Math.round(x), ty = Math.round(y);
+    if (tx < 0 || ty < 0 || tx >= gridSize || ty >= gridSize) return false;
+    const k = tx + "," + ty;
+    return !occupied.has(k) && !blocked.has(k);
+  }
+  let best = null, bestD = Infinity;
+  for (const c of candidates) {
+    if (!legal(c.x, c.y)) continue;
+    const d = Math.hypot(c.x - ideal.x, c.y - ideal.y);
+    if (d < bestD) { bestD = d; best = c; }
+  }
+  if (best) return best;
+  return {
+    x: Math.max(0, Math.min(gridSize - 0.05, ideal.x)),
+    y: Math.max(0, Math.min(gridSize - 0.05, ideal.y)),
+  };
+}
+
+export function petFollowTarget(ox, oy, facing, gridSize = 6) {
+  const { fx, fz } = facingVec(facing);
+  return {
+    x: Math.max(0, Math.min(gridSize - 0.05, ox - fx * 0.55)),
+    y: Math.max(0, Math.min(gridSize - 0.05, oy - fz * 0.55)),
+  };
+}
+
+export function petSitFacing(facing) {
+  const dir = facingIndex8(facing || { x: 1, z: 1 });
+  if (dir === 4) return { x: 1, z: 0 };
+  if (dir === 5 || dir === 6) return { x: 0, z: 1 };
+  return facing || { x: 1, z: 1 };
+}
+
 
 export function createAvatarPreview(container) {
   container.innerHTML = "";
@@ -787,18 +858,27 @@ export function createRoom3D(container) {
       };
       const spr = drawAvatarSprite(p.avatar || {}, flags, frame);
       const foot = tileToScreen(x + 0.5, y + 0.5);
-      list.push({ kind: "person", id: p.username, type: "person", depth: x + y + 0.45, sx: foot.sx - AV_W / 2, sy: foot.sy - AV_GROUND_Y, w: AV_W, h: AV_H, spr, raw: p, tileX: x, tileY: y });
+      let depth = x + y + 0.45;
+      if (p.sitting) {
+        for (const f of furniture) {
+          const fr = normalizeFurnRot(f.rot);
+          const dims = furnTileDims(f.type, fr);
+          if (x < f.x - 0.5 || y < f.y - 0.5 || x >= f.x + dims.w || y >= f.y + dims.h) continue;
+          const fd = f.x + f.y + (dims.w + dims.h) / 2 + 0.2;
+          if (fd + 0.08 > depth) depth = fd + 0.08;
+        }
+      }
+      list.push({ kind: "person", id: p.username, type: "person", depth, sx: foot.sx - AV_W / 2, sy: foot.sy - AV_GROUND_Y, w: AV_W, h: AV_H, spr, raw: p, tileX: x, tileY: y });
       if (p.activePet) {
-        const sit = !walking && !p.sitting;
-        const facing = p.facing || st.facing || { x: 1, z: 0 };
-        const fx = facing.x || 0, fz = facing.z || 0;
-        const rx = -fz, ry = fx;
-        const plen = Math.hypot(rx, ry) || 1;
-        const pst = st.petX != null ? { x: st.petX, y: st.petY } : { x: x + (rx / plen) * 0.45, y: y + (ry / plen) * 0.45 };
+        const sit = Boolean(st.petSit);
+        const petWalking = Boolean(st.petWalking);
+        const facing = st.petFacing || p.facing || st.facing || { x: 1, z: 0 };
+        const pst = st.petX != null ? { x: st.petX, y: st.petY } : { x, y };
         const pf = tileToScreen(pst.x + 0.5, pst.y + 0.5);
-        const hover = false;
-        const petAnim = tickChibiAnim(p.username + "-pet", now, { walking: false, targetDir: 1 });
-        const pspr = drawPetSprite(p.activePet, frame, walking || hover, sit && !hover, facing, petAnim.blink);
+        const petAnim = tickChibiAnim(p.username + "-pet", now, { walking: petWalking, targetDir: facingIndex8(facing) });
+        const wag = sit ? (Math.sin(now / 160) > 0.2 ? 1 : Math.sin(now / 160) < -0.2 ? -1 : 0) : 0;
+        const bob = sit && Math.sin(now / 480) > 0.15 ? -1 : 0;
+        const pspr = drawPetSprite(p.activePet, frame, petWalking, sit, facing, petAnim.blink, wag, bob);
         list.push({ kind: "pet", id: p.username + "-pet", type: "pet", depth: pst.x + pst.y + 0.35, sx: pf.sx - PET_W / 2, sy: pf.sy - PET_GROUND_Y, w: PET_W, h: PET_H, spr: pspr });
       }
     }
@@ -1038,8 +1118,61 @@ export function createRoom3D(container) {
     }
   }
 
+  let lastPetStep = 0;
+  function stepPets(now) {
+    const dt = lastPetStep ? Math.min(0.05, (now - lastPetStep) / 1000) : 0;
+    lastPetStep = now;
+    const blocked = (globalThis.HouseIso?.blockedSet(furniture) || new Set());
+    const occupied = new Set();
+    for (const p of people) {
+      const ost = personState.get(p.username) || p;
+      occupied.add(Math.round(ost.x ?? p.x) + "," + Math.round(ost.y ?? p.y));
+    }
+    for (const p of people) {
+      const st = personState.get(p.username);
+      if (!st) continue;
+      if (!(p.activePet || st.activePet)) {
+        st.petSit = false;
+        st.petWalking = false;
+        continue;
+      }
+      const ox = st.x, oy = st.y;
+      const walking = Boolean(st.walking);
+      const facing = p.facing || st.facing || { x: 1, z: 0 };
+      const ownerKey = Math.round(ox) + "," + Math.round(oy);
+      const occ = new Set(occupied);
+      occ.delete(ownerKey);
+      const want = walking
+        ? petFollowTarget(ox, oy, facing, gridSize)
+        : petSitTarget(ox, oy, facing, { blocked, occupied: occ, gridSize, sitting: p.sitting || st.sitting });
+      if (st.petX == null) { st.petX = ox; st.petY = oy; }
+      const dx = want.x - st.petX, dy = want.y - st.petY;
+      const dist = Math.hypot(dx, dy);
+      const speed = walking ? 3.15 : 3.35;
+      if (dist < 0.08) {
+        st.petX = want.x;
+        st.petY = want.y;
+        st.petWalking = false;
+        st.petSit = !walking;
+      } else if (dt > 0) {
+        const step = Math.min(dist, speed * dt);
+        st.petX += (dx / dist) * step;
+        st.petY += (dy / dist) * step;
+        st.petWalking = true;
+        st.petSit = false;
+      } else {
+        st.petWalking = true;
+        st.petSit = false;
+      }
+      st.petFacing = st.petWalking
+        ? { x: dx, z: dy }
+        : (walking ? facing : petSitFacing(facing));
+    }
+  }
+
   function render(now) {
     if (!alive) return;
+    stepPets(now);
     if (moveTarget && people.length) {
       const name = followName || (people[0] && people[0].username);
       const st = personState.get(name) || people.find((p) => p.username === name);
@@ -1319,13 +1452,7 @@ export function createRoom3D(container) {
       st.walking = Boolean(p.walking);
       st.dirX = p.dirX || 0;
       st.dirY = (p.dirZ ?? p.dirY) || 0;
-      const facing = p.facing || { x: 1, z: 0 };
-      const rx = -(facing.z || 0), ry = facing.x || 0;
-      const plen = Math.hypot(rx, ry) || 1;
-      const wantX = st.x + (rx / plen) * 0.45;
-      const wantY = st.y + (ry / plen) * 0.45;
-      st.petX = (st.petX ?? wantX) + (wantX - (st.petX ?? wantX)) * 0.2;
-      st.petY = (st.petY ?? wantY) + (wantY - (st.petY ?? wantY)) * 0.2;
+      if (st.petX == null) { st.petX = st.x; st.petY = st.y; }
       return p;
     });
   }
@@ -1394,9 +1521,22 @@ export function createRoom3D(container) {
     petSitting(name) {
       const p = people.find((x) => x.username === name);
       const st = personState.get(name);
-      if (!p?.activePet) return false;
-      return st ? !st.walking : !p.walking;
+      if (!p?.activePet && !st?.activePet) return false;
+      return Boolean(st?.petSit);
     },
+    petPose(name) {
+      const p = people.find((x) => x.username === name);
+      const st = personState.get(name);
+      if (!p?.activePet && !st?.activePet) return null;
+      return {
+        sitting: Boolean(st?.petSit),
+        x: st?.petX ?? null,
+        y: st?.petY ?? null,
+        following: Boolean((st?.walking || p?.walking) && !st?.petSit),
+        walking: Boolean(st?.petWalking),
+      };
+    },
+    petSitTarget,
     bagSwinging(id) { const u = uses[id]; return Boolean(u && (u.hit || u.swing || u.move || (u.lastHitAt && (Date.now() - u.lastHitAt) < 2500))); },
     personFlags(name) {
       const p = people.find((x) => x.username === name);

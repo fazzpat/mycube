@@ -1559,8 +1559,49 @@ try {
   await alice.waitForFunction(() => window.HouseRoom3D.petSitting("alice"), null, { timeout: 8000 });
   check("The owner's pet sits beside them when they stop walking", await alice.evaluate(() => window.HouseRoom3D.petSitting("alice")));
   check("Every viewer sees the pet sitting in the same pose", await bob.evaluate(() => window.HouseRoom3D.petSitting("alice")));
+  const sitPose = await alice.evaluate(() => {
+    const pose = window.HouseRoom3D.petPose("alice");
+    const tile = window.HouseRoom3D.personTile("alice");
+    return { pose, tile };
+  });
+  const bobSitPose = await bob.evaluate(() => window.HouseRoom3D.petPose("alice"));
+  const sitDist = (sitPose.pose && sitPose.tile)
+    ? Math.hypot(sitPose.pose.x - sitPose.tile.x, sitPose.pose.y - sitPose.tile.y)
+    : 99;
+  const sitSync = sitPose.pose && bobSitPose
+    && Math.hypot((sitPose.pose.x ?? 0) - (bobSitPose.x ?? 0), (sitPose.pose.y ?? 0) - (bobSitPose.y ?? 0)) < 0.15
+    && bobSitPose.sitting;
+  check(
+    "After the owner stops, the pet sits adjacent to their feet",
+    Boolean(sitPose.pose?.sitting && sitDist <= 1 && sitDist >= 0.12),
+    JSON.stringify({ sitPose, sitDist })
+  );
+  check(
+    "Every viewer sees the pet in the same sit placement",
+    Boolean(sitSync),
+    JSON.stringify({ alice: sitPose.pose, bob: bobSitPose })
+  );
   await alice.waitForTimeout(300);
   await alice.screenshot({ path: `${SHOT}/12-pet-sitting.png` });
+
+  await alice.evaluate(() => window.__clickTile(0, 5));
+  await alice.waitForFunction(() => {
+    const flags = window.HouseRoom3D.personFlags("alice");
+    const pose = window.HouseRoom3D.petPose("alice");
+    return Boolean(flags?.walking && pose && !pose.sitting);
+  }, null, { timeout: 8000 });
+  const followPose = await alice.evaluate(() => window.HouseRoom3D.petPose("alice"));
+  const bobFollow = await bob.evaluate(() => window.HouseRoom3D.petPose("alice"));
+  check(
+    "When the owner walks again, the pet stands and follows",
+    Boolean(followPose && !followPose.sitting && (followPose.following || followPose.walking)),
+    JSON.stringify(followPose)
+  );
+  check(
+    "Every viewer sees the pet leave the sit and follow",
+    Boolean(bobFollow && !bobFollow.sitting),
+    JSON.stringify(bobFollow)
+  );
 
   log("TV and light switch");
   await alice.evaluate(() => window.__debugKit({ furniture: ["tv", "fridge", "chesstable", "punchbag", "benchpress", "treadmill"], coins: 400 }));
