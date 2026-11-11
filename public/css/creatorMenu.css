@@ -535,10 +535,10 @@ body[data-view="creator"]:has(#view-creator.is-keyboard) #toasts {
   top: auto !important;
   right: auto !important;
   bottom: auto !important;
-  width: var(--phone-w, min(260px, 64vw)) !important;
-  height: var(--phone-h, min(440px, 53dvh)) !important;
-  max-width: var(--phone-w, min(260px, 64vw)) !important;
-  max-height: var(--phone-h, min(440px, 53dvh)) !important;
+  width: var(--phone-w, min(256px, calc(100vw - 24px))) !important;
+  height: var(--phone-h, min(384px, calc(var(--layout-h, var(--app-h, 100dvh)) - var(--dock-h) - 56px))) !important;
+  max-width: var(--phone-w, min(256px, calc(100vw - 24px))) !important;
+  max-height: var(--phone-h, min(384px, calc(var(--layout-h, var(--app-h, 100dvh)) - var(--dock-h) - 56px))) !important;
   min-height: 0 !important;
 }
 
@@ -614,8 +614,8 @@ body[data-view="creator"]:has(#view-creator.is-keyboard) #toasts {
    for 40px targets + pager) and let JS dock it away from the avatar. */
 #phone-overlay.is-character-edit.is-compact-edit .phone-device {
   /* size locked above; keep overflow rules from the compact sheet */
-  max-width: var(--phone-w, min(260px, 64vw)) !important;
-  max-height: var(--phone-h, min(440px, 53dvh)) !important;
+  max-width: var(--phone-w, min(256px, calc(100vw - 24px))) !important;
+  max-height: var(--phone-h, min(384px, calc(var(--layout-h, var(--app-h, 100dvh)) - var(--dock-h) - 56px))) !important;
   transition: none !important;
   box-sizing: border-box !important;
 }
@@ -762,16 +762,16 @@ body[data-view="creator"]:has(#view-creator.is-keyboard) #toasts {
 
 @media (max-height: 500px) {
   #phone-overlay.is-character-edit.is-compact-edit .phone-device {
-    width: var(--phone-w, min(260px, 64vw)) !important;
-    height: var(--phone-h, min(440px, 53dvh)) !important;
-    max-height: var(--phone-h, min(440px, 53dvh)) !important;
+    width: var(--phone-w, min(256px, calc(100vw - 24px))) !important;
+    height: var(--phone-h, min(384px, calc(var(--layout-h, var(--app-h, 100dvh)) - var(--dock-h) - 56px))) !important;
+    max-height: var(--phone-h, min(384px, calc(var(--layout-h, var(--app-h, 100dvh)) - var(--dock-h) - 56px))) !important;
   }
 }
 
 #phone-overlay.is-character-edit.is-compact-edit.is-short-edit .phone-device {
-  width: var(--phone-w, min(260px, 64vw)) !important;
-  height: var(--phone-h, min(440px, 53dvh)) !important;
-  max-height: var(--phone-h, min(440px, 53dvh)) !important;
+  width: var(--phone-w, min(256px, calc(100vw - 24px))) !important;
+  height: var(--phone-h, min(384px, calc(var(--layout-h, var(--app-h, 100dvh)) - var(--dock-h) - 56px))) !important;
+  max-height: var(--phone-h, min(384px, calc(var(--layout-h, var(--app-h, 100dvh)) - var(--dock-h) - 56px))) !important;
 }
 
 #phone-overlay.is-character-edit.is-compact-edit.is-short-edit .creator-footer {

@@ -673,32 +673,48 @@ export function setRecordMuted(on) {
   return muted;
 }
 
+export function activeRecordPlayer(map) {
+  if (!map) return null;
+  const list = Array.isArray(map) ? map : Object.values(map);
+  for (const rec of list) {
+    if (rec && rec.on && rec.vinyl && VINYL_FEELS[rec.vinyl]) return rec;
+  }
+  return null;
+}
+
 export function syncRecordAudio(rec, { userGesture = false } = {}) {
   const on = Boolean(rec?.on && rec?.vinyl && VINYL_FEELS[rec.vinyl]);
+  if (!on) return stopRecordAudio();
   if (userGesture) unlockRecordAudio();
   const deck = live;
   if (!deck || !deck.listening) return getRecordAudioState();
-  if (!on) {
-    deck.playing = null;
-    deck.wanted = null;
-    if (deck.audio && !deck.audio.paused) {
-      try { deck.audio.pause(); } catch {}
-    }
-    return getRecordAudioState();
-  }
   if (userGesture) return playRecordVinyl(rec.vinyl);
   // Already unlocked: keep the same track going, or switch if the room changed vinyls.
   if (deck.playing === rec.vinyl && deck.audio && !deck.audio.paused) return getRecordAudioState();
   return playRecordVinyl(rec.vinyl);
 }
 
+/** Pause immediately unless this room has a record table that is switched on. */
+export function syncRoomRecordAudio(map, opts) {
+  const rec = activeRecordPlayer(map);
+  if (!rec) return stopRecordAudio();
+  return syncRecordAudio(rec, opts);
+}
+
 export function stopRecordAudio() {
-  if (!live) return;
-  live.playing = null;
-  live.wanted = null;
-  if (live.audio && !live.audio.paused) {
-    try { live.audio.pause(); } catch {}
+  const el = live?.audio
+    || (typeof document !== "undefined" && (document.getElementById("record-audio") || document.querySelector("[data-testid=record-audio]")));
+  if (live) {
+    live.playing = null;
+    live.wanted = null;
   }
+  if (el) {
+    try {
+      el.pause();
+      el.currentTime = 0;
+    } catch {}
+  }
+  return getRecordAudioState();
 }
 
 export async function renderVinylSample(vinylId, seconds = 15) {

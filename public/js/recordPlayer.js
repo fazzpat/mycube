@@ -9,6 +9,7 @@ import {
   setRecordVolume,
   setRecordMuted,
   syncRecordAudio,
+  syncRoomRecordAudio,
   stopRecordAudio,
   installRecordAudioGestures,
   preloadRecordAudio,
@@ -457,6 +458,7 @@ export {
   setRecordVolume,
   setRecordMuted,
   syncRecordAudio,
+  syncRoomRecordAudio,
   stopRecordAudio,
   DEFAULT_VOLUME,
 };

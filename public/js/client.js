@@ -13,6 +13,7 @@ import {
   mountRecordPicker, openRecordPicker, closeRecordPicker, isRecordPickerOpen,
   paintRecordPicker, paintListenHint, syncRecordAudio, setRecordVolume, setRecordMuted,
   getRecordAudioState, unlockRecordAudio, playRecordVinyl, vinylById,
+  syncRoomRecordAudio, stopRecordAudio,
 } from "./recordPlayer.js";
 
 (() => {
@@ -695,6 +696,7 @@ import {
     r3.setChessMap(room.chess || {});
     r3.setTvs(room.tvs || {});
     r3.setRecordPlayers(room.recordPlayers || {});
+    syncRoomRecordAudio(room.recordPlayers || {});
     r3.setWallArt(room.wallArt || []);
     r3.setArcade(room.arcade || {});
     r3.setServerTime(room.serverTime || Date.now());
@@ -3879,6 +3881,8 @@ import {
   });
 
   socket.on("leftRoom", () => {
+    stopRecordAudio();
+    if (isRecordPickerOpen()) closeRecordPicker();
     closePhone();
     state.room = null;
     state.people.clear();
@@ -4071,6 +4075,7 @@ import {
     state.room3d?.setChessMap(state.room.chess || {});
     state.room3d?.setTvs(state.room.tvs || {});
     state.room3d?.setRecordPlayers(state.room.recordPlayers || {});
+    syncRoomRecordAudio(state.room.recordPlayers || {});
     if (isRecordPickerOpen()) closeRecordPicker();
     if (state.selectedFurnId === id) {
       state.selectedFurnId = null;
@@ -4104,7 +4109,7 @@ import {
     state.room3d?.setRecordPlayers(state.room.recordPlayers);
     if (serverTime) state.room3d?.setServerTime(serverTime);
     paintRecordPicker(state.room.recordPlayers[id]);
-    syncRecordAudio(state.room.recordPlayers[id] || { on: false });
+    syncRoomRecordAudio(state.room.recordPlayers);
   });
 
   socket.on("seatsUpdated", ({ seats }) => {
@@ -4276,6 +4281,7 @@ import {
   });
 
   window.__debugKit = (kit) => socket.emit("debugKit", kit);
+  window.__pickupFurniture = (id) => socket.emit("pickupFurniture", { id });
   window.__equipPet = (item) => socket.emit("equipPet", { item: item || null });
   window.__placePet = (item, x, y) => socket.emit("placePet", { item, x, y });
   window.__putAwayPet = (item) => socket.emit("putAwayPet", { item });
@@ -4363,6 +4369,8 @@ import {
       sessionStorage.removeItem("hearthUser");
       localStorage.removeItem("hearthUser");
     } catch {}
+    stopRecordAudio();
+    if (isRecordPickerOpen()) closeRecordPicker();
     closePhone();
     state.me = null;
     state.room = null;

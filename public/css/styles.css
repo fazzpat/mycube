@@ -1073,17 +1073,19 @@ body.phone-open .dock .phone-dock-btn { visibility: visible; }
   pointer-events: auto;
 }
 .phone-overlay {
-  --phone-w: min(260px, 64vw);
-  --phone-h: min(440px, max(53dvh, 228px), calc(var(--layout-h, var(--app-h, 100dvh)) - var(--dock-h) - 56px));
+  /* Fixed CSS-px handset, bottom-left overlay (not in-world).
+     256×384 is a 2×3 block of floor tiles at default phone zoom (tile 128×64). */
+  --phone-w: min(256px, calc(100vw - 24px));
+  --phone-h: min(384px, calc(var(--layout-h, var(--app-h, 100dvh)) - var(--dock-h) - 56px));
 }
 .phone-device {
   pointer-events: auto;
   position: relative;
   z-index: 1;
-  width: var(--phone-w, min(260px, 64vw));
-  height: var(--phone-h, min(440px, 53dvh));
-  max-width: var(--phone-w, min(260px, 64vw));
-  max-height: var(--phone-h, min(440px, 53dvh));
+  width: var(--phone-w, min(256px, calc(100vw - 24px)));
+  height: var(--phone-h, min(384px, calc(var(--layout-h, var(--app-h, 100dvh)) - var(--dock-h) - 56px)));
+  max-width: var(--phone-w, min(256px, calc(100vw - 24px)));
+  max-height: var(--phone-h, min(384px, calc(var(--layout-h, var(--app-h, 100dvh)) - var(--dock-h) - 56px)));
   filter: drop-shadow(0 10px 16px rgba(12, 6, 28, .4));
   animation: phoneUp .28s cubic-bezier(.2, 1.15, .3, 1);
 }
@@ -2424,10 +2426,10 @@ input, select, textarea, .chat-input, [data-testid="chat-input"] {
 .phone-device {
   animation: none !important;
   transform: none !important;
-  width: var(--phone-w, min(260px, 64vw)) !important;
-  height: var(--phone-h, min(440px, 53dvh)) !important;
-  max-width: var(--phone-w, min(260px, 64vw)) !important;
-  max-height: var(--phone-h, min(440px, 53dvh)) !important;
+  width: var(--phone-w, min(256px, calc(100vw - 24px))) !important;
+  height: var(--phone-h, min(384px, calc(var(--layout-h, var(--app-h, 100dvh)) - var(--dock-h) - 56px))) !important;
+  max-width: var(--phone-w, min(256px, calc(100vw - 24px))) !important;
+  max-height: var(--phone-h, min(384px, calc(var(--layout-h, var(--app-h, 100dvh)) - var(--dock-h) - 56px))) !important;
   overscroll-behavior: none;
   touch-action: manipulation;
 }
@@ -2753,10 +2755,10 @@ body.phone-open .phone-dock-btn {
 #phone-overlay.is-character-edit .phone-device,
 #phone-overlay.is-character-edit.is-compact-edit .phone-device,
 #phone-overlay.app-open .phone-device {
-  width: var(--phone-w, min(260px, 64vw)) !important;
-  height: var(--phone-h, min(440px, 53dvh)) !important;
-  max-width: var(--phone-w, min(260px, 64vw)) !important;
-  max-height: var(--phone-h, min(440px, 53dvh)) !important;
+  width: var(--phone-w, min(256px, calc(100vw - 24px))) !important;
+  height: var(--phone-h, min(384px, calc(var(--layout-h, var(--app-h, 100dvh)) - var(--dock-h) - 56px))) !important;
+  max-width: var(--phone-w, min(256px, calc(100vw - 24px))) !important;
+  max-height: var(--phone-h, min(384px, calc(var(--layout-h, var(--app-h, 100dvh)) - var(--dock-h) - 56px))) !important;
   left: auto !important;
   top: auto !important;
   right: auto !important;
@@ -2853,10 +2855,10 @@ body.phone-open .phone-dock-btn {
 #phone-overlay.is-character-edit.is-compact-edit .phone-device,
 #phone-overlay.is-character-edit.is-short-edit .phone-device,
 #phone-overlay.app-open .phone-device {
-  width: var(--phone-w, min(260px, 64vw)) !important;
-  height: var(--phone-h, min(440px, 53dvh)) !important;
-  max-width: var(--phone-w, min(260px, 64vw)) !important;
-  max-height: var(--phone-h, min(440px, 53dvh)) !important;
+  width: var(--phone-w, min(256px, calc(100vw - 24px))) !important;
+  height: var(--phone-h, min(384px, calc(var(--layout-h, var(--app-h, 100dvh)) - var(--dock-h) - 56px))) !important;
+  max-width: var(--phone-w, min(256px, calc(100vw - 24px))) !important;
+  max-height: var(--phone-h, min(384px, calc(var(--layout-h, var(--app-h, 100dvh)) - var(--dock-h) - 56px))) !important;
   min-height: 0 !important;
   min-width: 0 !important;
   flex: 0 0 auto !important;
@@ -3382,16 +3384,14 @@ body.shop-open .shop-toggle {
 
 
 
-/* Dock phone button: large, instant, unobstructed hit target. */
+/* Dock phone button: keep the original visible size (same as the emote
+   button). The larger hit target is an invisible ::after that extends into
+   the dock padding and the gap above/below — not into the emote button or
+   the chat input. */
 #phone-btn.phone-dock-btn,
 .dock .phone-dock-btn,
 .phone-dock-btn {
   position: relative;
-  width: 52px;
-  height: 52px;
-  min-width: 52px;
-  min-height: 52px;
-  flex: 0 0 52px;
   padding: 0;
   display: grid;
   place-items: center;
@@ -3401,17 +3401,16 @@ body.shop-open .shop-toggle {
   z-index: 51;
   pointer-events: auto;
 }
-/* Invisible padding into the surrounding dock gap so misses at the edge still count. */
 #phone-btn.phone-dock-btn::after,
 .phone-dock-btn::after {
   content: "";
   position: absolute;
+  /* 40px face + 10px left + 2px right = 52px hit width; 8px above/below
+     for height. Right stay short so we don't cover the emote button. */
   top: -8px;
-  right: -6px;
+  right: -2px;
   bottom: -8px;
-  left: -8px;
-  min-width: 68px;
-  min-height: 68px;
+  left: -10px;
 }
 #phone-btn.phone-dock-btn:active,
 #phone-btn.phone-dock-btn.is-pressed,
@@ -3419,21 +3418,5 @@ body.shop-open .shop-toggle {
 .phone-dock-btn.is-pressed {
   transform: translateY(1px);
   filter: brightness(0.9);
-  box-shadow: inset 0 2px 0 #8a6a4488, 0 0 0 1px #8a6a44;
-}
-@media (max-width: 400px) {
-  .dock .emote-btn {
-    width: 40px;
-    height: 40px;
-    flex: 0 0 40px;
-  }
-  .dock .phone-dock-btn,
-  #phone-btn.phone-dock-btn {
-    width: 52px !important;
-    height: 52px !important;
-    min-width: 52px !important;
-    min-height: 52px !important;
-    flex: 0 0 52px !important;
-  }
 }
 

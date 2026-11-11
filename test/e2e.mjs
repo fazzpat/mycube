@@ -1931,10 +1931,52 @@ async function runPhoneButtonHitTests(browser) {
 
   const hit = await page.evaluate(() => {
     const btn = document.querySelector('[data-testid="phone-btn"]');
-    const r = btn?.getBoundingClientRect();
-    return r ? { w: +r.width.toFixed(2), h: +r.height.toFixed(2), x: +r.x.toFixed(2), y: +r.y.toFixed(2) } : null;
+    const emote = document.querySelector('[data-testid="emote-wheel-btn"]');
+    const chat = document.querySelector('[data-testid="chat-input"]');
+    if (!btn) return null;
+    const r = btn.getBoundingClientRect();
+    const er = emote?.getBoundingClientRect();
+    const cr = chat?.getBoundingClientRect();
+    const after = getComputedStyle(btn, "::after");
+    const inset = {
+      left: parseFloat(after.left) || 0,
+      right: parseFloat(after.right) || 0,
+      top: parseFloat(after.top) || 0,
+      bottom: parseFloat(after.bottom) || 0,
+    };
+    const hitBox = {
+      x: r.x + inset.left,
+      y: r.y + inset.top,
+      w: r.width - inset.left - inset.right,
+      h: r.height - inset.top - inset.bottom,
+    };
+    const overlaps = (a, b) => Boolean(b && a.x < b.right && a.x + a.w > b.left && a.y < b.bottom && a.y + a.h > b.top);
+    const isBtn = (el) => Boolean(el && (el.id === "phone-btn" || el.closest?.("#phone-btn")));
+    const sample = [
+      [hitBox.x + 2, hitBox.y + hitBox.h / 2],
+      [hitBox.x + hitBox.w - 2, hitBox.y + hitBox.h / 2],
+      [hitBox.x + hitBox.w / 2, hitBox.y + 2],
+      [hitBox.x + hitBox.w / 2, hitBox.y + hitBox.h - 2],
+    ].map(([x, y]) => isBtn(document.elementFromPoint(x, y)));
+    return {
+      visible: { w: +r.width.toFixed(2), h: +r.height.toFixed(2) },
+      emote: er ? { w: +er.width.toFixed(2), h: +er.height.toFixed(2) } : null,
+      hit: { w: +hitBox.w.toFixed(2), h: +hitBox.h.toFixed(2), x: +hitBox.x.toFixed(2), y: +hitBox.y.toFixed(2) },
+      overlapsEmote: overlaps(hitBox, er),
+      overlapsChat: overlaps(hitBox, cr),
+      slopHits: sample,
+    };
   });
-  check("The dock phone button has at least a 52×52 hit target", Boolean(hit && hit.w >= 52 && hit.h >= 52), JSON.stringify(hit));
+  check(
+    "The dock phone button stays the same visible size as the emote button",
+    Boolean(hit && hit.emote && Math.abs(hit.visible.w - hit.emote.w) <= 1 && Math.abs(hit.visible.h - hit.emote.h) <= 1 && hit.visible.w <= 48),
+    JSON.stringify(hit)
+  );
+  check(
+    "The dock phone button has at least a 52×52 hit target that misses the emote button and chat input",
+    Boolean(hit && hit.hit.w >= 52 && hit.hit.h >= 52 && !hit.overlapsEmote && !hit.overlapsChat && hit.slopHits.every(Boolean)),
+    JSON.stringify(hit)
+  );
 
   async function assertBtnOnTop(label, setup) {
     if (setup) await setup();
@@ -2581,7 +2623,7 @@ try {
   const vp = alice.viewportSize();
   check(
     "The phone menu is a handheld in the corner with the room still visible above it",
-    Boolean(phoneBox && phoneBox.width >= 220 && phoneBox.width <= 280 && phoneBox.width <= vp.width * 0.68 && phoneBox.height >= 380 && phoneBox.height <= 460 && phoneBox.height <= vp.height * 0.58 && phoneBox.x < vp.width * 0.45 && phoneBox.x >= -4 && phoneBox.x < 40 && phoneBox.y >= 40),
+    Boolean(phoneBox && phoneBox.width >= 230 && phoneBox.width <= 280 && phoneBox.height >= 340 && phoneBox.height <= 420 && phoneBox.x < vp.width * 0.45 && phoneBox.x >= -4 && phoneBox.x < 40 && phoneBox.y >= 40),
     JSON.stringify(phoneBox && { w: Math.round(phoneBox.width), h: Math.round(phoneBox.height), x: Math.round(phoneBox.x), y: Math.round(phoneBox.y), vw: vp.width, vh: vp.height })
   );
   const aliceOnPhone = await alice.waitForFunction(() => window.HouseRoom3D.personFlags("alice")?.usingPhone, null, { timeout: 8000 }).then(() => true).catch(() => false);
@@ -2593,6 +2635,7 @@ try {
   await alice.screenshot({ path: `${SHOT}/08-phone-menu.png` });
   await openPhoneApp(alice, "shop");
   await alice.waitForSelector('[data-testid="store-panel"]:not(.hidden)');
+  await alice.waitForFunction(() => document.querySelector('[data-testid="phone-overlay"]')?.classList.contains("hidden") && !window.HouseRoom3D.personFlags("alice")?.usingPhone, null, { timeout: 8000 }).catch(() => {});
   const shopMutex = await alice.evaluate(() => ({
     phoneClosed: document.querySelector('[data-testid="phone-overlay"]')?.classList.contains("hidden"),
     shopOpen: !document.querySelector('[data-testid="store-panel"]')?.classList.contains("hidden"),

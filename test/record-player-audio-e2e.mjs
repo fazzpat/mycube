@@ -149,6 +149,14 @@ async function runOnEngine(name, browserType, useMobile) {
     }
     await page.waitForFunction(() => window.HouseRoom3D && window.HouseRoom3D.ready);
 
+    const quietHome = await snapshot(page);
+    const hasTable = await page.evaluate(() => (window.HouseRoom3D.getFurniture() || []).some((f) => f.type === "recordplayer"));
+    check(
+      `${name}: a room with no record player is silent`,
+      !hasTable && quietHome.listening !== true && !quietHome.playing && (quietHome.rawEl == null || quietHome.rawEl.paused === true),
+      JSON.stringify({ hasTable, quietHome })
+    );
+
     await page.evaluate(() => window.__debugKit?.({ furniture: ["recordplayer"], coins: 400 }));
     await page.evaluate(() => { window.__startPlace("recordplayer"); window.__clickTile(3, 2); });
     await page.waitForFunction(() => window.HouseRoom3D.getFurniture().some((f) => f.type === "recordplayer"));
@@ -212,6 +220,54 @@ async function runOnEngine(name, browserType, useMobile) {
       `${name}: playback recovers after the page is backgrounded and shown again`,
       Boolean(resumed.rawEl && resumed.rawEl.paused === false && resumed.listening),
       JSON.stringify({ resumed })
+    );
+
+    await page.evaluate((id) => window.__stopRecord?.(id), recId);
+    await page.waitForFunction((id) => !window.HouseRoom3D.recordOn(id), recId, { timeout: 8000 });
+    const stopped = await snapshot(page);
+    check(
+      `${name}: turning the record player off stops the audio immediately`,
+      Boolean((stopped.rawEl == null || stopped.rawEl.paused === true) && !stopped.playing && stopped.element?.paused !== false),
+      JSON.stringify({ stopped })
+    );
+
+    await page.evaluate((id) => window.__selectRecord?.(id, "neon-drift"), recId);
+    await page.waitForFunction((id) => window.HouseRoom3D.recordOn(id) && window.HouseRoom3D.recordVinyl(id) === "neon-drift", recId);
+    await page.waitForFunction(() => {
+      const s = window.__recordAudioState?.();
+      return Boolean(s?.listening && s.element && s.element.paused === false);
+    }, null, { timeout: 8000 });
+    const backOn = await snapshot(page);
+    check(
+      `${name}: turning the record player back on starts the audio again`,
+      Boolean(backOn.rawEl && backOn.rawEl.paused === false && backOn.listening && backOn.playing === "neon-drift"),
+      JSON.stringify({ backOn })
+    );
+
+    await page.evaluate((id) => window.__pickupFurniture?.(id), recId);
+    await page.waitForFunction(() => !(window.HouseRoom3D.getFurniture() || []).some((f) => f.type === "recordplayer"), null, { timeout: 8000 });
+    const afterPickup = await snapshot(page);
+    check(
+      `${name}: putting the record player away stops the audio`,
+      Boolean((afterPickup.rawEl == null || afterPickup.rawEl.paused === true) && !afterPickup.playing),
+      JSON.stringify({ afterPickup })
+    );
+
+    await page.evaluate(() => { window.__startPlace("recordplayer"); window.__clickTile(3, 2); });
+    await page.waitForFunction(() => window.HouseRoom3D.getFurniture().some((f) => f.type === "recordplayer"));
+    await page.evaluate(() => window.__exitEdit?.());
+    const recId2 = await page.evaluate(() => window.HouseRoom3D.getFurniture().find((f) => f.type === "recordplayer").id);
+    await page.evaluate((id) => window.__selectRecord?.(id, "midnight-ramen"), recId2);
+    await page.waitForFunction((id) => window.HouseRoom3D.recordOn(id), recId2, { timeout: 8000 });
+    await page.waitForFunction(() => window.__recordAudioState?.()?.element?.paused === false, null, { timeout: 8000 });
+    await page.evaluate(() => window.__leaveRoom?.());
+    await page.waitForSelector('body[data-view="lobby"]', { timeout: 15000 });
+    const afterLeave = await snapshot(page);
+    const leaveView = await page.evaluate(() => document.body?.dataset?.view || "");
+    check(
+      `${name}: leaving the cube stops the audio immediately`,
+      leaveView === "lobby" && (afterLeave.rawEl == null || afterLeave.rawEl.paused === true) && !afterLeave.playing,
+      JSON.stringify({ leaveView, afterLeave })
     );
   } finally {
     await ctx.close();
