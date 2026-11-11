@@ -64,18 +64,19 @@ function plot(buf, x, y, color, kind, depth = 0) {
   buf[i] = { r: color.r, g: color.g, b: color.b, a: 255, slot: kind, depth };
 }
 function shadeAt(pal, lx, ly) {
-  const L = -lx * 0.6 - ly * 0.78;
-  if (L > 0.32) return pal.hi;
-  if (L < -0.22) return pal.sh;
+  if (!pal || !pal.hi) return pal;
+  if (ly < -0.4) return pal.hi;
+  if (ly > 0.46) return pal.sh;
   return pal.mid;
 }
-function ellipse(buf, cx, cy, rx, ry, pal, kind, depth = 0) {
+function ellipse(buf, cx, cy, rx, ry, pal, kind, depth = 0, opts = {}) {
   const rxi = Math.ceil(rx) + 1, ryi = Math.ceil(ry) + 1;
+  const flat = opts.shade === "flat" || !pal?.hi;
   for (let y = -ryi; y <= ryi; y++) {
     for (let x = -rxi; x <= rxi; x++) {
       const nx = x / rx, ny = y / ry;
       if (nx * nx + ny * ny > 1) continue;
-      const col = pal.hi ? shadeAt(pal, nx, ny) : pal;
+      const col = flat ? (pal.mid || pal) : shadeAt(pal, nx, ny);
       plot(buf, Math.round(cx + x), Math.round(cy + y), col, kind, depth);
     }
   }
@@ -154,7 +155,7 @@ function addSticker(buf) {
   return next;
 }
 
-function drawPet(buf, kind, key, pal, sit, walkStep) {
+function drawPet(buf, kind, key, pal, sit, walkStep, blink = "open") {
   const cx = key === "e" ? 17 : 16;
   const headY = sit ? 13 : 11;
   const bodyY = sit ? 21 : 20;
@@ -162,7 +163,7 @@ function drawPet(buf, kind, key, pal, sit, walkStep) {
   // Body first
   const bw = sit ? 8.5 : 7.2, bh = sit ? 5.5 : 6.2;
   ellipse(buf, cx, bodyY, key === "e" ? bw - 1.5 : bw, bh, pal.fur, "body", 10);
-  ellipse(buf, cx, bodyY + 1, key === "e" ? 4 : 5, 3.2, pal.belly, "belly", 11);
+  if (key !== "n") ellipse(buf, cx, bodyY + 1, key === "e" ? 4 : 5, 3.2, pal.belly, "belly", 11, { shade: "flat" });
   // Paws
   const lift = walkStep ? 2 : 0;
   if (key === "e") {
@@ -184,7 +185,8 @@ function drawPet(buf, kind, key, pal, sit, walkStep) {
   }
   if (kind === "turtle") {
     ellipse(buf, cx, bodyY, 8, 5.5, pal.accent, "shell", 12);
-    ellipse(buf, cx, bodyY, 4, 2.6, pal.belly, "shell-hi", 13);
+    if (key !== "n") ellipse(buf, cx, bodyY, 4, 2.6, pal.belly, "shell-hi", 13, { shade: "flat" });
+    else ellipse(buf, cx, bodyY - 1, 3.2, 2.0, pal.fur, "shell-hi", 13, { shade: "flat" });
   }
   // Head (big)
   const hrx = key === "e" ? 7.4 : 8.4, hry = 7.6;
@@ -208,11 +210,23 @@ function drawPet(buf, kind, key, pal, sit, walkStep) {
   // Face
   if (key !== "n") {
     const eyeY = headY + 0.6;
+        function petEye(ex, ey) {
+      if (blink === "closed") {
+        plot(buf, Math.round(ex) - 1, Math.round(ey), INK, "eye", 30);
+        plot(buf, Math.round(ex), Math.round(ey), INK, "eye", 30);
+        plot(buf, Math.round(ex) + 1, Math.round(ey), INK, "eye", 30);
+      } else if (blink === "half") {
+        ellipse(buf, ex, ey, 1.3, 1.0, INK, "eye", 30);
+      } else {
+        ellipse(buf, ex, ey, 1.5, 2.1, INK, "eye", 30);
+        plot(buf, Math.round(ex) + 1, Math.round(ey) - 1, { r: 255, g: 255, b: 255 }, "eye-hi", 31);
+      }
+    }
     if (key === "e") {
-      ellipse(buf, cx + 3.4, eyeY, 1.5, 1.9, INK, "eye", 30);
+      petEye(cx + 3.4, eyeY);
     } else {
-      ellipse(buf, cx - 3.6, eyeY, 1.6, 2.0, INK, "eye", 30);
-      ellipse(buf, cx + 3.6, eyeY, 1.6, 2.0, INK, "eye", 30);
+      petEye(cx - 3.6, eyeY);
+      petEye(cx + 3.6, eyeY);
     }
     const nx = key === "e" ? cx + 5 : cx;
     plot(buf, Math.round(nx), Math.round(headY + 3.6), pal.nose, "nose", 30);
@@ -250,10 +264,11 @@ export function drawPetSprite(kind, flags = {}, frame = 0) {
   const dir = flags.dir != null ? flags.dir : facingToDir(flags.facing || { x: 1, z: 1 });
   const view = petViewOfDir(dir);
   const walkStep = walking && !sit ? (frame % 2) : 0;
-  const key = [k, view.key, view.flip ? 1 : 0, sit ? 1 : 0, walking ? 1 : 0, walkStep].join(":");
+  const blink = flags.blink || "open";
+  const key = [k, view.key, view.flip ? 1 : 0, sit ? 1 : 0, walking ? 1 : 0, walkStep, blink].join(":");
   if (cache.has(key)) return cache.get(key);
   let buf = makeBuf();
-  drawPet(buf, k, view.key, PALS[k], sit, walkStep);
+  drawPet(buf, k, view.key, PALS[k], sit, walkStep, blink);
   if (view.flip) buf = flipBuf(buf, true);
   buf = plantPet(buf);
   buf = addInk(buf);
