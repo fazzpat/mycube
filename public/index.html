@@ -209,6 +209,14 @@
             <svg viewBox="0 0 32 32" width="22" height="22"><path d="M16 3 L29 10.5 L16 18 L3 10.5 Z" fill="#f4c15d"/><path d="M3 10.5 L16 18 L16 30 L3 22.5 Z" fill="#c43a4a"/><path d="M16 18 L29 10.5 L29 22.5 L16 30 Z" fill="#8a5a32"/></svg>
             <span>MyCube</span>
           </div>
+          <button type="button" id="shop-toggle" class="shop-toggle" data-testid="shop-toggle" aria-label="Open shop" title="Shop" aria-expanded="false">
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round">
+              <path d="M6 7h15l-1.6 8.2H8.2L6 7z"/>
+              <path d="M6 7L4.8 3.5H2"/>
+              <circle cx="9.2" cy="19.2" r="1.5"/>
+              <circle cx="17.2" cy="19.2" r="1.5"/>
+            </svg>
+          </button>
           <button type="button" id="cam-toggle" class="cam-toggle" data-testid="cam-toggle" aria-label="Show the whole cube" title="Show the whole cube">
             <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round">
               <path d="M8.5 7l1.3-2.1h4.4L15.5 7H18a2 2 0 012 2v9a2 2 0 01-2 2H6a2 2 0 01-2-2V9a2 2 0 012-2h2.5z"/>
@@ -323,7 +331,8 @@
   <div id="store-panel" class="store-panel hidden" data-testid="store-panel">
         <div class="store-panel-head">
           <strong id="store-panel-title" data-testid="store-panel-title">Shop</strong>
-          <button type="button" class="btn tiny ghost" id="store-close" data-testid="store-close">Close</button>
+          <span class="shop-panel-coins" id="shop-panel-coins" data-testid="shop-panel-coins">🪙 50</span>
+          <button type="button" class="shop-panel-close" id="store-close" data-testid="store-close" aria-label="Close shop">✕</button>
         </div>
         <div class="store-tabs" data-testid="store-tabs" id="store-tabs">
           <button type="button" class="store-tab" data-store-tab="furniture" data-testid="store-tab-furniture">Furniture</button>
@@ -332,6 +341,7 @@
           <button type="button" class="store-tab" data-store-tab="art" data-testid="store-tab-art">Wall art</button>
         </div>
         <div class="store-slot-tabs hidden" data-testid="store-slot-tabs" id="store-slot-tabs"></div>
+        <div class="inv-row hidden" id="inventory-row" data-testid="shop-inventory"></div>
         <div class="store-panel-body">
           <div class="store-preview" id="store-preview" data-testid="store-preview"></div>
           <div class="store-grid" id="store-grid" data-testid="store-grid"></div>
@@ -383,12 +393,6 @@
                     <svg viewBox="0 0 32 32" width="28" height="28"><circle cx="16" cy="16" r="12" fill="#fff6e8"/><circle cx="12" cy="14" r="1.8" fill="#2a1c4a"/><circle cx="20" cy="14" r="1.8" fill="#2a1c4a"/><path d="M11 20c2 3 8 3 10 0" fill="none" stroke="#2a1c4a" stroke-width="2" stroke-linecap="round"/></svg>
                   </span>
                   <span class="phone-app-label">Emotes</span>
-                </button>
-                <button type="button" class="phone-app" data-testid="phone-app-shop" data-app="shop">
-                  <span class="phone-app-icon" style="background:linear-gradient(180deg,#ffd56a,#f0a020)">
-                    <svg viewBox="0 0 32 32" width="28" height="28"><path d="M8 12h16l-1.5 13h-13z" fill="#fff"/><path d="M11 12a5 5 0 0 1 10 0" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/></svg>
-                  </span>
-                  <span class="phone-app-label">Shop</span>
                 </button>
                 <button type="button" class="phone-app" data-testid="phone-app-invite" data-app="invite">
                   <span class="phone-app-icon" style="background:linear-gradient(180deg,#b7a6ff,#7c5cff)">
@@ -456,31 +460,6 @@
             <div id="phone-screen-edit" class="phone-app-screen hidden" data-testid="phone-screen-edit">
               <div class="phone-app-nav"><button type="button" class="phone-back" data-phone-back data-testid="phone-back" aria-label="Back">‹</button><h2>Edit Room</h2></div>
               <div class="phone-app-body" id="phone-edit-body"></div>
-            </div>
-            <div id="phone-screen-shop" class="phone-app-screen hidden" data-testid="phone-screen-shop">
-              <div class="phone-app-nav"><button type="button" class="phone-back" data-phone-back data-testid="phone-back" aria-label="Back">‹</button><h2>Shop</h2></div>
-              <div class="phone-app-body">
-                <div class="store-tabs phone-shop-tabs" data-testid="phone-shop-tabs" id="phone-shop-tabs">
-                  <button type="button" class="store-tab" data-shop-tab="furniture" data-testid="shop-tab-furniture">Furniture</button>
-                  <button type="button" class="store-tab" data-shop-tab="clothes" data-testid="shop-tab-clothes">Clothes</button>
-                  <button type="button" class="store-tab" data-shop-tab="pets" data-testid="shop-tab-pets">Pets</button>
-                  <button type="button" class="store-tab" data-shop-tab="art" data-testid="shop-tab-art">Wall art</button>
-                </div>
-                <div id="shop-furniture-pane">
-                  <p class="lede">Spend coins, then place what you own on the floor.</p>
-                  <div class="inv-row" id="inventory-row"></div>
-                  <div class="shop-grid" id="shop-grid"></div>
-                </div>
-                <div id="shop-catalog-pane" class="hidden">
-                  <div class="store-slot-tabs hidden" data-testid="phone-shop-slot-tabs" id="phone-shop-slot-tabs"></div>
-                  <div class="store-preview" id="phone-shop-preview" data-testid="phone-shop-preview"></div>
-                  <div class="store-grid" id="phone-shop-grid" data-testid="phone-shop-grid"></div>
-                  <div class="store-panel-foot">
-                    <button type="button" class="btn" id="phone-shop-tryon" data-testid="phone-shop-tryon">Try on</button>
-                    <button type="button" class="btn" id="phone-shop-buy" data-testid="phone-shop-buy" disabled>Buy</button>
-                  </div>
-                </div>
-              </div>
             </div>
             <div id="phone-screen-invite" class="phone-app-screen hidden" data-testid="phone-screen-invite">
               <div class="phone-app-nav"><button type="button" class="phone-back" data-phone-back data-testid="phone-back" aria-label="Back">‹</button><h2>Invite</h2></div>

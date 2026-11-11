@@ -295,6 +295,8 @@ import {
     const room = $("#room-coins");
     if (lobby) lobby.textContent = n;
     if (room) room.textContent = n;
+    const shop = $("#shop-panel-coins");
+    if (shop) shop.textContent = `🪙 ${n}`;
     updatePhoneBadge();
   }
 
@@ -1039,53 +1041,31 @@ import {
   raf = requestAnimationFrame(tick);
 
   /* ---------- shop ---------- */
-  function paintShop() {
-    if (!state.shopTab) state.shopTab = "furniture";
-    document.querySelectorAll("#phone-shop-tabs [data-shop-tab]").forEach((b) => {
-      b.classList.toggle("on", b.dataset.shopTab === state.shopTab);
-      b.setAttribute("aria-selected", b.dataset.shopTab === state.shopTab ? "true" : "false");
-    });
-    const furnPane = $("#shop-furniture-pane");
-    const catPane = $("#shop-catalog-pane");
-    if (state.shopTab === "clothes" || state.shopTab === "pets" || state.shopTab === "art") {
-      if (furnPane) furnPane.classList.add("hidden");
-      if (catPane) catPane.classList.remove("hidden");
-      paintPhoneShopCatalog();
-      return;
-    }
-    if (furnPane) furnPane.classList.remove("hidden");
-    if (catPane) catPane.classList.add("hidden");
+  function paintShopInventory() {
     const inv = $("#inventory-row");
     if (!inv) return;
+    const show = !state.storeKind || state.storeKind === "furniture" || state.storeKind === "art";
+    inv.classList.toggle("hidden", !show);
+    if (!show) {
+      inv.innerHTML = "";
+      return;
+    }
     const items = state.me?.inventory || [];
     inv.innerHTML = items.length
       ? items
           .map(
-            (t, i) =>
-              `<button class="inv-chip" data-testid="inv-${t}-${i}" data-place="${t}" type="button">${labelFor(t)} — place</button>`
+            (typ, i) =>
+              `<button class="inv-chip" data-testid="inv-${typ}-${i}" data-place="${typ}" type="button">${labelFor(typ)} — place</button>`
           )
           .join("")
       : `<span class="empty">Nothing in your pocket yet.</span>`;
     inv.querySelectorAll("[data-place]").forEach((b) =>
       b.addEventListener("click", () => startPlace(b.dataset.place))
     );
+  }
 
-    const grid = $("#shop-grid");
-    if (!grid) return;
-    const furnList = CATALOG.filter((item) => item.surface !== "wall");
-    grid.innerHTML =
-      furnList.map((item) => {
-        const afford = (state.me?.coins ?? 0) >= item.price;
-        return `<div class="shop-item">
-        ${furnitureSVG(item.type)}
-        <strong>${item.name}</strong>
-        <div class="item-sub">🪙 ${item.price} · ${item.w}×${item.h} tiles</div>
-        <button class="btn small" data-testid="buy-${item.type}" data-buy="${item.type}" ${afford ? "" : "disabled"} type="button">Buy</button>
-      </div>`;
-      }).join("");
-    grid.querySelectorAll("[data-buy]").forEach((b) =>
-      b.addEventListener("click", () => socket.emit("buyFurniture", { type: b.dataset.buy }))
-    );
+  function paintShop() {
+    if (storePanelOpen()) paintStorePanel();
   }
 
   function paintPhoneShopCatalog() {
@@ -2030,8 +2010,23 @@ import {
     if (send) send.textContent = "Say";
   }
 
+  function storePanelOpen() {
+    const el = $("#store-panel");
+    return Boolean(el && !el.classList.contains("hidden"));
+  }
+
+  function setShopOpenUi(open) {
+    document.body.classList.toggle("shop-open", open);
+    const btn = $("#shop-toggle");
+    if (btn) {
+      btn.setAttribute("aria-expanded", open ? "true" : "false");
+      btn.setAttribute("aria-label", open ? "Close shop" : "Open shop");
+    }
+  }
+
   function closeStorePanel() {
     HIDE($("#store-panel"));
+    setShopOpenUi(false);
     if (state.storePreview) {
       state.storePreview.dispose?.();
       state.storePreview = null;
@@ -2040,6 +2035,11 @@ import {
     state.storeSel = null;
     const prev = $("#store-preview");
     if (prev) prev.innerHTML = "";
+  }
+
+  function toggleStorePanel() {
+    if (storePanelOpen()) closeStorePanel();
+    else openStorePanel(state.storeKind || "furniture");
   }
 
   function storeStock(kind, slot) {
@@ -2133,6 +2133,8 @@ import {
     const kind = state.storeKind || "clothes";
     const title = $("#store-panel-title");
     if (title) title.textContent = "Shop";
+    updateCoins();
+    paintShopInventory();
     paintStoreTabs();
     if (!state.storeSlot) state.storeSlot = "all";
     paintSlotTabs("store-slot-tabs", state.storeSlot, (slot) => {
@@ -2156,14 +2158,27 @@ import {
         const thumb = (kind === "clothes" || kind === "pets" || kind === "art")
           ? `<canvas class="store-thumb" width="28" height="28" data-thumb-id="${id}" style="image-rendering:pixelated"></canvas>`
           : (typeof furnitureSVG === "function" ? furnitureSVG(s.type || id) : "");
-        return `<button type="button" class="store-item${sel}" data-testid="store-item-${id}" data-store-id="${id}">${thumb}<span class="meta">${escapeHtml(label)}${owned ? " · owned" : ""}</span><span class="price">${owned ? "✓" : s.price + "c"}</span></button>`;
+        const afford = !owned && coins >= (s.price || 0);
+        const buyLabel = owned ? "Owned" : "Buy";
+        return `<div class="store-item${sel}" data-testid="store-item-${id}" data-store-id="${id}">${thumb}<span class="meta">${escapeHtml(label)}${owned ? " · owned" : ""}</span><span class="price">${owned ? "owned" : s.price + "c"}</span><button type="button" class="btn small" data-testid="buy-${id}" data-buy="${id}" ${afford ? "" : "disabled"}>${buyLabel}</button></div>`;
       })
       .join("");
     grid.querySelectorAll("[data-store-id]").forEach((b) => {
-      b.addEventListener("click", () => {
+      b.addEventListener("click", (e) => {
+        if (e.target.closest("[data-buy]")) return;
         state.storeSel = b.dataset.storeId;
         paintStorePanel();
         paintStorePreview();
+      });
+    });
+    grid.querySelectorAll("[data-buy]").forEach((b) => {
+      b.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const id = b.dataset.buy;
+        if (!id) return;
+        state.storeSel = id;
+        if (kind === "furniture" || kind === "art") socket.emit("buyFurniture", { type: id });
+        else socket.emit("buyStoreItem", { kind, id });
       });
     });
     grid.querySelectorAll("canvas.store-thumb").forEach((c) => {
@@ -2200,12 +2215,15 @@ import {
     const stock = storeStock(k);
     const idOf = (s) => s.id || s.type;
     state.storeSel = sku && stock.some((s) => idOf(s) === sku) ? sku : idOf(stock[0] || {});
+    if (phoneOpen()) closePhone();
     SHOW($("#store-panel"));
+    setShopOpenUi(true);
     paintStorePanel();
     paintStorePreview();
   }
 
   $("#store-close")?.addEventListener("click", closeStorePanel);
+  $("#shop-toggle")?.addEventListener("click", toggleStorePanel);
   $("#store-tabs")?.querySelectorAll("[data-store-tab]").forEach((b) => {
     b.addEventListener("click", () => openStorePanel(b.dataset.storeTab));
   });
@@ -2649,9 +2667,12 @@ import {
   }
 
   function updatePhoneBadge() {
-    const on = spinAvailable();
-    document.querySelectorAll("[data-testid=phone-badge], [data-testid=spin-app-badge]").forEach((el) => {
-      el.classList.toggle("hidden", !on);
+    const spin = spinAvailable();
+    document.querySelectorAll("[data-testid=spin-app-badge]").forEach((el) => {
+      el.classList.toggle("hidden", !spin);
+    });
+    document.querySelectorAll("[data-testid=phone-badge]").forEach((el) => {
+      el.classList.toggle("hidden", !spin || Boolean(state.phoneBadgeSeen));
     });
   }
 
@@ -2714,7 +2735,7 @@ import {
     }
     const spr = drawAvatarSprite(state.draft, { bodyDir: 1, headDir: 1, blink: "open" }, 0);
     const boxW = Math.max(1, box.clientWidth || 140);
-    const boxH = Math.max(1, box.clientHeight || 48);
+    const boxH = Math.max(1, box.clientHeight || 90);
     const raw = Math.min(boxW / spr.w, boxH / spr.h);
     const scale = raw >= 1 ? Math.floor(raw) : Math.max(0.5, raw);
     const dw = Math.max(1, Math.round(spr.w * scale));
@@ -2799,7 +2820,13 @@ import {
   };
 
   function openPhone(app) {
+    if (app === "shop" || app === "clothes-store" || app === "pets-store") {
+      openPhoneApp(app);
+      return;
+    }
+    if (storePanelOpen()) closeStorePanel();
     const wasOpen = phoneOpen();
+    state.phoneBadgeSeen = true;
     tickPhoneTime();
     updatePhoneBadge();
     SHOW($("#phone-overlay"));
@@ -2811,7 +2838,21 @@ import {
   }
 
   function openPhoneApp(app) {
+    if (app === "clothes-store") {
+      openStorePanel("clothes");
+      return;
+    }
+    if (app === "pets-store") {
+      openStorePanel("pets");
+      return;
+    }
+    if (app === "shop") {
+      openStorePanel("furniture");
+      return;
+    }
+    if (storePanelOpen()) closeStorePanel();
     if (!phoneOpen()) {
+      state.phoneBadgeSeen = true;
       tickPhoneTime();
       updatePhoneBadge();
       SHOW($("#phone-overlay"));
@@ -2839,14 +2880,6 @@ import {
       state.phoneApp = "leave";
       setPhoneExpanded(true);
       return;
-    }
-    if (app === "clothes-store") {
-      state.shopTab = "clothes";
-      app = "shop";
-    }
-    if (app === "pets-store") {
-      state.shopTab = "pets";
-      app = "shop";
     }
     if (app === "edit-character" || app === "wardrobe") {
       openCharacterEditor("phone");
@@ -2881,7 +2914,6 @@ import {
     state.phoneApp = app;
     setPhoneExpanded(true);
     if (app === "edit-legacy") paintEditInventory();
-    if (app === "shop") paintShop();
     if (app === "invite") {
       const input = $("#invite-name");
       if (input) {
@@ -3109,9 +3141,9 @@ import {
 
   function refreshPhoneScreens() {
     updatePhoneBadge();
+    if (storePanelOpen()) paintStorePanel();
     if (!phoneOpen()) return;
     if (state.phoneApp === "edit") paintEditRoom();
-    if (state.phoneApp === "shop") paintShop();
     if (state.phoneApp === "lock") paintLock();
     if (state.phoneApp === "pets") paintPets();
     if (state.phoneApp === "props") paintProps();
@@ -3281,20 +3313,53 @@ import {
   function ignorePhoneTaps(ms = 400) {
     phoneTapIgnoreUntil = Date.now() + ms;
   }
-  function phoneTapIgnored(e) {
-    if (Date.now() >= phoneTapIgnoreUntil) return false;
+  function phoneTapIgnored() {
+    return Date.now() < phoneTapIgnoreUntil;
+  }
+  const phoneBtn = $("#phone-btn");
+  let phoneBtnHandled = false;
+  function setPhoneBtnPressed(on) {
+    phoneBtn?.classList.toggle("is-pressed", Boolean(on));
+  }
+  function togglePhoneFromDock(e) {
+    if (e && e.button != null && e.button !== 0) return false;
     e?.preventDefault?.();
     e?.stopPropagation?.();
-    return true;
-  }
-  $("#phone-btn")?.addEventListener("pointerdown", (e) => { if (phoneTapIgnored(e)) return; }, true);
-  $("#phone-btn")?.addEventListener("touchend", (e) => { if (phoneTapIgnored(e)) return; }, true);
-  $("#phone-btn")?.addEventListener("click", (e) => {
-    if (phoneTapIgnored(e)) return;
     if (phoneOpen()) closePhone();
     else openPhone();
+    return true;
+  }
+  phoneBtn?.addEventListener("pointerdown", (e) => {
+    if (e.button != null && e.button !== 0) return;
+    // preventDefault keeps a focused chat input from blurring first and
+    // swallowing the tap; the toggle runs immediately on this event.
+    e.preventDefault();
+    e.stopPropagation();
+    setPhoneBtnPressed(true);
+    phoneBtnHandled = true;
+    togglePhoneFromDock(e);
+  }, { capture: true });
+  phoneBtn?.addEventListener("pointerup", () => setPhoneBtnPressed(false));
+  phoneBtn?.addEventListener("pointercancel", () => setPhoneBtnPressed(false));
+  phoneBtn?.addEventListener("lostpointercapture", () => setPhoneBtnPressed(false));
+  phoneBtn?.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (phoneBtnHandled) {
+      phoneBtnHandled = false;
+      return;
+    }
+    if (phoneTapIgnored()) return;
+    togglePhoneFromDock(e);
   });
   $("#phone-overlay")?.querySelector(".phone-backdrop")?.addEventListener("click", closePhone);
+  $("#phone-overlay")?.querySelector(".phone-backdrop")?.addEventListener("pointerdown", (e) => {
+    // Close on the first pointer so a follow-up click isn't lost to the room.
+    if (e.button != null && e.button !== 0) return;
+    if (e.target && e.target.closest && e.target.closest(".phone-device, #phone-btn")) return;
+    e.preventDefault();
+    closePhone();
+  });
   $("#phone-home-bar")?.addEventListener("click", () => {
     if (state.phoneApp && state.phoneApp !== "home") showPhoneHome();
     else closePhone();
@@ -4142,7 +4207,7 @@ import {
     refreshPhoneScreens();
     paintShop();
     requestAnimationFrame(() => {
-      const chip = document.querySelector("#inventory-row [data-place], #phone-screen-shop [data-place]");
+      const chip = document.querySelector("#inventory-row [data-place], #store-panel [data-place]");
       chip?.scrollIntoView({ block: "nearest" });
     });
   });
@@ -4218,6 +4283,7 @@ import {
   window.__inventory = () => [...(state.me?.inventory || [])];
   window.__clickFurniture = (id, type, extra) => handleFurnitureClick(id, type, extra || {});
   window.__enterEdit = enterEditMode;
+  window.__toast = (message) => toast(message);
   window.__exitEdit = exitEditMode;
   window.__startPlace = startPlace;
   window.__highlightTile = (x, y) => updatePlaceHighlight(x, y);
@@ -4242,7 +4308,8 @@ import {
     }
     handleWallClick(wall, slot);
   };
-  window.__openPhone = () => openPhone();
+  window.__openPhone = (app) => openPhone(app);
+  window.__openPhoneApp = (app) => openPhoneApp(app);
   window.__leaveRoom = () => socket.emit("leaveRoom");
   window.__openStore = (kind, sku) => openStorePanel(kind, sku);
   window.__closeStore = () => closeStorePanel();

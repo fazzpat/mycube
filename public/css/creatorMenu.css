@@ -535,10 +535,10 @@ body[data-view="creator"]:has(#view-creator.is-keyboard) #toasts {
   top: auto !important;
   right: auto !important;
   bottom: auto !important;
-  width: min(170px, 40vw) !important;
-  height: min(228px, calc(var(--layout-h, var(--app-h, 100dvh)) - var(--dock-h) - 12px)) !important;
-  max-width: min(170px, 40vw) !important;
-  max-height: min(228px, calc(var(--layout-h, var(--app-h, 100dvh)) - var(--dock-h) - 12px)) !important;
+  width: var(--phone-w, min(260px, 64vw)) !important;
+  height: var(--phone-h, min(440px, 53dvh)) !important;
+  max-width: var(--phone-w, min(260px, 64vw)) !important;
+  max-height: var(--phone-h, min(440px, 53dvh)) !important;
   min-height: 0 !important;
 }
 
@@ -614,8 +614,8 @@ body[data-view="creator"]:has(#view-creator.is-keyboard) #toasts {
    for 40px targets + pager) and let JS dock it away from the avatar. */
 #phone-overlay.is-character-edit.is-compact-edit .phone-device {
   /* size locked above; keep overflow rules from the compact sheet */
-  max-width: min(170px, 40vw) !important;
-  max-height: min(228px, calc(var(--layout-h, var(--app-h, 100dvh)) - var(--dock-h) - 12px)) !important;
+  max-width: var(--phone-w, min(260px, 64vw)) !important;
+  max-height: var(--phone-h, min(440px, 53dvh)) !important;
   transition: none !important;
   box-sizing: border-box !important;
 }
@@ -762,16 +762,16 @@ body[data-view="creator"]:has(#view-creator.is-keyboard) #toasts {
 
 @media (max-height: 500px) {
   #phone-overlay.is-character-edit.is-compact-edit .phone-device {
-    width: min(170px, 40vw) !important;
-    height: min(228px, calc(var(--layout-h, var(--app-h, 100dvh)) - var(--dock-h) - 12px)) !important;
-    max-height: min(228px, calc(var(--layout-h, var(--app-h, 100dvh)) - var(--dock-h) - 12px)) !important;
+    width: var(--phone-w, min(260px, 64vw)) !important;
+    height: var(--phone-h, min(440px, 53dvh)) !important;
+    max-height: var(--phone-h, min(440px, 53dvh)) !important;
   }
 }
 
 #phone-overlay.is-character-edit.is-compact-edit.is-short-edit .phone-device {
-  width: min(170px, 40vw) !important;
-  height: min(228px, calc(var(--layout-h, var(--app-h, 100dvh)) - var(--dock-h) - 12px)) !important;
-  max-height: min(228px, calc(var(--layout-h, var(--app-h, 100dvh)) - var(--dock-h) - 12px)) !important;
+  width: var(--phone-w, min(260px, 64vw)) !important;
+  height: var(--phone-h, min(440px, 53dvh)) !important;
+  max-height: var(--phone-h, min(440px, 53dvh)) !important;
 }
 
 #phone-overlay.is-character-edit.is-compact-edit.is-short-edit .creator-footer {
@@ -845,24 +845,24 @@ body[data-view="creator"]:has(#view-creator.is-keyboard) #toasts {
    screen after the bezel, status, and home bar, so the preview stays
    compact (~48px) to leave at least one unclipped row of tiles. */
 #phone-overlay.is-character-edit .phone-app-nav {
-  padding: 0 4px 1px;
-  gap: 4px;
+  padding: 2px 6px 4px;
+  gap: 6px;
   min-height: 0;
   flex: 0 0 auto;
 }
 #phone-overlay.is-character-edit .phone-app-nav h2 {
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1;
 }
 #phone-overlay.is-character-edit .phone-back {
-  width: 20px;
-  height: 20px;
+  width: 26px;
+  height: 26px;
   border-radius: 8px;
-  flex: 0 0 20px;
+  flex: 0 0 26px;
 }
 #phone-overlay.is-character-edit .phone-edit-preview {
-  height: 48px !important;
-  flex: 0 0 48px !important;
+  height: 90px !important;
+  flex: 0 0 90px !important;
   align-items: center;
   justify-content: center;
   overflow: hidden;
@@ -897,11 +897,11 @@ body[data-view="creator"]:has(#view-creator.is-keyboard) #toasts {
 #phone-overlay.is-character-edit .creator-tabs button {
   flex: 0 0 auto !important;
   min-width: auto !important;
-  min-height: 18px !important;
+  min-height: 22px !important;
   height: auto !important;
-  font-size: 8px !important;
+  font-size: 9px !important;
   line-height: 1.1;
-  padding: 2px 6px !important;
+  padding: 3px 8px !important;
   white-space: nowrap;
   border-radius: 999px;
   letter-spacing: 0;
@@ -935,7 +935,7 @@ body[data-view="creator"]:has(#view-creator.is-keyboard) #toasts {
 }
 #phone-overlay.is-character-edit #creator-tab-panels {
   flex: 1 1 auto !important;
-  min-height: 44px !important;
+  min-height: 88px !important;
   height: auto !important;
   overflow: hidden !important;
   padding: 1px 1px 0 !important;
@@ -966,9 +966,9 @@ body[data-view="creator"]:has(#view-creator.is-keyboard) #toasts {
 #phone-overlay.is-character-edit .swatch-row,
 #phone-overlay.is-character-edit .choice-row {
   display: grid !important;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  grid-auto-rows: 40px;
-  gap: 1px;
+  grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
+  grid-auto-rows: 44px;
+  gap: 4px;
   align-content: start;
   justify-content: start;
   width: 100%;
@@ -979,9 +979,9 @@ body[data-view="creator"]:has(#view-creator.is-keyboard) #toasts {
 #phone-overlay.is-character-edit .creator-window button.swatch,
 #phone-overlay.is-character-edit .creator-window button.choice {
   width: auto !important;
-  height: 40px !important;
+  height: 44px !important;
   min-width: 0 !important;
-  min-height: 40px !important;
+  min-height: 44px !important;
   max-width: none !important;
   flex: none !important;
   box-sizing: border-box !important;

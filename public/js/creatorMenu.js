@@ -113,11 +113,11 @@ export function initCreatorMenu({ onShow, getBackdropRoom } = {}) {
     const w = Math.max(phone ? 80 : 120, (box?.clientWidth || (phone ? 140 : 300)) - 4);
     const rawH = (box?.clientHeight || (phone ? 48 : 120)) - 2;
     const h = Math.max(phone ? 40 : 44, rawH);
-    const tile = phone ? 42 : 52;
-    const phoneCols = Math.max(3, Math.min(4, Math.floor((w + 2) / tile) || 3));
+    const tile = phone ? 48 : 52;
+    const phoneCols = Math.max(3, Math.min(4, Math.floor((w + 4) / tile) || 3));
     const swatchPerRow = phone ? phoneCols : Math.max(3, Math.floor((w + 4) / 52));
     const choicePerRow = phone ? phoneCols : Math.max(3, Math.min(6, Math.floor((w + 4) / 56)));
-    return { w, h, swatchPerRow, choicePerRow, headingH: phone ? 0 : 22, itemH: phone ? 42 : 48 };
+    return { w, h, swatchPerRow, choicePerRow, headingH: phone ? 0 : 22, itemH: phone ? 48 : 48 };
   }
 
   function perRowFor(items) {

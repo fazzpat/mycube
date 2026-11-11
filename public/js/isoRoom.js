@@ -1441,6 +1441,10 @@ export function createRoom3D(container, opts = {}) {
   }
 
   canvas.addEventListener("pointerdown", (e) => {
+    const over = document.elementFromPoint(e.clientX, e.clientY);
+    if (over && over.closest && over.closest("#chat-dock, .chat-frame, #phone-btn, #emote-wheel-btn, #chat-send, #chat-input, #edit-inventory, #shop-toggle, .shop-toggle")) {
+      return;
+    }
     try { canvas.setPointerCapture?.(e.pointerId); } catch {}
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     velX = velY = 0;

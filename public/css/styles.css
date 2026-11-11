@@ -1072,13 +1072,18 @@ body.phone-open .dock .phone-dock-btn { visibility: visible; }
   background: rgba(18, 10, 36, .16);
   pointer-events: auto;
 }
+.phone-overlay {
+  --phone-w: min(260px, 64vw);
+  --phone-h: min(440px, max(53dvh, 228px), calc(var(--layout-h, var(--app-h, 100dvh)) - var(--dock-h) - 56px));
+}
 .phone-device {
   pointer-events: auto;
   position: relative;
   z-index: 1;
-  width: min(170px, 40vw);
-  height: min(228px, calc(var(--app-h, 100dvh) - var(--dock-h) - 12px));
-  max-height: calc(var(--app-h, 100dvh) - var(--dock-h) - 12px);
+  width: var(--phone-w, min(260px, 64vw));
+  height: var(--phone-h, min(440px, 53dvh));
+  max-width: var(--phone-w, min(260px, 64vw));
+  max-height: var(--phone-h, min(440px, 53dvh));
   filter: drop-shadow(0 10px 16px rgba(12, 6, 28, .4));
   animation: phoneUp .28s cubic-bezier(.2, 1.15, .3, 1);
 }
@@ -1329,7 +1334,7 @@ body.phone-open .dock .phone-dock-btn { visibility: visible; }
   flex: 0 0 auto;
   display: flex;
   flex-direction: column;
-  z-index: 40;
+  z-index: 50;
   position: relative;
   pointer-events: none;
   transform: translateY(calc(-1 * var(--kb-inset, 0px)));
@@ -1339,7 +1344,7 @@ body.phone-open .dock .phone-dock-btn { visibility: visible; }
 .kb-reserve { display: none !important; height: 0; flex: 0 0 0; }
 #chat-dock {
   position: relative;
-  z-index: 40;
+  z-index: 50;
   margin-bottom: 0;
   align-items: flex-end;
   transform: none;
@@ -2374,10 +2379,10 @@ input, select, textarea, .chat-input, [data-testid="chat-input"] {
 /* Room label at the TOP of the stage (topbar already clears the notch) */
 .room-plaque {
   top: 8px;
-  left: calc(8px + var(--safe-left, 0px));
+  left: calc(56px + var(--safe-left, 0px));
   bottom: auto !important;
   right: auto;
-  max-width: min(52vw, 280px);
+  max-width: min(48vw, 260px);
 }
 .mycube-badge {
   top: auto;
@@ -2419,8 +2424,10 @@ input, select, textarea, .chat-input, [data-testid="chat-input"] {
 .phone-device {
   animation: none !important;
   transform: none !important;
-  height: min(228px, calc(var(--layout-h, 100dvh) - var(--dock-h) - 12px)) !important;
-  max-height: calc(var(--layout-h, 100dvh) - var(--dock-h) - 12px) !important;
+  width: var(--phone-w, min(260px, 64vw)) !important;
+  height: var(--phone-h, min(440px, 53dvh)) !important;
+  max-width: var(--phone-w, min(260px, 64vw)) !important;
+  max-height: var(--phone-h, min(440px, 53dvh)) !important;
   overscroll-behavior: none;
   touch-action: manipulation;
 }
@@ -2467,8 +2474,8 @@ input, select, textarea, .chat-input, [data-testid="chat-input"] {
   align-content: start;
 }
 .phone-app { min-height: 0; }
-.phone-app-icon { width: 30px; height: 30px; border-radius: 8px; }
-.phone-app-label { font-size: .46rem; }
+.phone-app-icon { width: 36px; height: 36px; border-radius: 10px; }
+.phone-app-label { font-size: .55rem; }
 
 /* MyCoke-style chat strips: name tab + cream message, no tail, near the top */
 .speech-stack {
@@ -2746,10 +2753,10 @@ body.phone-open .phone-dock-btn {
 #phone-overlay.is-character-edit .phone-device,
 #phone-overlay.is-character-edit.is-compact-edit .phone-device,
 #phone-overlay.app-open .phone-device {
-  width: min(170px, 40vw) !important;
-  height: min(228px, calc(var(--layout-h, var(--app-h, 100dvh)) - var(--dock-h) - 12px)) !important;
-  max-width: min(170px, 40vw) !important;
-  max-height: min(228px, calc(var(--layout-h, var(--app-h, 100dvh)) - var(--dock-h) - 12px)) !important;
+  width: var(--phone-w, min(260px, 64vw)) !important;
+  height: var(--phone-h, min(440px, 53dvh)) !important;
+  max-width: var(--phone-w, min(260px, 64vw)) !important;
+  max-height: var(--phone-h, min(440px, 53dvh)) !important;
   left: auto !important;
   top: auto !important;
   right: auto !important;
@@ -2840,16 +2847,16 @@ body.phone-open .phone-dock-btn {
 }
 
 
-/* Always keep the in-game handset at the home-screen size. */
+/* Every in-game app uses the same moderately larger handset size. */
 #phone-overlay .phone-device,
 #phone-overlay.is-character-edit .phone-device,
 #phone-overlay.is-character-edit.is-compact-edit .phone-device,
 #phone-overlay.is-character-edit.is-short-edit .phone-device,
 #phone-overlay.app-open .phone-device {
-  width: min(170px, 40vw) !important;
-  height: min(228px, calc(var(--layout-h, var(--app-h, 100dvh)) - var(--dock-h) - 12px)) !important;
-  max-width: min(170px, 40vw) !important;
-  max-height: min(228px, calc(var(--layout-h, var(--app-h, 100dvh)) - var(--dock-h) - 12px)) !important;
+  width: var(--phone-w, min(260px, 64vw)) !important;
+  height: var(--phone-h, min(440px, 53dvh)) !important;
+  max-width: var(--phone-w, min(260px, 64vw)) !important;
+  max-height: var(--phone-h, min(440px, 53dvh)) !important;
   min-height: 0 !important;
   min-width: 0 !important;
   flex: 0 0 auto !important;
@@ -3069,3 +3076,364 @@ body[data-view="room"] .toast {
 }
 body[data-view="room"] .toast .toast-actions { margin-top: 4px; gap: 4px; }
 body[data-view="room"] .toast .toast-actions .btn { font-size: 11px; padding: 2px 6px; min-height: 22px; }
+
+
+/* Larger in-handset apps: Shop grid with visible prices, Pets action cards. */
+#phone-screen-shop .phone-app-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  margin: 0 8px 6px;
+}
+#phone-screen-shop .phone-shop-tabs {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 0 0 4px;
+}
+#phone-screen-shop .phone-shop-tabs .store-tab {
+  font-size: 11px;
+  padding: 5px 8px;
+  min-height: 26px;
+}
+#phone-screen-shop .store-preview {
+  width: 72px;
+  min-height: 96px;
+  flex: 0 0 auto;
+  align-self: center;
+}
+#phone-screen-shop .store-grid {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  gap: 6px;
+  overflow-y: auto;
+}
+#phone-screen-shop .store-item {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 4px;
+  min-height: 78px;
+  padding: 6px;
+  font-size: 11px;
+  line-height: 1.2;
+}
+#phone-screen-shop .store-item .meta {
+  width: 100%;
+  font-size: 11px;
+}
+#phone-screen-shop .store-item .price {
+  display: block;
+  margin-top: auto;
+  font-size: 12px;
+  font-weight: 800;
+  color: #2a7a4a;
+}
+#phone-screen-shop .store-thumb {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+}
+#phone-screen-shop .phone-shop-actions,
+#phone-screen-shop .store-actions {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 6px;
+  padding-top: 4px;
+}
+#phone-screen-shop .phone-shop-actions .btn,
+#phone-screen-shop #phone-shop-tryon,
+#phone-screen-shop #phone-shop-buy {
+  min-height: 32px;
+  font-size: 11px;
+}
+
+.phone-pet-card {
+  background: #fff8f0;
+  color: #1a1020;
+  border: 1px solid #d4c0a0;
+  border-radius: 10px;
+  padding: 8px;
+  margin-bottom: 8px;
+}
+.phone-pet-card strong { display: block; font-size: 13px; margin-bottom: 2px; }
+.phone-pet-card .item-sub { display: block; font-size: 11px; margin-bottom: 6px; color: #5a4030; }
+.phone-pet-card div { display: flex; flex-wrap: wrap; gap: 4px; }
+.phone-pet-card .btn {
+  min-height: 32px;
+  font-size: 11px;
+  padding: 4px 8px;
+  margin: 0;
+}
+
+#phone-overlay .phone-app-nav {
+  padding: 4px 8px 6px;
+}
+#phone-overlay .phone-app-nav h2 { font-size: 13px; }
+#phone-overlay .phone-back {
+  width: 28px;
+  height: 28px;
+  border-radius: 10px;
+  font-size: 1.2rem;
+}
+
+
+
+/* Shopping-cart button: 2000s circular HUD, top-left, matching camera buttons. */
+.shop-toggle {
+  position: absolute;
+  top: 8px;
+  left: calc(8px + var(--safe-left, 0px));
+  z-index: 46;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: #0a0c12ee;
+  color: #f4e6cc;
+  box-shadow: 0 0 0 1px #8a6a44, 0 2px 0 #3a2a18;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.shop-toggle svg { display: block; }
+.shop-toggle[aria-expanded="true"],
+body.shop-open .shop-toggle {
+  background: #1a140cee;
+  color: #f4c15d;
+  box-shadow: 0 0 0 1px #c4a060, 0 1px 0 #3a2a18;
+}
+
+/* Shop as a full-height left side panel. Room stays put and stays
+   tappable to the right; the panel does not resize the cube. */
+#store-panel.store-panel,
+.store-panel {
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: auto !important;
+  bottom: var(--dock-h, 76px) !important;
+  transform: none !important;
+  width: min(360px, 58vw) !important;
+  max-width: 360px !important;
+  height: auto !important;
+  max-height: none !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+  z-index: 44 !important;
+  background: #f4efe4ee !important;
+  color: #1a1020 !important;
+  box-shadow: 4px 0 0 #8a6a44, 8px 0 18px rgba(42, 24, 16, 0.28) !important;
+  border-radius: 0 14px 14px 0 !important;
+  font-family: "Nunito", "Trebuchet MS", sans-serif !important;
+  animation: shopPanelIn 0.28s cubic-bezier(.2, 1.1, .3, 1);
+  pointer-events: auto;
+}
+#store-panel.store-panel.hidden,
+.store-panel.hidden {
+  display: none !important;
+}
+@keyframes shopPanelIn {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+.store-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 10px 8px 12px;
+  flex: 0 0 auto;
+}
+.store-panel-head strong {
+  flex: 1 1 auto;
+  font-size: 16px;
+  letter-spacing: 0.02em;
+}
+.shop-panel-coins {
+  flex: 0 0 auto;
+  font-size: 13px;
+  font-weight: 800;
+  background: #efe6d4;
+  border: 1px solid #8a6a44;
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+.shop-panel-close {
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  border: 1px solid #8a6a44;
+  border-radius: 8px;
+  background: #efe6d4;
+  color: #3a2418;
+  font-size: 16px;
+  line-height: 1;
+  box-shadow: inset 1px 1px 0 #fff8ee;
+  cursor: pointer;
+}
+#store-panel .store-tabs {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  /* Indent tab row so the top-left cart toggle does not cover Furniture. */
+  padding: 0 10px 6px 56px;
+}
+#store-panel .store-tab {
+  font-size: 11px;
+  padding: 5px 8px;
+  min-height: 26px;
+}
+#store-panel #inventory-row,
+#store-panel .inv-row {
+  flex: 0 0 auto;
+  margin: 0 10px 6px;
+  max-height: 72px;
+  overflow: auto;
+}
+#store-panel .store-panel-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 10px 8px;
+  overflow: hidden;
+}
+#store-panel .store-preview {
+  width: 100%;
+  min-height: 0;
+  flex: 0 0 auto;
+  max-height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+#store-panel .store-grid {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(124px, 1fr));
+  gap: 8px;
+  align-content: start;
+}
+#store-panel .store-item,
+#store-panel .shop-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-height: 84px;
+  padding: 8px;
+  text-align: left;
+  background: #fff8f0;
+  color: #1a1020;
+  box-shadow: 0 0 0 1px #d4c0a0;
+  border-radius: 8px;
+  font-size: 12px;
+}
+#store-panel .store-item .meta,
+#store-panel .shop-item strong {
+  width: 100%;
+  font-size: 12px;
+  font-weight: 800;
+}
+#store-panel .store-item .price,
+#store-panel .shop-item .item-sub {
+  font-size: 12px;
+  font-weight: 800;
+  color: #2a7a4a;
+}
+#store-panel .store-item .btn,
+#store-panel .shop-item .btn {
+  margin-top: auto;
+  min-height: 28px;
+  font-size: 11px;
+  width: 100%;
+}
+#store-panel .store-panel-foot {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 6px;
+  padding: 8px 10px 10px;
+}
+#store-panel .store-panel-foot .btn {
+  min-height: 34px;
+  font-size: 12px;
+}
+
+@media (max-width: 520px) {
+  #store-panel.store-panel,
+  .store-panel {
+    width: min(360px, 58vw) !important;
+    max-width: 360px !important;
+    max-height: none !important;
+  }
+}
+
+
+
+/* Dock phone button: large, instant, unobstructed hit target. */
+#phone-btn.phone-dock-btn,
+.dock .phone-dock-btn,
+.phone-dock-btn {
+  position: relative;
+  width: 52px;
+  height: 52px;
+  min-width: 52px;
+  min-height: 52px;
+  flex: 0 0 52px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  z-index: 51;
+  pointer-events: auto;
+}
+/* Invisible padding into the surrounding dock gap so misses at the edge still count. */
+#phone-btn.phone-dock-btn::after,
+.phone-dock-btn::after {
+  content: "";
+  position: absolute;
+  top: -8px;
+  right: -6px;
+  bottom: -8px;
+  left: -8px;
+  min-width: 68px;
+  min-height: 68px;
+}
+#phone-btn.phone-dock-btn:active,
+#phone-btn.phone-dock-btn.is-pressed,
+.phone-dock-btn:active,
+.phone-dock-btn.is-pressed {
+  transform: translateY(1px);
+  filter: brightness(0.9);
+  box-shadow: inset 0 2px 0 #8a6a4488, 0 0 0 1px #8a6a44;
+}
+@media (max-width: 400px) {
+  .dock .emote-btn {
+    width: 40px;
+    height: 40px;
+    flex: 0 0 40px;
+  }
+  .dock .phone-dock-btn,
+  #phone-btn.phone-dock-btn {
+    width: 52px !important;
+    height: 52px !important;
+    min-width: 52px !important;
+    min-height: 52px !important;
+    flex: 0 0 52px !important;
+  }
+}
+

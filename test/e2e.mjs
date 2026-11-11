@@ -72,7 +72,20 @@ async function openPhone(page) {
   await page.waitForSelector('[data-testid="phone-home"]:not(.hidden)', { state: "visible" });
 }
 
+async function openShopPanel(page) {
+  const already = await page.evaluate(() => !document.querySelector('[data-testid="store-panel"]')?.classList.contains("hidden"));
+  if (already) return;
+  const btn = page.locator('[data-testid="shop-toggle"]');
+  if (await btn.count()) await btn.click();
+  else await page.evaluate(() => window.__openStore("furniture"));
+  await page.waitForSelector('[data-testid="store-panel"]:not(.hidden)');
+}
+
 async function openPhoneApp(page, app) {
+  if (app === "shop") {
+    await openShopPanel(page);
+    return;
+  }
   await openPhone(page);
   await page.click(`[data-testid="phone-app-${app}"]`);
 }
@@ -317,7 +330,7 @@ canvas.save(out)
   await execFileAsync("python3", ["-c", script, ...args]);
 }
 
-const PHONE_HUD = ['[data-testid="room-title"]', '#room-meta', '[data-testid="room-coins"]', '[data-testid="cam-toggle"]', '[data-testid="phone-btn"]', '[data-testid="emote-wheel-btn"]', '[data-testid="chat-dock"]'];
+const PHONE_HUD = ['[data-testid="room-title"]', '#room-meta', '[data-testid="room-coins"]', '[data-testid="shop-toggle"]', '[data-testid="cam-toggle"]', '[data-testid="phone-btn"]', '[data-testid="emote-wheel-btn"]', '[data-testid="chat-dock"]'];
 
 async function checkShellOverflow(page, label) {
   const info = await page.evaluate(() => {
@@ -591,9 +604,10 @@ async function runRecordPlayerTests(browser) {
     );
 
     await openPhoneApp(recA, "shop");
-    await recA.waitForSelector('[data-testid="phone-screen-shop"]:not(.hidden)');
+    await recA.waitForSelector('[data-testid="store-panel"]:not(.hidden)');
     const shopHas = await recA.locator('[data-testid="buy-recordplayer"]').count();
     check("Record table appears in the furniture shop", shopHas >= 1);
+    await recA.evaluate(() => window.__closeStore?.());
     await closePhoneIfOpen(recA);
 
     await recA.evaluate(() => window.__debugKit?.({ furniture: ["recordplayer"], coins: 400 }));
@@ -869,23 +883,49 @@ async function runCreatorPhoneAndBoot(browser) {
     Math.abs(afterClose.w - homePhone.w) <= 2 && Math.abs(afterClose.h - homePhone.h) <= 2 && afterClose.home,
     JSON.stringify({ home: homePhone, after: afterClose })
   );
-  const appSizes = [];
-  for (const app of ["shop", "pets"]) {
-    await openPhoneApp(page, app);
-    await page.waitForTimeout(200);
-    const sz = await page.evaluate(() => {
-      const r = document.querySelector("[data-testid=phone-device]").getBoundingClientRect();
-      return { w: Math.round(r.width), h: Math.round(r.height) };
-    });
-    appSizes.push({ app, ...sz });
-    await clickPhoneBack(page);
-    await page.waitForTimeout(150);
-  }
+  await openPhoneApp(page, "pets");
+  await page.waitForTimeout(200);
+  const petsSz = await page.evaluate(() => {
+    const r = document.querySelector("[data-testid=phone-device]").getBoundingClientRect();
+    return { w: Math.round(r.width), h: Math.round(r.height) };
+  });
   check(
-    "Shop and Pets stay at the same phone size as home",
-    appSizes.every((s) => Math.abs(s.w - Math.round(homePhone.w)) <= 2 && Math.abs(s.h - Math.round(homePhone.h)) <= 2),
-    JSON.stringify({ home: homePhone, apps: appSizes })
+    "Pets stays at the same phone size as home",
+    Math.abs(petsSz.w - Math.round(homePhone.w)) <= 2 && Math.abs(petsSz.h - Math.round(homePhone.h)) <= 2,
+    JSON.stringify({ home: homePhone, pets: petsSz })
   );
+  const roomBeforeShop = await page.evaluate(() => {
+    const r = document.getElementById("view-room")?.getBoundingClientRect();
+    return r ? { w: Math.round(r.width), h: Math.round(r.height), x: Math.round(r.x), y: Math.round(r.y) } : null;
+  });
+  await openPhoneApp(page, "shop");
+  await page.waitForSelector('[data-testid="store-panel"]:not(.hidden)');
+  const shopUi = await page.evaluate(() => {
+    const panel = document.querySelector("[data-testid=store-panel]");
+    const phone = document.querySelector("[data-testid=phone-overlay]");
+    const room = document.getElementById("view-room")?.getBoundingClientRect();
+    const pr = panel?.getBoundingClientRect();
+    return {
+      panelOpen: Boolean(panel && !panel.classList.contains("hidden")),
+      phoneClosed: !phone || phone.classList.contains("hidden"),
+      panel: pr ? { w: Math.round(pr.width), h: Math.round(pr.height), x: Math.round(pr.x), y: Math.round(pr.y) } : null,
+      room: room ? { w: Math.round(room.width), h: Math.round(room.height), x: Math.round(room.x), y: Math.round(room.y) } : null,
+      vw: window.innerWidth,
+      vh: window.innerHeight,
+    };
+  });
+  check(
+    "Opening the shop closes the phone and slides in a left side panel",
+    Boolean(shopUi.panelOpen && shopUi.phoneClosed && shopUi.panel && shopUi.panel.x <= 2 && shopUi.panel.y <= 2 && shopUi.panel.w >= 160 && shopUi.panel.w <= Math.min(360, Math.round(shopUi.vw * 0.62) + 2) && shopUi.panel.h >= Math.round(shopUi.vh * 0.55)),
+    JSON.stringify(shopUi)
+  );
+  check(
+    "The room stays in place when the shop panel opens",
+    Boolean(roomBeforeShop && shopUi.room && roomBeforeShop.w === shopUi.room.w && roomBeforeShop.h === shopUi.room.h && roomBeforeShop.x === shopUi.room.x && roomBeforeShop.y === shopUi.room.y),
+    JSON.stringify({ before: roomBeforeShop, after: shopUi.room })
+  );
+  await page.click('[data-testid="store-close"]');
+  await page.waitForFunction(() => document.querySelector('[data-testid="store-panel"]')?.classList.contains("hidden"));
   await openPhoneApp(page, "edit");
   await page.waitForTimeout(200);
   const editRow = await page.evaluate(() => {
@@ -1078,7 +1118,7 @@ async function runMobileAvatarClearTests(browser) {
       const mid = await measureAvatarPhoneClearance(page);
       check(
         `Edit Character at ${vp.name} (${place.label}) stays at the normal phone size and keeps the avatar in the room`,
-        mid.view === "room" && mid.box && mid.phone && mid.phone.w <= 220 && mid.phone.h <= 360 && mid.phoneFits && (place.kind === "sit" ? mid.sitting : !mid.sitting),
+        mid.view === "room" && mid.box && mid.phone && mid.phone.w <= 280 && mid.phone.h <= 470 && mid.phoneFits && (place.kind === "sit" ? mid.sitting : !mid.sitting),
         JSON.stringify({ place, mid, beforeTile: before?.tile })
       );
       check(
@@ -1126,7 +1166,7 @@ async function runPhoneEditPoseTests(browser) {
       JSON.stringify({ before, during, after })
     );
     if (homePhone && editPhone) {
-      const compact = editPhone.w <= 220 && editPhone.h <= 360;
+      const compact = editPhone.w <= 280 && editPhone.h <= 470;
       const restored = after.restored && Math.abs(after.restored.w - homePhone.w) <= 4 && Math.abs(after.restored.h - homePhone.h) <= 4;
       check(
         `${label}: the mobile editor stays compact and the phone restores on close`,
@@ -1854,7 +1894,13 @@ async function runPhonePlaytest(browser) {
       return r.width > 40 && r.left >= -8 && r.right <= w + 8 && r.top >= -8 && r.bottom <= h + 8;
     });
     check("The phone menu fits the phone screen", phoneFits);
-    await a.locator('[data-testid="phone-backdrop"]').tap();
+    const outsidePhone = await a.evaluate(() => {
+      const phone = document.querySelector("[data-testid=phone-device]")?.getBoundingClientRect();
+      const w = window.innerWidth;
+      const x = phone ? Math.min(w - 16, phone.right + 24) : w - 16;
+      return { x, y: 80 };
+    });
+    await a.touchscreen.tap(outsidePhone.x, outsidePhone.y);
     await a.waitForSelector('[data-testid="phone-overlay"].hidden, body:not(.phone-open)', { timeout: 8000 }).catch(() => {});
     await a.waitForTimeout(150);
 
@@ -1871,6 +1917,140 @@ async function runPhonePlaytest(browser) {
     await ctxA.close();
     await ctxB.close();
   }
+}
+
+
+async function runPhoneButtonHitTests(browser) {
+  log("Dock phone button hit target and touch toggles");
+  const i14 = devices["iPhone 14"] || devices["iPhone 13"] || { viewport: { width: 390, height: 844 } };
+  const ctx = await browser.newContext({ ...i14, hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
+  const page = await ctx.newPage();
+  page.setDefaultTimeout(20000);
+  await login(page, "phnbtn");
+  await page.waitForFunction(() => window.HouseRoom3D && window.HouseRoom3D.ready);
+
+  const hit = await page.evaluate(() => {
+    const btn = document.querySelector('[data-testid="phone-btn"]');
+    const r = btn?.getBoundingClientRect();
+    return r ? { w: +r.width.toFixed(2), h: +r.height.toFixed(2), x: +r.x.toFixed(2), y: +r.y.toFixed(2) } : null;
+  });
+  check("The dock phone button has at least a 52×52 hit target", Boolean(hit && hit.w >= 52 && hit.h >= 52), JSON.stringify(hit));
+
+  async function assertBtnOnTop(label, setup) {
+    if (setup) await setup();
+    const report = await page.evaluate(() => {
+      const btn = document.querySelector('[data-testid="phone-btn"]');
+      const r = btn.getBoundingClientRect();
+      const pts = [
+        ["center", r.x + r.width / 2, r.y + r.height / 2],
+        ["tl", r.x + 2, r.y + 2],
+        ["tr", r.x + r.width - 2, r.y + 2],
+        ["bl", r.x + 2, r.y + r.height - 2],
+        ["br", r.x + r.width - 2, r.y + r.height - 2],
+      ];
+      const isBtn = (el) => Boolean(el && (el.id === "phone-btn" || el.closest?.("#phone-btn")));
+      return {
+        box: { w: +r.width.toFixed(2), h: +r.height.toFixed(2), x: +r.x.toFixed(2), y: +r.y.toFixed(2) },
+        pts: pts.map(([name, x, y]) => {
+          const el = document.elementFromPoint(x, y);
+          return { name, ok: isBtn(el), id: el?.id || "", cls: (typeof el?.className === "string" ? el.className : "").slice(0, 60), tag: el?.tagName };
+        }),
+      };
+    });
+    check(
+      `Nothing covers the phone button (${label})`,
+      Boolean(report.pts.every((p) => p.ok)),
+      JSON.stringify(report)
+    );
+  }
+
+  await assertBtnOnTop("normal");
+
+  await page.focus('[data-testid="chat-input"]');
+  await page.evaluate(() => window.__setKeyboardInset?.(320));
+  await page.waitForTimeout(80);
+  await assertBtnOnTop("keyboard up");
+  await page.evaluate(() => {
+    window.__setKeyboardInset?.(0);
+    document.querySelector('[data-testid="chat-input"]')?.blur();
+  });
+  await page.waitForTimeout(80);
+
+  await page.evaluate(() => window.__enterEdit?.());
+  await page.waitForSelector('[data-testid="edit-inventory"]:not(.hidden)');
+  await assertBtnOnTop("edit row shown");
+  await page.evaluate(() => window.__exitEdit?.());
+
+  await page.evaluate(() => window.__toast?.("Saved!"));
+  await page.waitForTimeout(50);
+  await assertBtnOnTop("toast shown");
+
+  await page.evaluate(() => window.__openPhone?.());
+  await page.waitForSelector('[data-testid="phone-overlay"]:not(.hidden)');
+  await assertBtnOnTop("phone open");
+  await page.evaluate(() => window.__closePhone?.());
+  await page.waitForFunction(() => document.querySelector('[data-testid="phone-overlay"]')?.classList.contains("hidden"));
+
+  await page.evaluate(() => window.__openStore?.("furniture"));
+  await page.waitForSelector('[data-testid="store-panel"]:not(.hidden)');
+  await assertBtnOnTop("shop panel open");
+  await page.evaluate(() => window.__closeStore?.());
+
+  // First tap with the chat input focused must open the phone, not just blur.
+  await page.focus('[data-testid="chat-input"]');
+  await page.evaluate(() => window.__setKeyboardInset?.(320));
+  await page.waitForTimeout(80);
+  let box = await page.locator('[data-testid="phone-btn"]').boundingBox();
+  await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+  const openedFromFocus = await page.waitForSelector('[data-testid="phone-overlay"]:not(.hidden)', { timeout: 3000 }).then(() => true).catch(() => false);
+  check("Tapping the phone button while the chat input is focused opens the phone on the first tap", openedFromFocus);
+  box = await page.locator('[data-testid="phone-btn"]').boundingBox();
+  await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+  const closedAgain = await page.waitForFunction(() => document.querySelector('[data-testid="phone-overlay"]')?.classList.contains("hidden"), null, { timeout: 3000 }).then(() => true).catch(() => false);
+  check("Tapping the phone button again closes the phone while the keyboard is up", closedAgain);
+  await page.evaluate(() => window.__setKeyboardInset?.(0));
+
+  await page.evaluate(() => { window.__closePhone?.(); window.__enterEdit?.(); });
+  await page.waitForSelector('[data-testid="edit-inventory"]:not(.hidden)');
+  box = await page.locator('[data-testid="phone-btn"]').boundingBox();
+  await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+  const openedInEdit = await page.waitForSelector('[data-testid="phone-overlay"]:not(.hidden)', { timeout: 3000 }).then(() => true).catch(() => false);
+  check("Tapping the phone button in Edit Room opens the phone", openedInEdit);
+  await page.evaluate(() => { window.__closePhone?.(); window.__exitEdit?.(); });
+
+  await page.evaluate(() => window.__closePhone?.());
+  await page.waitForFunction(() => document.querySelector('[data-testid="phone-overlay"]')?.classList.contains("hidden"));
+  let toggles = 0;
+  const missed = [];
+  let seed = 12345;
+  const rnd = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return (seed >>> 8) / 0x1000000; };
+  for (let i = 0; i < 20; i++) {
+    const before = await page.evaluate(() => !document.querySelector('[data-testid="phone-overlay"]')?.classList.contains("hidden"));
+    const r = await page.locator('[data-testid="phone-btn"]').boundingBox();
+    const x = r.x + 3 + rnd() * Math.max(1, r.width - 6);
+    const y = r.y + 3 + rnd() * Math.max(1, r.height - 6);
+    await page.touchscreen.tap(x, y);
+    const ok = await page.waitForFunction((prev) => {
+      const open = !document.querySelector('[data-testid="phone-overlay"]')?.classList.contains("hidden");
+      return open !== prev;
+    }, before, { timeout: 2000 }).then(() => true).catch(() => false);
+    if (ok) toggles += 1;
+    else missed.push({ i, before, x: +x.toFixed(1), y: +y.toFixed(1) });
+  }
+  check("20 random taps inside the phone button produce 20 toggles", toggles === 20, JSON.stringify({ toggles, missed }));
+
+  await page.evaluate(() => window.__closePhone?.());
+  await page.waitForFunction(() => document.querySelector('[data-testid="phone-overlay"]')?.classList.contains("hidden"));
+  const r = await page.locator('[data-testid="phone-btn"]').boundingBox();
+  const cx = r.x + r.width / 2;
+  const cy = r.y + r.height / 2;
+  await page.touchscreen.tap(cx, cy);
+  await page.touchscreen.tap(cx, cy);
+  await page.touchscreen.tap(cx, cy);
+  const rapid = await page.evaluate(() => !document.querySelector('[data-testid="phone-overlay"]')?.classList.contains("hidden"));
+  check("Rapid taps toggle the phone on every tap (open-close-open)", rapid === true);
+
+  await ctx.close();
 }
 
 const browser = await chromium.launch({
@@ -2360,18 +2540,18 @@ try {
   await alice.evaluate(() => window.__debugKit?.({ coins: 400 }));
   await alice.waitForTimeout(200);
   await openPhoneApp(alice, "shop");
-  await alice.waitForSelector('[data-testid="phone-screen-shop"]:not(.hidden)');
+  await alice.waitForSelector('[data-testid="store-panel"]:not(.hidden)');
   await alice.waitForSelector('[data-testid="buy-couch"]');
   await alice.evaluate(() => document.querySelector('[data-testid="buy-couch"]')?.click());
   await alice.waitForFunction(() => (window.__inventory?.() || []).includes("couch"), null, { timeout: 15000 });
   await alice.evaluate(() => document.querySelector('[data-testid="buy-plant"]')?.click());
   await alice.waitForFunction(() => (window.__inventory?.() || []).includes("plant"), null, { timeout: 15000 });
-  await alice.evaluate(() => document.querySelector('#phone-screen-shop [data-place="couch"], #phone-screen-edit [data-place="couch"]')?.click());
+  await alice.evaluate(() => document.querySelector('#inventory-row [data-place="couch"], #store-panel [data-place="couch"], #phone-screen-edit [data-place="couch"]')?.click());
   await alice.evaluate(() => window.__clickTile(3, 1));
   await alice.waitForFunction(() => window.HouseRoom3D.getFurniture().some((f) => f.type === "couch"));
   await openPhoneApp(alice, "shop");
   await alice.waitForFunction(() => (window.__inventory?.() || []).includes("plant"), null, { timeout: 15000 });
-  await alice.evaluate(() => document.querySelector('#phone-screen-shop [data-place="plant"], #phone-screen-edit [data-place="plant"]')?.click());
+  await alice.evaluate(() => document.querySelector('#inventory-row [data-place="plant"], #store-panel [data-place="plant"], #phone-screen-edit [data-place="plant"]')?.click());
   await alice.evaluate(() => window.__clickTile(0, 1));
   await alice.waitForFunction(() => window.HouseRoom3D.getFurniture().some((f) => f.type === "plant"));
   await bob.waitForFunction(() => window.HouseRoom3D.getFurniture().some((f) => f.type === "couch"));
@@ -2400,9 +2580,9 @@ try {
   );
   const vp = alice.viewportSize();
   check(
-    "The phone menu is a small handheld in the corner",
-    Boolean(phoneBox && phoneBox.width <= 176 && phoneBox.width <= vp.width * 0.42 && phoneBox.height <= 250 && phoneBox.x < vp.width * 0.45 && phoneBox.x >= -4 && phoneBox.x < 40),
-    JSON.stringify(phoneBox && { w: Math.round(phoneBox.width), h: Math.round(phoneBox.height), x: Math.round(phoneBox.x), y: Math.round(phoneBox.y) })
+    "The phone menu is a handheld in the corner with the room still visible above it",
+    Boolean(phoneBox && phoneBox.width >= 220 && phoneBox.width <= 280 && phoneBox.width <= vp.width * 0.68 && phoneBox.height >= 380 && phoneBox.height <= 460 && phoneBox.height <= vp.height * 0.58 && phoneBox.x < vp.width * 0.45 && phoneBox.x >= -4 && phoneBox.x < 40 && phoneBox.y >= 40),
+    JSON.stringify(phoneBox && { w: Math.round(phoneBox.width), h: Math.round(phoneBox.height), x: Math.round(phoneBox.x), y: Math.round(phoneBox.y), vw: vp.width, vh: vp.height })
   );
   const aliceOnPhone = await alice.waitForFunction(() => window.HouseRoom3D.personFlags("alice")?.usingPhone, null, { timeout: 8000 }).then(() => true).catch(() => false);
   const bobSeesPhone = await bob.waitForFunction(() => window.HouseRoom3D.personFlags("alice")?.usingPhone, null, { timeout: 8000 }).then(() => true).catch(() => false);
@@ -2412,10 +2592,22 @@ try {
   await alice.screenshot({ path: `${SHOT}/29-corner-phone.png` });
   await alice.screenshot({ path: `${SHOT}/08-phone-menu.png` });
   await openPhoneApp(alice, "shop");
-  await alice.waitForSelector('[data-testid="phone-screen-shop"]:not(.hidden)');
+  await alice.waitForSelector('[data-testid="store-panel"]:not(.hidden)');
+  const shopMutex = await alice.evaluate(() => ({
+    phoneClosed: document.querySelector('[data-testid="phone-overlay"]')?.classList.contains("hidden"),
+    shopOpen: !document.querySelector('[data-testid="store-panel"]')?.classList.contains("hidden"),
+    usingPhone: Boolean(window.HouseRoom3D.personFlags("alice")?.usingPhone),
+  }));
+  check(
+    "Opening the shop from a phone session closes the phone and shows the side panel",
+    shopMutex.phoneClosed && shopMutex.shopOpen && !shopMutex.usingPhone,
+    JSON.stringify(shopMutex)
+  );
   await alice.waitForTimeout(200);
   await alice.screenshot({ path: `${SHOT}/09-phone-app-open.png` });
-  await alice.click('[data-testid="phone-home-bar"]');
+  await alice.click('[data-testid="shop-toggle"]');
+  await alice.waitForFunction(() => document.querySelector('[data-testid="store-panel"]')?.classList.contains("hidden"));
+  await openPhone(alice);
   await alice.waitForSelector('[data-testid="phone-home"]:not(.hidden)', { state: "visible" });
   await alice.click('[data-testid="phone-home-bar"]');
   await alice.waitForFunction(() => document.querySelector('[data-testid="phone-overlay"]')?.classList.contains("hidden"));
@@ -3331,6 +3523,9 @@ try {
 
   log("Phone playtest: follow camera, chess seating, and touch interactions");
   await runPhonePlaytest(browser);
+
+  log("Dock phone button hit target and touch toggles");
+  await runPhoneButtonHitTests(browser);
 
   log("Stores and restyle screenshots");
   await runStoresAndCyberShots(browser);
