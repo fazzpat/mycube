@@ -2,11 +2,13 @@ import { chromium, devices } from "playwright";
 import { mkdir, unlink, writeFile } from "fs/promises";
 import { execFile } from "child_process";
 import { promisify } from "util";
+import path from "path";
+import { fileURLToPath } from "url";
 
 const execFileAsync = promisify(execFile);
 
 const BASE = process.env.BASE_URL || "http://127.0.0.1:3000";
-const SHOT = "/workspace/rooms-app/screenshots";
+const SHOT = process.env.SHOT_DIR || path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "screenshots");
 
 function log(msg) {
   console.log("[test]", msg);
@@ -1343,6 +1345,16 @@ try {
   await alice.waitForSelector('[data-testid="chess-panel"]:not(.hidden)', { timeout: 20000 });
   await bob.waitForSelector('[data-testid="chess-panel"]:not(.hidden)', { timeout: 20000 });
   check("Both players get a chess panel when two seats are taken", true);
+  const panelSquares = await alice.evaluate(() => window.__chessPanelMetrics?.());
+  if (panelSquares?.squares?.length === 64) {
+    const dw = Math.max(...panelSquares.squares.map((s) => s.w)) - Math.min(...panelSquares.squares.map((s) => s.w));
+    const dh = Math.max(...panelSquares.squares.map((s) => s.h)) - Math.min(...panelSquares.squares.map((s) => s.h));
+    const rect = Math.max(...panelSquares.squares.map((s) => Math.abs(s.w - s.h)));
+    check("Playable chess squares are equal and actually square", dw <= 1.25 && dh <= 1.25 && rect <= 1.25, JSON.stringify({ dw, dh, rect, n: panelSquares.squares.length }));
+  } else {
+    check("Playable chess squares are equal and actually square", false, JSON.stringify(panelSquares));
+  }
+  check("The chess panel uses standing 2D piece sprites", (panelSquares?.pieces || 0) === 32);
   const boardInfo = await alice.evaluate((id) => window.__chessBoardInfo(id), chessId);
   check("The chess board sits inside the tabletop with a small margin", Boolean(boardInfo && boardInfo.board < boardInfo.table - 0.2 && boardInfo.square <= 0.14), JSON.stringify(boardInfo));
   const chessFaces = await alice.evaluate(() => {
