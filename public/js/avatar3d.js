@@ -449,39 +449,70 @@ function drawFace(buf, key, pal, upper, emote) {
   const anchors = eyeAnchors(key, upper, false);
   if (crying) {
     for (const a of anchors) {
-      rect(buf, a.x - 0.5, a.y + 3, a.x + 0.5, a.y + 7, TEAR, "tear", 55);
+      rect(buf, a.x - 0.5, a.y + 4, a.x + 0.5, a.y + 9, TEAR, "tear", 55);
     }
   }
   if (emote === "laugh") {
-    ellipse(buf, key === "e" ? g.cx + 4 : g.cx, cy + 9.0, 1.6, 1.2, rgb(90, 40, 40), "mouth", 54, { shade: "flat" });
+    ellipse(buf, key === "e" ? g.cx + 4 : g.cx, cy + 10.4, 1.6, 1.2, rgb(90, 40, 40), "mouth", 54, { shade: "flat" });
   } else if (emote === "cry") {
-    ellipse(buf, key === "e" ? g.cx + 4 : g.cx, cy + 9.2, 1.2, 0.8, rgb(120, 70, 70), "mouth", 54, { shade: "flat" });
+    ellipse(buf, key === "e" ? g.cx + 4 : g.cx, cy + 10.6, 1.2, 0.8, rgb(120, 70, 70), "mouth", 54, { shade: "flat" });
   }
 }
 
 function eyeAnchors(key, upper, flip) {
   if (key === "n" || key === "ne") return [];
   const g = headGeom(key);
-  const eyeY = g.cy + upper + 5.2;
+  // Low and wide on the lower face so the bigger ovals still sit under the brow.
+  const eyeY = g.cy + upper + 5.8;
   let pts;
-  if (key === "e") pts = [{ x: g.cx + 3.6, y: eyeY }];
-  else if (key === "se") pts = [{ x: g.cx - 3.4, y: eyeY }, { x: g.cx + 7.0, y: eyeY }];
-  else pts = [{ x: g.cx - 6.2, y: eyeY }, { x: g.cx + 6.2, y: eyeY }];
+  if (key === "e") pts = [{ x: g.cx + 3.8, y: eyeY }];
+  else if (key === "se") pts = [{ x: g.cx - 3.6, y: eyeY }, { x: g.cx + 7.2, y: eyeY }];
+  else pts = [{ x: g.cx - 6.4, y: eyeY }, { x: g.cx + 6.4, y: eyeY }];
   if (flip) pts = pts.map((p) => ({ x: AV_W - 1 - p.x, y: p.y }));
   return pts;
 }
 
-const EYE_OPEN = [[0, -2], [-1, -1], [0, -1], [1, -1], [-1, 0], [0, 0], [1, 0], [-1, 1], [0, 1], [1, 1], [0, 2]];
-const EYE_HALF = [[-1, 0], [0, 0], [1, 0], [0, -1], [0, 1]];
-const EYE_CLOSED = [[-2, 0], [-1, 0], [0, 0], [1, 0], [2, 0]];
+// ~5x7 tall rounded ovals, very dark brown/black.
+const EYE_INK = rgb(22, 14, 12);
 const EYE_HI = rgb(255, 255, 255);
+const BLUSH = rgb(232, 150, 156);
+const EYE_OPEN = [
+  [-1, -3], [0, -3], [1, -3],
+  [-2, -2], [-1, -2], [0, -2], [1, -2], [2, -2],
+  [-2, -1], [-1, -1], [0, -1], [1, -1], [2, -1],
+  [-2,  0], [-1,  0], [0,  0], [1,  0], [2,  0],
+  [-2,  1], [-1,  1], [0,  1], [1,  1], [2,  1],
+  [-2,  2], [-1,  2], [0,  2], [1,  2], [2,  2],
+  [-1,  3], [0,  3], [1,  3],
+];
+const EYE_HALF = [
+  [-1, -1], [0, -1], [1, -1],
+  [-2,  0], [-1,  0], [0,  0], [1,  0], [2,  0],
+  [-2,  1], [-1,  1], [0,  1], [1,  1], [2,  1],
+];
+const EYE_CLOSED = [
+  [-3, -1], [-2, 0], [-1, 1], [0, 1], [1, 1], [2, 0], [3, -1],
+];
 
 function stampEye(buf, cx, cy, blink) {
   const x = Math.round(cx), y = Math.round(cy);
   const mode = blink || "open";
   const pat = mode === "closed" ? EYE_CLOSED : mode === "half" ? EYE_HALF : EYE_OPEN;
-  for (const [dx, dy] of pat) plot(buf, x + dx, y + dy, INK, "eye", 54);
-  if (mode === "open") plot(buf, x + 1, y - 1, EYE_HI, "eye-hi", 55);
+  for (const [dx, dy] of pat) plot(buf, x + dx, y + dy, EYE_INK, "eye", 54);
+  if (mode === "open") {
+    // 2px white highlight at top-left, 1px sparkle at bottom-right.
+    plot(buf, x - 1, y - 2, EYE_HI, "eye-hi", 55);
+    plot(buf, x, y - 2, EYE_HI, "eye-hi", 55);
+    plot(buf, x + 1, y + 2, EYE_HI, "eye-spark", 55);
+  }
+}
+
+function stampBlush(buf, cx, cy, side) {
+  const x = Math.round(cx), y = Math.round(cy) + 5;
+  const dir = side >= 0 ? 1 : -1;
+  plot(buf, x + dir, y, BLUSH, "blush", 50);
+  plot(buf, x + dir * 2, y, BLUSH, "blush", 50);
+  plot(buf, x + dir, y + 1, BLUSH, "blush", 50);
 }
 
 function drawEyes(buf, key, upper, flip, flags, emote) {
@@ -490,8 +521,12 @@ function drawEyes(buf, key, upper, flip, flags, emote) {
   const blink = closedEmote ? "closed" : (flags.blink || "open");
   const lookX = closedEmote ? 0 : (flags.lookX || 0);
   const lookY = closedEmote ? 0 : (flags.lookY || 0);
-  for (const a of eyeAnchors(key, upper, flip)) {
+  const anchors = eyeAnchors(key, upper, flip);
+  const g = headGeom(key);
+  const midX = flip ? AV_W - 1 - g.cx : g.cx;
+  for (const a of anchors) {
     stampEye(buf, a.x + lookX, a.y + lookY, blink);
+    stampBlush(buf, a.x, a.y, a.x >= midX ? 1 : -1);
   }
 }
 
@@ -635,17 +670,16 @@ function ring(buf, cx, cy, rx, ry, color, kind, depth) {
 
 function drawGlasses(buf, key, upper) {
   if (key === "n" || key === "ne") return;
-  const g = headGeom(key);
-  const cy = g.cy + upper + 5.2;
   const frame = rgb(48, 36, 32);
-  if (key === "e") {
-    ring(buf, g.cx + 3.6, cy, 3.4, 2.8, frame, "glasses", 56);
-    return;
+  const anchors = eyeAnchors(key, upper, false);
+  for (const a of anchors) {
+    ring(buf, a.x, a.y, 4.0, 4.4, frame, "glasses", 56);
   }
-  const wide = 6.0;
-  ring(buf, g.cx - wide, cy, 3.6, 2.9, frame, "glasses", 56);
-  ring(buf, g.cx + wide, cy, 3.6, 2.9, frame, "glasses", 56);
-  rect(buf, g.cx - 2, cy, g.cx + 2, cy, frame, "glasses", 56);
+  if (anchors.length === 2) {
+    const left = anchors[0].x < anchors[1].x ? anchors[0] : anchors[1];
+    const right = anchors[0].x < anchors[1].x ? anchors[1] : anchors[0];
+    rect(buf, left.x + 3, left.y, right.x - 3, right.y, frame, "glasses", 56);
+  }
 }
 
 function drawHeadphones(buf, av, key, pal, upper) {

@@ -207,31 +207,55 @@ function drawPet(buf, kind, key, pal, sit, walkStep, blink = "open") {
   } else if (kind === "parrot") {
     ellipse(buf, cx, headY - 7, 3.2, 2.4, pal.fur, "crest", 18);
   }
-  // Face
+  // Face — big sparkly eyes to match the chibi avatars.
   if (key !== "n") {
-    const eyeY = headY + 0.6;
-        function petEye(ex, ey) {
+    const EYE_INK = { r: 22, g: 14, b: 12 };
+    const EYE_HI = { r: 255, g: 255, b: 255 };
+    const BLUSH = { r: 232, g: 150, b: 156 };
+    const PET_OPEN = [
+      [-1, -3], [0, -3], [1, -3],
+      [-2, -2], [-1, -2], [0, -2], [1, -2], [2, -2],
+      [-2, -1], [-1, -1], [0, -1], [1, -1], [2, -1],
+      [-2,  0], [-1,  0], [0,  0], [1,  0], [2,  0],
+      [-2,  1], [-1,  1], [0,  1], [1,  1], [2,  1],
+      [-1,  2], [0,  2], [1,  2],
+    ];
+    const PET_HALF = [
+      [-1, -1], [0, -1], [1, -1],
+      [-2,  0], [-1,  0], [0,  0], [1,  0], [2,  0],
+      [-1,  1], [0,  1], [1,  1],
+    ];
+    const PET_CLOSED = [
+      [-2, -1], [-1, 0], [0, 0], [1, 0], [2, -1],
+    ];
+    const eyeY = headY - 0.2;
+    function petEye(ex, ey, side) {
+      const x = Math.round(ex), y = Math.round(ey);
       if (blink === "closed") {
-        plot(buf, Math.round(ex) - 1, Math.round(ey), INK, "eye", 30);
-        plot(buf, Math.round(ex), Math.round(ey), INK, "eye", 30);
-        plot(buf, Math.round(ex) + 1, Math.round(ey), INK, "eye", 30);
+        for (const [dx, dy] of PET_CLOSED) plot(buf, x + dx, y + dy, EYE_INK, "eye", 30);
       } else if (blink === "half") {
-        ellipse(buf, ex, ey, 1.3, 1.0, INK, "eye", 30);
+        for (const [dx, dy] of PET_HALF) plot(buf, x + dx, y + dy, EYE_INK, "eye", 30);
       } else {
-        ellipse(buf, ex, ey, 1.5, 2.1, INK, "eye", 30);
-        plot(buf, Math.round(ex) + 1, Math.round(ey) - 1, { r: 255, g: 255, b: 255 }, "eye-hi", 31);
+        for (const [dx, dy] of PET_OPEN) plot(buf, x + dx, y + dy, EYE_INK, "eye", 30);
+        plot(buf, x - 1, y - 2, EYE_HI, "eye-hi", 31);
+        plot(buf, x, y - 2, EYE_HI, "eye-hi", 31);
+        plot(buf, x + 1, y + 1, EYE_HI, "eye-spark", 31);
       }
+      const dir = side >= 0 ? 1 : -1;
+      plot(buf, x + dir, y + 4, BLUSH, "blush", 28);
+      plot(buf, x + dir * 2, y + 4, BLUSH, "blush", 28);
     }
     if (key === "e") {
-      petEye(cx + 3.4, eyeY);
+      petEye(cx + 3.6, eyeY, 1);
     } else {
-      petEye(cx - 3.6, eyeY);
-      petEye(cx + 3.6, eyeY);
+      petEye(cx - 4.0, eyeY, -1);
+      petEye(cx + 4.0, eyeY, 1);
     }
     const nx = key === "e" ? cx + 5 : cx;
-    plot(buf, Math.round(nx), Math.round(headY + 3.6), pal.nose, "nose", 30);
-    plot(buf, Math.round(nx) - 1, Math.round(headY + 3.6), pal.nose, "nose", 30);
-    if (key !== "e") plot(buf, Math.round(nx) + 1, Math.round(headY + 3.6), pal.nose, "nose", 30);
+    const ny = headY + 5.0;
+    plot(buf, Math.round(nx), Math.round(ny), pal.nose, "nose", 32);
+    plot(buf, Math.round(nx) - 1, Math.round(ny), pal.nose, "nose", 32);
+    if (key !== "e") plot(buf, Math.round(nx) + 1, Math.round(ny), pal.nose, "nose", 32);
   }
 }
 
