@@ -2714,7 +2714,7 @@ import {
     }
     const spr = drawAvatarSprite(state.draft, { bodyDir: 1, headDir: 1, blink: "open" }, 0);
     const boxW = Math.max(1, box.clientWidth || 140);
-    const boxH = Math.max(1, box.clientHeight || 64);
+    const boxH = Math.max(1, box.clientHeight || 48);
     const raw = Math.min(boxW / spr.w, boxH / spr.h);
     const scale = raw >= 1 ? Math.floor(raw) : Math.max(0.5, raw);
     const dw = Math.max(1, Math.round(spr.w * scale));

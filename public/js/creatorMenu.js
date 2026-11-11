@@ -109,12 +109,15 @@ export function initCreatorMenu({ onShow, getBackdropRoom } = {}) {
 
   function panelMetrics() {
     const box = panelsEl || panelEl(currentId());
-    const w = Math.max(120, (box?.clientWidth || 300) - 4);
-    const h = Math.max(44, (box?.clientHeight || 120) - 2);
-    const compact = typeof compactEditViewport === "function" && compactEditViewport() && phoneEditOpen();
-    const swatchPerRow = compact ? 3 : Math.max(3, Math.floor((w + 4) / 52));
-    const choicePerRow = compact ? 3 : Math.max(3, Math.min(6, Math.floor((w + 4) / 56)));
-    return { w, h, swatchPerRow, choicePerRow, headingH: compact ? 0 : 22, itemH: compact ? 44 : 48 };
+    const phone = phoneEditOpen();
+    const w = Math.max(phone ? 80 : 120, (box?.clientWidth || (phone ? 140 : 300)) - 4);
+    const rawH = (box?.clientHeight || (phone ? 48 : 120)) - 2;
+    const h = Math.max(phone ? 40 : 44, rawH);
+    const tile = phone ? 42 : 52;
+    const phoneCols = Math.max(3, Math.min(4, Math.floor((w + 2) / tile) || 3));
+    const swatchPerRow = phone ? phoneCols : Math.max(3, Math.floor((w + 4) / 52));
+    const choicePerRow = phone ? phoneCols : Math.max(3, Math.min(6, Math.floor((w + 4) / 56)));
+    return { w, h, swatchPerRow, choicePerRow, headingH: phone ? 0 : 22, itemH: phone ? 42 : 48 };
   }
 
   function perRowFor(items) {

@@ -840,28 +840,32 @@ body[data-view="creator"]:has(#view-creator.is-keyboard) #toasts {
 }
 
 
-/* In-phone editor: shrink chrome so tabs and options can scroll inside the
-   home-size handset (nav + preview + tabs + footer must leave room). */
+/* In-phone editor: compact preview + tab chips, and a real options grid
+   with fully visible ~40px tiles. The 228px handset only has ~185px of
+   screen after the bezel, status, and home bar, so the preview stays
+   compact (~48px) to leave at least one unclipped row of tiles. */
 #phone-overlay.is-character-edit .phone-app-nav {
-  padding: 1px 4px 2px;
+  padding: 0 4px 1px;
   gap: 4px;
   min-height: 0;
+  flex: 0 0 auto;
 }
 #phone-overlay.is-character-edit .phone-app-nav h2 {
-  font-size: 11px;
+  font-size: 10px;
   line-height: 1;
 }
 #phone-overlay.is-character-edit .phone-back {
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   border-radius: 8px;
-  flex: 0 0 22px;
+  flex: 0 0 20px;
 }
 #phone-overlay.is-character-edit .phone-edit-preview {
-  height: 64px;
-  flex: 0 0 64px;
+  height: 48px !important;
+  flex: 0 0 48px !important;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
 }
 #phone-overlay.is-character-edit .phone-character-editor,
 #phone-overlay.is-character-edit .creator-window {
@@ -872,6 +876,7 @@ body[data-view="creator"]:has(#view-creator.is-keyboard) #toasts {
   display: flex !important;
   flex-direction: column !important;
   overflow: hidden !important;
+  padding: 1px 2px 2px !important;
 }
 #phone-overlay.is-character-edit .creator-tabs {
   flex: 0 0 auto;
@@ -884,6 +889,7 @@ body[data-view="creator"]:has(#view-creator.is-keyboard) #toasts {
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
   padding: 0 2px 2px;
+  margin: 0 !important;
 }
 #phone-overlay.is-character-edit .creator-tabs::-webkit-scrollbar {
   display: none;
@@ -891,75 +897,30 @@ body[data-view="creator"]:has(#view-creator.is-keyboard) #toasts {
 #phone-overlay.is-character-edit .creator-tabs button {
   flex: 0 0 auto !important;
   min-width: auto !important;
-  min-height: 22px !important;
+  min-height: 18px !important;
+  height: auto !important;
   font-size: 8px !important;
   line-height: 1.1;
-  padding: 3px 7px !important;
+  padding: 2px 6px !important;
   white-space: nowrap;
   border-radius: 999px;
   letter-spacing: 0;
+  box-shadow: none !important;
+}
+#phone-overlay.is-character-edit .creator-tabs button.is-selected {
+  box-shadow: 0 0 0 1px #fff4c4, 0 0 8px rgba(255, 228, 122, 0.7) !important;
 }
 #phone-overlay.is-character-edit .creator-pager:not(.is-needed) {
-  display: none;
-}
-#phone-overlay.is-character-edit .creator-pager {
-  flex: 0 0 auto;
-  flex-basis: 22px;
-}
-#phone-overlay.is-character-edit .creator-page-btn {
-  min-width: 22px !important;
-  min-height: 22px !important;
-}
-#phone-overlay.is-character-edit #creator-tab-panels,
-#phone-overlay.is-character-edit [data-panel] {
-  flex: 1 1 auto !important;
-  min-height: 0 !important;
-  height: auto !important;
-  overflow-x: hidden !important;
-  overflow-y: auto !important;
-}
-#phone-overlay.is-character-edit .creator-footer {
-  flex: 0 0 auto;
-  flex-shrink: 0;
-  flex-wrap: nowrap !important;
-  align-items: stretch;
-  padding: 2px 3px !important;
-  gap: 3px;
-}
-#phone-overlay.is-character-edit .creator-footer .field {
-  flex: 1 1 auto !important;
-  max-width: none !important;
-}
-#phone-overlay.is-character-edit .creator-footer-actions {
-  flex: 0 0 auto !important;
-  max-width: none !important;
-}
-#phone-overlay.is-character-edit .creator-footer-actions .btn {
-  min-width: 0 !important;
-  font-size: 6px !important;
-  padding: 0 5px !important;
-  white-space: nowrap;
-}
-#phone-overlay.is-character-edit #creator-back {
   display: none !important;
 }
-#phone-overlay.is-character-edit .creator-window input[type="text"],
-#phone-overlay.is-character-edit .creator-window .btn,
-#phone-overlay.is-character-edit .creator-window button.swatch,
-#phone-overlay.is-character-edit .creator-window button.choice,
-#phone-overlay.is-character-edit .creator-window .check-row {
-  min-height: 24px !important;
-}
-#phone-overlay.is-character-edit .creator-logo,
-#phone-overlay.is-character-edit .creator-tag,
-#phone-overlay.is-character-edit .phone-brand {
+#phone-overlay.is-character-edit .creator-page-dots {
   display: none !important;
 }
-
 #phone-overlay.is-character-edit .creator-pager {
   flex: 0 0 20px !important;
   flex-basis: 20px !important;
   max-height: 20px !important;
+  min-height: 0 !important;
   padding: 0 !important;
   gap: 4px !important;
 }
@@ -972,6 +933,117 @@ body[data-view="creator"]:has(#view-creator.is-keyboard) #toasts {
   font-size: 8px !important;
   box-shadow: none !important;
 }
+#phone-overlay.is-character-edit #creator-tab-panels {
+  flex: 1 1 auto !important;
+  min-height: 44px !important;
+  height: auto !important;
+  overflow: hidden !important;
+  padding: 1px 1px 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+#phone-overlay.is-character-edit [data-panel].hidden {
+  display: none !important;
+}
+#phone-overlay.is-character-edit [data-panel]:not(.hidden) {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  height: auto !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: flex-start !important;
+  padding: 1px;
+}
+#phone-overlay.is-character-edit [data-panel] h3,
+#phone-overlay.is-character-edit .creator-window h3 {
+  display: none !important;
+  margin: 0 !important;
+  height: 0 !important;
+  overflow: hidden !important;
+}
+#phone-overlay.is-character-edit .swatch-row,
+#phone-overlay.is-character-edit .choice-row {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-auto-rows: 40px;
+  gap: 1px;
+  align-content: start;
+  justify-content: start;
+  width: 100%;
+  max-width: 100%;
+  flex: 0 0 auto;
+  overflow: visible;
+}
+#phone-overlay.is-character-edit .creator-window button.swatch,
+#phone-overlay.is-character-edit .creator-window button.choice {
+  width: auto !important;
+  height: 40px !important;
+  min-width: 0 !important;
+  min-height: 40px !important;
+  max-width: none !important;
+  flex: none !important;
+  box-sizing: border-box !important;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 6px !important;
+  line-height: 1.15 !important;
+  padding: 1px 2px !important;
+  white-space: normal;
+  border-width: 2px !important;
+  box-shadow: 1px 1px 0 #1a1020 !important;
+}
+#phone-overlay.is-character-edit .creator-window button.swatch.selected,
+#phone-overlay.is-character-edit .creator-window button.choice.selected {
+  box-shadow:
+    0 0 0 1px #fff4c4,
+    0 0 0 2px #f4c15d !important;
+  z-index: 1;
+}
+#phone-overlay.is-character-edit .creator-window button.swatch.selected::after,
+#phone-overlay.is-character-edit .creator-window button.choice.selected::after {
+  top: 0;
+  right: 0;
+  width: 12px;
+  height: 12px;
+  font-size: 8px;
+  line-height: 12px;
+}
+#phone-overlay.is-character-edit .creator-window .check-row {
+  min-height: 40px !important;
+  height: 40px !important;
+  margin: 3px 0 0 !important;
+  flex: 0 0 40px;
+}
+#phone-overlay.is-character-edit .creator-footer {
+  flex: 0 0 auto;
+  flex-shrink: 0;
+  flex-wrap: nowrap !important;
+  align-items: stretch;
+  padding: 2px 1px 0 !important;
+  gap: 3px;
+}
+#phone-overlay.is-character-edit .creator-footer .field {
+  flex: 1 1 auto !important;
+  max-width: none !important;
+}
+#phone-overlay.is-character-edit .creator-footer-actions {
+  flex: 0 0 auto !important;
+  max-width: none !important;
+}
+#phone-overlay.is-character-edit .creator-footer-actions .btn {
+  min-width: 0 !important;
+  min-height: 22px !important;
+  height: 22px !important;
+  font-size: 6px !important;
+  padding: 0 5px !important;
+  white-space: nowrap;
+  border-width: 0 !important;
+}
+#phone-overlay.is-character-edit #creator-back {
+  display: none !important;
+}
 #phone-overlay.is-character-edit .creator-window input[type="text"] {
   min-height: 22px !important;
   height: 22px !important;
@@ -980,12 +1052,8 @@ body[data-view="creator"]:has(#view-creator.is-keyboard) #toasts {
   border-width: 2px !important;
   box-shadow: none !important;
 }
-#phone-overlay.is-character-edit .creator-footer-actions .btn {
-  min-height: 22px !important;
-  height: 22px !important;
-  border-width: 0 !important;
-}
-#phone-overlay.is-character-edit #creator-tab-panels,
-#phone-overlay.is-character-edit [data-panel] {
-  min-height: 0 !important;
+#phone-overlay.is-character-edit .creator-logo,
+#phone-overlay.is-character-edit .creator-tag,
+#phone-overlay.is-character-edit .phone-brand {
+  display: none !important;
 }

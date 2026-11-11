@@ -3192,7 +3192,11 @@ try {
 
   log("Tile hover, destination marker, and easier move targeting");
   await alice.evaluate(() => { window.__standUp?.(); window.__exitEdit?.(); window.__closePhone?.(); });
-  await alice.waitForTimeout(300);
+  await alice.waitForFunction(() => {
+    const flags = window.HouseRoom3D?.personFlags?.("alice") || {};
+    return !flags.sitting && !document.body.classList.contains("edit-mode") && !document.body.dataset.editMode;
+  }, null, { timeout: 8000 }).catch(() => {});
+  await alice.waitForTimeout(50);
   const hoverPos = await alice.evaluate(() => window.HouseRoom3D.projectTile(1, 4));
   await alice.mouse.move(hoverPos.x, hoverPos.y);
   await alice.waitForTimeout(80);
@@ -3212,14 +3216,14 @@ try {
   });
   check("Taps just off the floor edge snap to the nearest edge tile", edge.got?.x === 0 && edge.got?.y === 0, JSON.stringify(edge));
 
-  const destTile = await alice.evaluate(() => {
+  const destInfo = await alice.evaluate(() => {
     const size = 6;
     const furn = window.HouseRoom3D.getFurniture() || [];
     const pets = window.HouseRoom3D.getPlacedPets?.() || [];
-    const blocked = new Set([
+    const blocked = window.HouseIso?.blockedSet?.(furn) || new Set([
       ...furn.map((f) => `${Math.round(f.x)},${Math.round(f.y)}`),
-      ...pets.map((p) => `${Math.round(p.x)},${Math.round(p.y)}`),
     ]);
+    pets.forEach((p) => blocked.add(`${Math.round(p.x)},${Math.round(p.y)}`));
     const me = window.HouseRoom3D.personTile("alice");
     if (me) blocked.add(`${Math.round(me.x)},${Math.round(me.y)}`);
     const prefer = [{ x: 0, y: 5 }, { x: 1, y: 5 }, { x: 0, y: 4 }, { x: 5, y: 0 }, { x: 1, y: 4 }];
@@ -3231,15 +3235,17 @@ try {
         }
       }
     }
+    let marked = null;
     if (dest) {
       const pt = window.HouseRoom3D.projectTile(dest.x, dest.y);
       window.HouseRoom3D.tapAt(pt.x, pt.y);
+      // Read the marker in the same turn. Waiting lets a one-tile walk
+      // finish and the renderer clear the marker on arrival.
+      marked = window.HouseRoom3D.getMoveTarget();
     }
-    return dest;
+    return { destTile: dest, marked };
   });
-  await alice.waitForTimeout(200);
-  const marked = await alice.evaluate(() => window.HouseRoom3D.getMoveTarget());
-  check("Clicking a walkable tile sets a destination marker", Boolean(marked && destTile && marked.x === destTile.x && marked.y === destTile.y), JSON.stringify({ destTile, marked }));
+  check("Clicking a walkable tile sets a destination marker", Boolean(destInfo.marked && destInfo.destTile && destInfo.marked.x === destInfo.destTile.x && destInfo.marked.y === destInfo.destTile.y), JSON.stringify(destInfo));
 
   // Decorative plant should pass through; a blocked tile walks to a neighbor.
   const plantSpot = await alice.evaluate(() => {

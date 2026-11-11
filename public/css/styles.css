@@ -2716,8 +2716,8 @@ body.phone-open .phone-dock-btn {
 
 /* In-handset apps stay at the home-screen size; content scrolls inside. */
 .phone-edit-preview {
-  flex: 0 0 64px;
-  height: 64px;
+  flex: 0 0 48px;
+  height: 48px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2760,13 +2760,17 @@ body.phone-open .phone-dock-btn {
   position: relative !important;
   inset: auto !important;
   width: 100% !important;
-  height: auto !important;
+  height: 0 !important;
+  flex: 1 1 0 !important;
   min-height: 0 !important;
   transform: none !important;
   box-shadow: none !important;
   border: 0 !important;
-  padding: 4px !important;
+  padding: 2px 3px !important;
   background: transparent !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
 }
 .phone-edit-inv {
   display: grid;
