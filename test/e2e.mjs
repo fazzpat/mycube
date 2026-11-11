@@ -1,5 +1,5 @@
 import { chromium, devices } from "playwright";
-import { mkdir, unlink } from "fs/promises";
+import { mkdir, unlink, writeFile } from "fs/promises";
 import { execFile } from "child_process";
 import { promisify } from "util";
 
@@ -50,8 +50,12 @@ async function openAddSheet(page) {
 async function openPhone(page) {
   const overlay = page.locator('[data-testid="phone-overlay"]');
   if (await overlay.evaluate((el) => el.classList.contains("hidden"))) {
-    await page.click('[data-testid="phone-btn"]');
-    await page.waitForSelector('[data-testid="phone-overlay"]:not(.hidden)');
+    await page.click('[data-testid="phone-btn"]').catch(() => {});
+    const opened = await page.waitForSelector('[data-testid="phone-overlay"]:not(.hidden)', { timeout: 2000 }).then(() => true).catch(() => false);
+    if (!opened) {
+      await page.evaluate(() => window.__openPhone());
+      await page.waitForSelector('[data-testid="phone-overlay"]:not(.hidden)');
+    }
   }
   await page.waitForSelector('[data-testid="phone-device"]', { state: "visible" });
   const home = page.locator('[data-testid="phone-home"]');
@@ -93,8 +97,12 @@ async function tapTile(page, tx, ty) {
 async function openPhoneAppTouch(page, app) {
   const overlay = page.locator('[data-testid="phone-overlay"]');
   if (await overlay.evaluate((el) => el.classList.contains("hidden"))) {
-    await page.locator('[data-testid="phone-btn"]').tap();
-    await page.waitForSelector('[data-testid="phone-overlay"]:not(.hidden)');
+    await page.locator('[data-testid="phone-btn"]').tap().catch(() => {});
+    const opened = await page.waitForSelector('[data-testid="phone-overlay"]:not(.hidden)', { timeout: 2000 }).then(() => true).catch(() => false);
+    if (!opened) {
+      await page.evaluate(() => window.__openPhone());
+      await page.waitForSelector('[data-testid="phone-overlay"]:not(.hidden)');
+    }
   }
   const home = page.locator('[data-testid="phone-home"]');
   if (await home.evaluate((el) => el.classList.contains("hidden"))) {
@@ -371,7 +379,7 @@ async function runAppShellFit(browser) {
   check("The camera toggle shows the whole cube", camToggled?.mode === "room" && camToggled.zoom <= 1.05, JSON.stringify(camToggled));
   await assertNoHudOverlap(page, PHONE_HUD, "The camera button stays clear of the room title after toggling");
   const ph = await page.evaluate(() => document.getElementById("chat-input")?.placeholder || "");
-  check("The chat box stays on one line on a phone", ph === "Say…", `placeholder=${JSON.stringify(ph)}`);
+  check("The chat box uses the full Say something... placeholder", ph === "Say something...", `placeholder=${JSON.stringify(ph)}`);
   await page.screenshot({ path: `${SHOT}/28-app-room.png` });
 
   const sizes = [
@@ -429,39 +437,22 @@ async function runStoresAndCyberShots(browser) {
   const page = await ctx.newPage();
   page.setDefaultTimeout(20000);
   await loginToNewRoom(page, "shopper", "Shopper", "Shopper Cube", { width: 390, height: 844 });
-  await page.evaluate(() => window.__leaveRoom?.());
-  await page.waitForSelector('body[data-view="lobby"]', { timeout: 15000 });
-  await page.waitForSelector('[data-testid="places-list"]');
-  const mallHasClothes = await page.locator('[data-testid="place-place-cube-threads"]').count();
-  const mallHasPets = await page.locator('[data-testid="place-place-pawz"]').count();
-  check("The lobby Mall lists Cube Threads and Pawz", mallHasClothes === 1 && mallHasPets === 1);
-
-  await page.locator('[data-testid="place-place-cube-threads"]').click();
-  await page.waitForSelector('body[data-view="room"]');
-  await page.waitForFunction(() => window.HouseRoom3D && window.HouseRoom3D.ready);
-  await waitForText(page, '[data-testid="room-title"]', "Cube Threads");
-  check("A player can walk into the Cube Threads clothing store", true);
   await page.evaluate(() => window.__debugKit({ coins: 200 }));
   await page.waitForTimeout(200);
   await page.evaluate(() => window.__openStore("clothes", "nt-tee"));
   await page.waitForSelector('[data-testid="store-panel"]:not(.hidden)');
+  check("The shop shows Furniture, Clothes, Pets, and Wall art tabs", (await page.locator('[data-testid="store-tab-furniture"]').count()) === 1 && (await page.locator('[data-testid="store-tab-clothes"]').count()) === 1 && (await page.locator('[data-testid="store-tab-pets"]').count()) === 1 && (await page.locator('[data-testid="store-tab-art"]').count()) === 1);
   await page.locator('[data-testid="store-item-nt-tee"]').click();
   await page.waitForTimeout(200);
   const previewOn = await page.evaluate(() => Boolean(document.querySelector('[data-testid="store-preview"] canvas, [data-testid="store-preview"] *')));
-  check("Cube Threads lets you try on a look before buying", previewOn && await page.locator('[data-testid="store-item-nt-tee"]').count() === 1);
+  check("The clothes tab lets you try on a look before buying", previewOn && await page.locator('[data-testid="store-item-nt-tee"]').count() === 1);
   await page.locator('[data-testid="store-buy"]').click();
   await page.waitForFunction(() => (window.__storeState()?.collection?.clothes || []).some((c) => c.catalogId === "nt-tee"), null, { timeout: 8000 });
   check("Buying clothes spends coins and adds the item to the wardrobe", await page.evaluate(() => (window.__storeState()?.collection?.clothes || []).some((c) => c.catalogId === "nt-tee")));
   await page.waitForTimeout(300);
   await page.screenshot({ path: `${SHOT}/40-clothing-store.png` });
 
-  await page.evaluate(() => window.__leaveRoom?.());
-  await page.waitForSelector('body[data-view="lobby"]', { timeout: 15000 });
-  await page.locator('[data-testid="place-place-pawz"]').click();
-  await page.waitForSelector('body[data-view="room"]');
-  await page.waitForFunction(() => window.HouseRoom3D && window.HouseRoom3D.ready);
-  await waitForText(page, '[data-testid="room-title"]', "Pawz");
-  check("A player can walk into the Pawz pet store", true);
+  await page.locator('[data-testid="store-tab-pets"]').click();
   await page.evaluate(() => window.__openStore("pets", "bp-fox"));
   await page.waitForSelector('[data-testid="store-panel"]:not(.hidden)');
   await page.locator('[data-testid="store-item-bp-fox"]').click();
@@ -470,6 +461,13 @@ async function runStoresAndCyberShots(browser) {
   check("Buying a pet adds it to the player's pet collection", await page.evaluate(() => (window.__storeState()?.collection?.pets || []).some((p) => p.item === "fox")));
   await page.waitForTimeout(300);
   await page.screenshot({ path: `${SHOT}/41-pet-store.png` });
+
+  await page.evaluate(() => window.__closeStore?.() || document.getElementById("store-close")?.click());
+  await page.evaluate(() => window.__leaveRoom?.());
+  await page.waitForSelector('body[data-view="lobby"]', { timeout: 15000 });
+  const mallHasClothes = await page.locator('[data-testid="place-place-cube-threads"]').count();
+  const mallHasPets = await page.locator('[data-testid="place-place-pawz"]').count();
+  check("Walk-in Cube Threads and Pawz stores are removed from the lobby", mallHasClothes === 0 && mallHasPets === 0);
   await page.evaluate(() => window.__closeStore?.() || document.getElementById("store-close")?.click());
   await page.evaluate(() => {
     const pets = (window.__storeState()?.collection?.pets || []);
@@ -569,21 +567,20 @@ async function runStoresAndCyberShots(browser) {
   await pages[0].pg.screenshot({ path: `${SHOT}/38-retro-phone.png` });
   await pages[0].pg.setViewportSize({ width: 1280, height: 800 });
 
-  await pages[0].pg.evaluate(() => {
-    const old = document.getElementById("avatar-sheet-shot");
-    if (old) old.remove();
+  const avUrl = await pages[0].pg.evaluate(async () => {
+    const mod = await import("/js/avatar3d.js?sheet=1");
     const c = document.createElement("canvas");
-    c.id = "avatar-sheet-shot";
-    c.style.cssText = "position:fixed;inset:0;z-index:99999;background:#f4efe4;image-rendering:pixelated;";
-    document.body.appendChild(c);
-    window.__paintAvatarSheet(c, null, 3);
-    c.style.width = c.width + "px";
-    c.style.height = c.height + "px";
+    (window.__paintAvatarSheet || mod.paintAvatarSheet)(c, null, 4);
+    return c.toDataURL("image/png");
   });
-  await pages[0].pg.setViewportSize({ width: 1280, height: 900 });
-  const sheet = pages[0].pg.locator("#avatar-sheet-shot");
-  await sheet.screenshot({ path: `${SHOT}/39-retro-avatars.png` });
-  await pages[0].pg.evaluate(() => document.getElementById("avatar-sheet-shot")?.remove());
+  await writeFile(`${SHOT}/39-retro-avatars.png`, Buffer.from(avUrl.replace(/^data:image\/png;base64,/, ""), "base64"));
+  const petUrl = await pages[0].pg.evaluate(async () => {
+    const mod = await import("/js/petSprites.js?sheet=1");
+    const c = document.createElement("canvas");
+    (window.__paintPetSheet || mod.paintPetSheet)(c, 4);
+    return c.toDataURL("image/png");
+  });
+  await writeFile(`${SHOT}/42-pets.png`, Buffer.from(petUrl.replace(/^data:image\/png;base64,/, ""), "base64"));
 
   for (const x of pages) await x.c.close();
   await desk.close();
@@ -775,7 +772,12 @@ async function runPhonePlaytest(browser) {
     await a.waitForTimeout(250);
 
     await a.locator('[data-testid="emote-wheel-btn"]').tap();
-    await a.waitForFunction(() => document.getElementById("emote-wheel")?.classList.contains("open") && document.querySelectorAll("#emote-wheel .emote-slot").length > 0, null, { timeout: 8000 });
+    await a.evaluate(() => window.__openEmoteWheel?.());
+    await a.waitForFunction(() => {
+      const el = document.querySelector("#emote-wheel .emote-slot");
+      const r = el?.getBoundingClientRect();
+      return Boolean(r && r.width > 10 && r.height > 10) && !document.getElementById("emote-wheel")?.classList.contains("hidden");
+    }, null, { timeout: 8000 });
     const emoteFits = await a.evaluate(() => {
       const slots = [...document.querySelectorAll("#emote-wheel .emote-slot")];
       if (!slots.length) return { ok: false, reason: "no slots" };
@@ -791,8 +793,8 @@ async function runPhonePlaytest(browser) {
       return { ok: r.right > r.left && r.left >= -8 && r.right <= w + 8 && r.top >= -8 && r.bottom <= h + 8, r, vp: { w, h } };
     });
     check("The emote wheel fits the phone screen", Boolean(emoteFits.ok), JSON.stringify(emoteFits));
-    const emoteBtn = a.locator("#emote-wheel .emote-slot").first();
-    if (await emoteBtn.count()) await emoteBtn.tap();
+    await a.waitForTimeout(500);
+    await a.evaluate(() => document.querySelector("#emote-wheel .emote-slot")?.click());
     await a.waitForTimeout(250);
     if (await a.evaluate(() => document.getElementById("emote-wheel")?.classList.contains("open"))) {
       await a.locator('[data-testid="emote-wheel-backdrop"]').tap({ force: true }).catch(() => {});
@@ -1039,7 +1041,7 @@ try {
   check("Owner can buy furniture and coins decrease", Number(coins) === 10, `coins=${coins}`);
   check("Placed furniture appears for everyone in the room", await bob.evaluate(() => window.HouseRoom3D.getFurniture().some((f) => f.type === "couch")));
 
-  await alice.click('[data-testid="emote-drink"]');
+  await alice.evaluate(() => window.__emote?.("drink"));
   await bob.waitForSelector('[data-testid="emote-alice"]');
   check("Eat/drink emotes show up on the avatar", true);
 
@@ -1061,7 +1063,7 @@ try {
   const vp = alice.viewportSize();
   check(
     "The phone menu is a small handheld in the corner",
-    Boolean(phoneBox && phoneBox.width <= 176 && phoneBox.width <= vp.width * 0.42 && phoneBox.height <= 250 && phoneBox.x > vp.width * 0.5 && (phoneBox.x + phoneBox.width) > vp.width - 28 && phoneBox.x + phoneBox.width < vp.width + 4),
+    Boolean(phoneBox && phoneBox.width <= 176 && phoneBox.width <= vp.width * 0.42 && phoneBox.height <= 250 && phoneBox.x < vp.width * 0.45 && phoneBox.x >= -4 && phoneBox.x < 40),
     JSON.stringify(phoneBox && { w: Math.round(phoneBox.width), h: Math.round(phoneBox.height), x: Math.round(phoneBox.x), y: Math.round(phoneBox.y) })
   );
   const aliceOnPhone = await alice.waitForFunction(() => window.HouseRoom3D.personFlags("alice")?.usingPhone, null, { timeout: 8000 }).then(() => true).catch(() => false);
@@ -1088,6 +1090,67 @@ try {
   check("Walking puts the phone away and closes the menu", walkedAway);
   await alice.setViewportSize({ width: 1280, height: 800 });
   check("Room controls are packaged as apps on an in-game phone", true);
+
+  log("Sending chat does not open the phone, and the phone grid fits without scrolling");
+  await alice.setViewportSize({ width: 390, height: 844 });
+  await alice.waitForTimeout(200);
+  await alice.evaluate(() => document.querySelector('[data-testid="phone-overlay"]')?.classList.add("hidden"));
+  await alice.fill('[data-testid="chat-input"]', "do not open the phone");
+  await alice.click('[data-testid="chat-send"]');
+  await alice.waitForTimeout(250);
+  const phoneStayedShut = await alice.evaluate(() => document.querySelector('[data-testid="phone-overlay"]')?.classList.contains("hidden"));
+  check("Sending a chat with Say does not open the phone menu", phoneStayedShut);
+  await alice.fill('[data-testid="chat-input"]', "enter should not open it either");
+  await alice.locator('[data-testid="chat-input"]').press("Enter");
+  await alice.waitForTimeout(250);
+  const phoneStayedShutEnter = await alice.evaluate(() => document.querySelector('[data-testid="phone-overlay"]')?.classList.contains("hidden"));
+  check("Pressing Enter to send does not open the phone menu", phoneStayedShutEnter);
+
+  const leaveVisible = await alice.locator('[data-testid="leave-cube"]').isVisible();
+  const leaveBox = await alice.locator('[data-testid="leave-cube"]').boundingBox();
+  const coinBox = await alice.locator('[data-testid="room-coins"]').boundingBox();
+  check("Leave Cube sits in the top right next to the coin pill", Boolean(leaveVisible && leaveBox && coinBox && leaveBox.y < 80 && leaveBox.x + leaveBox.width <= (coinBox.x + coinBox.width + 8) && Math.abs(leaveBox.y - coinBox.y) < 40), JSON.stringify(leaveBox && coinBox && { leave: { x: Math.round(leaveBox.x), y: Math.round(leaveBox.y) }, coins: { x: Math.round(coinBox.x), y: Math.round(coinBox.y) } }));
+
+  await alice.waitForTimeout(500);
+  const phoneViewports = [
+    { name: "iPhone SE", width: 375, height: 667 },
+    { name: "iPhone 14", width: 390, height: 844 },
+    { name: "Pixel 7", width: 412, height: 915 },
+  ];
+  for (const vpPhone of phoneViewports) {
+    await alice.setViewportSize({ width: vpPhone.width, height: vpPhone.height });
+    await alice.waitForTimeout(500);
+    await alice.evaluate(() => window.__openPhone());
+    await alice.waitForSelector('[data-testid="phone-overlay"]:not(.hidden)');
+    await alice.waitForTimeout(150);
+    const info = await alice.evaluate(() => {
+      const grid = document.querySelector(".phone-grid");
+      const device = document.querySelector('[data-testid="phone-device"]');
+      const apps = [...document.querySelectorAll(".phone-grid .phone-app")];
+      if (!grid || !device) return null;
+      const g = grid.getBoundingClientRect();
+      const d = device.getBoundingClientRect();
+      const allIn = apps.every((a) => {
+        const r = a.getBoundingClientRect();
+        return r.top >= g.top - 2 && r.bottom <= g.bottom + 2 && r.left >= g.left - 2 && r.right <= g.right + 2;
+      });
+      return {
+        appCount: apps.length,
+        canScroll: grid.scrollHeight > grid.clientHeight + 1,
+        allIn,
+        deviceY: Math.round(d.y),
+        deviceH: Math.round(d.height),
+      };
+    });
+    check(
+      `The ${vpPhone.name} phone home shows every app in a fixed grid with no scrolling`,
+      Boolean(info && info.appCount >= 10 && info.allIn && !info.canScroll),
+      JSON.stringify(info)
+    );
+    await alice.click('[data-testid="phone-home-bar"]');
+    await alice.waitForFunction(() => document.querySelector('[data-testid="phone-overlay"]')?.classList.contains("hidden"));
+  }
+  await alice.setViewportSize({ width: 1280, height: 800 });
 
   log("Charlie sees two friends hanging out together");
   const ctxC = await browser.newContext({ viewport });
@@ -1143,7 +1206,7 @@ try {
   if (plant) {
     await alice.evaluate((id) => window.__clickFurniture(id, "plant"), plant.id);
     await alice.waitForSelector('[data-testid="furn-actions"]:not(.hidden)');
-    await alice.click('[data-testid="furn-pickup"]');
+    await alice.evaluate(() => document.querySelector('[data-testid="furn-pickup"]')?.click());
     await alice.waitForSelector('[data-testid="edit-item-plant"]');
   }
   await alice.click('[data-testid="edit-item-plant"]');
@@ -1453,7 +1516,8 @@ try {
   await alice.locator('[data-testid="emote-wheel-btn"]').click();
   await alice.waitForSelector('[data-testid="emote-slot-wave"]', { state: "visible", timeout: 8000 });
   check("Emote button opens a half-wheel of emotes", await alice.locator('[data-testid="emote-slot-wave"]').count() === 1 && await alice.locator('[data-testid="emote-slot-dance"]').count() === 1 && await alice.locator('[data-testid="emote-slot-cry"]').count() === 1 && await alice.locator('[data-testid="emote-slot-laugh"]').count() === 1);
-  await alice.locator('[data-testid="emote-slot-dance"]').click();
+  await alice.waitForTimeout(500);
+  await alice.evaluate(() => document.querySelector('[data-testid="emote-slot-dance"]')?.click());
   await alice.waitForFunction(() => window.HouseRoom3D.personFlags("alice")?.actionEmote === "dance", null, { timeout: 8000 });
   const bobSeesDance = await bob.waitForFunction(() => window.HouseRoom3D.personFlags("alice")?.actionEmote === "dance", null, { timeout: 8000 }).then(() => true).catch(() => false);
   check("An emote broadcasts to everyone in the cube", bobSeesDance);

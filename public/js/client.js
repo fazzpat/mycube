@@ -286,8 +286,15 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
 
   function paintPlaces() {
     const el = $("#places-list");
+    const panel = $("#places-panel");
     if (!el) return;
-    const places = state.places?.length ? state.places : PUBLIC_PLACES.map((p) => ({ id: p.id, name: p.name, shop: p.shop, occupantCount: 0 }));
+    const places = (state.places || []).filter((r) => r && r.id);
+    if (!places.length) {
+      if (panel) HIDE(panel);
+      el.innerHTML = "";
+      return;
+    }
+    if (panel) SHOW(panel);
     el.innerHTML = places
       .map((r) => `<button type="button" class="place-card" data-testid="place-${r.id}" data-shop="${r.shop || ""}" data-join-place="${r.id}"><strong>${escapeHtml(r.name)}</strong><span>${r.occupantCount || 0} inside · tap to visit</span></button>`)
       .join("");
@@ -531,6 +538,24 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
     paintOverlays();
   }
 
+  const NAME_TABS = [
+    { bg: "#3a6fd8", fg: "#ffffff" },
+    { bg: "#6b7d2a", fg: "#ffffff" },
+    { bg: "#e6c84a", fg: "#1a1408" },
+    { bg: "#d32f2f", fg: "#ffffff" },
+  ];
+  function nameTabOf(username) {
+    let h = 0;
+    const s = String(username || "");
+    for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+    return NAME_TABS[Math.abs(h) % NAME_TABS.length];
+  }
+  function bubbleMarkup(p, text, fading) {
+    const tab = nameTabOf(p.username);
+    const fade = fading ? " fade" : "";
+    return `<div class="speech-bubble${fade}"><span class="bubble-name" style="background:${tab.bg};color:${tab.fg}">${escapeHtml(displayOf(p))}</span><span class="bubble-text">${escapeHtml(text)}</span></div>`;
+  }
+
   function paintOverlays() {
     const layer = document.getElementById("bubble-layer");
     if (!layer || !state.room3d) return;
@@ -563,42 +588,8 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
       if (!active.length && p.bubble && now < p.bubbleUntil) {
         active.push({ text: p.bubble, until: p.bubbleUntil, id: "live" });
       }
-      let stack = layer.querySelector(`[data-testid="bubble-${cssEscape(p.username)}"]`);
-      if (active.length) {
-        if (!stack) {
-          stack = document.createElement("div");
-          stack.className = "speech-stack";
-          stack.dataset.testid = "bubble-" + p.username;
-          layer.appendChild(stack);
-        }
-        const sig = active.map((b) => b.id + ":" + b.text).join("|");
-        if (stack.dataset.sig !== sig) {
-          stack.dataset.sig = sig;
-          stack.innerHTML = active
-            .map((b) => {
-              const fading = b.until - now < 900;
-              const color = (p.avatar && p.avatar.shirt) || "#9b5cff";
-              const shout = b.shout ? " shout" : "";
-              return `<div class="speech-bubble${shout}${fading ? " fade" : ""}"><span class="bubble-name" style="background:${color}">${escapeHtml(displayOf(p))}</span><span class="bubble-text">${escapeHtml(b.text)}</span><i class="bubble-tail" aria-hidden="true"></i></div>`;
-            })
-            .join("");
-        } else {
-          stack.querySelectorAll(".speech-bubble").forEach((el, i) => {
-            if (active[i]) el.classList.toggle("fade", active[i].until - now < 900);
-          });
-        }
-        let bx = pos.x;
-        let by = pos.y - 14;
-        stack.style.left = bx + "px";
-        stack.style.top = by + "px";
-        const w = stack.offsetWidth || 120;
-        const hgt = stack.offsetHeight || 40;
-        bx = Math.min(Math.max(bx, PAD + w / 2), W - PAD - w / 2);
-        by = Math.min(Math.max(by, PAD + 8), H - PAD);
-        stack.style.left = bx + "px";
-        stack.style.top = by + "px";
-        seen.add("b:" + p.username);
-      }
+      p._activeBubbles = active;
+      p._bubbleX = pos.x;
 
       if (p.emote) {
         let em = layer.querySelector(`[data-testid="emote-${cssEscape(p.username)}"]`);
@@ -622,9 +613,9 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
           typ.dataset.testid = "typing-" + p.username;
           layer.appendChild(typ);
         }
-        typ.innerHTML = `<div class="speech-bubble typing-bubble">${escapeHtml(p.typingPreview)}<i class="bubble-tail" aria-hidden="true"></i></div>`;
+        typ.innerHTML = bubbleMarkup(p, p.typingPreview, false).replace('speech-bubble', 'speech-bubble typing-bubble');
         typ.style.left = Math.min(Math.max(pos.x, 48), W - 48) + "px";
-        typ.style.top = (ny - 10) + "px";
+        typ.style.top = Math.max(PAD + 36, Math.round(H * 0.1) + 8) + "px";
         seen.add("t:" + p.username);
       }
 
@@ -654,6 +645,51 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
         state.lastBoxing.set(p.username, nowBox);
       }
     }
+    // MyCoke strips: all live messages sit near the top, staggered by speaker X.
+    // Older lines step upward as new ones arrive.
+    const msgs = [];
+    for (const p of state.people.values()) {
+      for (const b of (p._activeBubbles || [])) {
+        msgs.push({ p, b, x: p._bubbleX || 0 });
+      }
+    }
+    msgs.sort((a, b) => (a.b.until || 0) - (b.b.until || 0));
+    const ENTRY = Math.max(PAD + 44, Math.min(96, Math.round(H * 0.09) + 44));
+    const STEP = 22;
+    const usedIds = new Set();
+    const latestOf = new Map();
+    for (const m of msgs) latestOf.set(m.p.username, m);
+    msgs.forEach((m, i) => {
+      const isLatest = latestOf.get(m.p.username) === m;
+      const testid = isLatest ? ("bubble-" + m.p.username) : ("bubble-" + m.p.username + "-" + (m.b.id || i));
+      usedIds.add(testid);
+      let el = layer.querySelector(`[data-testid="${cssEscape(testid)}"]`);
+      if (!el) {
+        el = document.createElement("div");
+        el.className = "speech-stack";
+        el.dataset.testid = testid;
+        layer.appendChild(el);
+      }
+      const fading = m.b.until - now < 900;
+      const sig = m.b.id + ":" + m.b.text + ":" + (fading ? "1" : "0");
+      if (el.dataset.sig !== sig) {
+        el.dataset.sig = sig;
+        el.innerHTML = bubbleMarkup(m.p, m.b.text, fading);
+      }
+      const w = el.offsetWidth || 80;
+      const age = msgs.length - 1 - i;
+      let bx = Math.min(Math.max(m.x, PAD + w / 2), W - PAD - w / 2);
+      let by = ENTRY - age * STEP;
+      if (by < PAD + 8) by = PAD + 8;
+      el.style.left = bx + "px";
+      el.style.top = by + "px";
+      seen.add("b:" + m.p.username);
+    });
+    layer.querySelectorAll(".speech-stack").forEach((el) => {
+      const id = el.dataset.testid || "";
+      if (id.startsWith("typing-")) return;
+      if (!usedIds.has(id)) el.remove();
+    });
     // impact flashes on bags
     for (const [id, use] of Object.entries(state.room?.uses || {})) {
       if (use?.type !== "punchbag" || !use.lastHitAt) continue;
@@ -673,8 +709,13 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
       setTimeout(() => pow.remove(), 400);
     }
     layer.querySelectorAll(".speech-stack").forEach((el) => {
-      const name = el.dataset.testid.replace("bubble-", "");
-      if (!seen.has("b:" + name)) el.remove();
+      const id = el.dataset.testid || "";
+      if (id.startsWith("typing-")) return;
+      const name = id.replace("bubble-", "").split("-")[0];
+      if (!seen.has("b:" + name) && !id.startsWith("typing-")) {
+        // kept messages are already pruned by usedIds above
+        if (!id.startsWith("bubble-")) el.remove();
+      }
     });
     layer.querySelectorAll(".emote-icon").forEach((el) => {
       const name = el.dataset.testid.replace("emote-", "");
@@ -757,7 +798,23 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
 
   /* ---------- shop ---------- */
   function paintShop() {
+    if (!state.shopTab) state.shopTab = "furniture";
+    document.querySelectorAll("#phone-shop-tabs [data-shop-tab]").forEach((b) => {
+      b.classList.toggle("on", b.dataset.shopTab === state.shopTab);
+      b.setAttribute("aria-selected", b.dataset.shopTab === state.shopTab ? "true" : "false");
+    });
+    const furnPane = $("#shop-furniture-pane");
+    const catPane = $("#shop-catalog-pane");
+    if (state.shopTab === "clothes" || state.shopTab === "pets" || state.shopTab === "art") {
+      if (furnPane) furnPane.classList.add("hidden");
+      if (catPane) catPane.classList.remove("hidden");
+      paintPhoneShopCatalog();
+      return;
+    }
+    if (furnPane) furnPane.classList.remove("hidden");
+    if (catPane) catPane.classList.add("hidden");
     const inv = $("#inventory-row");
+    if (!inv) return;
     const items = state.me?.inventory || [];
     inv.innerHTML = items.length
       ? items
@@ -773,8 +830,9 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
 
     const grid = $("#shop-grid");
     if (!grid) return;
+    const furnList = CATALOG.filter((item) => item.surface !== "wall");
     grid.innerHTML =
-      CATALOG.map((item) => {
+      furnList.map((item) => {
         const afford = (state.me?.coins ?? 0) >= item.price;
         return `<div class="shop-item">
         ${furnitureSVG(item.type)}
@@ -786,6 +844,66 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
     grid.querySelectorAll("[data-buy]").forEach((b) =>
       b.addEventListener("click", () => socket.emit("buyFurniture", { type: b.dataset.buy }))
     );
+  }
+
+  function paintPhoneShopCatalog() {
+    const kind = state.shopTab;
+    const list = storeStock(kind);
+    if (!state.shopSel || !list.some((s) => (s.id || s.type) === state.shopSel)) {
+      state.shopSel = (list[0] && (list[0].id || list[0].type)) || null;
+    }
+    const prev = $("#phone-shop-preview");
+    const grid = $("#phone-shop-grid");
+    if (grid) {
+      grid.innerHTML = list.map((s) => {
+        const id = s.id || s.type;
+        const label = s.label || s.name || s.type;
+        const owned = ownsStoreItem(kind, s);
+        const sel = state.shopSel === id ? " selected" : "";
+        const thumb = (kind === "clothes" || kind === "pets")
+          ? `<canvas class="store-thumb" width="28" height="28" data-thumb-id="${id}"></canvas>`
+          : "";
+        return `<button type="button" class="store-item${sel}" data-testid="store-item-${id}" data-shop-id="${id}">${thumb}<span class="meta">${escapeHtml(label)}${owned ? " · owned" : ""}</span><span class="price">${owned ? "✓" : s.price + "c"}</span></button>`;
+      }).join("");
+      grid.querySelectorAll("[data-shop-id]").forEach((b) => {
+        b.addEventListener("click", () => {
+          state.shopSel = b.dataset.shopId;
+          paintPhoneShopCatalog();
+        });
+      });
+      grid.querySelectorAll("canvas.store-thumb").forEach((c) => {
+        const stock = list.find((s) => (s.id || s.type) === c.dataset.thumbId);
+        if (stock && typeof window.__paintStoreThumb === "function") {
+          window.__paintStoreThumb(c, kind, stock.item || stock, state.me?.avatar || {});
+        }
+      });
+    }
+    const stock = list.find((s) => (s.id || s.type) === state.shopSel);
+    if (prev) {
+      if (kind === "pets" && stock) {
+        prev.innerHTML = `<canvas width="72" height="66" style="image-rendering:pixelated"></canvas>`;
+        const c = prev.querySelector("canvas");
+        if (c && window.__paintPetThumb) { c.width = 72; c.height = 66; window.__paintPetThumb(c, stock.item); }
+      } else if (kind === "clothes" && stock && window.__paintStoreThumb) {
+        prev.innerHTML = `<canvas width="56" height="56" style="image-rendering:pixelated"></canvas>`;
+        const c = prev.querySelector("canvas");
+        if (c) window.__paintStoreThumb(c, "clothes", stock.item, state.me?.avatar || {});
+      } else {
+        prev.innerHTML = stock ? `<strong>${escapeHtml(stock.label || stock.name || stock.type)}</strong>` : "";
+      }
+    }
+    const buy = $("#phone-shop-buy");
+    const coins = state.me?.coins ?? 0;
+    const owned = stock && ownsStoreItem(kind, stock);
+    if (buy) {
+      buy.disabled = !stock || owned || coins < (stock?.price || 0);
+      buy.textContent = !stock ? "Buy" : owned ? "Owned" : `Buy · ${stock.price}c`;
+    }
+    const tryon = $("#phone-shop-tryon");
+    if (tryon) {
+      tryon.style.display = kind === "clothes" ? "" : (kind === "pets" ? "" : "none");
+      tryon.textContent = kind === "pets" ? "Preview" : "Try on";
+    }
   }
 
   function labelFor(type) {
@@ -1243,12 +1361,10 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
   }
 
 
-  function setVoice(mode) {
-    state.voice = mode === "shout" ? "shout" : "speak";
-    $("#voice-speak")?.classList.toggle("on", state.voice === "speak");
-    $("#voice-shout")?.classList.toggle("on", state.voice === "shout");
+  function setVoice() {
+    state.voice = "speak";
     const send = $("#chat-send");
-    if (send) send.textContent = state.voice === "shout" ? "Shout" : "Say";
+    if (send) send.textContent = "Say";
   }
 
   function closeStorePanel() {
@@ -1264,10 +1380,17 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
   }
 
   function storeStock(kind) {
-    return kind === "pets" ? PET_STOCK : CLOTHING_STOCK;
+    if (kind === "pets") return PET_STOCK;
+    if (kind === "clothes") return CLOTHING_STOCK;
+    if (kind === "art") return CATALOG.filter((item) => item.surface === "wall");
+    return CATALOG.filter((item) => item.surface !== "wall");
   }
 
   function ownsStoreItem(kind, stock) {
+    if (kind === "furniture" || kind === "art") {
+      const typ = stock.type || stock.id;
+      return (state.me?.inventory || []).includes(typ);
+    }
     const col = state.me?.collection;
     if (!col) return false;
     if (kind === "pets") return (col.pets || []).some((p) => p.item === stock.item);
@@ -1277,10 +1400,20 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
   function paintStorePreview() {
     const el = $("#store-preview");
     if (!el) return;
-    const stock = storeStock(state.storeKind).find((s) => s.id === state.storeSel);
+    const stock = storeStock(state.storeKind).find((s) => (s.id || s.type) === state.storeSel);
     if (state.storeKind === "pets") {
       if (state.storePreview) { state.storePreview.dispose?.(); state.storePreview = null; }
-      el.innerHTML = `<div style="padding:12px;font-family:VT323,monospace;color:#00f0ff;text-align:center">${stock ? escapeHtml(stock.label) : ""}</div>`;
+      el.innerHTML = `<canvas width="96" height="88" data-testid="pet-preview-canvas" style="image-rendering:pixelated;width:96px;height:88px"></canvas><div style="padding:6px;text-align:center;font-weight:700">${stock ? escapeHtml(stock.label) : ""}</div>`;
+      const c = el.querySelector("canvas");
+      if (c && stock && typeof window.__paintPetThumb === "function") {
+        c.width = 96; c.height = 88;
+        window.__paintPetThumb(c, stock.item);
+      }
+      return;
+    }
+    if (state.storeKind === "furniture" || state.storeKind === "art") {
+      if (state.storePreview) { state.storePreview.dispose?.(); state.storePreview = null; }
+      el.innerHTML = `<div style="padding:12px;text-align:center;font-weight:700">${stock ? escapeHtml(stock.name || stock.label || stock.type) : ""}</div>`;
       return;
     }
     if (!state.storePreview) {
@@ -1293,18 +1426,32 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
     state.storePreview.resize?.();
   }
 
+  function paintStoreTabs() {
+    document.querySelectorAll("[data-store-tab]").forEach((b) => {
+      b.classList.toggle("on", b.dataset.storeTab === state.storeKind);
+      b.setAttribute("aria-selected", b.dataset.storeTab === state.storeKind ? "true" : "false");
+    });
+  }
+
   function paintStorePanel() {
-    const kind = state.storeKind;
+    const kind = state.storeKind || "clothes";
     const title = $("#store-panel-title");
-    if (title) title.textContent = kind === "pets" ? "Pawz" : "Cube Threads";
+    if (title) title.textContent = "Shop";
+    paintStoreTabs();
     const grid = $("#store-grid");
     if (!grid) return;
     const coins = state.me?.coins ?? 0;
-    grid.innerHTML = storeStock(kind)
+    const stockList = storeStock(kind);
+    grid.innerHTML = stockList
       .map((s) => {
+        const id = s.id || s.type;
+        const label = s.label || s.name || s.type;
         const owned = ownsStoreItem(kind, s);
-        const sel = state.storeSel === s.id ? " selected" : "";
-        return `<button type="button" class="store-item${sel}" data-testid="store-item-${s.id}" data-store-id="${s.id}"><canvas class="store-thumb" width="28" height="28" data-thumb-id="${s.id}"></canvas><span class="meta">${escapeHtml(s.label)}${owned ? " · owned" : ""}</span><span class="price">${owned ? "✓" : s.price + "c"}</span></button>`;
+        const sel = state.storeSel === id ? " selected" : "";
+        const thumb = (kind === "clothes" || kind === "pets")
+          ? `<canvas class="store-thumb" width="28" height="28" data-thumb-id="${id}"></canvas>`
+          : (typeof furnitureSVG === "function" ? furnitureSVG(s.type || id) : "");
+        return `<button type="button" class="store-item${sel}" data-testid="store-item-${id}" data-store-id="${id}">${thumb}<span class="meta">${escapeHtml(label)}${owned ? " · owned" : ""}</span><span class="price">${owned ? "✓" : s.price + "c"}</span></button>`;
       })
       .join("");
     grid.querySelectorAll("[data-store-id]").forEach((b) => {
@@ -1315,52 +1462,56 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
       });
     });
     grid.querySelectorAll("canvas.store-thumb").forEach((c) => {
-      const stock = storeStock(kind).find((s) => s.id === c.dataset.thumbId);
+      const stock = stockList.find((s) => (s.id || s.type) === c.dataset.thumbId);
       if (!stock) return;
       if (typeof window.__paintStoreThumb === "function") {
-        const ok = window.__paintStoreThumb(c, kind, stock.item || stock, state.me?.avatar || {});
-        if (ok === false && kind === "pets") {
-          const ctx = c.getContext("2d");
-          ctx.imageSmoothingEnabled = false;
-          ctx.fillStyle = "#efe6d4";
-          ctx.fillRect(0, 0, 28, 28);
-          ctx.fillStyle = "#3a6a8a";
-          ctx.beginPath(); ctx.arc(14, 14, 8, 0, Math.PI * 2); ctx.fill();
-        }
+        window.__paintStoreThumb(c, kind, stock.item || stock, state.me?.avatar || {});
       }
     });
     const buy = $("#store-buy");
-    const stock = storeStock(kind).find((s) => s.id === state.storeSel);
+    const stock = stockList.find((s) => (s.id || s.type) === state.storeSel);
     const owned = stock && ownsStoreItem(kind, stock);
     if (buy) {
       buy.disabled = !stock || owned || coins < (stock?.price || 0);
       buy.textContent = !stock ? "Buy" : owned ? "Owned" : `Buy · ${stock.price}c`;
     }
+    const tryon = $("#store-tryon");
+    if (tryon) {
+      tryon.style.display = kind === "clothes" || kind === "pets" ? "" : "none";
+      tryon.textContent = kind === "pets" ? "Preview" : "Try on";
+    }
   }
 
   function openStorePanel(kind, sku) {
-    state.storeKind = kind === "pets" ? "pets" : "clothes";
-    const stock = storeStock(state.storeKind);
-    state.storeSel = sku && stock.some((s) => s.id === sku) ? sku : stock[0]?.id;
+    const k = kind === "pets" ? "pets" : kind === "art" ? "art" : kind === "furniture" ? "furniture" : "clothes";
+    state.storeKind = k;
+    const stock = storeStock(k);
+    const idOf = (s) => s.id || s.type;
+    state.storeSel = sku && stock.some((s) => idOf(s) === sku) ? sku : idOf(stock[0] || {});
     SHOW($("#store-panel"));
     paintStorePanel();
     paintStorePreview();
   }
 
-  $("#voice-speak")?.addEventListener("click", () => setVoice("speak"));
-  $("#voice-shout")?.addEventListener("click", () => setVoice("shout"));
   $("#store-close")?.addEventListener("click", closeStorePanel);
+  $("#store-tabs")?.querySelectorAll("[data-store-tab]").forEach((b) => {
+    b.addEventListener("click", () => openStorePanel(b.dataset.storeTab));
+  });
   $("#store-tryon")?.addEventListener("click", () => {
     paintStorePreview();
     const kind = state.storeKind;
-    const stock = storeStock(kind).find((s) => s.id === state.storeSel);
-    if (!stock || kind === "pets") return;
+    const stock = storeStock(kind).find((s) => (s.id || s.type) === state.storeSel);
+    if (!stock || kind === "pets" || kind === "furniture" || kind === "art") return;
     const me = state.people.get(state.me?.username);
     if (me) me.avatar = { ...(me.avatar || {}), ...(stock.item || {}) };
     renderPeople();
   });
   $("#store-buy")?.addEventListener("click", () => {
     if (!state.storeKind || !state.storeSel) return;
+    if (state.storeKind === "furniture" || state.storeKind === "art") {
+      socket.emit("buyFurniture", { type: state.storeSel });
+      return;
+    }
     socket.emit("buyStoreItem", { kind: state.storeKind, id: state.storeSel });
   });
 
@@ -1692,9 +1843,9 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
       if (h > 0) root.style.setProperty("--dock-h", h + "px");
     }
     const chat = document.getElementById("chat-input");
+    root.style.setProperty("--layout-h", window.innerHeight + "px");
     if (chat) {
-      const narrow = (window.visualViewport?.width || window.innerWidth) <= 520;
-      const next = narrow ? "Say…" : "Say something — it vanishes in a few seconds";
+      const next = "Say something...";
       if (chat.placeholder !== next) chat.placeholder = next;
     }
     if (state.view === "room") state.room3d?.resize();
@@ -1857,7 +2008,7 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
     if (wasOpen) socket.emit("usePhone", { on: false });
   }
 
-  const OWNER_APPS = new Set(["edit", "shop", "invite", "lock", "upgrade"]);
+  const OWNER_APPS = new Set(["edit", "invite", "lock", "upgrade"]);
   const APP_TITLES = {
     edit: "Edit Room",
     shop: "Shop",
@@ -1908,12 +2059,13 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
       setPhoneExpanded(true);
       return;
     }
-    if (app === "clothes-store" || app === "pets-store") {
-      const id = app === "clothes-store" ? "place-cube-threads" : "place-pawz";
-      closePhone();
-      if (state.room?.id === id) openStorePanel(state.room.shop);
-      else tryJoin(id);
-      return;
+    if (app === "clothes-store") {
+      state.shopTab = "clothes";
+      app = "shop";
+    }
+    if (app === "pets-store") {
+      state.shopTab = "pets";
+      app = "shop";
     }
     if (app === "wardrobe") {
       closePhone();
@@ -2028,7 +2180,7 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
     if (!body) return;
     const pets = state.me?.collection?.pets || [];
     if (!pets.length) {
-      body.innerHTML = `<p class="phone-empty">Visit Pawz in the Mall (or the phone app) to adopt a pet, then bring them into cubes with you.</p>`;
+      body.innerHTML = `<p class="phone-empty">Open Shop and the Pets tab to adopt a pal, then bring them into cubes with you.</p>`;
       return;
     }
     body.innerHTML =
@@ -2229,11 +2381,30 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
     state.pendingPack = null;
   });
 
-  $("#leave-room").addEventListener("click", () => {
+  $("#leave-room")?.addEventListener("click", () => {
     closePhone();
     socket.emit("leaveRoom");
   });
-  $("#phone-btn")?.addEventListener("click", () => {
+  $("#leave-cube")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    closePhone();
+    socket.emit("leaveRoom");
+  });
+  let phoneTapIgnoreUntil = 0;
+  function ignorePhoneTaps(ms = 400) {
+    phoneTapIgnoreUntil = Date.now() + ms;
+  }
+  function phoneTapIgnored(e) {
+    if (Date.now() >= phoneTapIgnoreUntil) return false;
+    e?.preventDefault?.();
+    e?.stopPropagation?.();
+    return true;
+  }
+  $("#phone-btn")?.addEventListener("pointerdown", (e) => { if (phoneTapIgnored(e)) return; }, true);
+  $("#phone-btn")?.addEventListener("touchend", (e) => { if (phoneTapIgnored(e)) return; }, true);
+  $("#phone-btn")?.addEventListener("click", (e) => {
+    if (phoneTapIgnored(e)) return;
     if (phoneOpen()) closePhone();
     else openPhone();
   });
@@ -2272,19 +2443,43 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
     }
   });
   const phoneDevice = $("#phone-device");
-  let swipeStart = null;
-  phoneDevice?.addEventListener("touchstart", (e) => {
-    swipeStart = e.touches[0].clientY;
-  }, { passive: true });
-  phoneDevice?.addEventListener("touchend", (e) => {
-    if (swipeStart == null) return;
-    const dy = e.changedTouches[0].clientY - swipeStart;
-    swipeStart = null;
-    if (dy > 70) {
-      if (state.phoneApp && state.phoneApp !== "home") showPhoneHome();
-      else closePhone();
+  const stopPhoneScroll = (e) => {
+    e.preventDefault();
+  };
+  phoneDevice?.addEventListener("touchmove", stopPhoneScroll, { passive: false });
+  $("#phone-overlay")?.addEventListener("touchmove", (e) => {
+    if (e.target && (e.target === phoneDevice || phoneDevice?.contains(e.target) || e.target.closest?.(".phone-device, .phone-home, .phone-grid, .phone-screen"))) {
+      e.preventDefault();
     }
-  }, { passive: true });
+  }, { passive: false });
+  $("#phone-shop-tabs")?.querySelectorAll("[data-shop-tab]").forEach((b) => {
+    b.addEventListener("click", () => {
+      state.shopTab = b.dataset.shopTab;
+      if (b.dataset.shopTab === "clothes" || b.dataset.shopTab === "pets" || b.dataset.shopTab === "art") {
+        state.shopSel = null;
+      }
+      paintShop();
+    });
+  });
+  $("#phone-shop-buy")?.addEventListener("click", () => {
+    if (!state.shopSel) return;
+    if (state.shopTab === "art" || state.shopTab === "furniture") {
+      socket.emit("buyFurniture", { type: state.shopSel });
+      return;
+    }
+    socket.emit("buyStoreItem", { kind: state.shopTab, id: state.shopSel });
+  });
+  $("#phone-shop-tryon")?.addEventListener("click", () => {
+    const kind = state.shopTab;
+    const stock = storeStock(kind).find((s) => (s.id || s.type) === state.shopSel);
+    if (!stock) return;
+    if (kind === "clothes") {
+      const me = state.people.get(state.me?.username);
+      if (me) me.avatar = { ...(me.avatar || {}), ...(stock.item || {}) };
+      renderPeople();
+    }
+    paintPhoneShopCatalog();
+  });
   setInterval(tickPhoneTime, 15000);
   tickPhoneTime();
   const ACTION_EMOTE_LIST = [
@@ -2310,29 +2505,24 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
     const { wheel, btn } = emoteWheelEls();
     if (!wheel || !btn) return;
     const rect = btn.getBoundingClientRect();
-    const cx = rect.left + rect.width / 2;
-    const cy = rect.top + rect.height / 2;
-    wheel.style.left = cx + "px";
-    wheel.style.top = cy + "px";
+    const bx = rect.left + rect.width / 2;
+    const by = rect.top + rect.height / 2;
     const n = ACTION_EMOTE_LIST.length;
     const iconR = 32;
     const pad = 10;
-    let radius = Math.min(134, Math.max(100, window.innerWidth * 0.3));
-    const spaceLeft = cx - pad - iconR;
-    const spaceRight = window.innerWidth - cx - pad - iconR;
-    const spaceTop = cy - pad - iconR - 8;
-    radius = Math.min(radius, Math.max(86, spaceTop));
-    let start, end;
-    if (spaceLeft < radius && spaceRight >= radius * 0.55) {
-      start = Math.PI * 0.92;
-      end = -0.12;
-    } else if (spaceRight < radius && spaceLeft >= radius * 0.55) {
-      start = Math.PI + 0.12;
-      end = Math.PI * 0.08;
-    } else {
-      start = Math.PI;
-      end = 0;
-    }
+    const minX = pad + iconR;
+    const maxX = window.innerWidth - pad - iconR;
+    let radius = Math.min(168, Math.max(118, window.innerWidth * 0.36));
+    const spaceTop = by - pad - iconR - 8;
+    radius = Math.min(radius, Math.max(100, spaceTop));
+    // Shift the fan origin inward so a full upward semicircle stays on-screen.
+    let cx = bx, cy = by;
+    if (cx - radius < minX) cx = minX + radius;
+    if (cx + radius > maxX) cx = maxX - radius;
+    wheel.style.left = cx + "px";
+    wheel.style.top = cy + "px";
+    const start = Math.PI;
+    const end = 0;
     const slots = [...wheel.querySelectorAll(".emote-slot")];
     slots.forEach((el, i) => {
       const t = n === 1 ? 0.5 : i / (n - 1);
@@ -2443,6 +2633,9 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
   wheelBtn?.addEventListener("pointerup", (e) => {
     if (!wheelDrag) return;
     wheelDrag = false;
+    const br = wheelBtn.getBoundingClientRect();
+    const onBtn = e.clientX >= br.left && e.clientX <= br.right && e.clientY >= br.top && e.clientY <= br.bottom;
+    if (onBtn) return;
     const id = slotAtPoint(e.clientX, e.clientY);
     if (id) {
       playActionEmote(id);
@@ -2468,25 +2661,43 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
     window.visualViewport.addEventListener("scroll", () => { if (wheelOpen) layoutEmoteWheel(); });
   }
 
-  $("#emote-eat").addEventListener("click", () => socket.emit("emote", { type: "eat" }));
-  $("#emote-drink").addEventListener("click", () => socket.emit("emote", { type: "drink" }));
-  function sendChat() {
+  $("#emote-eat")?.addEventListener("click", () => socket.emit("emote", { type: "eat" }));
+  $("#emote-drink")?.addEventListener("click", () => socket.emit("emote", { type: "drink" }));
+  window.__emote = (type) => socket.emit("emote", { type });
+  function sendChat(e) {
+    e?.preventDefault?.();
+    e?.stopPropagation?.();
     const text = $("#chat-input").value;
-    if (!text.trim()) return;
-    socket.emit("say", { text, shout: state.voice === "shout" });
+    if (!text.trim()) {
+      ignorePhoneTaps(400);
+      return;
+    }
+    socket.emit("say", { text });
     $("#chat-input").value = "";
     autosizeChat();
+    ignorePhoneTaps(400);
   }
-  $("#chat-send").addEventListener("click", sendChat);
+  $("#chat-send")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    sendChat(e);
+  });
+  $("#chat-dock")?.addEventListener("click", (e) => {
+    if (e.target && (e.target.id === "chat-send" || e.target.closest?.("#chat-send"))) e.stopPropagation();
+  });
   $("#chat-input").addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      sendChat();
+      e.stopPropagation();
+      sendChat(e);
     }
   });
   $("#chat-input").addEventListener("input", autosizeChat);
   $("#chat-input").addEventListener("focus", () => setTimeout(syncKeyboardInset, 50));
-  $("#chat-input").addEventListener("blur", () => setTimeout(syncKeyboardInset, 50));
+  $("#chat-input").addEventListener("blur", () => {
+    ignorePhoneTaps(400);
+    setTimeout(syncKeyboardInset, 50);
+  });
   if (window.visualViewport) {
     window.visualViewport.addEventListener("resize", syncKeyboardInset);
     window.visualViewport.addEventListener("scroll", syncKeyboardInset);
@@ -2990,7 +3201,7 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
     state.room3d?.setGridSize(size);
     state.room3d?.setFurniture(state.room.furniture || []);
     renderPeople();
-    $("#room-meta").textContent = `${state.room.locked ? "Locked" : "Open"} · ${state.room.people?.length || state.room.occupants?.length || ""} here · ${state.room.owner}'s cube · ${size}×${size}`;
+    $("#room-meta").textContent = "Owner: " + state.room.owner;
     toast(`Cube upgraded to ${size}×${size}!`);
     refreshPhoneScreens();
   });
@@ -3036,7 +3247,7 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
     state.room.locked = locked;
     state.room.hasPassword = hasPassword;
     const count = state.room.people?.length || state.room.occupants?.length || "";
-    $("#room-meta").textContent = `${locked ? "Locked" : "Open"} · ${count} here · ${state.room.owner}'s cube · ${state.room.size || 6}×${state.room.size || 6}`;
+    $("#room-meta").textContent = "Owner: " + state.room.owner;
     toast(locked ? "Cube locked." : "Cube unlocked.");
     if (state.phoneApp === "lock") paintLock();
   });
@@ -3099,6 +3310,7 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
   window.__openPhone = () => openPhone();
   window.__leaveRoom = () => socket.emit("leaveRoom");
   window.__openStore = (kind, sku) => openStorePanel(kind, sku);
+  window.__closeStore = () => closeStorePanel();
   window.__storeState = () => ({ kind: state.storeKind, sel: state.storeSel, coins: state.me?.coins, collection: state.me?.collection });
   window.__buyStoreSel = () => socket.emit("buyStoreItem", { kind: state.storeKind, id: state.storeSel });
 

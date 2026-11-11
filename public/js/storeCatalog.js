@@ -58,24 +58,7 @@ export const PET_STOCK = [
   { id: "bp-turtle", item: "turtle", label: "Turtle", price: 28 },
 ];
 
-export const PUBLIC_PLACES = [
-  {
-    id: "place-cube-threads",
-    name: "Cube Threads",
-    shop: "clothes",
-    wallpaper: "paint-cream",
-    floorStyle: "wood",
-    keeper: { name: "Jess", skin: "#f1c27d", hair: "bangs", hairColor: "#2b1d16", shirt: "#2a2a2e", top: "bandtee", bottom: "jeans", bottomColor: "#2a2a2e", shoes: "skate", accessory: "wristband" },
-  },
-  {
-    id: "place-pawz",
-    name: "Pawz",
-    shop: "pets",
-    wallpaper: "paint-blush",
-    floorStyle: "tile",
-    keeper: { name: "Sam", skin: "#c68642", hair: "curly", hairColor: "#2b1d16", shirt: "#7bc47f", top: "hoodie", bottom: "cargo", bottomColor: "#6b7280", shoes: "gum", accessory: "trucker" },
-  },
-];
+export const PUBLIC_PLACES = []
 
 export const NEW_FURNITURE = [
   { type: "hoverchair", name: "Egg Chair", price: 30 },

@@ -1,4 +1,5 @@
-import { drawAvatarSprite, paintAvatarSheet, paintStoreThumb, AVATAR_SHEET_LOOKS, AV_W, AV_H } from "./avatar3d.js";
+import { drawAvatarSprite, paintAvatarSheet, paintStoreThumb, AVATAR_SHEET_LOOKS, AV_W, AV_H, facingIndex8 } from "./avatar3d.js";
+import { drawPetSprite as drawPetPixel, paintPetSheet, paintPetThumb, PET_W, PET_H } from "./petSprites.js";
 import { programAt } from "./cubechannel.js";
 /* 2D isometric pixel room renderer — 2000s house style, HouseRoom3D API. */
 const TW = 64;
@@ -52,7 +53,7 @@ const NEON = {
 };
 
 const WALL_COLORS = {
-  "paint-cream": { base: "#9aa0aa", grout: "#6d727a", cap: "#2a2c30", skirt: "#4a4e54", trim: "#3a3c40", accent: "#c4a35a", cyber: false },
+  "paint-cream": { base: "#b4b8c0", grout: "#5a5e64", cap: "#2a2c30", skirt: "#4a4e54", trim: "#3a3c40", accent: "#c4a35a", cyber: false },
   "paint-sage": { base: "#8a9a86", grout: "#5a6a56", cap: "#2a3228", skirt: "#3a4a36", trim: "#4a5a46", accent: "#6a8a4a", cyber: false },
   "paint-blush": { base: "#c4a8a6", grout: "#8a6a68", cap: "#4a3230", skirt: "#6a4a48", trim: "#5a3a38", accent: "#c48a80", cyber: false },
   "paint-slate": { base: "#8a8e9a", grout: "#5a5e6a", cap: "#2a2c34", skirt: "#3a3e4a", trim: "#3a3e4a", accent: "#6a7a9a", cyber: false },
@@ -641,82 +642,8 @@ function facingIndex(facing, dirX, dirY) {
   return dy < 0 ? 1 : 3;
 }
 
-function drawPetSprite(kind, frame, walking, sit) {
-  const key = "pet:" + kind + ":" + frame + ":" + walking + ":" + sit;
-  const w = 16, h = 16;
-  return sprite(key, w, h, (ctx) => {
-    ctx.fillStyle = "rgba(0,0,0,0.3)";
-    ctx.beginPath();
-    ctx.ellipse(8, 14, 5, 2, 0, 0, Math.PI * 2);
-    ctx.fill();
-    const mapped = kind === "robocat" ? "cat" : kind === "drone" ? "parrot" : kind === "neonfox" ? "fox" : kind === "jellyfish" ? "turtle" : kind;
-    const bob = walking ? (frame ? -1 : 0) : (mapped === "parrot" ? (frame ? -1 : 0) : 0);
-    const y = (sit ? 2 : 0) + bob;
-    const body = (x, yy, bw, bh, c) => px(ctx, x, yy + y, bw, bh, c);
-    if (mapped === "dog") {
-      body(3, 6, 10, 6, "#c4a06a");
-      body(11, 4, 4, 4, "#c4a06a");
-      pset(ctx, 13, 5, "#1a1a1a");
-      body(2, 5, 3, 3, "#8a6a40");
-      body(4, 12, 3, 3, "#c4a06a");
-      body(9, 12, 3, 3, "#c4a06a");
-    } else if (mapped === "bunny") {
-      body(4, 7, 8, 6, "#f4e8dc");
-      body(5, 2, 2, 6, "#f4e8dc");
-      body(9, 2, 2, 6, "#f4e8dc");
-      pset(ctx, 6, 3, "#f5a9b8");
-      pset(ctx, 10, 3, "#f5a9b8");
-      pset(ctx, 6, 9, "#222");
-      pset(ctx, 10, 9, "#222");
-    } else if (mapped === "fox") {
-      body(3, 6, 10, 6, "#d08030");
-      body(11, 4, 4, 4, "#d08030");
-      body(3, 3, 3, 4, "#d08030");
-      body(11, 3, 3, 3, "#f4e8dc");
-      pset(ctx, 13, 5, "#1a1a1a");
-      pset(ctx, 6, 8, "#222");
-      pset(ctx, 9, 8, "#222");
-      body(4, 12, 3, 3, "#d08030");
-      body(9, 12, 3, 3, "#d08030");
-      px(ctx, 2, 11 + y, 3, 1, "#d08030");
-    } else if (mapped === "hamster") {
-      body(4, 8, 8, 6, "#c49a60");
-      body(5, 6, 6, 4, "#c49a60");
-      pset(ctx, 7, 8, "#222");
-      pset(ctx, 10, 8, "#222");
-      pset(ctx, 11, 10, "#f5a9b8");
-      body(4, 11, 2, 2, "#e8c8a0");
-      body(10, 11, 2, 2, "#e8c8a0");
-      body(5, 13, 2, 2, "#c49a60");
-      body(9, 13, 2, 2, "#c49a60");
-    } else if (mapped === "parrot") {
-      body(5, 7, 6, 6, "#c43a4a");
-      body(6, 5, 5, 4, "#2a8a4a");
-      body(10, 6, 4, 3, "#f4c15d");
-      pset(ctx, 13, 7, "#c43a4a");
-      pset(ctx, 11, 7, "#222");
-      body(4, 12, 2, 3, "#2a8a4a");
-      body(9, 12, 2, 4, "#c43a4a");
-    } else if (mapped === "turtle") {
-      body(4, 8, 9, 5, "#3d7a4a");
-      body(5, 9, 7, 3, "#2a5a32");
-      body(3, 10, 3, 3, "#6a9a48");
-      body(11, 9, 3, 3, "#6a9a48");
-      pset(ctx, 4, 11, "#222");
-      body(6, 13, 2, 2, "#3d7a4a");
-      body(10, 13, 2, 2, "#3d7a4a");
-    } else {
-      body(3, 6, 10, 6, "#d08a3a");
-      body(3, 3, 3, 4, "#d08a3a");
-      body(10, 3, 3, 4, "#d08a3a");
-      body(11, 5, 5, 4, "#d08a3a");
-      pset(ctx, 5, 8, "#222");
-      pset(ctx, 8, 8, "#222");
-      pset(ctx, 13, 7, "#f5a9b8");
-      body(4, 12, 3, 3, "#d08a3a");
-      body(9, 12, 3, 3, "#d08a3a");
-    }
-  });
+function drawPetSprite(kind, frame, walking, sit, facing) {
+  return drawPetPixel(kind, { walking, sit, facing, dir: facing ? facingIndex8(facing) : undefined }, frame);
 }
 
 export function createAvatarPreview(container) {
@@ -859,8 +786,8 @@ export function createRoom3D(container) {
       fitRoomCamera();
       if (!isPhoneView()) {
         const b = roomWorldBounds();
-        const sx = Math.floor(viewW / (b.w + 32));
-        const sy = Math.floor(viewH / (b.h + 40));
+        const sx = Math.floor(viewW / Math.max(1, b.w + 8));
+        const sy = Math.floor(viewH / Math.max(1, b.h + 8));
         zoom = Math.max(1, Math.min(3, Math.min(sx, sy) || 1));
       }
     } else {
@@ -965,8 +892,8 @@ export function createRoom3D(container) {
         const pst = st.petX != null ? { x: st.petX, y: st.petY } : { x: x + (rx / plen) * 0.45, y: y + (ry / plen) * 0.45 };
         const pf = tileToScreen(pst.x + 0.5, pst.y + 0.5);
         const hover = false;
-        const pspr = drawPetSprite(p.activePet, frame, walking || hover, sit && !hover);
-        list.push({ kind: "pet", id: p.username + "-pet", type: "pet", depth: pst.x + pst.y + 0.35, sx: pf.sx - 8, sy: pf.sy - 16 + 2, w: 16, h: 16, spr: pspr });
+        const pspr = drawPetSprite(p.activePet, frame, walking || hover, sit && !hover, facing);
+        list.push({ kind: "pet", id: p.username + "-pet", type: "pet", depth: pst.x + pst.y + 0.35, sx: pf.sx - PET_W / 2, sy: pf.sy - PET_H + 2, w: PET_W, h: PET_H, spr: pspr });
       }
     }
     if (ghost) {
@@ -1034,16 +961,22 @@ export function createRoom3D(container) {
       } else {
         fillPoly(ctx, [inner(0, 0), inner(n, 0), inner(n, WALL_H), inner(0, WALL_H)], mid, grout);
       }
-      ctx.strokeStyle = grout;
-      ctx.lineWidth = 1;
-      for (let i = 0; i <= n; i++) {
-        if (wall === "left" && i > doorT0 && i < doorT1) continue;
-        const a = inner(i, 2), b = inner(i, WALL_H - 2);
-        ctx.beginPath(); ctx.moveTo(a.sx, a.sy); ctx.lineTo(b.sx, b.sy); ctx.stroke();
-      }
-      for (let up = 16; up < WALL_H - 4; up += 16) {
-        const a = inner(0, up), b = inner(n, up);
-        ctx.beginPath(); ctx.moveTo(a.sx, a.sy); ctx.lineTo(b.sx, b.sy); ctx.stroke();
+      // Square wall tiles with visible grout: paint grout field, then tile faces.
+      const rows = 3;
+      const skirtH = 7, capH = 6;
+      const usable = WALL_H - skirtH - capH;
+      const rowH = usable / rows;
+      const tileA = shade(base, 12);
+      const tileB = shade(base, -8);
+      for (let i = 0; i < n; i++) {
+        for (let r = 0; r < rows; r++) {
+          const u0 = skirtH + r * rowH + 0.8;
+          const u1 = skirtH + (r + 1) * rowH - 0.8;
+          const t0 = i + 0.06, t1 = i + 1 - 0.06;
+          if (wall === "left" && t0 < doorT1 && t1 > doorT0 && u0 < doorH) continue;
+          const fill = (i + r) % 2 ? tileA : tileB;
+          fillPoly(ctx, [inner(t0, u0), inner(t1, u0), inner(t1, u1), inner(t0, u1)], fill, grout);
+        }
       }
       // skirting board
       if (wall === "left") {
@@ -1496,4 +1429,4 @@ export function createRoom3D(container) {
   return api;
 }
 
-export default { createRoom3D, createAvatarPreview, paintAvatarSheet, paintStoreThumb, AVATAR_SHEET_LOOKS };
+export default { createRoom3D, createAvatarPreview, paintAvatarSheet, paintStoreThumb, paintPetSheet, AVATAR_SHEET_LOOKS, PET_W, PET_H };

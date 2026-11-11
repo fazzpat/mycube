@@ -120,7 +120,7 @@
             <span class="together-join">Join</span>
           </button>
         </div>
-        <div id="places-panel" class="places-panel" data-testid="places-panel">
+        <div id="places-panel" class="places-panel hidden" data-testid="places-panel">
           <div class="places-head">Mall</div>
           <div class="places-list" id="places-list" data-testid="places-list"></div>
         </div>
@@ -135,6 +135,7 @@
     <section id="view-room" class="view room-view hidden">
       <header class="topbar">
         <div class="topbar-right">
+          <button class="leave-cube-btn" type="button" data-testid="leave-cube" id="leave-cube" aria-label="Leave Cube">Leave Cube</button>
           <button class="coin-chip" type="button" data-testid="room-coins" id="room-coins-btn" aria-label="Open coins">🪙 <span id="room-coins">50</span></button>
         </div>
       </header>
@@ -248,22 +249,22 @@
         </div>
       </div>
       <div class="dock" id="chat-dock" data-testid="chat-dock">
-        <div class="voice-toggle" data-testid="voice-toggle" role="group" aria-label="Voice mode">
-          <button type="button" class="voice-opt on" data-testid="voice-speak" id="voice-speak">Speak</button>
-          <button type="button" class="voice-opt" data-testid="voice-shout" id="voice-shout">Shout</button>
-        </div>
-        <button class="emote-btn" data-testid="emote-eat" id="emote-eat" type="button" title="Eat">🥪</button>
-        <button class="emote-btn" data-testid="emote-drink" id="emote-drink" type="button" title="Drink">🥤</button>
         <button class="emote-btn emote-wheel-btn" data-testid="emote-wheel-btn" id="emote-wheel-btn" type="button" title="Emotes" aria-expanded="false" aria-label="Open emotes">😀</button>
-        <textarea id="chat-input" data-testid="chat-input" maxlength="80" rows="1" placeholder="Say something — it vanishes in a few seconds" autocomplete="off"></textarea>
+        <textarea id="chat-input" data-testid="chat-input" maxlength="80" rows="1" placeholder="Say something..." autocomplete="off"></textarea>
         <button class="btn small" data-testid="chat-send" id="chat-send" type="button">Say</button>
       </div>
       <div id="emote-wheel-backdrop" class="emote-wheel-backdrop hidden" data-testid="emote-wheel-backdrop"></div>
       <div id="emote-wheel" class="emote-wheel hidden" data-testid="emote-wheel" aria-label="Emotes"></div>
   <div id="store-panel" class="store-panel hidden" data-testid="store-panel">
         <div class="store-panel-head">
-          <strong id="store-panel-title" data-testid="store-panel-title">Store</strong>
+          <strong id="store-panel-title" data-testid="store-panel-title">Shop</strong>
           <button type="button" class="btn tiny ghost" id="store-close" data-testid="store-close">Close</button>
+        </div>
+        <div class="store-tabs" data-testid="store-tabs" id="store-tabs">
+          <button type="button" class="store-tab" data-store-tab="furniture" data-testid="store-tab-furniture">Furniture</button>
+          <button type="button" class="store-tab" data-store-tab="clothes" data-testid="store-tab-clothes">Clothes</button>
+          <button type="button" class="store-tab" data-store-tab="pets" data-testid="store-tab-pets">Pets</button>
+          <button type="button" class="store-tab" data-store-tab="art" data-testid="store-tab-art">Wall art</button>
         </div>
         <div class="store-panel-body">
           <div class="store-preview" id="store-preview" data-testid="store-preview"></div>
@@ -308,18 +309,6 @@
                     <svg viewBox="0 0 32 32" width="28" height="28"><path d="M8 12h16l-1.5 13h-13z" fill="#fff"/><path d="M11 12a5 5 0 0 1 10 0" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/></svg>
                   </span>
                   <span class="phone-app-label">Shop</span>
-                </button>
-                <button type="button" class="phone-app" data-testid="phone-app-clothes" data-app="clothes-store">
-                  <span class="phone-app-icon" style="background:linear-gradient(180deg,#ff2bd6,#9b5cff)">
-                    <svg viewBox="0 0 32 32" width="28" height="28"><path d="M10 8h12l4 5v4h-5v10h-10V17H6v-4z" fill="#fff"/></svg>
-                  </span>
-                  <span class="phone-app-label">Cube Threads</span>
-                </button>
-                <button type="button" class="phone-app" data-testid="phone-app-pets-store" data-app="pets-store">
-                  <span class="phone-app-icon" style="background:linear-gradient(180deg,#b6ff3b,#00f0ff)">
-                    <svg viewBox="0 0 32 32" width="28" height="28"><circle cx="16" cy="18" r="8" fill="#0a0812"/><circle cx="13" cy="17" r="1.3" fill="#b6ff3b"/><circle cx="19" cy="17" r="1.3" fill="#b6ff3b"/></svg>
-                  </span>
-                  <span class="phone-app-label">Pawz</span>
                 </button>
                 <button type="button" class="phone-app" data-testid="phone-app-invite" data-app="invite">
                   <span class="phone-app-icon" style="background:linear-gradient(180deg,#b7a6ff,#7c5cff)">
@@ -386,9 +375,25 @@
             <div id="phone-screen-shop" class="phone-app-screen hidden" data-testid="phone-screen-shop">
               <div class="phone-app-nav"><button type="button" class="phone-back" data-phone-back aria-label="Back">‹</button><h2>Shop</h2></div>
               <div class="phone-app-body">
-                <p class="lede">Spend coins, then place what you own on the floor.</p>
-                <div class="inv-row" id="inventory-row"></div>
-                <div class="shop-grid" id="shop-grid"></div>
+                <div class="store-tabs phone-shop-tabs" data-testid="phone-shop-tabs" id="phone-shop-tabs">
+                  <button type="button" class="store-tab" data-shop-tab="furniture" data-testid="shop-tab-furniture">Furniture</button>
+                  <button type="button" class="store-tab" data-shop-tab="clothes" data-testid="shop-tab-clothes">Clothes</button>
+                  <button type="button" class="store-tab" data-shop-tab="pets" data-testid="shop-tab-pets">Pets</button>
+                  <button type="button" class="store-tab" data-shop-tab="art" data-testid="shop-tab-art">Wall art</button>
+                </div>
+                <div id="shop-furniture-pane">
+                  <p class="lede">Spend coins, then place what you own on the floor.</p>
+                  <div class="inv-row" id="inventory-row"></div>
+                  <div class="shop-grid" id="shop-grid"></div>
+                </div>
+                <div id="shop-catalog-pane" class="hidden">
+                  <div class="store-preview" id="phone-shop-preview" data-testid="phone-shop-preview"></div>
+                  <div class="store-grid" id="phone-shop-grid" data-testid="phone-shop-grid"></div>
+                  <div class="store-panel-foot">
+                    <button type="button" class="btn" id="phone-shop-tryon" data-testid="phone-shop-tryon">Try on</button>
+                    <button type="button" class="btn" id="phone-shop-buy" data-testid="phone-shop-buy" disabled>Buy</button>
+                  </div>
+                </div>
               </div>
             </div>
             <div id="phone-screen-invite" class="phone-app-screen hidden" data-testid="phone-screen-invite">

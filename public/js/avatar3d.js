@@ -1,30 +1,6 @@
-/* Low-poly V-ego renderer: 8 iso angles, toon shade, quantized pixel outline. */
+/* Hand-authored Habbo-style paper-doll pixel avatars. Native 24x60, integer blit only. */
 export const AV_W = 24;
-export const AV_H = 64;
-const RS = 2; // render scale
-const RW = AV_W * RS;
-const RH = AV_H * RS;
-
-function hexToRgb(hex) {
-  const n = parseInt(String(hex).replace("#", ""), 16);
-  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
-}
-function shade(hex, amt) {
-  const { r, g, b } = hexToRgb(hex);
-  const c = (v) => Math.max(0, Math.min(255, v + amt));
-  return "#" + ((1 << 24) + (c(r) << 16) + (c(g) << 8) + c(b)).toString(16).slice(1);
-}
-function mix(a, b, t) {
-  const A = hexToRgb(a), B = hexToRgb(b);
-  const c = (x, y) => Math.round(x + (y - x) * t);
-  return "#" + ((1 << 24) + (c(A.r, B.r) << 16) + (c(A.g, B.g) << 8) + c(A.b, B.b)).toString(16).slice(1);
-}
-
-const L = { x: -0.52, y: 0.78, z: 0.34 };
-(function normLight() {
-  const m = Math.hypot(L.x, L.y, L.z) || 1;
-  L.x /= m; L.y /= m; L.z /= m;
-})();
+export const AV_H = 60;
 
 export function facingIndex8(facing, dirX, dirY) {
   let dx = 0, dy = 1;
@@ -36,654 +12,2186 @@ export function facingIndex8(facing, dirX, dirY) {
     dy = dirY || 0;
   }
   if (dx === 0 && dy === 0) dy = 1;
-  let ang = Math.atan2(dy, dx); // 0 = +x (SE)
+  let ang = Math.atan2(dy, dx);
   if (ang < 0) ang += Math.PI * 2;
   return Math.round(ang / (Math.PI / 4)) & 7;
 }
 
-export function yawFromDir(dir) {
-  return dir * (Math.PI / 4);
+function hexToRgb(hex) {
+  const n = parseInt(String(hex).replace("#", ""), 16);
+  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
 }
-
-function toon(rgb, nx, ny, nz, opts = {}) {
-  const nd = nx * L.x + ny * L.y + nz * L.z;
-  let t;
-  if (nd > 0.72) t = opts.spec ? 1.38 : 1.22;
-  else if (nd > 0.28) t = 1.0;
-  else if (nd > -0.05) t = 0.74;
-  else t = 0.48;
-  if (opts.fold && nd < 0.15) t *= 0.88;
+function mix(a, b, t) {
   return {
-    r: Math.max(0, Math.min(255, Math.round(rgb.r * t))),
-    g: Math.max(0, Math.min(255, Math.round(rgb.g * t))),
-    b: Math.max(0, Math.min(255, Math.round(rgb.b * t))),
+    r: Math.round(a.r + (b.r - a.r) * t),
+    g: Math.round(a.g + (b.g - a.g) * t),
+    b: Math.round(a.b + (b.b - a.b) * t),
   };
 }
-
-function unitSphere(lat = 9, lon = 12) {
-  const verts = [];
-  const tris = [];
-  for (let i = 0; i <= lat; i++) {
-    const v = i / lat, phi = v * Math.PI;
-    const y = Math.cos(phi), r = Math.sin(phi);
-    for (let j = 0; j <= lon; j++) {
-      const u = j / lon, th = u * Math.PI * 2;
-      const x = Math.cos(th) * r, z = Math.sin(th) * r;
-      verts.push({ x, y, z });
-    }
-  }
-  const stride = lon + 1;
-  for (let i = 0; i < lat; i++) {
-    for (let j = 0; j < lon; j++) {
-      const a = i * stride + j;
-      const b = a + stride;
-      if (i !== 0) tris.push([a, b, a + 1]);
-      if (i !== lat - 1) tris.push([a + 1, b, b + 1]);
-    }
-  }
-  return { verts, tris };
-}
-
-function unitBox() {
-  const verts = [
-    { x: -1, y: -1, z: -1 }, { x: 1, y: -1, z: -1 }, { x: 1, y: 1, z: -1 }, { x: -1, y: 1, z: -1 },
-    { x: -1, y: -1, z: 1 }, { x: 1, y: -1, z: 1 }, { x: 1, y: 1, z: 1 }, { x: -1, y: 1, z: 1 },
-  ];
-  const faces = [
-    [0, 1, 2, 3], [5, 4, 7, 6], [4, 0, 3, 7], [1, 5, 6, 2], [3, 2, 6, 7], [4, 5, 1, 0],
-  ];
-  const tris = [];
-  for (const f of faces) tris.push([f[0], f[1], f[2]], [f[0], f[2], f[3]]);
-  return { verts, tris };
-}
-
-const SPHERE = unitSphere(8, 10);
-const BOX = unitBox();
-
-function rotateYaw(p, yaw) {
-  const c = Math.cos(yaw), s = Math.sin(yaw);
-  return { x: p.z * c - p.x * s, y: p.y, z: p.z * s + p.x * c };
-}
-
-function addOutline(img, w, h, ink = { r: 18, g: 12, b: 16 }) {
-  const out = new Uint8ClampedArray(img);
-  const solid = (i) => img[i * 4 + 3] > 160;
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      const i = y * w + x;
-      if (solid(i)) continue;
-      let n = false;
-      if (x > 0 && solid(i - 1)) n = true;
-      else if (x + 1 < w && solid(i + 1)) n = true;
-      else if (y > 0 && solid(i - w)) n = true;
-      else if (y + 1 < h && solid(i + w)) n = true;
-      if (!n) continue;
-      const p = i * 4;
-      out[p] = ink.r; out[p + 1] = ink.g; out[p + 2] = ink.b; out[p + 3] = 255;
-    }
-  }
-  return out;
-}
-
-function downsample(src, sw, sh, scale) {
-  const w = sw / scale, h = sh / scale;
-  const out = new Uint8ClampedArray(w * h * 4);
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      let r = 0, g = 0, b = 0, a = 0, c = 0;
-      for (let oy = 0; oy < scale; oy++) {
-        for (let ox = 0; ox < scale; ox++) {
-          const i = ((y * scale + oy) * sw + (x * scale + ox)) * 4;
-          if (src[i + 3] < 8) continue;
-          r += src[i]; g += src[i + 1]; b += src[i + 2]; a += src[i + 3]; c++;
-        }
-      }
-      const o = (y * w + x) * 4;
-      if (!c) continue;
-      out[o] = Math.round(r / c);
-      out[o + 1] = Math.round(g / c);
-      out[o + 2] = Math.round(b / c);
-      out[o + 3] = Math.min(255, Math.round(a / c));
-    }
-  }
-  return { data: out, w, h };
-}
-
-function makeTarget() {
-  const zbuf = new Float32Array(RW * RH);
-  zbuf.fill(-1e9);
-  const img = new Uint8ClampedArray(RW * RH * 4);
-  const S = (58 * RS) / 6.35;
-  const ox = RW / 2;
-  const oy = RH - 3 * RS;
-  return { zbuf, img, S, ox, oy };
-}
-
-function project(T, x, y, z) {
+function mul(c, t) {
   return {
-    sx: T.ox + (x - z) * T.S,
-    sy: T.oy - y * T.S + (x + z) * T.S * 0.5,
-    depth: (x + z) * 0.75 + y * 0.12,
+    r: Math.max(0, Math.min(255, Math.round(c.r * t))),
+    g: Math.max(0, Math.min(255, Math.round(c.g * t))),
+    b: Math.max(0, Math.min(255, Math.round(c.b * t))),
   };
 }
+function rgb(r, g, b) { return { r, g, b }; }
 
-function plot(T, x, y, z, col, a = 255) {
-  const px = x | 0, py = y | 0;
-  if (px < 0 || py < 0 || px >= RW || py >= RH) return;
-  const i = py * RW + px;
-  if (z < T.zbuf[i]) return;
-  T.zbuf[i] = z;
-  const o = i * 4;
-  T.img[o] = col.r; T.img[o + 1] = col.g; T.img[o + 2] = col.b; T.img[o + 3] = a;
+const INK = rgb(22, 16, 18);
+const EYE_W = rgb(250, 250, 252);
+const PUPIL = rgb(28, 20, 22);
+const MOUTH = rgb(160, 80, 80);
+const NOSE = rgb(180, 110, 90);
+
+function tones(hex, warm = false) {
+  const b = hexToRgb(hex);
+  const hi = warm ? mix(b, rgb(255, 236, 214), 0.28) : mix(b, rgb(255, 255, 255), 0.22);
+  const sh = warm ? mix(mul(b, 0.72), rgb(90, 40, 30), 0.12) : mul(b, 0.68);
+  return { mid: b, hi, sh };
 }
 
-function fillTri(T, a, b, c, na, nb, nc, rgb, opts) {
-  const minX = Math.max(0, Math.floor(Math.min(a.sx, b.sx, c.sx)));
-  const maxX = Math.min(RW - 1, Math.ceil(Math.max(a.sx, b.sx, c.sx)));
-  const minY = Math.max(0, Math.floor(Math.min(a.sy, b.sy, c.sy)));
-  const maxY = Math.min(RH - 1, Math.ceil(Math.max(a.sy, b.sy, c.sy)));
-  const area = (b.sx - a.sx) * (c.sy - a.sy) - (b.sy - a.sy) * (c.sx - a.sx);
-  if (Math.abs(area) < 0.05) return;
-  const inv = 1 / area;
-  for (let y = minY; y <= maxY; y++) {
-    for (let x = minX; x <= maxX; x++) {
-      const w0 = ((b.sx - a.sx) * (y - a.sy) - (b.sy - a.sy) * (x - a.sx)) * inv;
-      const w1 = ((c.sx - b.sx) * (y - b.sy) - (c.sy - b.sy) * (x - b.sx)) * inv;
-      const w2 = 1 - w0 - w1;
-      if (w0 < -0.01 || w1 < -0.01 || w2 < -0.01) continue;
-      const z = a.depth * w2 + b.depth * w0 + c.depth * w1;
-      const nx = na.x * w2 + nb.x * w0 + nc.x * w1;
-      const ny = na.y * w2 + nb.y * w0 + nc.y * w1;
-      const nz = na.z * w2 + nb.z * w0 + nc.z * w1;
-      const len = Math.hypot(nx, ny, nz) || 1;
-      plot(T, x, y, z, toon(rgb, nx / len, ny / len, nz / len, opts));
-    }
-  }
+function shoePal(id) {
+  if (id === "black") return tones("#2a2a2e");
+  if (id === "red") return tones("#c0392b");
+  if (id === "gum") return tones("#e8d0b0", true);
+  if (id === "skate") return tones("#2a2a2e");
+  return tones("#f4f0ea");
 }
 
-function drawMesh(T, mesh, xf, rgb, opts = {}) {
-  const vs = mesh.verts.map((v) => {
-    const p = xf(v);
-    const pr = project(T, p.x, p.y, p.z);
-    return { ...pr, n: { x: p.nx, y: p.ny, z: p.nz } };
-  });
-  for (const t of mesh.tris) {
-    const a = vs[t[0]], b = vs[t[1]], c = vs[t[2]];
-    fillTri(T, a, b, c, a.n, b.n, c.n, rgb, opts);
-  }
-}
-
-function xfEllipsoid(cx, cy, cz, rx, ry, rz, yaw, tilt = 0, roll = 0) {
-  const cyaw = Math.cos(yaw), syaw = Math.sin(yaw);
-  const cti = Math.cos(tilt), sti = Math.sin(tilt);
-  const cr = Math.cos(roll), sr = Math.sin(roll);
-  return (v) => {
-    let x = v.x * rx, y = v.y * ry, z = v.z * rz;
-    // roll (z), tilt (x), yaw (y) — applied to both position and normal
-    let nx = v.x, ny = v.y, nz = v.z;
-    function rotX(px, py, pz, c, s) { return { x: px, y: py * c - pz * s, z: py * s + pz * c }; }
-    function rotZ(px, py, pz, c, s) { return { x: px * c - py * s, y: px * s + py * c, z: pz }; }
-    let p = rotZ(x, y, z, cr, sr); let n = rotZ(nx, ny, nz, cr, sr);
-    p = rotX(p.x, p.y, p.z, cti, sti); n = rotX(n.x, n.y, n.z, cti, sti);
-    const wx = p.z * cyaw - p.x * syaw, wy = p.y, wz = p.z * syaw + p.x * cyaw;
-    const nnx = n.z * cyaw - n.x * syaw, nny = n.y, nnz = n.z * syaw + n.x * cyaw;
-    const len = Math.hypot(nnx, nny, nnz) || 1;
-    return { x: wx + cx, y: wy + cy, z: wz + cz, nx: nnx / len, ny: nny / len, nz: nnz / len };
-  };
-}
-
-function xfBox(cx, cy, cz, hx, hy, hz, yaw, tilt = 0) {
-  return xfEllipsoid(cx, cy, cz, hx, hy, hz, yaw, tilt, 0);
-}
-
-function limbChain(base, length, angX, yaw) {
-  // returns center of a capsule going from joint along local -Y rotated by angX (pitch) then yaw
-  const c = Math.cos(angX), s = Math.sin(angX);
-  // local down is -Y; pitch around X swings in YZ (forward/back)
-  const ly = -Math.cos(angX) * length;
-  const lz = Math.sin(angX) * length;
-  const endLocal = { x: 0, y: ly, z: lz };
-  const midLocal = { x: 0, y: ly / 2, z: lz / 2 };
-  const end = rotateYaw({ x: endLocal.x + (base.lx || 0), y: endLocal.y, z: endLocal.z }, yaw);
-  const mid = rotateYaw({ x: midLocal.x + (base.lx || 0), y: midLocal.y, z: midLocal.z }, yaw);
-  return {
-    mid: { x: base.x + mid.x, y: base.y + mid.y, z: base.z + mid.z },
-    end: { x: base.x + end.x, y: base.y + end.y, z: base.z + end.z },
-    tilt: angX,
-  };
-}
-
-function shoeColor(id) {
-  if (id === "white") return "#f4f0ea";
-  if (id === "black") return "#2a2a2e";
-  if (id === "red") return "#c0392b";
-  if (id === "gum") return "#e8d0b0";
-  if (id === "skate") return "#2a2a2e";
-  if (id === "glow") return "#f4f0ea";
-  if (id === "cyber") return "#2a2a2e";
-  return "#2a2a2e";
-}
-
-function normalizeAvatar(raw) {
-  const a = { ...(raw || {}) };
+function normalizeAvatar(raw = {}) {
+  const a = { ...raw };
   if (a.top === "techwear") a.top = "jacket";
   if (a.top === "ledhoodie") a.top = "hoodie";
   if (a.bottom === "neonpants") a.bottom = "jeans";
   if (a.shoes === "glow") a.shoes = "white";
   if (a.shoes === "cyber") a.shoes = "black";
-  if (a.accessory === "visor" || a.accessory === "goggles") {
-    a.glasses = true;
-    a.accessory = "none";
-  }
+  if (a.accessory === "visor" || a.accessory === "goggles") { a.glasses = true; a.accessory = "none"; }
   if (a.accessory === "tattoo") a.accessory = "none";
   if (a.hair === "neon") a.hair = "spiky";
-  return a;
-}
-
-function buildPose(flags, frame) {
-  const sit = Boolean(flags.sitting);
-  const walk = Boolean(flags.walking) && !sit;
-  const f = walk ? (frame % 4) : 0;
-  const swing = walk ? [0.62, 0.08, -0.62, -0.08][f] : 0;
-  const bob = walk ? [0, 0.07, 0, 0.07][f] : 0;
-  const armS = walk ? -swing * 0.85 : 0;
-  const wave = flags.actionEmote === "wave" || flags.actionEmote === "dance";
-  const dance = flags.actionEmote === "dance";
-  const box = Boolean(flags.boxing);
-  const phone = Boolean(flags.usingPhone);
-  if (sit) {
-    return {
-      bob: 0, hipY: 1.85,
-      thighL: 1.15, thighR: 1.15, shinL: -1.25, shinR: -1.25,
-      armL: 0.35, armR: 0.35, elbowL: 0.6, elbowR: 0.6,
-    };
-  }
   return {
-    bob,
-    hipY: 3.05 + bob,
-    thighL: swing, thighR: -swing,
-    shinL: walk ? Math.max(0, -swing) * 0.55 : 0.08,
-    shinR: walk ? Math.max(0, swing) * 0.55 : 0.08,
-    armL: box || wave || dance ? -2.1 : 0.12 + armS * 0.9,
-    armR: phone || box || dance ? (phone ? -1.4 : -2.0) : 0.12 - armS * 0.9,
-    elbowL: box || wave ? 1.1 : 0.22,
-    elbowR: phone || box ? 1.2 : 0.22,
+    skin: a.skin || "#f1c27d",
+    hair: a.hair || "short",
+    hairColor: a.hairColor || "#2b1d16",
+    shirt: a.shirt || "#ff7a59",
+    glasses: Boolean(a.glasses),
+    top: a.top || "tshirt",
+    bottom: a.bottom || "jeans",
+    bottomColor: a.bottomColor || "#3d4f7c",
+    shoes: a.shoes || "white",
+    accessory: a.accessory || "none",
+    headphoneColor: a.headphoneColor || "#2a2a2e",
   };
 }
 
-function drawCharacter(T, avatar, yaw, pose, flags) {
-  avatar = normalizeAvatar(avatar);
-  const skin = hexToRgb(avatar.skin || "#f1c27d");
-  const shirt = hexToRgb(avatar.shirt || "#ff7a59");
-  const pants = hexToRgb(avatar.bottomColor || "#3d4f7c");
-  const shoe = hexToRgb(shoeColor(avatar.shoes || "white"));
-  const hairC = hexToRgb(avatar.hairColor || "#2b1d16");
-  const hairL = hexToRgb(mix(avatar.hairColor || "#2b1d16", "#ffffff", 0.35));
-  const top = avatar.top || "tshirt";
-  const hair = avatar.hair || "short";
-
-  const hipY = pose.hipY;
-  const chestY = hipY + 1.05;
-  const shoulderY = chestY + 0.62;
-  const neckY = shoulderY + 0.28;
-  const headY = neckY + 0.62;
-  const headR = 0.5;
-
-  // legs
-  const hipOff = 0.22;
-  function leg(side, thighA, shinA) {
-    const hx = -side * hipOff;
-    const hip = { x: 0, y: hipY, z: 0, lx: hx };
-    const shorts = (avatar.bottom || "jeans") === "shorts";
-    const cargo = (avatar.bottom || "jeans") === "cargo";
-    const thighLen = 1.22, shinLen = 1.18;
-    const th = limbChain(hip, thighLen, thighA, yaw);
-    const shin = limbChain({ x: th.end.x, y: th.end.y, z: th.end.z, lx: 0 }, shinLen, thighA + shinA, yaw);
-    const thighR = cargo ? 0.26 : 0.22;
-    drawMesh(T, SPHERE, xfEllipsoid(th.mid.x, th.mid.y, th.mid.z, thighR, thighLen * 0.52, 0.26, yaw, thighA), pants, { fold: true });
-    if (shorts) {
-      const midShin = limbChain({ x: th.end.x, y: th.end.y, z: th.end.z, lx: 0 }, shinLen * 0.45, thighA + shinA, yaw);
-      drawMesh(T, SPHERE, xfEllipsoid(midShin.mid.x, midShin.mid.y, midShin.mid.z, 0.2, shinLen * 0.25, 0.22, yaw, thighA + shinA), pants, { fold: true });
-      drawMesh(T, SPHERE, xfEllipsoid(shin.mid.x, shin.mid.y - 0.15, shin.mid.z, 0.16, shinLen * 0.28, 0.18, yaw, thighA + shinA), skin);
-    } else {
-      drawMesh(T, SPHERE, xfEllipsoid(shin.mid.x, shin.mid.y, shin.mid.z, cargo ? 0.22 : 0.2, shinLen * 0.5, 0.22, yaw, thighA + shinA), pants, { fold: true });
-    }
-    const skate = (avatar.shoes || "white") === "skate";
-    const fwd = rotateYaw({ x: 0, y: 0, z: 0.22 }, yaw);
-    drawMesh(T, BOX, xfBox(shin.end.x + fwd.x, shin.end.y + 0.1, shin.end.z + fwd.z, skate ? 0.24 : 0.2, skate ? 0.16 : 0.12, skate ? 0.38 : 0.32, yaw, 0), shoe, { spec: true });
-    const hl = { r: 245, g: 245, b: 248 };
-    drawMesh(T, BOX, xfBox(shin.end.x + fwd.x, shin.end.y + 0.16, shin.end.z + fwd.z, 0.12, 0.03, 0.2, yaw, 0), hl, { spec: true });
-  }
-  leg(1, pose.thighL, pose.shinL);
-  leg(-1, pose.thighR, pose.shinR);
-
-  // hips / jeans waist
-  drawMesh(T, SPHERE, xfEllipsoid(0, hipY + 0.15, 0, 0.42, 0.28, 0.28, yaw), pants, { fold: true });
-
-  // torso
-  const torsoRgb = shirt;
-  const torsoH = 0.95;
-  const tw = top === "hoodie" || top === "jacket" ? 0.48 : 0.42;
-  drawMesh(T, SPHERE, xfEllipsoid(0, chestY, 0, tw, torsoH, 0.32, yaw), torsoRgb, { fold: true });
-  if (top === "hoodie") {
-    const back = rotateYaw({ x: 0, y: 0, z: -0.28 }, yaw);
-    drawMesh(T, SPHERE, xfEllipsoid(back.x, shoulderY + 0.1, back.z, 0.36, 0.22, 0.22, yaw), shadeRgb(torsoRgb, -20));
-  }
-  if (top === "bandtee") {
-    const graphic = shadeRgb(torsoRgb, 80);
-    drawMesh(T, BOX, xfBox(0, chestY + 0.05, 0.28, 0.22, 0.22, 0.04, yaw), graphic);
-    drawMesh(T, BOX, xfBox(0, chestY + 0.05, 0.3, 0.1, 0.1, 0.03, yaw), shadeRgb(torsoRgb, -40));
-  }
-  if (top === "jacket") {
-    const inner = shadeRgb(torsoRgb, 30);
-    drawMesh(T, BOX, xfBox(0, chestY, 0.1, 0.18, 0.7, 0.16, yaw), inner);
-  }
-
-  // shoulders
-  const shx = 0.66;
-  const sl = rotateYaw({ x: -shx, y: 0, z: 0 }, yaw);
-  const sr = rotateYaw({ x: shx, y: 0, z: 0 }, yaw);
-  drawMesh(T, SPHERE, xfEllipsoid(sl.x, shoulderY, sl.z, 0.22, 0.2, 0.22, yaw), torsoRgb);
-  drawMesh(T, SPHERE, xfEllipsoid(sr.x, shoulderY, sr.z, 0.22, 0.2, 0.22, yaw), torsoRgb);
-
-  // arms + hands
-  function arm(side, ang, elbow) {
-    const ox = -side * shx;
-    const base = { x: 0, y: shoulderY - 0.02, z: 0, lx: ox };
-    const upper = limbChain(base, 0.85, ang, yaw);
-    const lower = limbChain({ x: upper.end.x, y: upper.end.y, z: upper.end.z, lx: 0 }, 0.78, ang + elbow, yaw);
-    drawMesh(T, SPHERE, xfEllipsoid(upper.mid.x, upper.mid.y, upper.mid.z, 0.18, 0.44, 0.18, yaw, ang), torsoRgb);
-    drawMesh(T, SPHERE, xfEllipsoid(lower.mid.x, lower.mid.y, lower.mid.z, 0.16, 0.38, 0.16, yaw, ang + elbow), skin);
-    drawMesh(T, SPHERE, xfEllipsoid(lower.end.x, lower.end.y, lower.end.z, 0.18, 0.15, 0.2, yaw, ang + elbow), skin);
-    return lower.end;
-  }
-  const leftHand = arm(1, pose.armL, pose.elbowL);
-  const rightHand = arm(-1, pose.armR, pose.elbowR);
-
-  if (flags.usingPhone && rightHand) {
-    const ph = hexToRgb("#1a1a22");
-    drawMesh(T, BOX, xfBox(rightHand.x, rightHand.y + 0.08, rightHand.z + 0.05, 0.08, 0.16, 0.03, yaw), ph, { spec: true });
-  }
-  if ((flags.heldItem || flags.heldProp) === "coffee" && rightHand) {
-    drawMesh(T, BOX, xfBox(rightHand.x, rightHand.y + 0.05, rightHand.z + 0.08, 0.08, 0.12, 0.08, yaw), hexToRgb("#6b3a2a"));
-  }
-
-  // neck
-  drawMesh(T, SPHERE, xfEllipsoid(0, neckY, 0, 0.14, 0.18, 0.14, yaw), skin);
-
-  // head (rounded, slightly wider in cheeks)
-  drawMesh(T, SPHERE, xfEllipsoid(0, headY, 0.02, 0.52, 0.56, 0.48, yaw), skin);
-  // nose bump
-  const nose = rotateYaw({ x: 0, y: -0.02, z: 0.48 }, yaw);
-  drawMesh(T, SPHERE, xfEllipsoid(nose.x, headY + nose.y, nose.z, 0.1, 0.08, 0.1, yaw), skin);
-  // ears
-  const earL = rotateYaw({ x: -0.5, y: 0, z: 0 }, yaw);
-  const earR = rotateYaw({ x: 0.5, y: 0, z: 0 }, yaw);
-  drawMesh(T, SPHERE, xfEllipsoid(earL.x, headY, earL.z, 0.08, 0.12, 0.08, yaw), skin);
-  drawMesh(T, SPHERE, xfEllipsoid(earR.x, headY, earR.z, 0.08, 0.12, 0.08, yaw), skin);
-
-  drawHair(T, hair, hairC, hairL, yaw, headY, flags);
-
-  // accessories
-  const acc = avatar.accessory || "none";
-  if (acc === "cap") {
-    const cap = hexToRgb(avatar.shirt || "#ff7a59");
-    drawMesh(T, SPHERE, xfEllipsoid(0, headY + 0.32, 0, 0.56, 0.22, 0.54, yaw), cap, { spec: true });
-    const brim = rotateYaw({ x: 0, y: 0, z: 0.4 }, yaw);
-    drawMesh(T, BOX, xfBox(brim.x, headY + 0.22, brim.z, 0.28, 0.04, 0.28, yaw), shadeRgb(cap, -30));
-  } else if (acc === "beanie") {
-    const bn = hexToRgb(avatar.headphoneColor || avatar.shirt || "#2a2a2e");
-    drawMesh(T, SPHERE, xfEllipsoid(0, headY + 0.3, 0, 0.56, 0.28, 0.54, yaw), bn);
-  } else if (acc === "headphones") {
-    const hp = hexToRgb(avatar.headphoneColor || "#2a2a2e");
-    drawMesh(T, SPHERE, xfEllipsoid(earL.x - 0.04, headY, earL.z, 0.12, 0.16, 0.12, yaw), hp, { spec: true });
-    drawMesh(T, SPHERE, xfEllipsoid(earR.x + 0.04, headY, earR.z, 0.12, 0.16, 0.12, yaw), hp, { spec: true });
-    drawMesh(T, BOX, xfBox(0, headY + 0.42, 0, 0.52, 0.05, 0.08, yaw), hp);
-  } else if (acc === "trucker") {
-    const front = hexToRgb(avatar.shirt || "#c43a4a");
-    const mesh = hexToRgb("#efe6d4");
-    drawMesh(T, SPHERE, xfEllipsoid(0, headY + 0.32, 0, 0.56, 0.22, 0.54, yaw), mesh, { spec: true });
-    const panel = rotateYaw({ x: 0, y: 0, z: 0.2 }, yaw);
-    drawMesh(T, SPHERE, xfEllipsoid(panel.x, headY + 0.3, panel.z, 0.36, 0.2, 0.28, yaw), front, { spec: true });
-    const brim = rotateYaw({ x: 0, y: 0, z: 0.4 }, yaw);
-    drawMesh(T, BOX, xfBox(brim.x, headY + 0.22, brim.z, 0.28, 0.04, 0.28, yaw), shadeRgb(front, -30));
-  } else if (avatar.glasses) {
-    const col = hexToRgb("#111111");
-    const fwd = rotateYaw({ x: 0, y: 0, z: 0.46 }, yaw);
-    drawMesh(T, BOX, xfBox(fwd.x, headY + 0.02, fwd.z, 0.36, 0.08, 0.06, yaw), col, { spec: true });
-  } else if (acc === "chain") {
-    const g = hexToRgb("#f4c15d");
-    drawMesh(T, SPHERE, xfEllipsoid(0, chestY + 0.35, 0.28, 0.14, 0.06, 0.06, yaw), g, { spec: true });
-  }
-  if (acc === "belt" || acc === "wristband") {
-    if (acc === "belt") {
-      drawMesh(T, BOX, xfBox(0, hipY + 0.2, 0.05, 0.42, 0.08, 0.3, yaw), hexToRgb("#1a1a1c"));
-      drawMesh(T, BOX, xfBox(0, hipY + 0.2, 0.32, 0.08, 0.08, 0.04, yaw), hexToRgb("#c4a35a"), { spec: true });
-    }
-  }
-  if (acc === "wristband" && leftHand) {
-    drawMesh(T, SPHERE, xfEllipsoid(leftHand.x, leftHand.y + 0.12, leftHand.z, 0.12, 0.08, 0.12, yaw), hexToRgb("#1a1a1c"));
-  }
-
-  return { headY, yaw, leftHand, rightHand };
+/* View keys: s front, se front 3/4, e side, n back. Other dirs are mirrors. */
+function viewOf(dir) {
+  const map = { 0: "se", 1: "s", 2: "se", 3: "e", 4: "n", 5: "n", 6: "n", 7: "e" };
+  const flip = { 0: false, 1: false, 2: true, 3: true, 4: true, 5: false, 6: false, 7: false };
+  // dir 4 is NW = flip of NE; use se-back. Map 4 and 6 to "n" is too lossy.
+  // Better: 4 = flip n-side (use "n" flipped), 6 = "n" unflipped is wrong (6 is NE back 3/4).
+  return { key: map[dir] || "se", flip: Boolean(flip[dir]) };
 }
 
-function shadeRgb(rgb, amt) {
-  return {
-    r: Math.max(0, Math.min(255, rgb.r + amt)),
-    g: Math.max(0, Math.min(255, rgb.g + amt)),
-    b: Math.max(0, Math.min(255, rgb.b + amt)),
-  };
-}
-
-function drawHair(T, style, hairC, hairL, yaw, headY, flags) {
-  const base = (cx, cy, cz, rx, ry, rz, tilt = 0, col = hairC) => {
-    const p = rotateYaw({ x: cx, y: cy, z: cz }, yaw);
-    drawMesh(T, SPHERE, xfEllipsoid(p.x, headY + p.y, p.z, rx, ry, rz, yaw, tilt), col, { spec: true });
-  };
-  // cap over skull + highlight streak
-  base(0, 0.22, -0.02, 0.56, 0.38, 0.54, 0);
-  base(-0.12, 0.38, 0.05, 0.18, 0.1, 0.22, 0.2, hairL);
-
-  if (style === "curly") {
-    const puffs = [
-      [-0.5, 0.2, 0.18, 0.34], [0.5, 0.2, 0.18, 0.34],
-      [-0.3, 0.55, 0.05, 0.32], [0.3, 0.55, 0.05, 0.32],
-      [0, 0.62, 0.08, 0.34], [-0.48, 0.32, -0.22, 0.3], [0.48, 0.32, -0.22, 0.3],
-      [0, 0.4, -0.45, 0.32], [-0.2, 0.5, 0.3, 0.28], [0.2, 0.5, 0.3, 0.28],
-    ];
-    for (const [x, y, z, r] of puffs) base(x, y, z, r, r, r);
-    base(-0.2, 0.5, 0.05, 0.12, 0.08, 0.12, 0, hairL);
-  } else if (style === "bun") {
-    base(-0.28, 0.62, -0.05, 0.22, 0.2, 0.22);
-    base(0.28, 0.62, -0.05, 0.22, 0.2, 0.22);
-    base(-0.28, 0.72, -0.02, 0.08, 0.06, 0.08, 0, hairL);
-    base(0.28, 0.72, -0.02, 0.08, 0.06, 0.08, 0, hairL);
-  } else if (style === "spiky" || style === "neon") {
-    const spikes = [
-      [0, 0.85, 0.05, 0.08, 0.42, 0.08, -0.15],
-      [-0.28, 0.72, 0.1, 0.07, 0.36, 0.07, 0.35],
-      [0.28, 0.78, 0.05, 0.07, 0.4, 0.07, -0.3],
-      [-0.18, 0.7, -0.2, 0.07, 0.32, 0.07, 0.2],
-      [0.15, 0.82, -0.12, 0.07, 0.38, 0.07, -0.25],
-      [0.4, 0.55, 0.05, 0.07, 0.28, 0.07, -0.5],
-    ];
-    for (const [x, y, z, rx, ry, rz, tilt] of spikes) {
-      base(x, y, z, rx, ry, rz, tilt, style === "neon" ? hairL : hairC);
-    }
-    base(0.05, 0.9, 0.02, 0.05, 0.08, 0.05, 0, hairL);
-  } else if (style === "undercut") {
-    // short sides already just cap; volume on top swept
-    base(0.08, 0.42, 0.1, 0.42, 0.22, 0.36, -0.4);
-    base(0.18, 0.5, 0.05, 0.2, 0.1, 0.18, -0.3, hairL);
-  } else if (style === "long") {
-    base(-0.4, -0.15, -0.05, 0.18, 0.7, 0.2);
-    base(0.4, -0.15, -0.05, 0.18, 0.7, 0.2);
-    base(0, -0.05, -0.4, 0.4, 0.7, 0.2);
-    base(-0.35, 0.2, 0.15, 0.12, 0.16, 0.12, 0, hairL);
-  } else if (style === "bangs") {
-    // emo side fringe swept over one eye, longer on the left
-    base(-0.15, 0.22, 0.42, 0.38, 0.16, 0.22, 0.6);
-    base(-0.42, 0.05, 0.15, 0.18, 0.5, 0.18, 0.2);
-    base(0.32, 0.2, -0.1, 0.16, 0.2, 0.16);
-    base(-0.2, 0.18, 0.45, 0.12, 0.08, 0.1, 0.4, hairL);
-  } else if (style === "short") {
-    base(0, 0.3, 0.05, 0.54, 0.28, 0.5);
-    base(-0.2, 0.38, 0.1, 0.16, 0.1, 0.16, 0, hairL);
-  } else {
-    base(0, 0.28, 0, 0.54, 0.3, 0.52);
+// Refined view map: NE (6) and N (5) share back; NW (4) is flipped NE/back.
+function viewOfDir(dir) {
+  switch (dir) {
+    case 0: return { key: "se", flip: false }; // SE front 3/4
+    case 1: return { key: "s", flip: false };  // S front
+    case 2: return { key: "se", flip: true };  // SW
+    case 3: return { key: "e", flip: true };   // W
+    case 4: return { key: "n", flip: true };   // NW back 3/4 flipped
+    case 5: return { key: "n", flip: false };  // N back
+    case 6: return { key: "n", flip: false };  // NE ~ back
+    case 7: return { key: "e", flip: false };  // E side
+    default: return { key: "se", flip: false };
   }
 }
 
-function faceVisible(yaw) {
-  // camera looks from +X+Z; face forward is rotateYaw(0,0,1)
-  const fwd = rotateYaw({ x: 0, y: 0, z: 1 }, yaw);
-  const viewX = 1, viewZ = 1;
-  return fwd.x * viewX + fwd.z * viewZ > 0.15;
+/* ---------------- pixel maps ('.' transparent, see PAL) ----------------
+   # skin mid  s shade  h highlight
+   % shirt mid c shade  + highlight
+   = pants mid p shade  q highlight
+   @ hair mid  a shade  i highlight
+   $ shoe mid  w shade  y highlight  d sole
+   e eye white u pupil  b brow  n nose  m mouth
+   x accessory z shade  v highlight  g gold  t graphic
+   o outline (only onto empty)
+*/
+const PAL_KEYS = {
+  "#": "skin.mid", h: "skin.hi", s: "skin.sh",
+  "%": "shirt.mid", "+": "shirt.hi", c: "shirt.sh",
+  "=": "pants.mid", q: "pants.hi", p: "pants.sh",
+  "@": "hair.mid", i: "hair.hi", a: "hair.sh",
+  $: "shoe.mid", y: "shoe.hi", w: "shoe.sh", d: "sole.mid",
+  e: "eye", u: "pupil", b: "brow", n: "nose", m: "mouth",
+  x: "acc.mid", z: "acc.sh", v: "acc.hi", g: "gold", t: "graphic",
+  o: "ink",
+};
+
+function L(y, rows, x = 0) {
+  return { x, y, rows };
 }
 
-function projectPoint(T, x, y, z) {
-  return project(T, x, y, z);
+/* ===== BODY CORE: head, neck, torso (no arms/legs) ===== */
+const CORE = {
+  s: L(4, [
+    ".......oooooooo.......",
+    "......ohhhhhhhho......",
+    "......ohhhhhhhho......",
+    "......oh######ho......",
+    "......o########o......",
+    "......o########o......",
+    "......o########o......",
+    "......o########o......",
+    "......o###ss###o......",
+    "......o##ssss##o......",
+    "......o###ss###o......",
+    ".......o######o.......",
+    "........oooooo........",
+    ".........o##o.........",
+    ".........o##o.........",
+    "........oooooo........",
+    ".......o######o.......",
+    ".......oh####ho.......",
+    ".......o######o.......",
+    ".......o##ss##o.......",
+    ".......o######o.......",
+    ".......o######o.......",
+    ".......o##ss##o.......",
+    ".......o######o.......",
+    "........o####o........",
+    "........oooooo........",
+  ]),
+  se: L(4, [
+    "........ooooooo.......",
+    ".......ohhhhhhho......",
+    ".......ohhhhhhho......",
+    ".......oh#####ho......",
+    ".......o#######o......",
+    ".......o#######o......",
+    ".......o#######o......",
+    ".......o#######o......",
+    ".......o##sss##o......",
+    ".......o##sss##o......",
+    ".......o###ss##o......",
+    "........o#####o.......",
+    "........oooooo........",
+    ".........o##o.........",
+    ".........o##o.........",
+    "........oooooo........",
+    ".......o######o.......",
+    ".......oh####ho.......",
+    ".......o######o.......",
+    ".......o##ss##o.......",
+    ".......o######o.......",
+    ".......o######o.......",
+    ".......o#sss##o.......",
+    ".......o######o.......",
+    "........o####o........",
+    "........oooooo........",
+  ]),
+  e: L(4, [
+    ".........oooooo.......",
+    "........ohhhhhho......",
+    "........ohhhhhho......",
+    "........oh####ho......",
+    "........o######o......",
+    "........o######o......",
+    "........o######o......",
+    "........o#ssss#o......",
+    "........o#ssss#o......",
+    "........o##ss##o......",
+    "........o######o......",
+    ".........o####o.......",
+    ".........oooooo.......",
+    "..........o##o........",
+    "..........o##o........",
+    ".........oooooo.......",
+    "........o######o......",
+    "........oh####ho......",
+    "........o######o......",
+    "........o##ss##o......",
+    "........o######o......",
+    "........o######o......",
+    "........o#sss##o......",
+    "........o######o......",
+    ".........o####o.......",
+    ".........oooooo.......",
+  ]),
+  n: L(4, [
+    ".......oooooooo.......",
+    "......ohhhhhhhho......",
+    "......ohhhhhhhho......",
+    "......oh######ho......",
+    "......o########o......",
+    "......o########o......",
+    "......o########o......",
+    "......o########o......",
+    "......o########o......",
+    "......oh######ho......",
+    "......o#ssssss#o......",
+    ".......o######o.......",
+    "........oooooo........",
+    ".........o##o.........",
+    ".........o##o.........",
+    "........oooooo........",
+    ".......o######o.......",
+    ".......o######o.......",
+    ".......o######o.......",
+    ".......o##ss##o.......",
+    ".......o######o.......",
+    ".......o######o.......",
+    ".......o##ss##o.......",
+    ".......o######o.......",
+    "........o####o........",
+    "........oooooo........",
+  ]),
+};
+
+/* Faces drawn after hair so eyes stay readable. Only front views. */
+const FACE = {
+  s: L(11, [
+    "........b....b........",
+    "........ee..ee........",
+    "........eu..ue........",
+    "..........nn..........",
+    "..........mm..........",
+  ]),
+  se: L(11, [
+    ".........b....b.......",
+    ".........ee..ee.......",
+    ".........eu..ue.......",
+    "...........nn.........",
+    "...........mm.........",
+  ]),
+  e: L(11, [
+    "..............b.......",
+    ".............ee.......",
+    ".............ue.......",
+    "..............n.......",
+    "..............m.......",
+  ]),
+};
+
+/* Arms: [view][kind] where kind is idle|w0|w1|w2|w3|wave|phone|punch|hold|sit */
+function armPair(view, kind, xL, xR, y, rowsL, rowsR) {
+  return { view, kind, left: L(y, rowsL, xL), right: L(y, rowsR, xR) };
 }
 
-function paintFaceDecals(ctx, T, yaw, headY, avatar, scaleToNative = false) {
-  // decals are painted on the hi-res buffer via a temp path after we blit to 24x64
-  void scaleToNative;
-  const fwd = rotateYaw({ x: 0, y: 0, z: 0.5 }, yaw);
-  const right = rotateYaw({ x: 1, y: 0, z: 0 }, yaw);
-  const vis = faceVisible(yaw);
-  if (!vis && !avatar.glasses) return null;
-  const mid = projectPoint(T, fwd.x * 0.15, headY + 0.02, fwd.z * 0.15);
-  return { mid, fwd, right, vis, T };
+const ARMS = [];
+function addArms(view, kind, xL, xR, y, left, right) {
+  ARMS.push({ view, kind, left: L(y, left, xL), right: L(y, right, xR) });
 }
 
-function drawDecalsOnNative(ctx, info, avatar, yaw) {
-  if (!info) return;
-  const T = info.T;
-  const headY = 4.85; // unused if we project explicitly
-  void headY;
-  const eyeY = 0.08;
-  const eyeSep = 0.2;
-  function pt(lx, ly, lz) {
-    const p = rotateYaw({ x: lx, y: ly, z: lz }, yaw);
-    const pr = project(T, p.x, /*head is around*/ (3.05 + 1.05 + 0.62 + 0.28 + 0.62) + p.y, p.z);
-    // The headY used in build is: neckY + 0.62 with neckY = shoulderY+0.28, shoulderY = chestY+0.62, chestY = hipY+1.05
-    // hipY walk is ~3.05+bob — we must use the same. Can't easily. Better project during drawCharacter and stash.
-    return pr;
-  }
-  void pt; void eyeY; void eyeSep; void ctx; void avatar;
+// S idle arms
+addArms("s", "idle", 2, 17, 19, [
+  ".oo..",
+  "ohho.",
+  "o##o.",
+  "o##o.",
+  "o#so.",
+  "o#so.",
+  "o##o.",
+  "o##o.",
+  "osso.",
+  "o##o.",
+  "o##o.",
+  ".oo..",
+  "o##o.",
+  "ooo..",
+], [
+  ".oo..",
+  ".o#ho",
+  ".o##o",
+  ".o##o",
+  ".os#o",
+  ".os#o",
+  ".o##o",
+  ".o##o",
+  ".osso",
+  ".o##o",
+  ".o##o",
+  "..oo.",
+  ".o##o",
+  "..ooo",
+]);
+addArms("s", "w0", 2, 17, 19, [
+  ".oo..",
+  "ohho.",
+  "o##o.",
+  "o##o.",
+  "o#so.",
+  "osso.",
+  "o##o.",
+  ".oo..",
+  "o##o.",
+  "ooo..",
+  ".....",
+  ".....",
+  ".....",
+  ".....",
+], [
+  ".oo..",
+  ".o#ho",
+  ".o##o",
+  ".o##o",
+  ".os#o",
+  ".os#o",
+  ".o##o",
+  ".o##o",
+  ".osso",
+  ".o##o",
+  ".o##o",
+  "..oo.",
+  ".o##o",
+  "..ooo",
+]);
+addArms("s", "w2", 2, 17, 19, [
+  ".oo..",
+  "ohho.",
+  "o##o.",
+  "o##o.",
+  "o#so.",
+  "o#so.",
+  "o##o.",
+  "o##o.",
+  "osso.",
+  "o##o.",
+  "o##o.",
+  ".oo..",
+  "o##o.",
+  "ooo..",
+], [
+  ".oo..",
+  ".o#ho",
+  ".o##o",
+  ".o##o",
+  ".os#o",
+  ".osso",
+  ".o##o",
+  "..oo.",
+  ".o##o",
+  "..ooo",
+  ".....",
+  ".....",
+  ".....",
+  ".....",
+]);
+addArms("s", "wave", 2, 17, 8, [
+  ".oo..",
+  "ohho.",
+  "o##o.",
+  "o##o.",
+  "o#so.",
+  "o#so.",
+  "o##o.",
+  "o##o.",
+  "osso.",
+  "o##o.",
+  "o##o.",
+  ".oo..",
+  "o##o.",
+  "ooo..",
+], [
+  ".....",
+  "..ooo",
+  ".o##o",
+  ".o#ho",
+  ".o##o",
+  ".os#o",
+  ".o##o",
+  "..oo.",
+  ".....",
+  ".....",
+  ".....",
+  ".....",
+  ".....",
+  ".....",
+]);
+addArms("s", "phone", 2, 17, 19, [
+  ".oo..",
+  "ohho.",
+  "o##o.",
+  "o##o.",
+  "o#so.",
+  "o#so.",
+  "o##o.",
+  "o##o.",
+  "osso.",
+  "o##o.",
+  "o##o.",
+  ".oo..",
+  "o##o.",
+  "ooo..",
+], [
+  ".oo..",
+  ".o#ho",
+  ".o##o",
+  "os#o.",
+  "o##o.",
+  "ooo..",
+  ".xxo.",
+  ".xx..",
+  ".....",
+  ".....",
+  ".....",
+  ".....",
+  ".....",
+  ".....",
+]);
+addArms("s", "punch", 3, 16, 14, [
+  ".oo..",
+  "oh#o.",
+  "o##o.",
+  "osso.",
+  "o##o.",
+  "ooo..",
+  ".....",
+  ".....",
+], [
+  ".oo..",
+  ".o#ho",
+  ".o##o",
+  ".osso",
+  ".o##o",
+  "..ooo",
+  ".....",
+  ".....",
+]);
+addArms("s", "hold", 2, 17, 19, [
+  ".oo..",
+  "ohho.",
+  "o##o.",
+  "o##o.",
+  "o#so.",
+  "o#so.",
+  "o##o.",
+  "o##o.",
+  "osso.",
+  "o##o.",
+  "o##o.",
+  ".oo..",
+  "o##o.",
+  "ooo..",
+], [
+  ".oo..",
+  ".o#ho",
+  ".o##o",
+  ".o##o",
+  ".os#o",
+  ".os#o",
+  ".o##o",
+  ".o##o",
+  ".osso",
+  ".o##d",
+  ".o#dd",
+  "..odd",
+  "..dyd",
+  "...oo",
+]);
+addArms("s", "sit", 2, 17, 25, [
+  ".oo..",
+  "ohho.",
+  "o##o.",
+  "o#so.",
+  "osso.",
+  "o##o.",
+  ".oo..",
+  "o##o.",
+  "ooo..",
+], [
+  ".oo..",
+  ".o#ho",
+  ".o##o",
+  ".os#o",
+  ".osso",
+  ".o##o",
+  "..oo.",
+  ".o##o",
+  "..ooo",
+]);
+
+// SE arms — 3/4, right arm more in front
+addArms("se", "idle", 3, 16, 19, [
+  ".oo.",
+  "ohho",
+  "o##o",
+  "o#so",
+  "o#so",
+  "o##o",
+  "osso",
+  "o##o",
+  "o##o",
+  ".oo.",
+  "o##o",
+  "ooo.",
+], [
+  ".oo.",
+  "o#ho",
+  "o##o",
+  "os#o",
+  "os#o",
+  "o##o",
+  "osso",
+  "o##o",
+  "o##o",
+  ".oo.",
+  "o##o",
+  "ooo.",
+]);
+addArms("se", "w0", 3, 16, 19, [
+  ".oo.",
+  "ohho",
+  "o##o",
+  "o#so",
+  "osso",
+  "o##o",
+  ".oo.",
+  "o##o",
+  "ooo.",
+  "....",
+  "....",
+  "....",
+], [
+  ".oo.",
+  "o#ho",
+  "o##o",
+  "os#o",
+  "os#o",
+  "o##o",
+  "osso",
+  "o##o",
+  "o##o",
+  ".oo.",
+  "o##o",
+  "ooo.",
+]);
+addArms("se", "w2", 3, 16, 19, [
+  ".oo.",
+  "ohho",
+  "o##o",
+  "o#so",
+  "o#so",
+  "o##o",
+  "osso",
+  "o##o",
+  "o##o",
+  ".oo.",
+  "o##o",
+  "ooo.",
+], [
+  ".oo.",
+  "o#ho",
+  "o##o",
+  "os#o",
+  "osso",
+  "o##o",
+  ".oo.",
+  "o##o",
+  "ooo.",
+  "....",
+  "....",
+  "....",
+]);
+addArms("se", "wave", 3, 16, 8, [
+  ".oo.",
+  "ohho",
+  "o##o",
+  "o#so",
+  "o#so",
+  "o##o",
+  "osso",
+  "o##o",
+  "o##o",
+  ".oo.",
+  "o##o",
+  "ooo.",
+], [
+  "ooo.",
+  "o#ho",
+  "o##o",
+  "os#o",
+  "o##o",
+  "osso",
+  ".oo.",
+  "....",
+  "....",
+  "....",
+  "....",
+  "....",
+]);
+addArms("se", "phone", 3, 16, 19, [
+  ".oo.",
+  "ohho",
+  "o##o",
+  "o#so",
+  "o#so",
+  "o##o",
+  "osso",
+  "o##o",
+  "o##o",
+  ".oo.",
+  "o##o",
+  "ooo.",
+], [
+  ".oo.",
+  "o#ho",
+  "o##o",
+  "os#o",
+  "o##o",
+  "ooo.",
+  ".xx.",
+  ".xx.",
+  "....",
+  "....",
+  "....",
+  "....",
+]);
+addArms("se", "punch", 4, 15, 14, [
+  ".oo.",
+  "oh#o",
+  "osso",
+  "o##o",
+  "ooo.",
+], [
+  ".oo.",
+  "o#ho",
+  "osso",
+  "o##o",
+  "ooo.",
+]);
+addArms("se", "hold", 3, 16, 19, [
+  ".oo.",
+  "ohho",
+  "o##o",
+  "o#so",
+  "o#so",
+  "o##o",
+  "osso",
+  "o##o",
+  "o##o",
+  ".oo.",
+  "o##o",
+  "ooo.",
+], [
+  ".oo.",
+  "o#ho",
+  "o##o",
+  "os#o",
+  "os#o",
+  "o##o",
+  "osso",
+  "o##d",
+  "o#dd",
+  ".odd",
+  ".dyd",
+  "..oo",
+]);
+addArms("se", "sit", 3, 16, 25, [
+  ".oo.",
+  "ohho",
+  "o##o",
+  "osso",
+  "o##o",
+  ".oo.",
+  "o##o",
+  "ooo.",
+], [
+  ".oo.",
+  "o#ho",
+  "o##o",
+  "osso",
+  "o##o",
+  ".oo.",
+  "o##o",
+  "ooo.",
+]);
+
+// E side — one visible arm in front, a sliver in back
+addArms("e", "idle", 9, 12, 19, [
+  "oo.",
+  "oho",
+  "o#o",
+  "oso",
+  "o#o",
+  "o#o",
+  "oso",
+  "o#o",
+  "o#o",
+  "oo.",
+  "o#o",
+  "ooo",
+], [
+  "oo.",
+  "o#o",
+  "o#o",
+  "oso",
+  "o#o",
+  "o#o",
+  "oso",
+  "o#o",
+  "o#o",
+  "oo.",
+  "o#o",
+  "ooo",
+]);
+addArms("e", "w0", 9, 12, 19, [
+  "oo.",
+  "oho",
+  "o#o",
+  "oso",
+  "o#o",
+  "oo.",
+  "o#o",
+  "ooo",
+  "...",
+  "...",
+  "...",
+  "...",
+], [
+  "oo.",
+  "o#o",
+  "o#o",
+  "oso",
+  "o#o",
+  "o#o",
+  "oso",
+  "o#o",
+  "o#o",
+  "oo.",
+  "o#o",
+  "ooo",
+]);
+addArms("e", "w2", 9, 12, 19, [
+  "oo.",
+  "oho",
+  "o#o",
+  "oso",
+  "o#o",
+  "o#o",
+  "oso",
+  "o#o",
+  "o#o",
+  "oo.",
+  "o#o",
+  "ooo",
+], [
+  "oo.",
+  "o#o",
+  "o#o",
+  "oso",
+  "o#o",
+  "oo.",
+  "o#o",
+  "ooo",
+  "...",
+  "...",
+  "...",
+  "...",
+]);
+addArms("e", "wave", 9, 12, 8, [
+  "oo.",
+  "oho",
+  "o#o",
+  "oso",
+  "o#o",
+  "o#o",
+  "oso",
+  "o#o",
+  "o#o",
+  "oo.",
+  "o#o",
+  "ooo",
+], [
+  "ooo",
+  "o#o",
+  "o#o",
+  "oso",
+  "o#o",
+  "oo.",
+  "...",
+  "...",
+  "...",
+  "...",
+  "...",
+  "...",
+]);
+addArms("e", "phone", 9, 12, 19, [
+  "oo.",
+  "oho",
+  "o#o",
+  "oso",
+  "o#o",
+  "o#o",
+  "oso",
+  "o#o",
+  "o#o",
+  "oo.",
+  "o#o",
+  "ooo",
+], [
+  "oo.",
+  "o#o",
+  "oso",
+  "o#o",
+  "ooo",
+  "xx.",
+  "xx.",
+  "...",
+  "...",
+  "...",
+  "...",
+  "...",
+]);
+addArms("e", "punch", 10, 12, 14, [
+  "oo.",
+  "oho",
+  "oso",
+  "o#o",
+  "ooo",
+], [
+  "oo.",
+  "o#o",
+  "oso",
+  "o#o",
+  "ooo",
+]);
+addArms("e", "hold", 9, 12, 19, [
+  "oo.",
+  "oho",
+  "o#o",
+  "oso",
+  "o#o",
+  "o#o",
+  "oso",
+  "o#o",
+  "o#o",
+  "oo.",
+  "o#o",
+  "ooo",
+], [
+  "oo.",
+  "o#o",
+  "o#o",
+  "oso",
+  "o#o",
+  "o#o",
+  "oso",
+  "o#d",
+  "odd",
+  "dd.",
+  "yd.",
+  "oo.",
+]);
+addArms("e", "sit", 9, 12, 25, [
+  "oo.",
+  "oho",
+  "oso",
+  "o#o",
+  "oo.",
+  "o#o",
+  "ooo",
+], [
+  "oo.",
+  "o#o",
+  "oso",
+  "o#o",
+  "oo.",
+  "o#o",
+  "ooo",
+]);
+
+// N back — arms similar to S
+addArms("n", "idle", 2, 17, 19, [
+  ".oo..",
+  "o@@o.",
+  "o##o.",
+  "o#so.",
+  "o#so.",
+  "o##o.",
+  "osso.",
+  "o##o.",
+  "o##o.",
+  ".oo..",
+  "o##o.",
+  "ooo..",
+], [
+  ".oo..",
+  ".o@@o",
+  ".o##o",
+  ".os#o",
+  ".os#o",
+  ".o##o",
+  ".osso",
+  ".o##o",
+  ".o##o",
+  "..oo.",
+  ".o##o",
+  "..ooo",
+]);
+addArms("n", "w0", 2, 17, 19, [
+  ".oo..",
+  "o##o.",
+  "o#so.",
+  "osso.",
+  "o##o.",
+  ".oo..",
+  "o##o.",
+  "ooo..",
+], [
+  ".oo..",
+  ".o##o",
+  ".os#o",
+  ".os#o",
+  ".o##o",
+  ".osso",
+  ".o##o",
+  ".o##o",
+  "..oo.",
+  ".o##o",
+  "..ooo",
+  ".....",
+]);
+addArms("n", "w2", 2, 17, 19, [
+  ".oo..",
+  "o##o.",
+  "o#so.",
+  "o#so.",
+  "o##o.",
+  "osso.",
+  "o##o.",
+  "o##o.",
+  ".oo..",
+  "o##o.",
+  "ooo..",
+  ".....",
+], [
+  ".oo..",
+  ".o##o",
+  ".os#o",
+  ".osso",
+  ".o##o",
+  "..oo.",
+  ".o##o",
+  "..ooo",
+]);
+addArms("n", "wave", 2, 17, 8, [
+  ".oo..",
+  "o##o.",
+  "o#so.",
+  "o##o.",
+  "osso.",
+  "o##o.",
+  "o##o.",
+  ".oo..",
+  "o##o.",
+  "ooo..",
+], [
+  "..ooo",
+  ".o##o",
+  ".o##o",
+  ".os#o",
+  ".o##o",
+  "..oo.",
+]);
+addArms("n", "phone", 2, 17, 19, [
+  ".oo..",
+  "o##o.",
+  "o#so.",
+  "o##o.",
+  "osso.",
+  "o##o.",
+  "o##o.",
+  ".oo..",
+  "o##o.",
+  "ooo..",
+], [
+  ".oo..",
+  ".o##o",
+  ".os#o",
+  ".o##o",
+  "..ooo",
+  "..xx.",
+  "..xx.",
+]);
+addArms("n", "punch", 3, 16, 14, [
+  ".oo..",
+  "o##o.",
+  "osso.",
+  "o##o.",
+  "ooo..",
+], [
+  ".oo..",
+  ".o##o",
+  ".osso",
+  ".o##o",
+  "..ooo",
+]);
+addArms("n", "hold", 2, 17, 19, [
+  ".oo..",
+  "o##o.",
+  "o#so.",
+  "o##o.",
+  "osso.",
+  "o##o.",
+  "o##o.",
+  ".oo..",
+  "o##o.",
+  "ooo..",
+], [
+  ".oo..",
+  ".o##o",
+  ".os#o",
+  ".o##o",
+  ".osso",
+  ".o##d",
+  ".o#dd",
+  "..odd",
+  "...oo",
+]);
+addArms("n", "sit", 2, 17, 25, [
+  ".oo..",
+  "o##o.",
+  "osso.",
+  "o##o.",
+  ".oo..",
+  "o##o.",
+  "ooo..",
+], [
+  ".oo..",
+  ".o##o",
+  ".osso",
+  ".o##o",
+  "..oo.",
+  ".o##o",
+  "..ooo",
+]);
+
+function getArms(view, kind) {
+  return ARMS.find((a) => a.view === view && a.kind === kind)
+    || ARMS.find((a) => a.view === view && a.kind === "idle");
 }
 
-// Stash projected face anchors during render
-function faceAnchors(T, yaw, headY) {
-  const anchors = {};
-  function P(lx, ly, lz) {
-    const p = rotateYaw({ x: lx, y: ly, z: lz }, yaw);
-    return project(T, p.x, headY + p.y, p.z);
-  }
-  anchors.center = P(0, 0, 0.2);
-  anchors.eyeL = P(-0.2, 0.14, 0.44);
-  anchors.eyeR = P(0.2, 0.14, 0.44);
-  anchors.browL = P(-0.2, 0.28, 0.44);
-  anchors.browR = P(0.2, 0.28, 0.44);
-  anchors.mouth = P(0, -0.14, 0.48);
-  anchors.cheekL = P(-0.28, -0.02, 0.38);
-  anchors.cheekR = P(0.28, -0.02, 0.38);
-  anchors.vis = faceVisible(yaw);
-  return anchors;
+/* ===== LEGS ===== */
+const LEGS = [];
+function addLegs(view, kind, y, rows) {
+  LEGS.push({ view, kind, layer: L(y, rows) });
 }
 
-function blitHiToCanvas(T, anchors, avatar) {
-  const { data, w, h } = downsample(T.img, RW, RH, RS);
-  const outlined = addOutline(data, w, h, { r: 22, g: 14, b: 18 });
-  const c = document.createElement("canvas");
-  c.width = w; c.height = h;
-  const ctx = c.getContext("2d");
-  ctx.imageSmoothingEnabled = false;
-  const img = ctx.createImageData(w, h);
-  img.data.set(outlined);
-  ctx.putImageData(img, 0, 0);
+addLegs("s", "idle", 30, [
+  "........oooooo........",
+  ".......o======o.......",
+  ".......oq====qo.......",
+  ".......o==pp==o.......",
+  "......o==o..o==o......",
+  "......o==o..o==o......",
+  "......o==o..o==o......",
+  "......oppo..oppo......",
+  "......o==o..o==o......",
+  "......o==o..o==o......",
+  "......o==o..o==o......",
+  "......oppo..oppo......",
+  "......o==o..o==o......",
+  "......o==o..o==o......",
+  ".......oo....oo.......",
+  "......oyyo..oyyo......",
+  "......o$$o..o$$o......",
+  "......oddo..oddo......",
+  "......oooo..oooo......",
+]);
+addLegs("s", "w0", 30, [
+  "........oooooo........",
+  ".......o======o.......",
+  ".......oq====qo.......",
+  "......o==o..o==o......",
+  ".....o==o....o==o.....",
+  ".....o==o....oppo.....",
+  ".....oppo....o==o.....",
+  ".....o==o.....oo......",
+  ".....o==o....oyyo.....",
+  ".....oppo....o$$o.....",
+  "......oo.....oddo.....",
+  ".....oyyo....oooo.....",
+  ".....o$$o.............",
+  ".....oddo.............",
+  ".....oooo.............",
+]);
+addLegs("s", "w2", 30, [
+  "........oooooo........",
+  ".......o======o.......",
+  ".......oq====qo.......",
+  "......o==o..o==o......",
+  ".....o==o....o==o.....",
+  ".....oppo....o==o.....",
+  ".....o==o....oppo.....",
+  "......oo.....o==o.....",
+  ".....oyyo....o==o.....",
+  ".....o$$o....oppo.....",
+  ".....oddo.....oo......",
+  ".....oooo....oyyo.....",
+  ".............o$$o.....",
+  ".............oddo.....",
+  ".............oooo.....",
+]);
+addLegs("s", "sit", 36, [
+  "........oooooo........",
+  "......o========o......",
+  ".....oq========qo.....",
+  "....o==oooooooo==o....",
+  "...o==o........o==o...",
+  "...oppo........oppo...",
+  "...o==o........o==o...",
+  "...oyyo........oyyo...",
+  "...o$$o........o$$o...",
+  "...oddo........oddo...",
+  "...oooo........oooo...",
+]);
 
-  // Face decals at native resolution (crisper eyes/brows)
-  if (anchors && anchors.vis) {
-    const sx = 1 / RS, sy = 1 / RS;
-    const q = (p) => ({ x: p.sx * sx, y: p.sy * sy });
-    const eL = q(anchors.eyeL), eR = q(anchors.eyeR);
-    const bL = q(anchors.browL), bR = q(anchors.browR);
-    const mo = q(anchors.mouth);
-    const acc = avatar.accessory || "none";
-    const brow = shade(avatar.hairColor || "#2b1d16", -40);
-    ctx.fillStyle = brow;
-    ctx.fillRect((bL.x - 1.2) | 0, (bL.y) | 0, 3, 1);
-    ctx.fillRect((bR.x - 1.2) | 0, (bR.y) | 0, 3, 1);
-    if (avatar.glasses || acc === "visor" || acc === "goggles") {
-      if (acc === "visor") {
-        ctx.fillStyle = "rgba(0,220,240,0.7)";
-        ctx.fillRect((eL.x - 2) | 0, (eL.y - 1) | 0, ((eR.x - eL.x) + 5) | 0, 3);
-        ctx.fillStyle = "#083040";
-        ctx.fillRect((eL.x - 2) | 0, (eL.y - 1) | 0, ((eR.x - eL.x) + 5) | 0, 1);
-      } else {
-        ctx.fillStyle = acc === "goggles" ? "#111" : "#1a1a1a";
-        ctx.fillRect((eL.x - 2) | 0, (eL.y - 1) | 0, 4, 3);
-        ctx.fillRect((eR.x - 2) | 0, (eR.y - 1) | 0, 4, 3);
-        ctx.fillStyle = "#d8dce0";
-        ctx.fillRect((eL.x) | 0, (eL.y) | 0, 1, 1);
-        ctx.fillRect((eR.x) | 0, (eR.y) | 0, 1, 1);
-        ctx.fillStyle = "#222";
-        ctx.fillRect(((eL.x + eR.x) / 2) | 0, (eL.y) | 0, 1, 1);
+addLegs("se", "idle", 30, [
+  "........oooooo........",
+  ".......o======o.......",
+  ".......oq====qo.......",
+  ".......o==pp==o.......",
+  "......o==o.o==o.......",
+  "......o==o.o==o.......",
+  "......oppo.oppo.......",
+  "......o==o.o==o.......",
+  "......o==o.o==o.......",
+  "......oppo.oppo.......",
+  "......o==o.o==o.......",
+  "......o==o.o==o.......",
+  ".......oo...oo........",
+  "......oyyo.oyyo.......",
+  "......o$$o.o$$o.......",
+  "......oddo.oddo.......",
+  "......oooo.oooo.......",
+]);
+addLegs("se", "w0", 30, [
+  "........oooooo........",
+  ".......o======o.......",
+  "......o==o.o==o.......",
+  ".....o==o...o==o......",
+  ".....oppo...oppo......",
+  ".....o==o....oo.......",
+  ".....o==o...oyyo......",
+  "......oo....o$$o......",
+  ".....oyyo...oddo......",
+  ".....o$$o...oooo......",
+  ".....oddo.............",
+  ".....oooo.............",
+]);
+addLegs("se", "w2", 30, [
+  "........oooooo........",
+  ".......o======o.......",
+  "......o==o.o==o.......",
+  ".....o==o...o==o......",
+  ".....oppo...oppo......",
+  "......oo....o==o......",
+  ".....oyyo...o==o......",
+  ".....o$$o....oo.......",
+  ".....oddo...oyyo......",
+  ".....oooo...o$$o......",
+  "............oddo......",
+  "............oooo......",
+]);
+addLegs("se", "sit", 36, [
+  "........oooooo........",
+  "......o========o......",
+  ".....oq========qo.....",
+  "....o==oooooooo==o....",
+  "...o==o........o==o...",
+  "...oppo........oppo...",
+  "...oyyo........oyyo...",
+  "...o$$o........o$$o...",
+  "...oooo........oooo...",
+]);
+
+addLegs("e", "idle", 30, [
+  ".........oooooo.......",
+  "........o======o......",
+  "........oq====qo......",
+  "........o==pp==o......",
+  "........o======o......",
+  "........opppppp.......",
+  "........o======o......",
+  "........o======o......",
+  "........opppppp.......",
+  "........o======o......",
+  "........o======o......",
+  ".........oooooo.......",
+  "........oyyyyyo.......",
+  "........o$$$$$o.......",
+  "........odddddo.......",
+  "........ooooooo.......",
+]);
+addLegs("e", "w0", 30, [
+  ".........oooooo.......",
+  "........o======o......",
+  ".......o==q====o......",
+  "......o==o.o====o.....",
+  "......oppo.oppppo.....",
+  "......o==o..o===o.....",
+  ".......oo...oyyyo.....",
+  "......oyyo..o$$$o.....",
+  "......o$$o..odddo.....",
+  "......oddo...oooo.....",
+  "......oooo............",
+]);
+addLegs("e", "w2", 30, [
+  ".........oooooo.......",
+  "........o======o......",
+  ".......o=======qo.....",
+  "......o====o.o==o.....",
+  "......oppppo.oppo.....",
+  "......o====o.o==o.....",
+  "......oyyyo...oo......",
+  "......o$$$o..oyyo.....",
+  "......odddo..o$$o.....",
+  "......oooo...oddo.....",
+  ".............oooo.....",
+]);
+addLegs("e", "sit", 36, [
+  ".........oooooo.......",
+  ".......o========o.....",
+  "......oq========qo....",
+  "....oooooooo======o...",
+  "..o==o........o===o...",
+  "..oppo........opppo...",
+  "..oyyo........oyyyo...",
+  "..o$$o........o$$$o...",
+  "..oooo........ooooo...",
+]);
+
+addLegs("n", "idle", 30, [
+  "........oooooo........",
+  ".......o======o.......",
+  ".......o======o.......",
+  ".......o==pp==o.......",
+  "......o==o..o==o......",
+  "......o==o..o==o......",
+  "......o==o..o==o......",
+  "......oppo..oppo......",
+  "......o==o..o==o......",
+  "......o==o..o==o......",
+  "......oppo..oppo......",
+  "......o==o..o==o......",
+  ".......oo....oo.......",
+  "......oyyo..oyyo......",
+  "......o$$o..o$$o......",
+  "......oddo..oddo......",
+  "......oooo..oooo......",
+]);
+addLegs("n", "w0", 30, [
+  "........oooooo........",
+  ".......o======o.......",
+  "......o==o..o==o......",
+  ".....o==o....o==o.....",
+  ".....oppo....oppo.....",
+  ".....o==o.....oo......",
+  "......oo.....oyyo.....",
+  ".....oyyo....o$$o.....",
+  ".....o$$o....oddo.....",
+  ".....oddo....oooo.....",
+  ".....oooo.............",
+]);
+addLegs("n", "w2", 30, [
+  "........oooooo........",
+  ".......o======o.......",
+  "......o==o..o==o......",
+  ".....o==o....o==o.....",
+  ".....oppo....oppo.....",
+  "......oo.....o==o.....",
+  ".....oyyo.....oo......",
+  ".....o$$o....oyyo.....",
+  ".....oddo....o$$o.....",
+  ".....oooo....oddo.....",
+  ".............oooo.....",
+]);
+addLegs("n", "sit", 36, [
+  "........oooooo........",
+  "......o========o......",
+  ".....o==========o.....",
+  "....o==oooooooo==o....",
+  "...o==o........o==o...",
+  "...oppo........oppo...",
+  "...oyyo........oyyo...",
+  "...o$$o........o$$o...",
+  "...oooo........oooo...",
+]);
+
+function getLegs(view, kind) {
+  return (LEGS.find((a) => a.view === view && a.kind === kind)
+    || LEGS.find((a) => a.view === view && a.kind === "idle")).layer;
+}
+
+/* ===== TOPS (torso only; sleeves are painted from arm skin) ===== */
+const TOPS = {
+  tshirt: {
+    s: L(19, [
+      ".......o++++++o.......",
+      ".......o+%++%+o.......",
+      ".......o%%%%%%o.......",
+      ".......o%%cc%%o.......",
+      ".......o%%%%%%o.......",
+      ".......o%%%%%%o.......",
+      ".......o%%cc%%o.......",
+      ".......o%%%%%%o.......",
+      "........o%%%%o........",
+      "........oooooo........",
+    ]),
+    se: L(19, [
+      ".......o++++++o.......",
+      ".......o+%++%+o.......",
+      ".......o%%%%%%o.......",
+      ".......o%%cc%%o.......",
+      ".......o%%%%%%o.......",
+      ".......o%%%%%%o.......",
+      ".......o%ccc%%o.......",
+      ".......o%%%%%%o.......",
+      "........o%%%%o........",
+      "........oooooo........",
+    ]),
+    e: L(19, [
+      "........o++++++o......",
+      "........o+%++%+o......",
+      "........o%%%%%%o......",
+      "........o%%cc%%o......",
+      "........o%%%%%%o......",
+      "........o%%%%%%o......",
+      "........o%ccc%%o......",
+      "........o%%%%%%o......",
+      ".........o%%%%o.......",
+      ".........oooooo.......",
+    ]),
+    n: L(19, [
+      ".......o%%%%%%o.......",
+      ".......o%%%%%%o.......",
+      ".......o%%%%%%o.......",
+      ".......o%%cc%%o.......",
+      ".......o%%%%%%o.......",
+      ".......o%%%%%%o.......",
+      ".......o%%cc%%o.......",
+      ".......o%%%%%%o.......",
+      "........o%%%%o........",
+      "........oooooo........",
+    ]),
+  },
+};
+// hoodie / jacket / bandtee derived at blit time from tshirt + extras
+
+const HOODIE_EXTRA = {
+  s: L(16, [
+    "......o.cc%%cc.o......",
+    ".......o%%%%%%o.......",
+  ]),
+  se: L(16, [
+    "......o.cc%%cc.o......",
+    ".......o%%%%%%o.......",
+  ]),
+  e: L(16, [
+    ".......occ%%cco.......",
+    "........o%%%%%%o......",
+  ]),
+  n: L(12, [
+    "......occccccco.......",
+    ".....oc%%%%%%%%o......",
+    ".....oc%%%++%%co......",
+    "......occccccco.......",
+  ]),
+};
+
+const JACKET_EXTRA = {
+  s: L(19, [
+    ".......o+....+o.......",
+    ".......o+....+o.......",
+    ".......oc....co.......",
+    ".......o%....%o.......",
+    ".......o%....%o.......",
+    ".......o%....%o.......",
+    ".......oc....co.......",
+    ".......o%....%o.......",
+    "........o....o........",
+    "........oooooo........",
+  ]),
+  se: L(19, [
+    ".......o+....+o.......",
+    ".......o+....+o.......",
+    ".......oc....co.......",
+    ".......o%....%o.......",
+    ".......o%....%o.......",
+    ".......o%....%o.......",
+    ".......oc....co.......",
+    ".......o%....%o.......",
+    "........o....o........",
+    "........oooooo........",
+  ]),
+  e: L(19, [
+    "........o++++++o......",
+    "........o+%++%+o......",
+    "........o%%%%%%o......",
+    "........o%%cc%%o......",
+    "........o%%%%%%o......",
+    "........o%%%%%%o......",
+    "........o%ccc%%o......",
+    "........o%%%%%%o......",
+    ".........o%%%%o.......",
+    ".........oooooo.......",
+  ]),
+  n: L(19, [
+    ".......o++++++o.......",
+    ".......o+%++%+o.......",
+    ".......o%%%%%%o.......",
+    ".......o%%cc%%o.......",
+    ".......o%%%%%%o.......",
+    ".......o%%%%%%o.......",
+    ".......o%%cc%%o.......",
+    ".......o%%%%%%o.......",
+    "........o%%%%o........",
+    "........oooooo........",
+  ]),
+};
+
+const BAND_GRAPHIC = {
+  s: L(22, [
+    ".........ottto........",
+    ".........otcto........",
+    ".........ottto........",
+  ]),
+  se: L(22, [
+    "..........otto........",
+    "..........otco........",
+    "..........otto........",
+  ]),
+};
+
+/* ===== HAIR (6+ silhouettes, highlight streaks) ===== */
+const HAIR = {
+  short: {
+    s: L(3, [
+      "......oooooooooo......",
+      ".....oiii@@@@@ao......",
+      "....oii@@@@@@@@ao.....",
+      "....oi@@@@@@@@@@o.....",
+      "....o@@@@....@@@o.....",
+      "....o@@@......@@o.....",
+      "....oa@........ao.....",
+      ".....o..........o.....",
+    ]),
+    se: L(3, [
+      ".......oooooooooo.....",
+      "......oiii@@@@@ao.....",
+      ".....oii@@@@@@@@ao....",
+      ".....oi@@@@@@@@@@o....",
+      ".....o@@@@....@@@o....",
+      ".....o@@@......@@o....",
+      ".....oa@........ao....",
+      "......o..........o....",
+    ]),
+    e: L(3, [
+      ".........ooooooo......",
+      "........oii@@@@ao.....",
+      "........oi@@@@@@o.....",
+      "........o@@@@..@o.....",
+      "........o@@@...@o.....",
+      ".......oa@@....@o.....",
+      ".......oo......o......",
+    ]),
+    n: L(3, [
+      "......oooooooooo......",
+      ".....oiii@@@@@@ao.....",
+      ".....oi@@@@@@@@@o.....",
+      ".....o@@@....@@@o.....",
+      ".....oa@......@ao.....",
+      "......oo......oo......",
+    ]),
+  },
+  spiky: {
+    s: L(1, [
+      ".....o.o..o..o.o......",
+      "....oioooioooioao.....",
+      "....oi@@@@@@@@@ao.....",
+      "...oii@@@@@@@@@@ao....",
+      "...oi@@@@....@@@@o....",
+      "...o@@@........@@o....",
+      "...oa@..........ao....",
+      "....o............o....",
+    ]),
+    se: L(1, [
+      "......o.o..o..o.o.....",
+      ".....oioooioooioao....",
+      ".....oi@@@@@@@@@ao....",
+      "....oii@@@@@@@@@@ao...",
+      "....oi@@@@....@@@@o...",
+      "....o@@@........@@o...",
+      "....oa@..........ao...",
+      ".....o............o...",
+    ]),
+    e: L(1, [
+      "........o.o.o.o.o.....",
+      ".......oioioioiao.....",
+      ".......oi@@@@@@@o.....",
+      ".......o@@@@..@@o.....",
+      ".......o@@@....@o.....",
+      "......oa@@.....o......",
+      "......oo.......o......",
+    ]),
+    n: L(1, [
+      "....o.o..o..o..o.o....",
+      ".....oiooiiooiiao.....",
+      ".....oi@@@@@@@@@o.....",
+      ".....o@@@....@@@o.....",
+      ".....oa@......@ao.....",
+      "......oo......oo......",
+    ]),
+  },
+  bangs: {
+    s: L(3, [
+      "......oooooooooo......",
+      ".....oiii@@@@@@ao.....",
+      "....oii@@@@@@@@@ao....",
+      "....oi@@@@@@aaaaao....",
+      "....o@@@@..aaaaaao....",
+      "....o@@@....aa@aao....",
+      "....oa@......o..ao....",
+      ".....o..........o.....",
+    ]),
+    se: L(3, [
+      ".......oooooooooo.....",
+      "......oiii@@@@@@ao....",
+      ".....oii@@@@@@@@@ao...",
+      ".....oi@@@@@@aaaaao...",
+      ".....o@@@@.aaaaaaao...",
+      ".....o@@@...aaa@aao...",
+      ".....oa@.....o...ao...",
+      "......o...........o...",
+    ]),
+    e: L(3, [
+      ".........ooooooo......",
+      "........oii@@@@ao.....",
+      "........oi@@@@@ao.....",
+      "........o@@@@aaaa.....",
+      "........o@@@.aaaa.....",
+      "........oa@..aaa.o....",
+      "........oo....ooo.....",
+    ]),
+    n: L(3, [
+      "......oooooooooo......",
+      ".....oiii@@@@@@ao.....",
+      ".....oi@@@@@@@@@o.....",
+      ".....o@@@aaaaaaa@o....",
+      ".....oa@......@ao.....",
+      "......oo......oo......",
+    ]),
+  },
+  curly: {
+    s: L(2, [
+      "....oo.oo.oo.oo.oo....",
+      "...oi@oi@oi@oi@oao....",
+      "...oii@@@@@@@@@aoo....",
+      "..oii@@@@@@@@@@@ao....",
+      "..oi@@@@@...@@@@@o....",
+      "..o@@@@.......@@@o....",
+      "..oa@@.........@ao....",
+      "...o.............o....",
+    ]),
+    se: L(2, [
+      ".....oo.oo.oo.oo.o....",
+      "....oi@oi@oi@oi@ao....",
+      "....oii@@@@@@@@@aoo...",
+      "...oii@@@@@@@@@@@ao...",
+      "...oi@@@@@...@@@@@o...",
+      "...o@@@@.......@@@o...",
+      "...oa@@.........@ao...",
+      "....o.............o...",
+    ]),
+    e: L(2, [
+      ".......o.o.o.o.o.o....",
+      "......oi@i@i@i@iao....",
+      "......oi@@@@@@@@@o....",
+      "......o@@@....@@@o....",
+      ".....oa@@......@ao....",
+      "......oo........oo....",
+    ]),
+    n: L(2, [
+      "....oo.oo.oo.oo.oo....",
+      "...oi@oi@oi@oi@oao....",
+      "...oii@@@@@@@@@@@o....",
+      "...oi@@@@@...@@@@@o...",
+      "...o@@@@.......@@@o...",
+      "...oa@@.........@ao...",
+      "....oo...........oo...",
+    ]),
+  },
+  bun: {
+    s: L(1, [
+      ".........oooo.........",
+      "........oi@@ao........",
+      "........o@ii@o........",
+      ".......oooooooo.......",
+      "......oiii@@@@ao......",
+      ".....oi@@@@@@@@ao.....",
+      ".....o@@@@....@@o.....",
+      ".....o@@@......@o.....",
+      ".....oa@........o.....",
+      "......o.........o.....",
+    ]),
+    se: L(1, [
+      "..........oooo........",
+      ".........oi@@ao.......",
+      ".........o@ii@o.......",
+      "........oooooooo......",
+      ".......oiii@@@@ao.....",
+      "......oi@@@@@@@@ao....",
+      "......o@@@@....@@o....",
+      "......o@@@......@o....",
+      "......oa@........o....",
+      ".......o.........o....",
+    ]),
+    e: L(1, [
+      "............oooo......",
+      "...........oi@@ao.....",
+      "...........o@ii@o.....",
+      "..........ooooooo.....",
+      ".........oii@@@ao.....",
+      ".........oi@@@@@o.....",
+      ".........o@@...@o.....",
+      ".........oa.....o.....",
+      ".........oo.....o.....",
+    ]),
+    n: L(1, [
+      ".........oooo.........",
+      "........oi@@ao........",
+      "........o@ii@o........",
+      ".......oooooooo.......",
+      "......oiii@@@@ao......",
+      "......oi@@@@@@@o......",
+      "......o@@....@@o......",
+      "......oa@....@ao......",
+      ".......oo....oo.......",
+    ]),
+  },
+  long: {
+    s: L(3, [
+      "......oooooooooo......",
+      ".....oiii@@@@@@ao.....",
+      "....oii@@@@@@@@@ao....",
+      "....oi@@@@@@@@@@@o....",
+      "....o@@@@....@@@@o....",
+      "....o@@@......@@@o....",
+      "....oa@........@ao....",
+      "....oa@........@ao....",
+      "....oa@........@ao....",
+      "....oaa........aao....",
+      ".....oo........oo.....",
+    ]),
+    se: L(3, [
+      ".......oooooooooo.....",
+      "......oiii@@@@@@ao....",
+      ".....oii@@@@@@@@@ao...",
+      ".....oi@@@@@@@@@@@o...",
+      ".....o@@@@....@@@@o...",
+      ".....o@@@......@@@o...",
+      ".....oa@........@ao...",
+      ".....oa@........@ao...",
+      ".....oa@........@ao...",
+      ".....oaa........aao...",
+      "......oo........oo....",
+    ]),
+    e: L(3, [
+      ".........ooooooo......",
+      "........oii@@@@ao.....",
+      "........oi@@@@@@o.....",
+      "........o@@@@..@o.....",
+      "...oooooa@@....@o.....",
+      "...oaaaa@.......o.....",
+      "...oaaaa.......oo.....",
+      "....oooo.......o......",
+    ]),
+    n: L(3, [
+      "......oooooooooo......",
+      ".....oiii@@@@@@ao.....",
+      ".....oi@@@@@@@@@o.....",
+      ".....o@@@@@@@@@@@o....",
+      "....oa@@@@@@@@@@@ao...",
+      "....oa@.........@ao...",
+      "....oa@.........@ao...",
+      ".....oo.........oo....",
+    ]),
+  },
+  undercut: {
+    s: L(3, [
+      ".......oooooooo.......",
+      "......oiii@@@@ao......",
+      "......oi@@@@@@@o......",
+      "......o@@@..@@@o......",
+      "......o@@....@@o......",
+      ".......o......o.......",
+    ]),
+    se: L(3, [
+      "........oooooooo......",
+      ".......oiii@@@@ao.....",
+      ".......oi@@@@@@@o.....",
+      ".......o@@@..@@@o.....",
+      ".......o@@....@@o.....",
+      "........o......o......",
+    ]),
+    e: L(3, [
+      "..........oooooo......",
+      ".........oii@@@ao.....",
+      ".........oi@@@@@o.....",
+      ".........o@@...@o.....",
+      ".........oa.....o.....",
+      "..........o.....o.....",
+    ]),
+    n: L(3, [
+      "........oooooo........",
+      ".......oiii@@ao.......",
+      ".......oi@@@@@o.......",
+      ".......o@@..@@o.......",
+      "........o....o........",
+    ]),
+  },
+};
+
+/* Hats / accessories on the head */
+const HATS = {
+  cap: {
+    s: L(2, [
+      "......oxxxxxxxxo......",
+      ".....oxvvvvvvvzo......",
+      ".....oxxxxxxxxxo......",
+      "...ooo..........ooo...",
+    ]),
+    se: L(2, [
+      ".......oxxxxxxxxo.....",
+      "......oxvvvvvvvzo.....",
+      "......oxxxxxxxxxo.....",
+      "....ooo..........ooo..",
+    ]),
+    e: L(2, [
+      "........oxxxxxxxo.....",
+      ".......oxvvvvvvzo.....",
+      ".......oxxxxxxxxo.....",
+      "..........oooooooo....",
+    ]),
+    n: L(2, [
+      "......oxxxxxxxxo......",
+      ".....oxvvvvvvvzo......",
+      ".....oxxxxxxxxxo......",
+    ]),
+  },
+  trucker: {
+    s: L(2, [
+      "......oxxxxxzzo.......",
+      ".....oxvvvvxzzzo......",
+      ".....oxxxxxxzzzo......",
+      "...ooo..........ooo...",
+    ]),
+    se: L(2, [
+      ".......oxxxxxzzo......",
+      "......oxvvvvxzzzo.....",
+      "......oxxxxxxzzzo.....",
+      "....ooo..........ooo..",
+    ]),
+    e: L(2, [
+      "........oxxxzzo.......",
+      ".......oxvvxzzzo......",
+      ".......oxxxxxzzo......",
+      "..........oooooooo....",
+    ]),
+    n: L(2, [
+      "......oxxxxxzzo.......",
+      ".....oxvvvvxzzzo......",
+      ".....oxxxxxxzzzo......",
+    ]),
+  },
+  beanie: {
+    s: L(1, [
+      ".......oooooooo.......",
+      "......oxvvvvvvxo......",
+      ".....oxxxxxxxxxxo.....",
+      ".....oxzzzzzzzzxo.....",
+      ".....oxxxxxxxxxxo.....",
+    ]),
+    se: L(1, [
+      "........oooooooo......",
+      ".......oxvvvvvvxo.....",
+      "......oxxxxxxxxxxo....",
+      "......oxzzzzzzzzxo....",
+      "......oxxxxxxxxxxo....",
+    ]),
+    e: L(1, [
+      ".........ooooooo......",
+      "........oxvvvvvxo.....",
+      ".......oxxxxxxxxxo....",
+      ".......oxzzzzzzzxo....",
+      ".......oxxxxxxxxxo....",
+    ]),
+    n: L(1, [
+      ".......oooooooo.......",
+      "......oxvvvvvvxo......",
+      ".....oxxxxxxxxxxo.....",
+      ".....oxzzzzzzzzxo.....",
+      ".....oxxxxxxxxxxo.....",
+    ]),
+  },
+};
+
+const HEADPHONES = {
+  s: L(10, [
+    "....xxo........oxx....",
+    "....xzo........ozx....",
+    "....xxo........oxx....",
+  ]),
+  se: L(10, [
+    ".....xxo........oxx...",
+    ".....xzo........ozx...",
+    ".....xxo........oxx...",
+  ]),
+  e: L(10, [
+    ".......xxo............",
+    ".......xzo............",
+    ".......xxo............",
+  ]),
+  n: L(9, [
+    "....xxoooooooooooxx...",
+    "....xzo..........ozx..",
+    "....xxo..........oxx..",
+  ]),
+};
+
+const GLASSES = {
+  s: L(11, [
+    ".......oxxxooxxxo.....",
+    ".......ozxzoozxzo.....",
+  ]),
+  se: L(11, [
+    "........oxxxooxxxo....",
+    "........ozxzoozxzo....",
+  ]),
+  e: L(11, [
+    ".............oxxxo....",
+    ".............ozxzo....",
+  ]),
+};
+
+const CHAIN = {
+  s: L(20, [
+    ".........oggo.........",
+    "..........gg..........",
+  ]),
+  se: L(20, [
+    "..........oggo........",
+    "...........gg.........",
+  ]),
+  e: L(20, [
+    "...........ogg........",
+  ]),
+};
+
+function padRow(row) {
+  if (row.length === 24) return row;
+  if (row.length < 24) return row + ".".repeat(24 - row.length);
+  return row.slice(0, 24);
+}
+
+function makeBuf() {
+  const pix = new Array(AV_W * AV_H);
+  for (let i = 0; i < pix.length; i++) pix[i] = null;
+  return pix;
+}
+
+function plot(buf, x, y, color, kind, overwrite = true) {
+  if (x < 0 || y < 0 || x >= AV_W || y >= AV_H) return;
+  const i = y * AV_W + x;
+  if (!overwrite && buf[i]) return;
+  if (kind === "ink" && buf[i] && buf[i].kind !== "ink") return;
+  buf[i] = { color, kind };
+}
+
+function blitLayer(buf, layer, pal, flip, ox = 0, oy = 0) {
+  if (!layer) return;
+  const rows = layer.rows;
+  for (let j = 0; j < rows.length; j++) {
+    const row = rows[j];
+    for (let i = 0; i < row.length; i++) {
+      const ch = row[i];
+      if (ch === "." || ch === " " || ch === "|") continue;
+      let x = (layer.x || 0) + i + ox;
+      const y = (layer.y || 0) + j + oy;
+      if (flip) x = AV_W - 1 - x;
+      const key = PAL_KEYS[ch];
+      if (!key) continue;
+      if (key === "ink") {
+        plot(buf, x, y, pal.ink, "ink", false);
+        continue;
       }
-    } else {
-      ctx.fillStyle = "#fff";
-      ctx.fillRect((eL.x - 1) | 0, (eL.y - 1) | 0, 3, 2);
-      ctx.fillRect((eR.x - 1) | 0, (eR.y - 1) | 0, 3, 2);
-      ctx.fillStyle = "#1a1020";
-      ctx.fillRect((eL.x) | 0, (eL.y - 1) | 0, 1, 2);
-      ctx.fillRect((eR.x) | 0, (eR.y - 1) | 0, 1, 2);
+      const col = lookup(pal, key);
+      if (!col) continue;
+      plot(buf, x, y, col, key, true);
     }
-    ctx.fillStyle = "#c07070";
-    ctx.fillRect((mo.x) | 0, (mo.y) | 0, 2, 1);
   }
+}
 
-  // soft elliptical floor shadow under feet
-  ctx.globalCompositeOperation = "destination-over";
-  ctx.fillStyle = "rgba(0,0,0,0.32)";
-  ctx.beginPath();
-  ctx.ellipse(w / 2, h - 2, 7, 2.2, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.globalCompositeOperation = "source-over";
-  return { c, w, h };
+function lookup(pal, key) {
+  const parts = key.split(".");
+  let v = pal;
+  for (const p of parts) v = v ? v[p] : null;
+  return v || null;
+}
+
+function sleeveFromArm(armLayer, length) {
+  // Recolor skin pixels in the upper portion of an arm into shirt tones.
+  if (!armLayer) return null;
+  const rows = armLayer.rows.map((r) => r.split(""));
+  const h = rows.length;
+  const cut = length === "long" ? Math.max(0, h - 4) : Math.min(6, h);
+  for (let j = 0; j < cut; j++) {
+    for (let i = 0; i < rows[j].length; i++) {
+      const ch = rows[j][i];
+      if (ch === "#" || ch === "h" || ch === "s") {
+        rows[j][i] = ch === "h" ? "+" : ch === "s" ? "c" : "%";
+      }
+      // leave @ (hair on back arms) as-is
+    }
+  }
+  return { x: armLayer.x, y: armLayer.y, rows: rows.map((r) => r.join("")) };
+}
+
+function shortsLegs(layer) {
+  if (!layer) return layer;
+  // Below mid-shin, convert pants pixels to skin.
+  const rows = layer.rows.map((r) => r.split(""));
+  const start = Math.floor(rows.length * 0.55);
+  for (let j = start; j < rows.length; j++) {
+    // stop before shoes
+    const row = rows[j].join("");
+    if (row.includes("$") || row.includes("y") || row.includes("d")) break;
+    for (let i = 0; i < rows[j].length; i++) {
+      const ch = rows[j][i];
+      if (ch === "=" || ch === "p" || ch === "q") {
+        rows[j][i] = ch === "q" ? "h" : ch === "p" ? "s" : "#";
+      }
+    }
+  }
+  return { x: layer.x, y: layer.y, rows: rows.map((r) => r.join("")) };
+}
+
+function cargoPockets(view) {
+  if (view === "e") {
+    return L(36, [
+      "..........oxxo........",
+      "..........ozzo........",
+    ]);
+  }
+  return L(36, [
+    ".......oxx....xxo.....",
+    ".......ozz....zzo.....",
+  ]);
+}
+
+function skateStripe(layer) {
+  if (!layer) return layer;
+  const rows = layer.rows.map((r) => r);
+  // add a highlight stripe on shoe mid rows
+  const out = rows.map((row) => row.split(""));
+  for (let j = 0; j < out.length; j++) {
+    const s = out[j].join("");
+    if (s.includes("$") || s.includes("y")) {
+      for (let i = 0; i < out[j].length; i++) {
+        if (out[j][i] === "$") { out[j][i] = "y"; break; }
+      }
+    }
+  }
+  return { x: layer.x, y: layer.y, rows: out.map((r) => r.join("")) };
+}
+
+function addOutline(buf) {
+  const next = buf.slice();
+  const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  for (let y = 0; y < AV_H; y++) {
+    for (let x = 0; x < AV_W; x++) {
+      const i = y * AV_W + x;
+      if (buf[i]) continue;
+      let n = false;
+      for (const [dx, dy] of dirs) {
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= AV_W || ny >= AV_H) continue;
+        const c = buf[ny * AV_W + nx];
+        if (c && c.kind !== "ink" && c.kind !== "shadow") { n = true; break; }
+      }
+      if (n) next[i] = { color: INK, kind: "ink" };
+    }
+  }
+  return next;
+}
+
+function armKindFromFlags(flags, frame) {
+  if (flags.sitting) return "sit";
+  if (flags.actionEmote === "wave" || flags.actionEmote === "dance") return "wave";
+  if (flags.boxing) return "punch";
+  if (flags.usingPhone) return "phone";
+  const held = flags.heldItem?.kind || flags.heldItem || flags.heldProp;
+  if (held) return "hold";
+  if (flags.gym) return "hold";
+  if (flags.walking) {
+    const f = frame % 4;
+    if (f === 0) return "w0";
+    if (f === 2) return "w2";
+    return "idle";
+  }
+  return "idle";
+}
+
+function legKindFromFlags(flags, frame) {
+  if (flags.sitting) return "sit";
+  if (flags.walking) {
+    const f = frame % 4;
+    if (f === 0) return "w0";
+    if (f === 2) return "w2";
+    return "idle";
+  }
+  return "idle";
+}
+
+function buildPalette(av) {
+  const skin = tones(av.skin, true);
+  const shirt = tones(av.shirt);
+  const pants = tones(av.bottomColor);
+  const hair = tones(av.hairColor);
+  const shoe = shoePal(av.shoes);
+  const accBase = av.accessory === "headphones" ? av.headphoneColor : (av.shirt || "#2a2a2e");
+  const acc = tones(av.accessory === "beanie" || av.accessory === "cap" || av.accessory === "trucker" ? (av.headphoneColor || av.shirt || "#2a2a2e") : accBase);
+  const graphic = mix(shirt.mid, rgb(255, 255, 255), 0.55);
+  const sole = av.shoes === "gum" || av.shoes === "white" ? tones("#c4a070") : tones("#1a1a1c");
+  const gold = tones("#f4c15d");
+  return {
+    ink: INK,
+    skin, shirt, pants, hair, shoe, acc,
+    sole: sole.mid ? sole : { mid: sole },
+    gold: gold.mid,
+    graphic,
+    eye: EYE_W,
+    pupil: PUPIL,
+    brow: mix(hexToRgb(av.hairColor || "#2b1d16"), INK, 0.4),
+    nose: mix(skin.sh, NOSE, 0.4),
+    mouth: MOUTH,
+  };
 }
 
 const cache = new Map();
 
-export function drawAvatarSprite(avatar = {}, flags = {}, frame = 0) {
-  const a = {
-    skin: avatar.skin || "#f1c27d",
-    hair: avatar.hair || "short",
-    hairColor: avatar.hairColor || "#2b1d16",
-    shirt: avatar.shirt || "#ff7a59",
-    glasses: Boolean(avatar.glasses),
-    top: avatar.top || "tshirt",
-    bottom: avatar.bottom || "jeans",
-    bottomColor: avatar.bottomColor || "#3d4f7c",
-    shoes: avatar.shoes || "white",
-    accessory: avatar.accessory || "none",
-    headphoneColor: avatar.headphoneColor || "#2a2a2e",
+function composeAvatar(av, flags, frame) {
+  const dir = (flags.walking && (flags.dirX || flags.dirY))
+    ? facingIndex8(null, flags.dirX, flags.dirY)
+    : facingIndex8(flags.facing, flags.dirX, flags.dirY);
+  const { key, flip } = viewOfDir(dir);
+  const pal = buildPalette(av);
+  const bob = (flags.walking && !flags.sitting && (frame % 4 === 1 || frame % 4 === 3)) ? -1 : 0;
+  const sit = Boolean(flags.sitting);
+  const aKind = armKindFromFlags(flags, frame);
+  const lKind = legKindFromFlags(flags, frame);
+  const arms = getArms(key, aKind);
+  const idleArms = getArms(key, "idle");
+  const legs = getLegs(key, lKind);
+  const sleeveLen = (av.top === "hoodie" || av.top === "jacket") ? "long" : "short";
+  const oneHanded = aKind === "wave" || aKind === "phone" || aKind === "hold";
+
+  const buf = makeBuf();
+  // far arm first (left on unflipped front). Keep the far arm idle for one-handed actions.
+  const far = oneHanded ? (flip ? idleArms.right : idleArms.left) : (flip ? arms.right : arms.left);
+  const near = oneHanded ? (flip ? arms.left : arms.right) : (flip ? arms.left : arms.right);
+  const armPull = (layer) => {
+    if (!layer || key === "e") return 0;
+    const pull = key === "se" ? 1 : 2;
+    return (layer.x < 10) ? pull : -pull;
   };
+  blitLayer(buf, sleeveFromArm(far, sleeveLen), pal, flip, armPull(far), bob);
+  blitLayer(buf, far, pal, flip, armPull(far), bob);
+
+  let legLayer = av.bottom === "shorts" ? shortsLegs(legs) : legs;
+  if (av.shoes === "skate") legLayer = skateStripe(legLayer);
+  blitLayer(buf, legLayer, pal, flip, 0, sit ? 0 : bob);
+
+  blitLayer(buf, CORE[key], pal, flip, 0, bob);
+
+  const topBase = TOPS.tshirt[key];
+  blitLayer(buf, topBase, pal, flip, 0, bob);
+  if (av.top === "hoodie") blitLayer(buf, HOODIE_EXTRA[key], pal, flip, 0, bob);
+  if (av.top === "jacket") blitLayer(buf, JACKET_EXTRA[key], pal, flip, 0, bob);
+  if (av.top === "bandtee") blitLayer(buf, BAND_GRAPHIC[key], pal, flip, 0, bob);
+  if (av.bottom === "cargo") blitLayer(buf, cargoPockets(key), pal, flip, 0, sit ? 0 : bob);
+  if (av.accessory === "belt") {
+    blitLayer(buf, L(28 + bob, ["........oggggg........", "........oooooo........"]), pal, flip);
+  }
+
+  blitLayer(buf, sleeveFromArm(near, sleeveLen), pal, flip, armPull(near), bob);
+  blitLayer(buf, near, pal, flip, armPull(near), bob);
+
+  if (av.accessory === "wristband") {
+    const handY = (near.y || 19) + Math.max(0, (near.rows.length || 8) - 5) + bob;
+    blitLayer(buf, L(handY, ["xzzx"], (near.x || 17) + 0), pal, flip);
+  }
+  if (av.accessory === "chain") blitLayer(buf, CHAIN[key], pal, flip, 0, bob);
+
+  const hair = (HAIR[av.hair] || HAIR.short)[key];
+  const hatOn = av.accessory === "cap" || av.accessory === "beanie" || av.accessory === "trucker";
+  if (!hatOn) blitLayer(buf, hair, pal, flip, 0, bob);
+  else {
+    // still a little hair at the sides
+    blitLayer(buf, hair, pal, flip, 0, bob);
+    blitLayer(buf, HATS[av.accessory][key], pal, flip, 0, bob);
+  }
+
+  if (key !== "n") blitLayer(buf, FACE[key], pal, flip, 0, bob);
+  if (av.glasses) blitLayer(buf, GLASSES[key], pal, flip, 0, bob);
+  if (av.accessory === "headphones") blitLayer(buf, HEADPHONES[key], pal, flip, 0, bob);
+
+  const outlined = addOutline(buf);
+
+  // floor shadow
+  const spr = { c: null, w: AV_W, h: AV_H, data: outlined };
+  return spr;
+}
+
+function bufToCanvas(buf) {
+  const c = document.createElement("canvas");
+  c.width = AV_W;
+  c.height = AV_H;
+  const ctx = c.getContext("2d");
+  ctx.imageSmoothingEnabled = false;
+  const img = ctx.createImageData(AV_W, AV_H);
+  for (let i = 0; i < buf.length; i++) {
+    const p = buf[i];
+    const o = i * 4;
+    if (!p) continue;
+    img.data[o] = p.color.r;
+    img.data[o + 1] = p.color.g;
+    img.data[o + 2] = p.color.b;
+    img.data[o + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+  // elliptical shadow under feet
+  ctx.globalCompositeOperation = "destination-over";
+  ctx.fillStyle = "rgba(0,0,0,0.32)";
+  ctx.beginPath();
+  ctx.ellipse(AV_W / 2, AV_H - 2, 7, 2, 0, 0, Math.PI * 2);
+  ctx.fill();
+  return { c, w: AV_W, h: AV_H };
+}
+
+export function drawAvatarSprite(avatar = {}, flags = {}, frame = 0) {
+  const av = normalizeAvatar(avatar);
   const walk = Boolean(flags.walking) && !flags.sitting;
-  let dir;
-  if (walk && (flags.dirX || flags.dirY)) dir = facingIndex8(null, flags.dirX, flags.dirY);
-  else dir = facingIndex8(flags.facing, flags.dirX, flags.dirY);
-  const key = "av3:" + JSON.stringify(a) + ":" + dir + ":" + Boolean(flags.sitting) + ":" + walk + ":" + (frame % 4) + ":" + Boolean(flags.usingPhone) + ":" + Boolean(flags.boxing) + ":" + (flags.actionEmote || "") + ":" + (flags.heldItem || flags.heldProp || "");
+  const dir = (walk && (flags.dirX || flags.dirY))
+    ? facingIndex8(null, flags.dirX, flags.dirY)
+    : facingIndex8(flags.facing, flags.dirX, flags.dirY);
+  const held = flags.heldItem?.kind || flags.heldProp || (typeof flags.heldItem === "string" ? flags.heldItem : "");
+  const key = "pd:" + JSON.stringify(av) + ":" + dir + ":" + Boolean(flags.sitting) + ":" + walk + ":" + (frame % 4) + ":" + Boolean(flags.usingPhone) + ":" + Boolean(flags.boxing) + ":" + (flags.actionEmote || "") + ":" + held + ":" + Boolean(flags.gym);
   const hit = cache.get(key);
   if (hit) return hit;
-
-  const T = makeTarget();
-  const yaw = yawFromDir(dir);
-  const pose = buildPose(flags, frame);
-  const info = drawCharacter(T, a, yaw, pose, flags);
-  const anchors = faceAnchors(T, yaw, info.headY);
-  const spr = blitHiToCanvas(T, anchors, a);
+  const composed = composeAvatar(av, flags, frame);
+  const spr = bufToCanvas(composed.data);
   cache.set(key, spr);
   return spr;
 }
@@ -699,41 +2207,38 @@ export const AVATAR_SHEET_LOOKS = [
   { label: "undercut", skin: "#c68642", hair: "undercut", hairColor: "#2b1d16", shirt: "#2a2a2e", top: "hoodie", bottom: "cargo", bottomColor: "#6b7280", shoes: "skate", accessory: "wristband" },
 ];
 
-export function paintAvatarSheet(canvas, looks, scale = 3) {
+export function paintAvatarSheet(canvas, looks, scale = 4) {
   looks = looks && looks.length ? looks : AVATAR_SHEET_LOOKS;
-  const dirs = [0, 1, 2, 3, 4, 5, 6, 7];
-  const dirLabels = ["SE", "S", "SW", "W", "NW", "N", "NE", "E"];
-  const cols = 8;
-  const pad = 12, cap = 16, gap = 10;
+  const dirs = [
+    { d: 0, label: "SE" },
+    { d: 1, label: "S" },
+    { d: 7, label: "E" },
+    { d: 5, label: "N" },
+  ];
+  const pad = 16, cap = 18, gap = 14;
   const cw = AV_W * scale, ch = AV_H * scale;
-  const rowsLooks = Math.ceil(looks.length / cols);
-  const rows = rowsLooks + 1; // + turnaround row
-  canvas.width = pad * 2 + cols * cw + (cols - 1) * gap;
+  const cols = dirs.length;
+  const rows = looks.length;
+  canvas.width = pad * 2 + cols * cw + (cols - 1) * gap + 80;
   canvas.height = pad * 2 + rows * (ch + cap) + (rows - 1) * gap + 8;
   const ctx = canvas.getContext("2d");
   ctx.imageSmoothingEnabled = false;
   ctx.fillStyle = "#f4efe4";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  looks.forEach((look, i) => {
-    const r = Math.floor(i / cols), c = i % cols;
-    const x = pad + c * (cw + gap);
+  ctx.font = "12px Verdana, sans-serif";
+  looks.forEach((look, r) => {
     const y = pad + r * (ch + cap + gap);
-    const spr = drawAvatarSprite(look, { facing: { x: 0, z: 1 } }, 0);
-    ctx.drawImage(spr.c, 0, 0, spr.w, spr.h, x, y, cw, ch);
-    ctx.fillStyle = "#2a1c4a";
-    ctx.font = "11px sans-serif";
-    ctx.fillText(look.label || "", x, y + ch + 12);
-  });
-  const turnY = pad + rowsLooks * (ch + cap + gap);
-  const turnLook = looks[0] || AVATAR_SHEET_LOOKS[0];
-  dirs.forEach((d, i) => {
-    const x = pad + i * (cw + gap);
-    const y = turnY;
-    const spr = drawAvatarSprite(turnLook, { facing: { x: Math.cos(d * Math.PI / 4), z: Math.sin(d * Math.PI / 4) } }, 0);
-    ctx.drawImage(spr.c, 0, 0, spr.w, spr.h, x, y, cw, ch);
-    ctx.fillStyle = "#2a1c4a";
-    ctx.font = "11px sans-serif";
-    ctx.fillText(dirLabels[i], x + 8, y + ch + 12);
+    ctx.fillStyle = "#2a1c16";
+    ctx.fillText(look.label || "", 8, y + 14);
+    dirs.forEach((dir, c) => {
+      const x = pad + 80 + c * (cw + gap);
+      const spr = drawAvatarSprite(look, { facing: { x: Math.cos(dir.d * Math.PI / 4), z: Math.sin(dir.d * Math.PI / 4) } }, 0);
+      ctx.drawImage(spr.c, 0, 0, spr.w, spr.h, x, y, cw, ch);
+      if (r === 0) {
+        ctx.fillStyle = "#2a1c16";
+        ctx.fillText(dir.label, x + cw / 2 - 8, y - 4);
+      }
+    });
   });
 }
 
@@ -743,11 +2248,17 @@ export function paintStoreThumb(canvas, kind, item, base) {
   ctx.imageSmoothingEnabled = false;
   ctx.fillStyle = "#efe6d4";
   ctx.fillRect(0, 0, w, h);
-  if (kind === "pets") return false;
+  if (kind === "pets") {
+    const name = typeof item === "string" ? item : (item?.item || item?.kind || "cat");
+    if (typeof window !== "undefined" && typeof window.__paintPetThumb === "function") {
+      return window.__paintPetThumb(canvas, name);
+    }
+    return false;
+  }
   const av = { ...(base || {}), ...(item || {}) };
-  const spr = drawAvatarSprite(av, { facing: { x: 0, z: 1 } }, 0);
-  const dw = 10, dh = 26;
-  ctx.drawImage(spr.c, 0, 0, spr.w, spr.h, Math.floor((w - dw) / 2), 1, dw, dh);
+  const spr = drawAvatarSprite(av, { facing: { x: 1, z: 1 } }, 0);
+  const dw = 10, dh = 24;
+  ctx.drawImage(spr.c, 0, 0, spr.w, spr.h, Math.floor((w - dw) / 2), 2, dw, dh);
   return true;
 }
 
