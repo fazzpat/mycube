@@ -1543,14 +1543,16 @@ function shoePal(id) {
   return { upper: tones("#f4efe6", true), sole: tones("#6a7a8a", true), accent: tones("#3a6aaa", true), lace: rgb(90, 80, 70) };
 }
 
+const HAND_R = 3.15;
+const HAND_PAD = 1.05;
+
 function drawMitten(buf, cx, cy, pal, side = 1) {
-  // Round palm with a 2-3 tone cel ramp so it reads as a sphere, not a flat hexagon.
-  ellipse(buf, cx, cy, 4.0, 3.9, pal.skin, "hand", 32);
-  const tx = cx + (side >= 0 ? 2.7 : -2.7);
-  ellipse(buf, tx, cy - 0.8, 2.0, 2.2, pal.skin, "thumb", 33);
+  // Smaller, rounder hanging mitten. Thumb is a little bump on top, not a sideways flipper.
+  ellipse(buf, cx, cy, HAND_R, HAND_R, pal.skin, "hand", 32);
+  ellipse(buf, cx + (side >= 0 ? 0.8 : -0.8), cy - 1.5, 1.4, 1.5, pal.skin, "thumb", 33);
   const hi = pal.skin.hi || pal.skin.mid || pal.skin;
-  plot(buf, Math.round(cx - 1), Math.round(cy - 2), hi, "hand-hi", 34);
-  plot(buf, Math.round(cx), Math.round(cy - 2), hi, "hand-hi", 34);
+  plot(buf, Math.round(cx), Math.round(cy - 1.6), hi, "hand-hi", 34);
+  plot(buf, Math.round(cx - 1), Math.round(cy - 1.2), hi, "hand-hi", 34);
 }
 
 function plotCheck(buf, x, y, on, pal) {
@@ -1663,19 +1665,34 @@ function walkPose(frame, walking, sit) {
   };
 }
 
-function handClearance(t, side, squash = 0) {
-  // Palm radius 4 plus 1px ink, so the mitten can touch the torso edge but not sit inside it.
-  // Follow walk squash so a wider or narrower bean does not leave a gap or tuck the hand in.
-  const hw = t.hw * (1 + (squash || 0));
-  return t.cx + side * (hw + 5.2);
+function torsoHalfWidthAt(t, y, upper, squash = 0) {
+  // Superellipse width of the bean at this y, matching drawTorso's squash.
+  const h = t.h * (1 - (squash || 0) * 0.65);
+  const cy = t.y0 + upper + h * 0.50;
+  const rx = t.hw * (1 + (squash || 0));
+  const ry = h * 0.50 || 1;
+  const ny = Math.min(0.96, Math.abs((y - cy) / ry));
+  const n = 2.55;
+  return rx * Math.pow(1 - Math.pow(ny, n), 1 / n);
+}
+
+function handClearance(t, side, squash, y, upper) {
+  // Use the widest bean slice the palm covers, so the top of the mitten
+  // still kisses the outline and never the fill.
+  let hw = 0;
+  for (let yy = y - HAND_R; yy <= y + HAND_R; yy += 0.5) {
+    hw = Math.max(hw, torsoHalfWidthAt(t, yy, upper, squash));
+  }
+  return t.cx + side * (hw + HAND_R + HAND_PAD);
 }
 
 function handPose(kind, side, pose, t, upper, key, frame) {
   const squash = pose.squash || 0;
+  const h = t.h * (1 - squash * 0.65);
   const cuffX = t.cx + side * t.hw * (1 + squash);
   const cuffY = t.y0 + upper + 4;
-  let hx = handClearance(t, side, squash);
-  let hy = t.y0 + upper + t.h * 0.70;
+  let hy = t.y0 + upper + h * 0.90;
+  let hx = handClearance(t, side, squash, hy, upper);
   if (kind === "wave" || kind === "cheer") {
     if (side > 0 || kind === "cheer") { hx = t.cx + side * 13; hy = (t.y0 + upper) - 8; }
   } else if (kind === "dance") {
@@ -1689,9 +1706,6 @@ function handPose(kind, side, pose, t, upper, key, frame) {
   } else if (kind === "hold" || kind === "punch") {
     hx = t.cx + side * 8;
     hy = t.y0 + upper + 8;
-  } else if (kind === "sit") {
-    hx = t.cx + side * 6;
-    hy = t.y0 + upper + 11;
   } else if (kind === "clap") {
     hx = t.cx + side * 3;
     hy = t.y0 + upper + 7;
@@ -1708,9 +1722,17 @@ function handPose(kind, side, pose, t, upper, key, frame) {
   const hand = side < 0 ? pose.handL : pose.handR;
   const special = kind === "wave" || kind === "dance" || kind === "cheer" || kind === "phone" || String(kind || "").startsWith("phone") || kind === "cry" || kind === "hold" || kind === "punch" || kind === "clap" || kind === "shrug";
   if (hand && !special) {
-    // Walk motion is a small vertical bob. Hands stay seated at the torso edge.
+    // Vertical bob in every view. Side view also swings forward/back along the
+    // torso's front or back edge, never out into a T-pose.
     hy += hand.dy || 0;
-    hx = handClearance(t, side, squash);
+    const rest = handClearance(t, side, squash, hy, upper);
+    if (key === "e") {
+      const along = hand.dx || 0;
+      const extra = Math.max(0, along * side);
+      hx = rest + side * extra * 0.85;
+    } else {
+      hx = rest;
+    }
   }
   return { x: hx, y: hy, cuffX, cuffY };
 }
