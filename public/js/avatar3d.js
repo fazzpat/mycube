@@ -808,17 +808,37 @@ const EYE_CLOSED = [
   [-3, -1], [-2, 0], [-1, 1], [0, 1], [1, 1], [2, 0], [3, -1],
 ];
 
-function stampEye(buf, cx, cy, blink) {
+function stampEye(buf, cx, cy, blink, lookX = 0, lookY = 0) {
   const x = Math.round(cx), y = Math.round(cy);
   const mode = blink || "open";
+  const down = mode === "open" && lookY > 0;
   const pat = mode === "closed" ? EYE_CLOSED : mode === "half" ? EYE_HALF : EYE_OPEN;
-  for (const [dx, dy] of pat) plot(buf, x + dx, y + dy, EYE_INK, "eye", 54);
+  for (const [dx, dy] of pat) {
+    // Looking down: drop the top row so the lid sits lower over the pupil.
+    if (down && dy <= -3) continue;
+    plot(buf, x + dx, y + dy, EYE_INK, "eye", 54);
+  }
   if (mode === "open") {
-    // 2px white highlight at top-left, 1px sparkle at bottom-right.
-    plotInside(buf, x - 1, y - 2, EYE_HI, "eye-hi", 55);
-    plotInside(buf, x, y - 2, EYE_HI, "eye-hi", 55);
-    plotInside(buf, x, y - 1, rgb(150, 200, 230), "eye-blue", 55);
-    plotInside(buf, x + 1, y + 2, EYE_HI, "eye-spark", 55);
+    if (down) {
+      // Pupils sit in the lower eye, shifted toward the phone side.
+      const px = x + (lookX > 0 ? 1 : lookX < 0 ? -1 : 0);
+      plotInside(buf, px - 1, y + 1, EYE_HI, "eye-hi", 55);
+      plotInside(buf, px, y + 1, EYE_HI, "eye-hi", 55);
+      plotInside(buf, px, y + 2, rgb(150, 200, 230), "eye-blue", 55);
+      plotInside(buf, px + 1, y + 3, EYE_HI, "eye-spark", 55);
+      // Lowered brow, sloping slightly down toward the phone.
+      const slope = lookX >= 0 ? 1 : -1;
+      for (const [dx, dy] of [[-2, -4], [-1, -4], [0, -3], [1, -3], [2, -3]]) {
+        plot(buf, x + dx * slope, y + dy, EYE_INK, "brow", 56);
+      }
+    } else {
+      // 2px white highlight at top-left, 1px sparkle at bottom-right.
+      const ox = lookX || 0, oy = lookY || 0;
+      plotInside(buf, x - 1 + ox, y - 2 + oy, EYE_HI, "eye-hi", 55);
+      plotInside(buf, x + ox, y - 2 + oy, EYE_HI, "eye-hi", 55);
+      plotInside(buf, x + ox, y - 1 + oy, rgb(150, 200, 230), "eye-blue", 55);
+      plotInside(buf, x + 1 + ox, y + 2 + oy, EYE_HI, "eye-spark", 55);
+    }
   }
 }
 
@@ -840,7 +860,10 @@ function drawEyes(buf, key, upper, flip, flags, emote) {
   const g = headGeom(key);
   const midX = flip ? AV_W - 1 - g.cx : g.cx;
   for (const a of anchors) {
-    stampEye(buf, a.x + lookX, a.y + lookY, blink);
+    // Looking down keeps the sockets in place and moves the pupils;
+    // other looks still nudge the whole eye.
+    if (lookY > 0) stampEye(buf, a.x, a.y, blink, lookX, lookY);
+    else stampEye(buf, a.x + lookX, a.y + lookY, blink, lookX, lookY);
     stampBlush(buf, a.x, a.y, a.x >= midX ? 1 : -1);
   }
 }
@@ -2154,9 +2177,9 @@ function drawArms(buf, av, key, pal, upper, pose) {
       ey = y0 - 6 + (side > 0 ? -2 : 1);
       hand = { x: ex, y: ey - 1 };
     } else if (kind === "phone" || kind.startsWith("phone")) {
-      const tap = kind === "phone1" ? -1 : 0;
-      ex = t.cx + (key === "e" ? t.hw + 2 : t.hw + 6);
-      ey = y0 + 12 + tap;
+      const tap = kind === "phone1" ? 1 : 0;
+      ex = t.cx + (key === "e" ? t.hw + 3 : t.hw + 7);
+      ey = y0 + 3 + tap;
       hand = { x: ex + 1, y: ey };
     } else if (kind === "hold" || kind === "punch") {
       ex = t.cx + side * 6;
@@ -2204,15 +2227,29 @@ function drawArms(buf, av, key, pal, upper, pose) {
   return { near };
 }
 
+function drawHeldPhone(buf, x, y, { tap = false, thumb } = {}) {
+  const out = x >= AV_W / 2 ? 1 : -1;
+  const inn = -out;
+  const ph = tones("#2a2420");
+  // Handset sits in the palm, body slightly outward, screen facing the face.
+  rect(buf, x + inn * 1, y - 4, x + out * 3, y + 4, ph, "phone", 60, 1);
+  const screen = rgb(200, 240, 210);
+  rect(buf, x + inn * 1, y - 3, x + inn * 3, y + 3, screen, "phone-screen", 61);
+  const glow = rgb(232, 255, 226);
+  plot(buf, Math.round(x + inn * 4), Math.round(y - 1), glow, "phone-glow", 62);
+  plot(buf, Math.round(x + inn * 4), Math.round(y), glow, "phone-glow", 62);
+  plot(buf, Math.round(x + inn * 4), Math.round(y + 1), glow, "phone-glow", 62);
+  if (tap && thumb) {
+    circle(buf, x + inn * 1.5, y + 1, 1.4, thumb, "hand", 63);
+  }
+}
+
 function drawProp(buf, flags, hand, key, pose) {
+
   if (!hand) return;
   const held = flags.heldItem?.kind || flags.heldProp || (typeof flags.heldItem === "string" ? flags.heldItem : "");
   if (pose.armKind && String(pose.armKind).startsWith("phone") || flags.usingPhone) {
-    const pal = tones("#3a3430");
-    const out = hand.x >= (AV_W / 2) ? 1 : -1;
-    rect(buf, hand.x + out * 1, hand.y - 3, hand.x + out * 5, hand.y + 4, pal, "phone", 60, 1);
-    const screen = rgb(160, 196, 170);
-    rect(buf, hand.x + out * 2, hand.y - 2, hand.x + out * 4, hand.y + 3, screen, "phone-screen", 61);
+    drawHeldPhone(buf, hand.x, hand.y, { tap: String(pose.armKind) === "phone1" });
     return;
   }
   if (!held) return;
@@ -2413,11 +2450,11 @@ function handPose(kind, side, pose, t, upper, key, frame) {
     hx = t.cx + side * 10;
     hy = (t.y0 + upper) - 11 + (side > 0 ? -2 : 0);
   } else if (kind === "phone" || (kind && String(kind).startsWith("phone"))) {
-    // Hold a small phone out to the character's right side at hip height,
-    // never up in front of the face or chest. A phone1 frame is a thumb tap.
-    const tap = kind === "phone1" || kind === "phoneTap" ? -1 : 0;
-    hy = t.y0 + upper + 12 + tap;
-    hx = key === "e" ? t.cx + t.hw + 2 : t.cx + t.hw + 6;
+    // Hold a small phone out to the character's right side at chest /
+    // shoulder height, never in front of the face. A phone1 frame is a thumb tap.
+    const tap = kind === "phone1" || kind === "phoneTap" ? 1 : 0;
+    hy = t.y0 + upper + 3 + tap;
+    hx = key === "e" ? t.cx + t.hw + 3 : t.cx + t.hw + 7;
   } else if (kind === "hold" || kind === "punch") {
     hx = t.cx + side * 8;
     hy = t.y0 + upper + 8;
@@ -2505,7 +2542,7 @@ function composeAvatar(av, flagsIn, frame) {
   const phoneIdle = Boolean(flags.usingPhone) && !walk && !sit;
   if (phoneIdle) {
     flags.lookX = bodyView.flip ? -1 : 1;
-    flags.lookY = 1; // look down at the phone
+    flags.lookY = 1; // pupils drop toward the phone
   }
   const pal = buildPalette(av);
   const shoes = shoePal(av.shoes);
@@ -2515,7 +2552,7 @@ function composeAvatar(av, flagsIn, frame) {
   const bob = walk ? (pose.bob || 0) : (phoneIdle ? ((frame % 16) < 8 ? 0 : 1) : 0);
   const upper = sit ? AV_SEAT_DROP : (bob + breathe);
   const motion0 = headMotion(frame, walk, sit, upper);
-  const motion = phoneIdle ? { y: (motion0.y || 0) + 2, x: (motion0.x || 0) + 2 } : motion0;
+  const motion = phoneIdle ? { y: (motion0.y || 0) + 3, x: (motion0.x || 0) + 2 } : motion0;
   const headUpper = motion.y;
   const emote = flags.actionEmote || "";
   const hatOn = av.accessory === "cap" || av.accessory === "beanie" || av.accessory === "trucker" || av.accessory === "bucket" || av.accessory === "fitted";
@@ -2585,24 +2622,19 @@ function composeAvatar(av, flagsIn, frame) {
     return stickerSprite((buf) => {
       drawMitten(buf, hp.x, hp.y, pal, hp.side);
       if (holdPhone) {
-        const out = hp.x >= AV_W / 2 ? 1 : -1;
-        const ph = tones("#2a2420");
-        rect(buf, hp.x + out * 1, hp.y - 3, hp.x + out * 5, hp.y + 4, ph, "phone", 60, 1);
-        rect(buf, hp.x + out * 2, hp.y - 2, hp.x + out * 4, hp.y + 3, rgb(160, 196, 170), "phone-screen", 61);
-      }
-      if (tapPhone) {
-        // already positioned higher in handPose when frame ticks
+        drawHeldPhone(buf, hp.x, hp.y, { tap: tapPhone, thumb: pal.skin });
       }
     });
   }
 
   const holdingPhone = Boolean(flags.usingPhone) || (aKind && String(aKind).startsWith("phone"));
+  const tappingPhone = holdingPhone && (aKind === "phone1" || aKind === "phoneTap");
   const layers = [];
   const backView = bk === "n" || bk === "ne";
   const fFoot = footSpr(farFoot);
   const nFoot = footSpr(nearFoot);
-  const fHand = handSpr(farHand, false, holdingPhone);
-  const nHand = handSpr(nearHand, holdingPhone, false);
+  const fHand = handSpr(farHand, false, false);
+  const nHand = handSpr(nearHand, holdingPhone, tappingPhone);
   if (backView) layers.push(fFoot, body, head, nFoot, fHand, nHand);
   else layers.push(fFoot, fHand, body, head, nFoot, nHand);
 
@@ -3369,7 +3401,7 @@ export function inspectPhoneHold(avatar = {}, flags = {}, frame = 0) {
     for (let x = 0; x < AV_W; x++) {
       const p = buf[y * AV_W + x];
       if (!p) continue;
-      if (p.kind === "phone" || p.kind === "phone-screen") phone = grow(phone, x, y);
+      if (p.kind === "phone" || p.kind === "phone-screen" || p.kind === "phone-glow") phone = grow(phone, x, y);
       if (p.kind === "eye" || p.kind === "eye-hi" || p.kind === "head" || p.kind === "face" || p.kind === "skin-head" || p.kind === "mouth") face = grow(face, x, y);
       if (typeof isTorsoish === "function" ? isTorsoish(p.kind) : (p.kind === "top" || p.kind === "pants" || p.kind === "skirt" || p.kind === "skin-body")) torso = grow(torso, x, y);
     }
@@ -3377,11 +3409,12 @@ export function inspectPhoneHold(avatar = {}, flags = {}, frame = 0) {
   const overlapsFace = Boolean(phone && face && phone.x0 <= face.x1 && phone.x1 >= face.x0 && phone.y0 <= face.y1 && phone.y1 >= face.y0);
   const phoneCx = phone ? (phone.x0 + phone.x1) / 2 : null;
   const torsoMid = torso ? (torso.x0 + torso.x1) / 2 : AV_W / 2;
-  const beside = Boolean(phone && torso && Math.abs(phoneCx - torsoMid) >= (torso.x1 - torso.x0) * 0.35);
-  const belowFace = Boolean(phone && face && phone.y0 >= face.y1 - 1);
+  const beside = Boolean(phone && torso && Math.abs(phoneCx - torsoMid) >= (torso.x1 - torso.x0) * 0.28);
+  const notInFront = Boolean(!phone || !face || phone.x0 >= face.x1 - 1 || phone.x1 <= face.x0 + 1);
   return {
     phone, face, torso, hasPhone: Boolean(phone),
-    overlapsFace, atSide: Boolean(beside && !overlapsFace && (belowFace || !face)),
+    overlapsFace: Boolean(overlapsFace && !notInFront),
+    atSide: Boolean(beside && notInFront),
   };
 }
 

@@ -3246,22 +3246,23 @@ body.shop-open .shop-toggle {
   box-shadow: 0 0 0 1px #c4a060, 0 1px 0 #3a2a18;
 }
 
-/* Shop as a left side panel. Top stays at the top-left of the room
-   view; height is half the stage (bottom ends around mid-screen) so
-   more of the cube stays visible and tappable below. Same width; the
-   item list scrolls inside. The panel does not resize the room. */
+/* Shop as a left side panel. It starts just below the fixed top bar
+   (Leave Cube / coins / notch) so the Shop title and close X stay
+   fully visible. Height is half the remaining stage, so the bottom
+   still ends around mid-screen. Same width; the item list scrolls
+   inside. The panel does not resize the room. */
 #store-panel.store-panel,
 .store-panel {
   position: fixed !important;
-  top: var(--vv-top, 0px) !important;
+  top: calc(var(--vv-top, 0px) + max(var(--room-topbar-h, 0px), calc(44px + var(--sat, env(safe-area-inset-top, 0px))))) !important;
   left: 0 !important;
   right: auto !important;
   bottom: auto !important;
   transform: none !important;
   width: min(360px, 58vw) !important;
   max-width: 360px !important;
-  height: calc((100% - var(--dock-h, 76px)) / 2) !important;
-  max-height: calc((100% - var(--dock-h, 76px)) / 2) !important;
+  height: calc((100% - var(--dock-h, 76px) - max(var(--room-topbar-h, 0px), calc(44px + var(--sat, env(safe-area-inset-top, 0px))))) / 2) !important;
+  max-height: calc((100% - var(--dock-h, 76px) - max(var(--room-topbar-h, 0px), calc(44px + var(--sat, env(safe-area-inset-top, 0px))))) / 2) !important;
   overflow: hidden !important;
   display: flex !important;
   flex-direction: column !important;
@@ -3294,7 +3295,7 @@ body.shop-open #toasts {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: calc(8px + var(--sat, env(safe-area-inset-top, 0px))) 10px 6px 12px;
+  padding: 8px 10px 6px 12px;
   flex: 0 0 auto;
 }
 .store-panel-head strong {
@@ -3329,15 +3330,16 @@ body.shop-open #toasts {
   display: flex;
   flex-wrap: nowrap;
   gap: 4px;
-  padding: 0 10px 6px 10px;
+  padding: 0 8px 6px 8px;
   overflow-x: auto;
+  scrollbar-width: thin;
 }
 #store-panel .store-tab {
-  flex: 1 1 0;
-  font-size: 11px;
-  padding: 5px 6px;
+  flex: 0 0 auto;
+  font-size: 10px;
+  padding: 4px 6px;
   min-height: 26px;
-  min-width: 0;
+  min-width: max-content;
   white-space: nowrap;
   text-align: center;
 }

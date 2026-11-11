@@ -930,6 +930,17 @@ async function runCreatorPhoneAndBoot(browser) {
     if (toastVis && pr) overlapsHud.push("toasts");
     const plaqueVis = plaque && document.querySelector(".room-plaque") && getComputedStyle(document.querySelector(".room-plaque")).visibility !== "hidden";
     if (plaqueVis && pr) overlapsHud.push("plaque");
+    const box = (sel) => {
+      const el = panel?.querySelector(sel);
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return { text: (el.textContent || "").trim(), x: +r.x.toFixed(1), y: +r.y.toFixed(1), w: +r.width.toFixed(1), h: +r.height.toFixed(1), bottom: +r.bottom.toFixed(1), right: +r.right.toFixed(1), clipped: el.scrollWidth > el.clientWidth + 1 };
+    };
+    const topbar = document.querySelector(".room-view .topbar")?.getBoundingClientRect();
+    const tabInfo = [...(panel?.querySelectorAll(".store-tab") || [])].map((el) => {
+      const r = el.getBoundingClientRect();
+      return { text: (el.textContent || "").replace(/\s+/g, " ").trim(), w: +r.width.toFixed(1), clipped: el.scrollWidth > el.clientWidth + 1 };
+    });
     return {
       panelOpen: Boolean(panel && !panel.classList.contains("hidden")),
       phoneClosed: !phone || phone.classList.contains("hidden"),
@@ -942,12 +953,35 @@ async function runCreatorPhoneAndBoot(browser) {
       thumbCount: thumbs.length,
       thumbsWithArt: thumbs.filter((t) => t.ink > 8).length,
       overlapsHud,
+      title: box("[data-testid=store-panel-title]"),
+      close: box("[data-testid=store-close]"),
+      coins: box("[data-testid=shop-panel-coins]"),
+      topbarBottom: topbar ? Math.round(topbar.bottom) : 0,
+      tabInfo,
     };
   });
   check(
-    "Opening the shop closes the phone and slides in a left side panel",
-    Boolean(shopUi.panelOpen && shopUi.phoneClosed && shopUi.panel && shopUi.panel.x <= 2 && shopUi.panel.y <= 2 && shopUi.panel.w >= 160 && shopUi.panel.w <= Math.min(360, Math.round(shopUi.vw * 0.62) + 2)),
+    "Opening the shop closes the phone and slides in a left side panel below the top bar",
+    Boolean(shopUi.panelOpen && shopUi.phoneClosed && shopUi.panel && shopUi.panel.x <= 2
+      && shopUi.panel.y >= Math.max(36, (shopUi.topbarBottom || 0) - 2)
+      && shopUi.panel.w >= 160 && shopUi.panel.w <= Math.min(360, Math.round(shopUi.vw * 0.62) + 2)),
     JSON.stringify(shopUi)
+  );
+  check(
+    "The Shop title, coin chip, and close X are fully visible below the top bar",
+    Boolean(shopUi.title && shopUi.close && shopUi.title.text.includes("Shop")
+      && shopUi.title.y >= (shopUi.panel?.y || 0) - 1
+      && shopUi.title.y >= (shopUi.topbarBottom || 0) - 2
+      && shopUi.close.y >= (shopUi.topbarBottom || 0) - 2
+      && shopUi.title.w > 8 && shopUi.close.w >= 24
+      && shopUi.title.right <= shopUi.vw && shopUi.close.right <= shopUi.vw),
+    JSON.stringify({ title: shopUi.title, close: shopUi.close, coins: shopUi.coins, topbarBottom: shopUi.topbarBottom })
+  );
+  const wantedTabs = ["Furniture", "Clothes", "Pets", "Wall art"];
+  check(
+    "Shop tab labels are fully readable",
+    Boolean(shopUi.tabInfo && wantedTabs.every((name) => shopUi.tabInfo.some((t) => t.text === name && !t.clipped && t.w >= 28))),
+    JSON.stringify(shopUi.tabInfo)
   );
   check(
     "The shop panel is about half as tall and ends around mid-screen",
@@ -2735,12 +2769,12 @@ try {
   const poseHold = await alice.evaluate(async () => {
     const mod = await import("/js/avatar3d.js?phonepose=1");
     const av = window.__storeState?.()?.me?.avatar || {};
-    const views = [1, 0, 7, 5]; // front, 3/4, side, back
+    const views = [0, 1, 2, 3, 4, 5, 6, 7];
     return views.map((dir) => ({ dir, ...mod.inspectPhoneHold(av, { bodyDir: dir, headDir: dir, usingPhone: true }, 0) }));
   });
   check(
-    "The phone-open pose holds the phone at the side, not in front of the face, in all main views",
-    Array.isArray(poseHold) && poseHold.length === 4 && poseHold.every((p) => p.hasPhone && p.atSide && !p.overlapsFace),
+    "The phone-open pose holds the phone at the side, not in front of the face, in all 8 directions",
+    Array.isArray(poseHold) && poseHold.length === 8 && poseHold.every((p) => p.hasPhone && p.atSide && !p.overlapsFace),
     JSON.stringify(poseHold.map((p) => ({ dir: p.dir, hasPhone: p.hasPhone, atSide: p.atSide, overlapsFace: p.overlapsFace, phone: p.phone, face: p.face })))
   );
   check("Other people in the cube see you scrolling on a phone", bobSeesPhone);
