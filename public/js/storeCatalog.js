@@ -7,7 +7,7 @@ export const HAIR_STYLES = [
 ];
 export const HAIR_LABELS = {
   short: "Short", long: "Long", curly: "Curly", bun: "Bun", spiky: "Spiky", bangs: "Bangs", undercut: "Undercut",
-  frosted: "Frosted tips", buzz: "Buzz cut", swoop: "Swoop emo", cornrows: "Cornrows", shaggy: "Shaggy skater",
+  frosted: "Frosted tips", buzz: "Buzz cut", swoop: "Swoop emo", cornrows: "Slick back", slickback: "Slick back", shaggy: "Shaggy skater",
   ponytail: "Pigtails", pigtails: "Pigtails", spacebuns: "Space buns", straightbangs: "Straight bangs", afropuff: "Afro puff", bobclips: "Bob + clips",
 };
 export const HAIR_COLORS = [

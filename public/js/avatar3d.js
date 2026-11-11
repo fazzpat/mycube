@@ -78,6 +78,7 @@ function normalizeAvatar(raw = {}) {
   if (a.accessory === "tattoo") a.accessory = "none";
   if (a.hair === "neon") a.hair = "spiky";
   if (a.hair === "pigtails") a.hair = "ponytail";
+  if (a.hair === "slickback" || a.hair === "slick") a.hair = "cornrows";
   return {
     skin: a.skin || "#f1c27d",
     hair: a.hair || "short",
@@ -1020,22 +1021,39 @@ function drawHairCap(buf, g, cy, pal, key, style) {
   // Attached: every cap pixel either sits on the head or grows out of a head pixel.
   const hx = g.cx, hy = cy + 0.4;
   const rx = g.rx, ry = g.ry;
-  const vrx = rx * 1.08, vry = ry * 1.08;
-  const hairline = hy - ry * 0.10;
+  let vrx = rx * 1.08, vry = ry * 1.08;
+  let hairline = hy - ry * 0.10;
   let sideBot = hy + ry * 0.34;
   if (style === "buzz") sideBot = hy + ry * 0.22;
   if (style === "bobclips") sideBot = hy + ry * 0.78;
   if (style === "straightbangs" || style === "long") sideBot = hy + ry * 0.42;
   if (style === "afropuff") sideBot = hy + ry * 0.42;
   if (style === "ponytail" || style === "spacebuns") sideBot = hy + ry * 0.36;
+  if (style === "cornrows") {
+    // Clean high hairline, tight temples, a little extra crown height for the pompadour.
+    hairline = hy - ry * 0.40;
+    sideBot = hy + ry * 0.16;
+    vrx = rx * 1.04;
+    vry = ry * 1.08;
+  }
   if (key === "n" || key === "ne") sideBot = Math.max(sideBot, hy + ry * 0.86);
+  if (style === "cornrows" && (key === "n" || key === "ne")) sideBot = hy + ry * 0.96;
   const mid = (style === "buzz") ? (pal.hair.sh || pal.hair.mid || pal.hair) : (pal.hair.mid || pal.hair);
   const sh = pal.hair.sh || mid;
   const rxi = Math.ceil(vrx) + 1, ryi = Math.ceil(vry) + 1;
   for (let y = -ryi; y <= ryi; y++) {
     for (let x = -rxi; x <= rxi; x++) {
       const nx = x / vrx, ny = y / vry;
-      if (nx * nx + ny * ny > 1) continue;
+      let inVol = nx * nx + ny * ny <= 1;
+      if (!inVol && style === "cornrows" && key !== "n" && key !== "ne") {
+        // Soft lifted pompadour at the front — a wide, rounded mound, not a point.
+        let pox = 0, poy = -ry * 0.88, prx = rx * 0.78, pry = ry * 0.26;
+        if (key === "e") { pox = rx * 0.22; poy = -ry * 0.70; prx = rx * 0.62; pry = ry * 0.30; }
+        else if (key === "se") { pox = rx * 0.12; poy = -ry * 0.82; prx = rx * 0.70; pry = ry * 0.26; }
+        const px = (x - pox) / prx, py = (y - poy) / pry;
+        inVol = px * px + py * py <= 1;
+      }
+      if (!inVol) continue;
       const py = hy + y, px = hx + x;
       const onHead = (x / rx) * (x / rx) + (y / ry) * (y / ry) <= 1.02;
       const isCap = py <= hairline + 0.4;
@@ -1113,10 +1131,8 @@ function bangSpecs(style, key) {
     ];
   }
   if (style === "cornrows") {
-    return [
-      { dx: -3.6, dy: 0.0, len: 3.4, half: 1.15, ang: PI * 0.56 },
-      { dx: 3.6, dy: 0.0, len: 3.4, half: 1.15, ang: PI * 0.44 },
-    ];
+    // Clean slicked-back hairline — forehead fully visible, no bangs.
+    return [];
   }
   // ponytail and default: 3 pointed bangs with a clear gap + two frame strands
   return [
@@ -1382,73 +1398,94 @@ function drawAfroCloud(buf, g, cy, pal, key, opts = {}) {
   }
 }
 
-function drawCornrows(buf, g, cy, pal, key) {
-  // 3–4 distinct braided rows running front to back along the scalp.
+function drawSlickBack(buf, g, cy, pal, key, hatOn = false) {
+  // Anime slicked-back cut: clean hairline, lifted pompadour, strands sweeping back,
+  // and one or two pointed nape flicks. No bangs.
   const hy = cy + 0.4;
   const hx = g.cx;
-  const mid = pal.hair.mid || pal.hair;
-  const sh = pal.hair.sh || mid;
-  const hairline = hy - g.ry * 0.10;
-  const rows = 4;
-  for (let r = 0; r < rows; r++) {
-    const u = (r + 0.5) / rows;
-    const offset = (u - 0.5) * 1.72;
-    const beads = [];
-    if (key === "e") {
-      // Side: rows hug the scalp from the front hairline, over the crown, to the nape.
-      const k = 0.90 - r * 0.10;
-      for (let i = 0; i < 7; i++) {
-        const t = i / 6;
-        const a = -0.20 - t * (Math.PI - 0.42);
-        beads.push({
-          x: hx + Math.cos(a) * (g.rx * 0.95),
-          y: hy + Math.sin(a) * (g.ry * k),
-        });
-      }
-    } else if (key === "n" || key === "ne") {
-      const x = hx + offset * g.rx * 0.78 + (key === "ne" ? -1.8 : 0);
-      const top = hy - g.ry * 0.90;
-      const bot = hy + g.ry * 0.78;
-      for (let i = 0; i < 6; i++) {
-        const t = i / 5;
-        beads.push({ x, y: top + t * (bot - top) });
-      }
-    } else {
-      let x = hx + offset * g.rx * 0.78;
-      if (key === "se") x -= 1.2;
-      const top = hy - g.ry * 0.94;
-      const bot = hairline + 0.2;
-      for (let i = 0; i < 6; i++) {
-        const t = i / 5;
-        beads.push({
-          x: hx + (x - hx) * (1 - t * 0.12),
-          y: bot + t * (top - bot),
-        });
-      }
+  const hairline = hy - g.ry * 0.40;
+  const depth = hatOn ? 63 : 46;
+
+  function napeFlicks() {
+    const napeY = hy + g.ry * (key === "n" || key === "ne" ? 0.88 : 0.72);
+    if (key === "n" || key === "ne") {
+      stampSpike(buf, hx - 2.0, napeY, 4.6, 1.35, Math.PI * 0.58, pal.hair, "hair-lock", depth, false);
+      stampSpike(buf, hx + 2.4, napeY + 0.2, 5.0, 1.40, Math.PI * 0.44, pal.hair, "hair-lock", depth, false);
+    } else if (key === "e") {
+      stampSpike(buf, hx - g.rx * 0.52, napeY, 5.0, 1.35, Math.PI * 0.70, pal.hair, "hair-lock", depth, false);
+      stampSpike(buf, hx - g.rx * 0.28, napeY + 0.2, 3.8, 1.15, Math.PI * 0.56, pal.hair, "hair-lock", depth, false);
+    } else if (key === "se") {
+      stampSpike(buf, hx - g.rx * 0.60, napeY, 4.6, 1.30, Math.PI * 0.64, pal.hair, "hair-lock", depth, false);
     }
-    for (let i = 0; i < beads.length; i++) {
-      const b = beads[i];
-      const col = (i > beads.length * 0.55) ? sh : mid;
-      ellipse(buf, b.x, b.y, 1.45, 1.25, col, "hair", 46, { shade: "flat" });
-      // A darker edge on each bead so the four rows stay distinct.
-      const ink = mix(mid, rgb(32, 18, 16), 0.45);
-      plot(buf, Math.round(b.x + 1.3), Math.round(b.y), ink, "hair", 47);
+    // Front: no nape flicks over the face.
+  }
+
+  function comb(x0, y0, x1, y1, steps = 14) {
+    // In-cap comb lines so strands sweep back without sticking out of the silhouette.
+    const mid = pal.hair.mid || pal.hair;
+    const sh = pal.hair.sh || mid;
+    const hiCol = animeHairHi(pal);
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const x = x0 + (x1 - x0) * t;
+      const y = y0 + (y1 - y0) * t;
+      const col = t < 0.28 ? hiCol : (t > 0.78 ? sh : mid);
+      plotInside(buf, Math.round(x), Math.round(y), col, "hair-hi", 47);
     }
   }
-  // Short braid ends at the nape.
-  const napeY = hy + g.ry * (key === "n" || key === "ne" ? 0.92 : 0.70);
-  const tails = key === "e"
-    ? [{ x: hx - g.rx * 0.55, ang: Math.PI * 0.62 }]
-    : (key === "n" || key === "ne"
-      ? [{ x: hx - 3.2, ang: Math.PI * 0.58 }, { x: hx + 0.4, ang: Math.PI * 0.50 }, { x: hx + 3.6, ang: Math.PI * 0.42 }]
-      : [{ x: hx - 3.4, ang: Math.PI * 0.62 }, { x: hx + 3.4, ang: Math.PI * 0.38 }]);
-  if (key !== "n" && key !== "ne" && key !== "e") {
-    // Front: only a hint of the nape tails peeking behind the ears, not over the face.
+
+  if (hatOn) {
+    napeFlicks();
+    return;
   }
-  for (const t of tails) {
-    if (key !== "n" && key !== "ne" && key !== "e" && Math.abs((t.x - hx) / g.rx) < 0.35) continue;
-    stampSpike(buf, t.x, napeY, key === "n" || key === "ne" ? 6.4 : 4.6, 1.35, t.ang, pal.hair, "hair-tail", 46, false);
+
+  // Long sleek comb-line strands sweeping backward over the crown.
+  if (key === "e") {
+    const fx = hx + g.rx * 0.50;
+    const fy = hairline + 0.4;
+    comb(fx, fy, hx - g.rx * 0.15, hy - g.ry * 1.02);
+    comb(fx - 0.6, fy + 1.2, hx - g.rx * 0.40, hy - g.ry * 0.72);
+    comb(fx - 1.4, fy + 2.2, hx - g.rx * 0.55, hy - g.ry * 0.20);
+  } else if (key === "n" || key === "ne") {
+    const ox = key === "ne" ? -1.4 : 0;
+    comb(hx - 3.0 + ox, hy - g.ry * 0.92, hx - 2.4 + ox, hy + g.ry * 0.55);
+    comb(hx + 0.2 + ox, hy - g.ry * 1.00, hx + 0.4 + ox, hy + g.ry * 0.62);
+    comb(hx + 3.2 + ox, hy - g.ry * 0.92, hx + 2.8 + ox, hy + g.ry * 0.55);
+  } else {
+    const sx = key === "se" ? -1.0 : 0;
+    comb(hx - 3.6 + sx, hairline + 0.2, hx - 2.4 + sx, hy - g.ry * 0.98);
+    comb(hx - 0.2 + sx, hairline - 0.2, hx + 0.4 + sx, hy - g.ry * 1.06);
+    comb(hx + 3.4 + sx, hairline + 0.2, hx + 2.6 + sx, hy - g.ry * 0.98);
+    if (key === "se") comb(hx - 5.2, hairline + 1.6, hx - 6.4, hy - g.ry * 0.20);
   }
+
+  // Strong glossy highlight running front to back, never a near-white pixel.
+  const hi = animeHairHi(pal);
+  if (key === "e") {
+    for (let t = 0; t <= 1; t += 0.03) {
+      const a = -0.28 - t * 2.35;
+      const x = hx + Math.cos(a) * (g.rx * 0.70);
+      const y = hy - 1.0 + Math.sin(a) * (g.ry * 0.98);
+      plotInside(buf, Math.round(x), Math.round(y), hi, "hair-hi", 47);
+      plotInside(buf, Math.round(x), Math.round(y - 1), hi, "hair-hi", 47);
+    }
+  } else if (key === "n" || key === "ne") {
+    for (let t = 0; t <= 1; t += 0.05) {
+      const x = hx - 1.0 + (key === "ne" ? -1.2 : 0);
+      const y = hy - g.ry * (0.96 - t * 0.42);
+      plotInside(buf, Math.round(x), Math.round(y), hi, "hair-hi", 47);
+      plotInside(buf, Math.round(x + 1), Math.round(y), hi, "hair-hi", 47);
+    }
+  } else {
+    for (let t = 0; t <= 1; t += 0.03) {
+      const x = hx - g.rx * 0.12 + t * g.rx * 0.04 + (key === "se" ? -1.0 : 0);
+      const y = (hairline - 1.4) - t * g.ry * 0.80;
+      plotInside(buf, Math.round(x), Math.round(y), hi, "hair-hi", 47);
+      plotInside(buf, Math.round(x + 1), Math.round(y), hi, "hair-hi", 47);
+    }
+  }
+
+  napeFlicks();
 }
 
 function drawHairUnderHat(buf, av, key, pal, g, cy) {
@@ -1496,8 +1533,8 @@ function drawHair(buf, av, key, pal, upper, hatOn, bob = 0) {
     }
     if (style === "bobclips") drawBobJaw(buf, g, cy, pal, key);
     if (style === "afropuff") drawAfroCloud(buf, g, cy, pal, key);
-    if (style === "cornrows") drawCornrows(buf, g, cy, pal, key);
-    if (style !== "buzz" && style !== "afropuff") drawAngelRing(buf, g, cy, pal);
+    if (style === "cornrows") drawSlickBack(buf, g, cy, pal, key, false);
+    if (style !== "buzz" && style !== "afropuff" && style !== "cornrows") drawAngelRing(buf, g, cy, pal);
     if (style === "shaggy" || style === "bobclips") stampAhoge(buf, g, cy, pal, key);
   }
   if (!hatOn && av.hair === "bun") {
@@ -1668,6 +1705,10 @@ function drawHairPeeks(buf, av, key, pal, upper, bob = 0) {
   // Bangs and side strands belong in front of the hat brim, never on the crown.
   // Pigtails also exit from under the hat at the sides in every view.
   if (av.hair === "ponytail") drawPonyTail(buf, av, key, pal, upper, true, bob);
+  if (av.hair === "cornrows") {
+    const g = headGeom(key);
+    drawSlickBack(buf, g, g.cy + upper, pal, key, true);
+  }
   if (key === "n" || key === "ne") return;
   stampBangs(buf, av, key, pal, upper, true);
   const style = av.hair;
@@ -2892,7 +2933,7 @@ export const HAIRCUT_LOOKS = [
   { label: "Frosted tips", hair: "frosted", hairColor: "#4a2e18" },
   { label: "Buzz cut", hair: "buzz", hairColor: "#d4892a" },
   { label: "Swoop emo", hair: "swoop", hairColor: "#3d48c8" },
-  { label: "Cornrows", hair: "cornrows", hairColor: "#7a3a14" },
+  { label: "Slick back", hair: "cornrows", hairColor: "#7a3a14" },
   { label: "Shaggy skater", hair: "shaggy", hairColor: "#c45a28" },
   { label: "Pigtails", hair: "ponytail", hairColor: "#e0b01a" },
   { label: "Space buns", hair: "spacebuns", hairColor: "#9b4fd0" },
