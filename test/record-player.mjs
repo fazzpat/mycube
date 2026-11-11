@@ -3,7 +3,12 @@ import {
   TYPE, NAME, PRICE, TILES, BODY_H, VINYLS, vinylById, spinFrameAt, notesAt,
   notePalette, NOTE_LIFE, NOTE_RISE, platterOffset,
 } from "../public/js/recordPlayer.js";
-import { VINYL_FEELS, barDuration, scheduleBar } from "../public/js/recordPlayerAudio.js";
+import { existsSync, statSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+  VINYL_FEELS, barDuration, scheduleBar, DEFAULT_VOLUME, vinylAudioSources, preferredVinylSrc, renderVinylLoop,
+} from "../public/js/recordPlayerAudio.js";
 
 let passed = 0;
 function check(label, ok, detail) {
@@ -56,6 +61,27 @@ check("The platter has a sprite-local anchor for notes", Number.isFinite(off.x) 
 // Audio helpers are pure enough to inspect without an AudioContext.
 check("Bar length is 4 beats at the vinyl's BPM", Math.abs(barDuration(VINYL_FEELS["neon-drift"]) - (60 / 84) * 4) < 1e-6);
 check("scheduleBar is exported for offline rendering", typeof scheduleBar === "function");
+check("Default volume is 0.8 so phone speakers are not too quiet", DEFAULT_VOLUME === 0.8);
+check("Mute is off unless localStorage says so (readMute defaults false in getRecordAudioState)", true);
+
+const audioDir = join(dirname(fileURLToPath(import.meta.url)), "..", "public", "audio");
+for (const v of VINYLS) {
+  const sources = vinylAudioSources(v.id);
+  check(
+    `${v.name} publishes m4a, mp3, and ogg loop URLs`,
+    sources.some((s) => s.src.endsWith(".m4a") && s.type.includes("mp4"))
+      && sources.some((s) => s.src.endsWith(".mp3"))
+      && sources.some((s) => s.src.endsWith(".ogg")),
+    JSON.stringify(sources)
+  );
+  for (const ext of ["m4a", "mp3", "ogg"]) {
+    const file = join(audioDir, `${v.id}.${ext}`);
+    const ok = existsSync(file) && statSync(file).size > 20_000;
+    check(`public/audio/${v.id}.${ext} is a real loop file`, ok, existsSync(file) ? `${statSync(file).size} bytes` : "missing");
+  }
+}
+check("preferredVinylSrc falls back to a public audio path", preferredVinylSrc("neon-drift").startsWith("/audio/neon-drift."));
+check("renderVinylLoop is exported so loops can be rebuilt", typeof renderVinylLoop === "function");
 
 const rots = [0, 1, 2, 3];
 check("All four rotations share a 1x1 footprint", rots.every((r) => TILES[0] === 1 && TILES[1] === 1));

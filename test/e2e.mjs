@@ -645,6 +645,31 @@ async function runRecordPlayerTests(browser) {
       Boolean(aliceAudio?.listening && (aliceAudio?.vinyl === "neon-drift" || aliceAudio?.playing === "neon-drift") && noteCount >= 1),
       JSON.stringify({ aliceAudio, noteCount })
     );
+    const aliceEl = aliceAudio?.element || {};
+    const t0 = aliceEl.currentTime || 0;
+    await recA.waitForTimeout(500);
+    const aliceLater = await recA.evaluate(() => window.__recordAudioState());
+    const t1 = aliceLater?.element?.currentTime || 0;
+    check(
+      "The owner's HTML audio element is playing, unmuted, and advancing after a vinyl tap",
+      Boolean(aliceEl.present && aliceEl.paused === false && aliceEl.muted === false && aliceEl.volume > 0 && t1 > t0 && aliceAudio?.ctx === "running"),
+      JSON.stringify({ aliceEl, t0, t1, later: aliceLater, ctx: aliceAudio?.ctx })
+    );
+    const ownerGate = await recA.evaluate(() => {
+      const btn = document.querySelector('[data-testid="record-listen"]');
+      const hint = document.querySelector('[data-testid="record-listen-hint"]');
+      return {
+        listenHidden: !btn || btn.classList.contains("hidden"),
+        hintHidden: !hint || hint.classList.contains("hidden"),
+        volume: document.querySelector('[data-testid="record-volume"]')?.value,
+        muted: window.__recordAudioState()?.muted,
+      };
+    });
+    check(
+      "The owner who chose the vinyl is not blocked by TAP TO LISTEN, and volume is not muted or zero",
+      Boolean(ownerGate.listenHidden && ownerGate.hintHidden && ownerGate.muted === false && Number(ownerGate.volume) >= 50),
+      JSON.stringify(ownerGate)
+    );
     check(
       "A guest sees the same vinyl playing but does not auto-hear it",
       bobAudio?.listening === false,
@@ -726,11 +751,26 @@ async function runRecordPlayerTouchTests(browser) {
       notes: window.HouseRoom3D.recordNotes(id).length,
       audio: window.__recordAudioState(),
     }), recId);
+    const el0 = state.audio?.element || {};
+    const t0 = el0.currentTime || 0;
+    await page.waitForTimeout(500);
+    const later = await page.evaluate(() => window.__recordAudioState());
+    const t1 = later?.element?.currentTime || 0;
     check(
       "A phone tap on a vinyl starts that beat, spins the platter, and floats notes",
       Boolean(state.on && state.vinyl === "midnight-ramen" && state.notes >= 1 && state.audio?.listening && (state.audio.playing === "midnight-ramen" || state.audio.vinyl === "midnight-ramen")),
       JSON.stringify(state)
     );
+    check(
+      "After a phone vinyl tap the audio element is playing and the AudioContext is running",
+      Boolean(el0.present && el0.paused === false && el0.muted === false && el0.volume > 0 && t1 > t0 && (state.audio?.ctx === "running" || later?.ctx === "running")),
+      JSON.stringify({ el0, t0, t1, later, ctx: state.audio?.ctx })
+    );
+    const gate = await page.evaluate(() => {
+      const btn = document.querySelector('[data-testid="record-listen"]');
+      return { hidden: !btn || btn.classList.contains("hidden"), vol: window.__recordAudioState()?.volume, muted: window.__recordAudioState()?.muted };
+    });
+    check("The phone owner is not shown TAP TO LISTEN after picking a vinyl", Boolean(gate.hidden && gate.muted === false && gate.vol > 0), JSON.stringify(gate));
   } finally {
     await ctx.close();
   }

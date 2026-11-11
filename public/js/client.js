@@ -11,7 +11,7 @@ import {
   TYPE as RECORD_TYPE, VINYLS as RECORD_VINYLS,
   mountRecordPicker, openRecordPicker, closeRecordPicker, isRecordPickerOpen,
   paintRecordPicker, paintListenHint, syncRecordAudio, setRecordVolume, setRecordMuted,
-  getRecordAudioState, unlockRecordAudio, vinylById,
+  getRecordAudioState, unlockRecordAudio, playRecordVinyl, vinylById,
 } from "./recordPlayer.js";
 
 (() => {
@@ -37,10 +37,10 @@ import {
   installChessLayout(window.HouseIso);
   mountRecordPicker({
     onSelect(id, vinyl) {
-      // resume() must be called inside the tap, before any await, or iOS stays silent.
-      const unlocked = unlockRecordAudio();
+      // play() is also invoked in the picker pointer handler; call it here too
+      // so a programmatic select still starts audio in the same turn.
+      playRecordVinyl(vinyl);
       socket.emit("selectRecordPlayer", { id, vinyl });
-      Promise.resolve(unlocked).then(() => syncRecordAudio({ on: true, vinyl }, { userGesture: true }));
     },
     onStop(id) {
       socket.emit("selectRecordPlayer", { id, stop: true });
@@ -48,11 +48,9 @@ import {
     },
     onListen(id) {
       const rec = state.room?.recordPlayers?.[id];
-      const unlocked = unlockRecordAudio();
-      Promise.resolve(unlocked).then(() => {
-        syncRecordAudio(rec, { userGesture: true });
-        paintRecordPicker(rec);
-      });
+      if (rec?.on && rec.vinyl) playRecordVinyl(rec.vinyl);
+      else unlockRecordAudio();
+      paintRecordPicker(rec);
     },
     onVolume: setRecordVolume,
     onMute: setRecordMuted,
@@ -3831,10 +3829,13 @@ import {
   window.__openRecordPicker = (id) => openRecordPicker(id, state.room?.recordPlayers?.[id]);
   window.__closeRecordPicker = () => closeRecordPicker();
   window.__recordAudioState = () => getRecordAudioState();
-  window.__listenToRecord = async (id) => {
-    await unlockRecordAudio();
-    return syncRecordAudio(state.room?.recordPlayers?.[id], { userGesture: true });
+  window.__listenToRecord = (id) => {
+    const rec = state.room?.recordPlayers?.[id];
+    if (rec?.on && rec.vinyl) return playRecordVinyl(rec.vinyl);
+    unlockRecordAudio();
+    return syncRecordAudio(rec, { userGesture: true });
   };
+  window.__playRecordVinyl = (vinyl) => playRecordVinyl(vinyl);
   window.__setRecordVolume = (v) => setRecordVolume(v);
   window.__setRecordMuted = (m) => setRecordMuted(m);
   window.__toggleCam = () => { const m = state.room3d?.toggleCamMode(); syncCamToggle(); return m; };

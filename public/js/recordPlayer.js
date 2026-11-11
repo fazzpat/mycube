@@ -1,13 +1,17 @@
 /* Standing 1-tile record table: spinning vinyl, floating notes, arcade picker. */
 import {
   VINYL_FEELS,
+  DEFAULT_VOLUME,
   unlockRecordAudio,
+  playRecordVinyl,
   isRecordListening,
   getRecordAudioState,
   setRecordVolume,
   setRecordMuted,
   syncRecordAudio,
   stopRecordAudio,
+  installRecordAudioGestures,
+  preloadRecordAudio,
 } from "./recordPlayerAudio.js";
 
 export const TYPE = "recordplayer";
@@ -324,18 +328,49 @@ export function mountRecordPicker(h = {}) {
     </div>
     <div class="record-picker-vol">
       <button type="button" class="record-btn record-mute" data-testid="record-mute" aria-pressed="false">MUTE</button>
-      <input type="range" min="0" max="100" value="55" data-testid="record-volume" class="record-volume" aria-label="Volume" />
+      <input type="range" min="0" max="100" value="80" data-testid="record-volume" class="record-volume" aria-label="Volume" />
     </div>
     <button type="button" class="record-btn record-close" data-testid="record-close">CLOSE</button>
   </div>`);
   const hint = el(`<button type="button" id="record-listen-hint" class="record-listen-hint hidden" data-testid="record-listen-hint">♪ TAP TO LISTEN</button>`);
   host.appendChild(pane);
   host.appendChild(hint);
+  installRecordAudioGestures();
+  let lastVinylAt = 0;
+  const pickVinyl = (id) => {
+    if (!id) return;
+    lastVinylAt = Date.now();
+    // play() first, in this tap, before any socket/await work.
+    playRecordVinyl(id);
+    hooks.onSelect?.(openId, id);
+  };
+  const replayVinyl = (id) => { if (id) playRecordVinyl(id); };
   pane.querySelectorAll("[data-vinyl]").forEach((b) => {
-    b.addEventListener("click", () => hooks.onSelect?.(openId, b.dataset.vinyl));
+    b.addEventListener("pointerdown", (e) => {
+      if (e.button && e.button !== 0) return;
+      pickVinyl(b.dataset.vinyl);
+    });
+    b.addEventListener("touchend", (e) => {
+      replayVinyl(b.dataset.vinyl);
+    }, { passive: true });
+    b.addEventListener("click", () => {
+      if (Date.now() - lastVinylAt < 450) {
+        replayVinyl(b.dataset.vinyl);
+        return;
+      }
+      pickVinyl(b.dataset.vinyl);
+    });
   });
   pane.querySelector("[data-testid=record-stop]")?.addEventListener("click", () => hooks.onStop?.(openId));
-  pane.querySelector("[data-testid=record-listen]")?.addEventListener("click", () => hooks.onListen?.(openId));
+  const listenNow = (id) => {
+    const rec = hooks.getState?.(id || openId);
+    if (rec?.on && rec.vinyl) playRecordVinyl(rec.vinyl);
+    else unlockRecordAudio();
+    hooks.onListen?.(id || openId);
+  };
+  pane.querySelector("[data-testid=record-listen]")?.addEventListener("pointerdown", () => listenNow(openId));
+  pane.querySelector("[data-testid=record-listen]")?.addEventListener("touchend", () => listenNow(openId), { passive: true });
+  pane.querySelector("[data-testid=record-listen]")?.addEventListener("click", () => listenNow(openId));
   pane.querySelector("[data-testid=record-close]")?.addEventListener("click", () => closeRecordPicker());
   pane.querySelector("[data-testid=record-mute]")?.addEventListener("click", () => {
     const next = !getRecordAudioState().muted;
@@ -346,7 +381,9 @@ export function mountRecordPicker(h = {}) {
     hooks.onVolume?.(Number(e.target.value) / 100);
     paintRecordPicker();
   });
-  hint.addEventListener("click", () => hooks.onListen?.(hint.dataset.recordId));
+  hint.addEventListener("pointerdown", () => listenNow(hint.dataset.recordId));
+  hint.addEventListener("touchend", () => listenNow(hint.dataset.recordId), { passive: true });
+  hint.addEventListener("click", () => listenNow(hint.dataset.recordId));
 }
 
 export function openRecordPicker(id, rec) {
@@ -356,6 +393,7 @@ export function openRecordPicker(id, rec) {
   pane.dataset.recordId = id;
   pane.classList.remove("hidden");
   paintRecordPicker(rec);
+  try { preloadRecordAudio(); } catch {}
   return true;
 }
 
@@ -413,10 +451,12 @@ export function paintListenHint(playingId, clientRect) {
 
 export {
   unlockRecordAudio,
+  playRecordVinyl,
   isRecordListening,
   getRecordAudioState,
   setRecordVolume,
   setRecordMuted,
   syncRecordAudio,
   stopRecordAudio,
+  DEFAULT_VOLUME,
 };

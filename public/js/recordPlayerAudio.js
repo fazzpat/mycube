@@ -309,180 +309,396 @@ export function scheduleBar(ctx, dest, noise, feel, when, barIndex, gain = 1) {
 function connectMaster(ctx, feel) {
   const filter = ctx.createBiquadFilter();
   filter.type = "lowpass";
-  filter.frequency.value = feel?.cutoff || 2400;
-  filter.Q.value = 0.7;
+  filter.frequency.value = (feel?.cutoff || 2400) + 400;
+  filter.Q.value = 0.65;
+  // Presence / mid boost — lofi low-pass is otherwise too quiet on phone speakers.
+  const mid = ctx.createBiquadFilter();
+  mid.type = "peaking";
+  mid.frequency.value = 2200;
+  mid.Q.value = 0.85;
+  mid.gain.value = 7;
+  const highmid = ctx.createBiquadFilter();
+  highmid.type = "peaking";
+  highmid.frequency.value = 3600;
+  highmid.Q.value = 0.7;
+  highmid.gain.value = 4;
   const shaper = ctx.createWaveShaper();
   const curve = new Float32Array(256);
   for (let i = 0; i < 256; i++) {
     const x = (i / 128) - 1;
-    curve[i] = Math.tanh(x * 1.4);
+    curve[i] = Math.tanh(x * 1.35);
   }
   shaper.curve = curve;
   const gain = ctx.createGain();
   gain.gain.value = 0.0001;
-  filter.connect(shaper);
+  filter.connect(mid);
+  mid.connect(highmid);
+  highmid.connect(shaper);
   shaper.connect(gain);
-  return { filter, gain, input: filter };
+  return { filter, mid, highmid, gain, input: filter };
 }
+
+function seamlessCrossfade(buffer, fadeSec = 0.025) {
+  const n = Math.max(2, Math.floor(buffer.sampleRate * fadeSec));
+  for (let c = 0; c < buffer.numberOfChannels; c++) {
+    const d = buffer.getChannelData(c);
+    const len = d.length;
+    if (len <= n * 2) continue;
+    for (let i = 0; i < n; i++) {
+      const t = i / n;
+      const start = d[i];
+      const end = d[len - n + i];
+      d[i] = end * (1 - t) + start * t;
+      d[len - n + i] = end * (1 - t);
+    }
+  }
+  return buffer;
+}
+
+export const LOOP_BARS = 16;
+
+/** Render an exact number of bars with no end fade, for a looping audio file. */
+export async function renderVinylLoop(vinylId, bars = LOOP_BARS) {
+  const feel = VINYL_FEELS[vinylId];
+  if (!feel || typeof OfflineAudioContext === "undefined") return null;
+  const sr = 44100;
+  const bar = barDuration(feel);
+  const dur = bar * Math.max(4, bars);
+  const ctx = new OfflineAudioContext(2, Math.ceil(sr * dur), sr);
+  const noise = makeNoiseBuffer(ctx, 1.5);
+  const master = connectMaster(ctx, feel);
+  master.gain.gain.setValueAtTime(0.0001, 0);
+  master.gain.gain.exponentialRampToValueAtTime(0.85, 0.01);
+  master.gain.connect(ctx.destination);
+  for (let i = 0; i < bars; i++) {
+    scheduleBar(ctx, master.input, noise, feel, i * bar, i, 1);
+  }
+  const rendered = await ctx.startRendering();
+  return seamlessCrossfade(rendered, 0.025);
+}
+
+export const DEFAULT_VOLUME = 0.8;
 
 const STORE_VOL = "mycube.record.volume";
 const STORE_MUTE = "mycube.record.muted";
 
+export function vinylAudioSources(id) {
+  return [
+    { src: `/audio/${id}.m4a`, type: "audio/mp4" },
+    { src: `/audio/${id}.mp3`, type: "audio/mpeg" },
+    { src: `/audio/${id}.ogg`, type: "audio/ogg" },
+  ];
+}
+
+export function preferredVinylSrc(id) {
+  if (typeof document === "undefined") return `/audio/${id}.mp3`;
+  const probe = document.createElement("audio");
+  const sources = vinylAudioSources(id);
+  for (const s of sources) {
+    const rank = probe.canPlayType?.(s.type) || "";
+    if (rank === "probably" || rank === "maybe") return s.src;
+  }
+  return sources[0].src;
+}
+
 function readVol() {
   try {
+    if (typeof localStorage === "undefined") return DEFAULT_VOLUME;
     const raw = localStorage.getItem(STORE_VOL);
-    if (raw == null || raw === "") return 0.55;
+    if (raw == null || raw === "") return DEFAULT_VOLUME;
     const n = Number(raw);
-    if (Number.isFinite(n)) return Math.min(1, Math.max(0, n));
+    // 0 was accidentally persisted by an older bug; mute is the real off switch.
+    if (!Number.isFinite(n) || n <= 0) return DEFAULT_VOLUME;
+    return Math.min(1, n);
   } catch {}
-  return 0.55;
+  return DEFAULT_VOLUME;
 }
 function readMute() {
-  try { return localStorage.getItem(STORE_MUTE) === "1"; } catch { return false; }
+  try {
+    if (typeof localStorage === "undefined") return false;
+    return localStorage.getItem(STORE_MUTE) === "1";
+  } catch { return false; }
 }
 
 let live = null;
+
+function setPlaybackSession() {
+  try {
+    const session = globalThis.navigator?.audioSession;
+    if (session && session.type !== "playback") session.type = "playback";
+  } catch {}
+}
+
+function ensureAudioEl() {
+  if (typeof document === "undefined") return null;
+  let el = document.getElementById("record-audio");
+  if (!el) {
+    el = document.createElement("audio");
+    el.id = "record-audio";
+    el.setAttribute("data-testid", "record-audio");
+    el.loop = true;
+    el.preload = "auto";
+    el.playsInline = true;
+    el.setAttribute("playsinline", "");
+    el.setAttribute("webkit-playsinline", "");
+    el.crossOrigin = "anonymous";
+    (document.body || document.documentElement).appendChild(el);
+  }
+  return el;
+}
+
+function attachSources(el, vinylId) {
+  if (!el || !vinylId) return;
+  const src = preferredVinylSrc(vinylId);
+  if (el.dataset.vinyl === vinylId && el.getAttribute("src") === src && !el.error) return;
+  el.pause();
+  while (el.firstChild) el.removeChild(el.firstChild);
+  for (const s of vinylAudioSources(vinylId)) {
+    const source = document.createElement("source");
+    source.src = s.src;
+    source.type = s.type;
+    el.appendChild(source);
+  }
+  el.src = src;
+  el.dataset.vinyl = vinylId;
+  el.loop = true;
+  el.load();
+}
+
+function applyElementGain() {
+  if (!live?.audio) return;
+  live.audio.muted = Boolean(live.muted);
+  live.audio.volume = live.muted ? 0 : Math.max(0, Math.min(1, live.volume));
+}
 
 function ensureLive() {
   if (live) return live;
   const Ctx = (typeof globalThis !== "undefined" && (globalThis.AudioContext || globalThis.webkitAudioContext))
     || (typeof window !== "undefined" && (window.AudioContext || window.webkitAudioContext))
     || undefined;
-  if (!Ctx) return null;
-  const ctx = new Ctx();
-  const noise = makeNoiseBuffer(ctx, 1.5);
-  const dummyFeel = VINYL_FEELS["neon-drift"];
-  const master = connectMaster(ctx, dummyFeel);
-  master.gain.connect(ctx.destination);
+  const ctx = Ctx ? new Ctx() : null;
+  const audio = ensureAudioEl();
   live = {
     ctx,
-    noise,
-    master,
+    audio,
     playing: null,
-    nextBar: 0,
-    barIndex: 0,
-    timer: null,
+    wanted: null,
     volume: readVol(),
     muted: readMute(),
     listening: false,
+    primed: false,
   };
-  applyLiveGain(0);
+  applyElementGain();
   return live;
 }
 
-function applyLiveGain(target, at = 0.05) {
-  if (!live) return;
-  const g = live.muted || !live.playing ? 0.0001 : Math.max(0.0001, live.volume * 0.9);
-  const t = live.ctx.currentTime + at;
-  live.master.gain.gain.cancelScheduledValues(live.ctx.currentTime);
-  live.master.gain.gain.setValueAtTime(Math.max(0.0001, live.master.gain.gain.value || 0.0001), live.ctx.currentTime);
-  live.master.gain.gain.exponentialRampToValueAtTime(target == null ? g : Math.max(0.0001, target), t);
+/** Start (or switch to) a vinyl. play() is called in this turn — do not await first. */
+export function playRecordVinyl(vinylId) {
+  setPlaybackSession();
+  const deck = ensureLive();
+  if (!deck) return getRecordAudioState();
+  deck.listening = true;
+  deck.wanted = vinylId || deck.wanted;
+  if (deck.ctx && (deck.ctx.state === "suspended" || deck.ctx.state === "interrupted")) {
+    try { deck.ctx.resume(); } catch {}
+  }
+  if (!vinylId || !VINYL_FEELS[vinylId] || !deck.audio) return getRecordAudioState();
+  attachSources(deck.audio, vinylId);
+  applyElementGain();
+  let playResult = null;
+  try { playResult = deck.audio.play(); } catch {}
+  deck.playing = vinylId;
+  if (playResult && typeof playResult.then === "function") {
+    playResult.then(() => { deck.primed = true; }).catch(() => {});
+  }
+  return playResult && typeof playResult.then === "function"
+    ? playResult.then(() => getRecordAudioState()).catch(() => getRecordAudioState())
+    : getRecordAudioState();
 }
 
-function schedulerTick() {
-  if (!live?.playing) return;
-  const feel = VINYL_FEELS[live.playing];
-  if (!feel) return;
-  const bar = barDuration(feel);
-  const ahead = live.ctx.currentTime + 0.25;
-  while (live.nextBar < ahead) {
-    scheduleBar(live.ctx, live.master.input, live.noise, feel, live.nextBar, live.barIndex, 1);
-    live.nextBar += bar;
-    live.barIndex += 1;
+function resumeContext(deck) {
+  if (deck?.ctx && (deck.ctx.state === "suspended" || deck.ctx.state === "interrupted")) {
+    try { deck.ctx.resume(); } catch {}
   }
+}
+
+/** Prime the media channel on a gesture without opting the guest into listening. */
+export function primeRecordAudio() {
+  setPlaybackSession();
+  const deck = ensureLive();
+  if (!deck) return Promise.resolve(false);
+  resumeContext(deck);
+  const el = deck.audio;
+  if (el && deck.listening && deck.wanted && VINYL_FEELS[deck.wanted]) {
+    applyElementGain();
+    if (el.paused) {
+      try { el.play(); } catch {}
+    }
+    return Promise.resolve(true);
+  }
+  if (el && !deck.primed && !deck.wanted) {
+    if (!el.dataset.vinyl) attachSources(el, "neon-drift");
+    const wasMuted = el.muted;
+    el.muted = true;
+    try {
+      const p = el.play();
+      if (p && typeof p.then === "function") {
+        p.then(() => {
+          deck.primed = true;
+          // Don't clobber a vinyl that started after this prime began.
+          if (!deck.wanted && !deck.listening) {
+            try { el.pause(); el.currentTime = 0; } catch {}
+          }
+          el.muted = deck.muted || wasMuted;
+          applyElementGain();
+        }).catch(() => { el.muted = wasMuted; });
+      }
+    } catch { el.muted = wasMuted; }
+  }
+  return Promise.resolve(Boolean(deck.ctx ? deck.ctx.state !== "suspended" : true));
 }
 
 export function unlockRecordAudio() {
-  // Call resume() in this turn so iOS Safari treats it as a user gesture.
+  // resume() and play() must run in this turn so iOS treats them as a gesture.
+  setPlaybackSession();
   const deck = ensureLive();
   if (!deck) return Promise.resolve(false);
   deck.listening = true;
-  if (deck.ctx.state === "suspended" || deck.ctx.state === "interrupted") {
-    try {
-      const p = deck.ctx.resume();
-      return Promise.resolve(p).then(() => deck.ctx.state === "running" || deck.ctx.state === "interrupted").catch(() => false);
-    } catch {
-      return Promise.resolve(false);
+  resumeContext(deck);
+  const el = deck.audio;
+  if (el) {
+    applyElementGain();
+    if (deck.wanted && VINYL_FEELS[deck.wanted]) {
+      attachSources(el, deck.wanted);
+      try { el.play(); } catch {}
+      deck.playing = deck.wanted;
+    } else {
+      primeRecordAudio();
     }
   }
-  return Promise.resolve(deck.ctx.state === "running" || deck.ctx.state === "interrupted");
+  const running = !deck.ctx || deck.ctx.state === "running" || deck.ctx.state === "interrupted";
+  return Promise.resolve(Boolean(deck.listening && running));
+}
+
+export function recoverRecordAudio() {
+  if (typeof document !== "undefined" && document.visibilityState && document.visibilityState !== "visible") return;
+  if (!live?.listening) return;
+  setPlaybackSession();
+  if (live.ctx && (live.ctx.state === "suspended" || live.ctx.state === "interrupted")) {
+    try { live.ctx.resume(); } catch {}
+  }
+  if (live.wanted && live.audio && live.audio.paused && !live.muted) {
+    try { live.audio.play(); } catch {}
+  }
+}
+
+export function installRecordAudioGestures() {
+  if (typeof document === "undefined" || installRecordAudioGestures.installed) return;
+  installRecordAudioGestures.installed = true;
+  const kick = () => { primeRecordAudio(); };
+  for (const ev of ["pointerdown", "touchend", "click", "keydown"]) {
+    document.addEventListener(ev, kick, { capture: true, passive: true });
+  }
+  document.addEventListener("visibilitychange", recoverRecordAudio);
+  window.addEventListener("pageshow", recoverRecordAudio);
+  window.addEventListener("focus", recoverRecordAudio);
+}
+
+export function preloadRecordAudio() {
+  if (typeof document === "undefined") return;
+  for (const id of Object.keys(VINYL_FEELS)) {
+    const link = document.createElement("link");
+    link.rel = "preload";
+    link.as = "audio";
+    link.href = preferredVinylSrc(id);
+    document.head.appendChild(link);
+  }
 }
 
 export function isRecordListening() {
-  return Boolean(live?.listening && live.ctx && live.ctx.state !== "closed");
+  return Boolean(live?.listening);
+}
+
+function elementSnapshot() {
+  const el = live?.audio;
+  if (!el) return { present: false, paused: true, muted: false, volume: 0, currentTime: 0, ended: false };
+  return {
+    present: true,
+    paused: Boolean(el.paused),
+    muted: Boolean(el.muted),
+    volume: Number(el.volume),
+    currentTime: Number(el.currentTime) || 0,
+    ended: Boolean(el.ended),
+    src: el.currentSrc || el.src || el.getAttribute("src") || "",
+    vinyl: el.dataset.vinyl || null,
+    loop: Boolean(el.loop),
+    readyState: el.readyState,
+  };
 }
 
 export function getRecordAudioState() {
   return {
     listening: isRecordListening(),
-    playing: live?.playing || null,
-    vinyl: live?.playing || null,
+    playing: live?.playing || live?.wanted || null,
+    vinyl: live?.playing || live?.wanted || null,
     volume: live ? live.volume : readVol(),
     muted: live ? live.muted : readMute(),
     ctx: live?.ctx?.state || "none",
+    element: elementSnapshot(),
   };
 }
 
 export function setRecordVolume(v) {
   const raw = Number(v);
   const n = Number.isFinite(raw) ? Math.min(1, Math.max(0, raw)) : (live?.volume ?? readVol());
-  try { localStorage.setItem(STORE_VOL, String(n)); } catch {}
+  try { if (typeof localStorage !== "undefined") localStorage.setItem(STORE_VOL, String(n)); } catch {}
   if (live) {
     live.volume = n;
     if (n <= 0.001) live.muted = false;
-    applyLiveGain();
+    applyElementGain();
   }
   return n;
 }
 
 export function setRecordMuted(on) {
   const muted = Boolean(on);
-  try { localStorage.setItem(STORE_MUTE, muted ? "1" : "0"); } catch {}
+  try { if (typeof localStorage !== "undefined") localStorage.setItem(STORE_MUTE, muted ? "1" : "0"); } catch {}
   if (live) {
     live.muted = muted;
-    applyLiveGain();
+    applyElementGain();
+    if (!muted && live.wanted && live.audio?.paused) {
+      try { live.audio.play(); } catch {}
+    }
   }
   return muted;
 }
 
-export async function syncRecordAudio(rec, { userGesture = false } = {}) {
+export function syncRecordAudio(rec, { userGesture = false } = {}) {
   const on = Boolean(rec?.on && rec?.vinyl && VINYL_FEELS[rec.vinyl]);
-  if (userGesture) {
-    const ok = await unlockRecordAudio();
-    if (!ok) return getRecordAudioState();
-  }
+  if (userGesture) unlockRecordAudio();
   const deck = live;
   if (!deck || !deck.listening) return getRecordAudioState();
   if (!on) {
-    if (deck.playing) {
-      applyLiveGain(0.0001, 0.12);
-      deck.playing = null;
-      if (deck.timer) { clearInterval(deck.timer); deck.timer = null; }
+    deck.playing = null;
+    deck.wanted = null;
+    if (deck.audio && !deck.audio.paused) {
+      try { deck.audio.pause(); } catch {}
     }
     return getRecordAudioState();
   }
-  if (deck.playing === rec.vinyl && deck.timer) return getRecordAudioState();
-  // Switch or start.
-  if (deck.ctx.state === "suspended" || deck.ctx.state === "interrupted") {
-    if (!userGesture) return getRecordAudioState();
-    try { await deck.ctx.resume(); } catch { return getRecordAudioState(); }
-  }
-  deck.master.filter.frequency.value = VINYL_FEELS[rec.vinyl].cutoff;
-  deck.playing = rec.vinyl;
-  deck.barIndex = 0;
-  deck.nextBar = deck.ctx.currentTime + 0.06;
-  if (deck.timer) clearInterval(deck.timer);
-  schedulerTick();
-  deck.timer = setInterval(schedulerTick, 80);
-  applyLiveGain(null, 0.08);
-  return getRecordAudioState();
+  if (userGesture) return playRecordVinyl(rec.vinyl);
+  // Already unlocked: keep the same track going, or switch if the room changed vinyls.
+  if (deck.playing === rec.vinyl && deck.audio && !deck.audio.paused) return getRecordAudioState();
+  return playRecordVinyl(rec.vinyl);
 }
 
-export async function stopRecordAudio({ fade = true } = {}) {
+export function stopRecordAudio() {
   if (!live) return;
-  if (fade) applyLiveGain(0.0001, 0.1);
   live.playing = null;
-  if (live.timer) { clearInterval(live.timer); live.timer = null; }
+  live.wanted = null;
+  if (live.audio && !live.audio.paused) {
+    try { live.audio.pause(); } catch {}
+  }
 }
 
 export async function renderVinylSample(vinylId, seconds = 15) {
