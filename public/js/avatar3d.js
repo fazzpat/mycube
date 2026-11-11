@@ -904,14 +904,38 @@ function hairClumps(style, key) {
   return clumps;
 }
 
+function drawHairUnderHat(buf, av, key, pal, g, cy) {
+  // Tight scalp only — nothing tall enough to poke through the crown of the hat.
+  ellipse(buf, g.cx, cy - 1.8, g.rx * 0.9, g.ry * 0.52, pal.hair, "hair-cap", 44, { shade: "flat" });
+  const style = av.hair;
+  const showSides = ["shaggy", "long", "straightbangs", "bobclips", "swoop", "ponytail"].includes(style);
+  if (showSides) {
+    for (const c of hairClumps(style, key)) {
+      if (c.fringe) continue;
+      const side = Math.abs(Math.cos(c.ang)) > 0.72 && c.dy > -3.2;
+      if (!side) continue;
+      stampSpike(buf, g.cx + c.dx, cy + c.dy, Math.min(c.len, 5.2), c.half, c.ang, pal.hair, "hair", 45, Boolean(c.rounded));
+    }
+  }
+  if (["straightbangs", "swoop", "bobclips", "shaggy", "long"].includes(style) && key !== "n" && key !== "ne") {
+    for (const c of hairClumps(style, key)) {
+      if (!c.fringe) continue;
+      stampSpike(buf, g.cx + c.dx, cy + c.dy, c.len, c.half, c.ang, pal.hair, "hair", 45, Boolean(c.rounded));
+    }
+  }
+}
+
 function drawHair(buf, av, key, pal, upper, hatOn) {
   const g = headGeom(key);
   const cy = g.cy + upper;
-  const style = hatOn && av.hair !== "long" && av.hair !== "straightbangs" && av.hair !== "ponytail" ? "short" : av.hair;
-  const special = style === "ponytail" || style === "spacebuns" || style === "afropuff";
+  if (hatOn) {
+    drawHairUnderHat(buf, av, key, pal, g, cy);
+  } else {
+  const style = av.hair;
   // Tight scalp for special styles so buns/puff can sit separately on top. No connecting cap.
   if (style === "spacebuns") {
-    ellipse(buf, g.cx, cy - 1.2, g.rx * 0.78, g.ry * 0.42, pal.hair, "hair-cap", 44, { shade: "flat" });
+    // Scalp only — stays above the forehead so no hair color lands on the face.
+    ellipse(buf, g.cx, cy - 6.6, g.rx * 0.8, g.ry * 0.3, pal.hair, "hair-cap", 44, { shade: "flat" });
   } else if (style === "afropuff") {
     ellipse(buf, g.cx, cy - 2.0, g.rx * 0.7, g.ry * 0.36, pal.hair, "hair-cap", 44, { shade: "flat" });
   } else {
@@ -921,7 +945,8 @@ function drawHair(buf, av, key, pal, upper, hatOn) {
       stampSpike(buf, g.cx + c.dx, cy + c.dy, c.len, c.half, c.ang, pal.hair, "hair", 45, Boolean(c.rounded));
     }
   }
-  if (av.hair === "bun") {
+  } // end no-hat cap/clumps
+  if (!hatOn && av.hair === "bun") {
     const bx = key === "e" ? 4 : 11;
     stampSpike(buf, g.cx - (key === "e" ? 0 : bx), cy + 2, 3.2, 3.2, Math.PI, pal.hair, "hair-bun", 46, true);
     stampSpike(buf, g.cx + bx, cy + 2, 3.2, 3.2, 0, pal.hair, "hair-bun", 46, true);
@@ -935,7 +960,7 @@ function drawHair(buf, av, key, pal, upper, hatOn) {
       stampSpike(buf, g.cx + lx, cy + 3, 18, 3.3, Math.PI * 0.45, pal.hair, "hair-lock", 43, true);
     }
   }
-  if (av.hair === "frosted") {
+  if (!hatOn && av.hair === "frosted") {
     const tip = { hi: rgb(255, 248, 220), mid: rgb(243, 229, 194), sh: rgb(210, 190, 150) };
     for (const c of hairClumps("frosted", key)) {
       const tx = g.cx + c.dx + Math.cos(c.ang) * (c.len * 0.62);
@@ -943,27 +968,30 @@ function drawHair(buf, av, key, pal, upper, hatOn) {
       stampSpike(buf, tx, ty, c.len * 0.42, Math.max(1.4, c.half * 0.7), c.ang, tip, "hair-tip", 46, false);
     }
   }
-  if (av.hair === "spacebuns") {
-    const rad = 3.2;
-    const by = cy - 10.2;
+  if (!hatOn && av.hair === "spacebuns") {
+    const rad = 2.8;
+    // Perch on the crown, fully above the forehead. Keep a 1px margin at the top for ink.
+    const skullTop = cy - g.ry;
+    const by = Math.max(rad + 1.2, skullTop - rad + 1.8);
     function bun(bx, by0, kind) {
-      // Own shading per bun, then a dark ring so they read as separate balls.
       egg(buf, bx, by0, rad, rad, pal.hair, kind, 47, { widen: 0 });
       const ink = mix(pal.hair.mid || pal.hair, rgb(32, 18, 16), 0.55);
       for (let a = 0; a < 16; a++) {
         const ang = (a / 16) * Math.PI * 2;
-        plot(buf, Math.round(bx + Math.cos(ang) * rad), Math.round(by0 + Math.sin(ang) * rad), ink, "hair-bun-ink", 48);
+        plot(buf, Math.round(bx + Math.cos(ang) * (rad + 0.2)), Math.round(by0 + Math.sin(ang) * (rad + 0.2)), ink, "hair-bun-ink", 48);
       }
     }
     if (key === "e") {
-      bun(g.cx + 1.0, by, "hair-bun");
-      bun(g.cx - 6.4, by + 1.4, "hair-bun-far");
+      bun(g.cx + 2.4, by + 0.3, "hair-bun");
+      bun(g.cx - 5.6, by, "hair-bun-far");
     } else {
-      const sep = (key === "se" || key === "ne") ? 6.4 : 6.8;
+      const sep = key === "se" || key === "ne" ? 7.2 : 8.0;
       bun(g.cx - sep, by, "hair-bun");
       bun(g.cx + sep, by, "hair-bun");
-      // Part and scalp between the buns, and a sliver of head below each bun.
-      rect(buf, g.cx - 1.0, cy - 8, g.cx + 1.0, cy - 1, pal.skin, "part", 49);
+      // Skin part only on the scalp between the buns, never down the face.
+      const partTop = Math.max(skullTop + 1, by + 1);
+      const partBot = cy - 5.5;
+      if (partBot > partTop) rect(buf, g.cx - 1.0, partTop, g.cx + 1.0, partBot, pal.skin, "part", 49);
     }
   }
   if (av.hair === "ponytail") {
@@ -979,12 +1007,28 @@ function drawHair(buf, av, key, pal, upper, hatOn) {
     } else {
       tx = g.cx + 4.5; ty = cy - 9.2; ang = -Math.PI / 2 + 0.62;
     }
+    if (hatOn) {
+      // Exit from under the back of the hat, never up through the crown.
+      if (key === "n" || key === "ne") {
+        ty = cy - 1.6;
+        ang = Math.PI * 0.62;
+      } else if (key === "e") {
+        ty += 2.4;
+        ang = Math.PI * 0.82;
+      } else if (key === "se") {
+        ty += 2.2;
+        ang = Math.PI * 0.72;
+      } else {
+        ty = cy - 3.0;
+        ang = -Math.PI / 2 + 1.15;
+      }
+    }
     stampSpike(buf, tx, ty, 13, 3.1, ang, pal.hair, "hair-tail", 46, true);
     stampSpike(buf, tx, ty, 10, 2.2, ang + 0.22, pal.hair, "hair-tail", 46, true);
     ellipse(buf, tx, ty, 2.5, 2.1, tie, "hair-tie", 48, { shade: "flat" });
     plot(buf, Math.round(tx), Math.round(ty) - 1, tieHi, "hair-tie", 49);
   }
-  if (av.hair === "afropuff") {
+  if (!hatOn && av.hair === "afropuff") {
     const px = g.cx + (key === "e" ? 1 : 0);
     const py = cy - 7.2;
     const prx = key === "e" ? 8.2 : 9.6;
@@ -1026,37 +1070,72 @@ function drawHair(buf, av, key, pal, upper, hatOn) {
       clip(g.cx + 7, cy + 1, cyan);
     }
   }
-  if (av.hair === "buzz") {
+  if (!hatOn && av.hair === "buzz") {
     ellipse(buf, g.cx, cy - 2.2, g.rx * 0.86, g.ry * 0.52, pal.hair.sh || pal.hair, "hair-buzz", 44, { shade: "flat" });
   }
 }
 
 function drawHat(buf, av, key, pal, upper) {
   const g = headGeom(key);
-  // Sit snugly on the crown of the new round head (skull top ≈ cy - ry).
-  const crown = g.cy + upper - g.ry + 3.4;
+  const cy = g.cy + upper;
+  // Sit on the skull, not floating above it.
+  const crown = cy - g.ry + 2.0;
   const acc = pal.acc;
-  if (av.accessory === "beanie") {
-    ellipse(buf, g.cx, crown + 1.2, g.rx * 0.96, 5.6, acc, "hat", 55);
-    ellipse(buf, g.cx, crown - 0.4, g.rx * 0.7, 3.4, acc, "hat", 56);
-    circle(buf, g.cx, crown - 4.4, 2.0, acc, "hat-pom", 57);
-  } else if (av.accessory === "cap" || av.accessory === "trucker" || av.accessory === "fitted") {
-    ellipse(buf, g.cx, crown + 1.6, g.rx * 0.94, 4.6, acc, "hat", 55);
-    if (key !== "n" && key !== "ne") {
-      const bx = key === "e" ? g.cx + 7.2 : g.cx + (key === "se" ? 3.2 : 0);
-      const brimW = key === "e" ? 6.6 : 7.6;
-      const brimH = av.accessory === "fitted" ? 1.35 : (av.accessory === "bucket" ? 2.0 : 1.7);
-      const brimY = crown + (av.accessory === "fitted" ? 5.0 : 5.4);
-      ellipse(buf, bx, brimY, brimW, brimH, acc, "hat-brim", 56);
+  const kind = av.accessory;
+  if (kind === "beanie") {
+    ellipse(buf, g.cx, crown + 4.4, g.rx * 1.02, 7.0, acc, "hat", 55);
+    ellipse(buf, g.cx, crown + 2.0, g.rx * 0.78, 3.6, acc, "hat", 56);
+    ellipse(buf, g.cx, crown + 7.4, g.rx * 1.04, 2.1, acc.sh || acc, "hat-cuff", 57);
+    circle(buf, g.cx + (key === "e" ? 1 : 0), crown - 1.0, 2.0, acc, "hat-pom", 58);
+  } else if (kind === "cap" || kind === "trucker" || kind === "fitted") {
+    const tight = kind === "fitted";
+    const capRy = tight ? 4.4 : 5.0;
+    ellipse(buf, g.cx, crown + 3.6, g.rx * (tight ? 0.96 : 1.0), capRy, acc, "hat", 55);
+    if (kind === "trucker" && key !== "n") {
+      ellipse(buf, g.cx + (key === "e" ? 2.2 : 0), crown + 4.0, g.rx * 0.62, 3.2, acc.hi || acc, "hat-panel", 56);
+    }
+    const brimH = tight ? 1.25 : 1.6;
+    const brimY = crown + capRy + 1.5;
+    if (key === "e") {
+      ellipse(buf, g.cx + 8.4, brimY - 0.2, 6.8, brimH + 0.15, acc, "hat-brim", 57);
+    } else if (key === "se") {
+      ellipse(buf, g.cx + 5.6, brimY, 7.2, brimH, acc, "hat-brim", 57);
     } else if (key === "ne") {
-      ellipse(buf, g.cx - 2, crown + 5.0, 5.5, 1.3, acc, "hat-brim", 54);
+      ellipse(buf, g.cx - 5.2, brimY, 6.0, brimH * 0.85, acc, "hat-brim", 54);
+    } else if (key === "n") {
+      ellipse(buf, g.cx, crown + capRy + 0.5, g.rx * 0.86, 1.15, acc.sh || acc, "hat-back", 54);
+    } else {
+      // Front: brim toward the camera, a wide thin bill under the crown.
+      ellipse(buf, g.cx, brimY, g.rx * 0.98, brimH, acc, "hat-brim", 57);
     }
-    if (av.accessory === "fitted") {
-      plot(buf, Math.round(g.cx), Math.round(crown + 0.6), rgb(255, 240, 200), "hat-logo", 57);
+    if (kind === "fitted") {
+      plotInside(buf, Math.round(g.cx + (key === "e" ? 2 : 0)), Math.round(crown + 2.8), rgb(255, 240, 200), "hat-logo", 58);
     }
-  } else if (av.accessory === "bucket") {
-    ellipse(buf, g.cx, crown + 1.8, g.rx * 0.9, 4.2, acc, "hat", 55);
-    ellipse(buf, g.cx, crown + 5.4, g.rx * 1.18, 2.1, acc, "hat-brim", 56);
+  } else if (kind === "bucket") {
+    ellipse(buf, g.cx, crown + 3.8, g.rx * 0.94, 4.6, acc, "hat", 55);
+    ellipse(buf, g.cx, crown + 7.6, g.rx * 1.28, 2.35, acc, "hat-brim", 56);
+    ellipse(buf, g.cx, crown + 6.6, g.rx * 0.98, 1.15, acc.sh || acc, "hat-brim-in", 56, { shade: "flat" });
+  }
+}
+
+function drawHairPeeks(buf, av, key, pal, upper) {
+  // Bangs and forehead fringe belong in front of the hat brim, never on the crown.
+  if (key === "n" || key === "ne") return;
+  const style = av.hair;
+  if (!["straightbangs", "swoop", "bobclips", "shaggy", "long"].includes(style)) return;
+  const g = headGeom(key);
+  const cy = g.cy + upper;
+  for (const c of hairClumps(style, key)) {
+    if (!c.fringe) continue;
+    stampSpike(buf, g.cx + c.dx, cy + c.dy, c.len, c.half, c.ang, pal.hair, "hair-peek", 62, Boolean(c.rounded));
+  }
+  if (style === "bobclips") {
+    const pink = rgb(255, 90, 160), cyan = rgb(80, 200, 255);
+    if (key === "e") plot(buf, Math.round(g.cx + 6), Math.round(cy + 1), pink, "clip", 63);
+    else {
+      plot(buf, Math.round(g.cx - 8), Math.round(cy + 1), pink, "clip", 63);
+      plot(buf, Math.round(g.cx + 7), Math.round(cy + 1), cyan, "clip", 63);
+    }
   }
 }
 
@@ -1632,6 +1711,7 @@ function composeAvatar(av, flags, frame) {
   }
   if (av.glasses || av.accessory === "shades") drawGlasses(head, av, hk, headUpper);
   if (hatOn) drawHat(head, av, hk, pal, headUpper);
+  if (hatOn) drawHairPeeks(head, av, hk, pal, headUpper);
   if (av.accessory === "headphones") drawHeadphones(head, av, hk, pal, headUpper);
   if (emote === "heart") {
     const g = headGeom(hk);
@@ -2257,7 +2337,7 @@ export function paintClothesCatalog(canvas, items, scale = 4) {
 }
 
 
-export function paintHairHatFit(canvas, scale = 4) {
+export function paintHairHatFit(canvas, scale = 3) {
   const hairs = HAIRCUT_LOOKS;
   const hats = [
     { accessory: "none", label: "No hat" },
@@ -2273,51 +2353,33 @@ export function paintHairHatFit(canvas, scale = 4) {
     { label: "Side", body: 7 },
     { label: "Back", body: 5 },
   ];
-  const pad = 12, cap = 14, gap = 6, lab = 52;
+  const pad = 12, cap = 14, gap = 6, lab = 58, section = 18;
   const cw = AV_W * scale, ch = AV_H * scale;
-  const hairRows = dirs.length;
-  const hatLooks = hairs.slice(0, 4);
-  const hatRows = hats.length;
+  const rows = hats.length * dirs.length;
   canvas.width = lab + pad * 2 + hairs.length * cw + (hairs.length - 1) * gap;
-  canvas.height = pad * 2 + (hairRows + hatRows) * (ch + cap) + (hairRows + hatRows) * gap + 24;
+  canvas.height = pad * 2 + hats.length * section + rows * (ch + cap + gap);
   const ctx = canvas.getContext("2d");
   ctx.imageSmoothingEnabled = false;
   ctx.fillStyle = "#f4efe4";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.font = "11px Verdana, sans-serif";
-  ctx.fillStyle = "#2a1c16";
   const base = { skin: "#f0c9a8", shirt: "#6c7bff", top: "tshirt", bottom: "jeans", bottomColor: "#3d4f7c", shoes: "white" };
-  ctx.fillText("Hair · 4 views", 8, pad);
-  dirs.forEach((d, r) => {
-    const y = pad + 8 + r * (ch + cap + gap);
-    ctx.fillText(d.label, 6, y + cap + ch / 2);
-    hairs.forEach((h, i) => {
-      const x = lab + pad + i * (cw + gap);
-      const spr = drawAvatarSprite({ ...base, hair: h.hair, hairColor: h.hairColor, accessory: "none" }, { bodyDir: d.body, headDir: d.body, blink: "open" }, 0);
-      ctx.drawImage(spr.c, 0, 0, spr.w, spr.h, x, y + cap, cw, ch);
-      if (r === 0) ctx.fillText(h.label, x, y + 10);
-    });
-  });
-  const hatOrigin = pad + 16 + hairRows * (ch + cap + gap);
-  ctx.fillText("Hats · a few hairs × 4 views (front, 3/4, side, back packed per cell)", 8, hatOrigin);
-  hats.forEach((hat, r) => {
-    const y = hatOrigin + 10 + r * (ch + cap + gap);
-    ctx.fillText(hat.label, 6, y + cap + ch / 2);
-    // 4 hairs, each drawn in 4 small views? User asked: every hat x a few hairs x 4 views.
-    // Layout: each column is a hair, and we draw 4 views in a 2x2 inside the cell if space is tight.
-    // Simpler: 4 columns of hairs, and we use 4 rows of views already... that's huge.
-    // Do: for each hat row, 4 hairs × 4 view thumbnails in a strip (view as 4 mini sprites).
-    const sub = Math.max(2, Math.floor(scale / 2) + 1);
-    hatLooks.forEach((h, i) => {
-      const x0 = lab + pad + i * (cw + gap);
-      dirs.forEach((d, v) => {
-        const spr = drawAvatarSprite({ ...base, hair: h.hair, hairColor: h.hairColor, accessory: hat.accessory }, { bodyDir: d.body, headDir: d.body, blink: "open" }, 0);
-        const sw = AV_W * 2, sh = AV_H * 2;
-        const vx = x0 + (v % 2) * (cw / 2);
-        const vy = y + cap + Math.floor(v / 2) * (ch / 2);
-        ctx.drawImage(spr.c, 0, 0, spr.w, spr.h, vx, vy, cw / 2, ch / 2);
+  let y = pad;
+  hats.forEach((hat) => {
+    ctx.fillStyle = "#2a1c16";
+    ctx.fillText(hat.label + " · all 10 haircuts × 4 views", 8, y + 12);
+    y += section;
+    dirs.forEach((d, r) => {
+      ctx.fillStyle = "#2a1c16";
+      ctx.fillText(d.label, 6, y + cap + ch / 2);
+      hairs.forEach((h, i) => {
+        const x = lab + pad + i * (cw + gap);
+        const spr = drawAvatarSprite({ ...base, hair: h.hair, hairColor: h.hairColor, accessory: hat.accessory === "none" ? "none" : hat.accessory }, { bodyDir: d.body, headDir: d.body, blink: "open" }, 0);
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(spr.c, 0, 0, spr.w, spr.h, x, y + cap, cw, ch);
+        if (r === 0) ctx.fillText(h.label, x, y + 10);
       });
-      ctx.fillText(h.label, x0, y + 10);
+      y += ch + cap + gap;
     });
   });
 }

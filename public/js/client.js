@@ -77,6 +77,37 @@ import { initChessUI } from "./chess-ui.js";
     });
   }
 
+  let lastTvToastKey = "";
+  function maybeTvChannelToast(force) {
+    const me = state.people.get(state.me?.username) || state.me;
+    if (!me?.sitting) {
+      lastTvToastKey = "";
+      return;
+    }
+    const facing = me.facing || { x: 0, z: 1 };
+    const tvs = state.room?.tvs || {};
+    let best = null, bestScore = 0;
+    for (const furn of state.room?.furniture || []) {
+      if (furn.type !== "tv" && furn.type !== "holotv") continue;
+      if (!tvs[furn.id]?.on) continue;
+      const dx = (furn.x + 0.5) - (me.x ?? 0);
+      const dy = (furn.y + 0.5) - (me.y ?? 0);
+      const len = Math.hypot(dx, dy);
+      if (len < 0.4 || len > 5.5) continue;
+      const dot = (facing.x * dx + (facing.z || 0) * dy) / len;
+      if (dot < 0.35) continue;
+      const score = dot * 2 - len * 0.15;
+      if (score > bestScore) { bestScore = score; best = furn; }
+    }
+    if (!best) return;
+    const name = state.room3d?.tvChannelName?.(best.id) || "";
+    if (!name) return;
+    const key = best.id + ":" + name;
+    if (!force && key === lastTvToastKey) return;
+    lastTvToastKey = key;
+    toast("Now playing · " + name);
+  }
+
   function toast(message, actions, extraClass) {
     const el = document.createElement("div");
     el.className = extraClass ? `toast ${extraClass}` : "toast";
@@ -3185,6 +3216,10 @@ import { initChessUI } from "./chess-ui.js";
     }
     if (username === state.me?.username && !sitting) closeChessPanel();
     if (username === state.me?.username) maybeFireArrive(p);
+    if (username === state.me?.username) {
+      if (sitting) maybeTvChannelToast(true);
+      else lastTvToastKey = "";
+    }
     renderPeople();
   });
 
@@ -3296,6 +3331,7 @@ import { initChessUI } from "./chess-ui.js";
     else delete state.room.tvs[id];
     state.room3d?.setTvs(state.room.tvs);
     if (serverTime) state.room3d?.setServerTime(serverTime);
+    maybeTvChannelToast(false);
   });
 
   socket.on("seatsUpdated", ({ seats }) => {
