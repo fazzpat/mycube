@@ -20,7 +20,7 @@ const TILES = {
 
 const BODY_H = {
   rug: 4, plant: 36, podplant: 38, lamp: 48, table: 18, coffeetable: 14, counter: 20,
-  couch: 26, capsulecouch: 26, chair: 24, hoverchair: 32, bed: 18, tv: 38, holotv: 38,
+  couch: 26, capsulecouch: 26, chair: 24, hoverchair: 32, bed: 18, tv: 60, holotv: 60,
   fridge: 44, kitchenette: 24, bookshelf: 42, chesstable: 14, chessstool: 14, punchbag: 46, heavybag: 46,
   benchpress: 22, treadmill: 30, cubics: 44, pinball: 40, clothescab: 42, coffeemachine: 48,
   djdeck: 18, sodavending: 46, neonsign: 46, rack: 36, mannequin: 42, petpen: 22, cage: 24,
@@ -199,9 +199,14 @@ const TV_SCREEN_UV = { u0: 0.05, v0: 0.08, u1: 0.95, v1: 0.90 };
 function tvLayout(tw, th, rot = 0) {
   const full = insetBox(tw, th);
   const standH = 10;
-  const bodyH = 22;
+  const bodyH = 44;
   const r = normalizeFurnRot(rot);
-  const panel = backRect(tw, th, r, 0.16);
+  // Thin panel centered on the console top (horizontally and in depth).
+  const x0 = I, y0 = I, fw = tw - 2 * I, fh = th - 2 * I;
+  const depth = Math.min(0.16, (r % 2 === 0 ? fh : fw) * 0.5);
+  const panel = r % 2 === 0
+    ? { x: x0, y: y0 + (fh - depth) / 2, w: fw, h: depth }
+    : { x: x0 + (fw - depth) / 2, y: y0, w: depth, h: fh };
   const pad = 0.05;
   const body = r % 2 === 0
     ? { x: panel.x + pad, y: panel.y, w: Math.max(0.2, panel.w - pad * 2), h: panel.h }
