@@ -1,5 +1,5 @@
-import { drawAvatarSprite, paintAvatarSheet, paintStoreThumb, AVATAR_SHEET_LOOKS, AV_W, AV_H, facingIndex8 } from "./avatar3d.js";
-import { drawPetSprite as drawPetPixel, paintPetSheet, paintPetThumb, PET_W, PET_H } from "./petSprites.js";
+import { drawAvatarSprite, paintAvatarSheet, paintStoreThumb, AVATAR_SHEET_LOOKS, AV_W, AV_H, AV_GROUND_Y, facingIndex8 } from "./avatar3d.js";
+import { drawPetSprite as drawPetPixel, paintPetSheet, paintPetThumb, PET_W, PET_H, PET_GROUND_Y } from "./petSprites.js";
 import { programAt } from "./cubechannel.js";
 import {
   normalizeFurnRot, snapFacingToAxis, furnTileDims, furnSpriteMetrics, furnBlitPos,
@@ -408,6 +408,8 @@ export function createRoom3D(container) {
   let serverTime0 = Date.now();
   let serverAt = performance.now();
   let hoverTile = null;
+  let moveTarget = null;
+  let isFurnInteractive = null;
   let panStart = null;
   const pointers = new Map();
   let pinchStart = 0, pinchZoom0 = 1;
@@ -421,6 +423,40 @@ export function createRoom3D(container) {
   function bobY(now) {
     return Math.sin((now || performance.now()) / 900) * 1.2;
   }
+
+  function tileDiamond(tx, ty) {
+    const p = tileToScreen(tx, ty);
+    return [
+      { sx: p.sx, sy: p.sy },
+      { sx: p.sx + TW / 2, sy: p.sy + TH / 2 },
+      { sx: p.sx, sy: p.sy + TH },
+      { sx: p.sx - TW / 2, sy: p.sy + TH / 2 },
+    ];
+  }
+
+  function drawTileShadow(ctx, tx, ty, kind) {
+    const pts = tileDiamond(tx, ty);
+    const pulse = kind === "target" ? 0.22 + Math.sin(performance.now() / 180) * 0.06 : 0.28;
+    fillPoly(ctx, pts, kind === "target" ? `rgba(20, 12, 8, ${0.34 + pulse * 0.15})` : "rgba(18, 10, 8, 0.30)", kind === "target" ? "rgba(40, 24, 16, 0.55)" : "rgba(20, 12, 10, 0.4)");
+  }
+
+  function pickFloorTile(sx, sy) {
+    const t = screenToTile(sx, sy);
+    const n = gridSize;
+    if (t.x >= 0 && t.x < n && t.y >= 0 && t.y < n) {
+      return { x: Math.floor(t.x), y: Math.floor(t.y) };
+    }
+    // Just-off-edge snaps to the nearest in-bounds tile. Phones get a wider slack.
+    const slack = isPhoneView() ? 0.85 : 0.45;
+    if (t.x >= -slack && t.x < n + slack && t.y >= -slack && t.y < n + slack) {
+      return {
+        x: Math.max(0, Math.min(n - 1, Math.floor(Math.max(0, Math.min(n - 0.0001, t.x))))),
+        y: Math.max(0, Math.min(n - 1, Math.floor(Math.max(0, Math.min(n - 0.0001, t.y))))),
+      };
+    }
+    return null;
+  }
+
   function roomWorldBounds() {
     const n = gridSize;
     const pts = [tileToScreen(0, 0), tileToScreen(n, 0), tileToScreen(0, n), tileToScreen(n, n)];
@@ -541,7 +577,7 @@ export function createRoom3D(container) {
     for (const npc of npcs) {
       const foot = footOf(npc.x, npc.y);
       const spr = drawAvatarSprite(npc.avatar || {}, { facing: { x: 1, z: 1 } }, 0);
-      list.push({ kind: "npc", id: npc.id, type: "shopkeeper", depth: npc.x + npc.y + 0.4, sx: foot.sx - AV_W / 2, sy: foot.sy - AV_H + 2, w: AV_W, h: AV_H, spr, raw: npc });
+      list.push({ kind: "npc", id: npc.id, type: "shopkeeper", depth: npc.x + npc.y + 0.4, sx: foot.sx - AV_W / 2, sy: foot.sy - AV_GROUND_Y, w: AV_W, h: AV_H, spr, raw: npc });
     }
     for (const p of people) {
       const st = personState.get(p.username) || p;
@@ -556,7 +592,7 @@ export function createRoom3D(container) {
       };
       const spr = drawAvatarSprite(p.avatar || {}, flags, frame);
       const foot = tileToScreen(x + 0.5, y + 0.5);
-      list.push({ kind: "person", id: p.username, type: "person", depth: x + y + 0.45, sx: foot.sx - AV_W / 2, sy: foot.sy - AV_H + 2, w: AV_W, h: AV_H, spr, raw: p, tileX: x, tileY: y });
+      list.push({ kind: "person", id: p.username, type: "person", depth: x + y + 0.45, sx: foot.sx - AV_W / 2, sy: foot.sy - AV_GROUND_Y, w: AV_W, h: AV_H, spr, raw: p, tileX: x, tileY: y });
       if (p.activePet) {
         const sit = !walking && !p.sitting;
         const facing = p.facing || st.facing || { x: 1, z: 0 };
@@ -567,7 +603,7 @@ export function createRoom3D(container) {
         const pf = tileToScreen(pst.x + 0.5, pst.y + 0.5);
         const hover = false;
         const pspr = drawPetSprite(p.activePet, frame, walking || hover, sit && !hover, facing);
-        list.push({ kind: "pet", id: p.username + "-pet", type: "pet", depth: pst.x + pst.y + 0.35, sx: pf.sx - PET_W / 2, sy: pf.sy - PET_H + 2, w: PET_W, h: PET_H, spr: pspr });
+        list.push({ kind: "pet", id: p.username + "-pet", type: "pet", depth: pst.x + pst.y + 0.35, sx: pf.sx - PET_W / 2, sy: pf.sy - PET_GROUND_Y, w: PET_W, h: PET_H, spr: pspr });
       }
     }
     if (ghost) {
@@ -765,6 +801,17 @@ export function createRoom3D(container) {
 
   function render(now) {
     if (!alive) return;
+    if (moveTarget && people.length) {
+      const name = followName || (people[0] && people[0].username);
+      const st = personState.get(name) || people.find((p) => p.username === name);
+      if (st) {
+        const x = st.x ?? st.targetX, y = st.y ?? st.targetY;
+        const walking = Boolean(st.walking);
+        if (!walking && x != null && Math.hypot((x) - (moveTarget.x + 0), (y) - (moveTarget.y + 0)) < 0.45) {
+          moveTarget = null;
+        }
+      }
+    }
     applyCamera();
     ctx.imageSmoothingEnabled = false;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -781,16 +828,10 @@ export function createRoom3D(container) {
         const spr = floorTileSprite(kind, lightsOn, (x + y) + x * 3);
         blit(spr, p.sx - TW / 2 - 1, p.sy - 1);
         if (hoverTile && hoverTile.x === x && hoverTile.y === y) {
-          ctx.strokeStyle = NEON.cyan;
-          ctx.globalAlpha = 0.7;
-          ctx.beginPath();
-          ctx.moveTo(p.sx, p.sy);
-          ctx.lineTo(p.sx + TW / 2, p.sy + TH / 2);
-          ctx.lineTo(p.sx, p.sy + TH);
-          ctx.lineTo(p.sx - TW / 2, p.sy + TH / 2);
-          ctx.closePath();
-          ctx.stroke();
-          ctx.globalAlpha = 1;
+          drawTileShadow(ctx, x, y, "hover");
+        }
+        if (moveTarget && moveTarget.x === x && moveTarget.y === y) {
+          drawTileShadow(ctx, x, y, "target");
         }
       }
     }
@@ -816,39 +857,40 @@ export function createRoom3D(container) {
   function hitAt(cx, cy) {
     const now = performance.now();
     const wpt = worldFromClient(cx, cy, now);
-    const list = collectDrawList(now);
-    for (let i = list.length - 1; i >= 0; i--) {
-      const it = list[i];
-      if (it.kind === "ghost") continue;
-      if (wpt.sx >= it.sx && wpt.sx <= it.sx + it.w && wpt.sy >= it.sy && wpt.sy <= it.sy + it.h) {
-        // Taller avatars/pets overlap floor diamonds behind them. Prefer the
-        // tile under the cursor so those sprites don't swallow walk/place taps.
-        if (it.kind === "person" || it.kind === "pet") {
-          const tile = screenToTile(wpt.sx, wpt.sy);
-          const tx = Math.floor(tile.x), ty = Math.floor(tile.y);
-          if (tx >= 0 && ty >= 0 && tx < gridSize && ty < gridSize) continue;
-        }
-        if (it.kind === "furn" && it.raw && !hitFurnitureAt(it.raw, wpt.sx, wpt.sy, screenToTile)) continue;
-        return it;
-      }
-    }
+    const floor = pickFloorTile(wpt.sx, wpt.sy);
     const sw = lightSwitchPos();
-    if (wpt.sx >= sw.sx && wpt.sx <= sw.sx + sw.w && wpt.sy >= sw.sy && wpt.sy <= sw.sy + sw.h) return { kind: "switch" };
+    if (wpt.sx >= sw.sx && wpt.sx <= sw.sx + sw.w && wpt.sy >= sw.sy && wpt.sy <= sw.sy + sw.h) {
+      return { kind: "switch", floor };
+    }
     for (const art of wallArt) {
       const pos = wallSlotWorld(art.wall, art.slot);
       if (wpt.sx >= pos.sx && wpt.sx <= pos.sx + (pos.w || 22) && wpt.sy >= pos.sy && wpt.sy <= pos.sy + (pos.h || 18)) {
-        return { kind: "wall", wall: pos.wall, slot: pos.slot, art };
+        return { kind: "wall", wall: pos.wall, slot: pos.slot, art, floor };
       }
     }
-    const tile = screenToTile(wpt.sx, wpt.sy);
-    if (tile.y < 0 && tile.x >= 0 && tile.x < gridSize) {
-      return { kind: "wall", wall: "back", slot: Math.max(0, Math.min(gridSize - 1, Math.floor(tile.x))) };
+    const list = collectDrawList(now);
+    for (let i = list.length - 1; i >= 0; i--) {
+      const it = list[i];
+      if (it.kind === "ghost" || it.kind === "person" || it.kind === "pet") continue;
+      if (wpt.sx >= it.sx && wpt.sx <= it.sx + it.w && wpt.sy >= it.sy && wpt.sy <= it.sy + it.h) {
+        if (it.kind === "furn" && it.raw && !hitFurnitureAt(it.raw, wpt.sx, wpt.sy, screenToTile)) continue;
+        if (it.kind === "furn" || it.kind === "npc") {
+          const interactive = typeof isFurnInteractive === "function" ? isFurnInteractive(it.type, it.raw) : true;
+          if (!interactive) continue;
+          return { ...it, floor };
+        }
+        return { ...it, floor };
+      }
     }
-    if (tile.x < 0 && tile.y >= 0 && tile.y < gridSize) {
-      return { kind: "wall", wall: "left", slot: Math.max(0, Math.min(gridSize - 1, Math.floor(tile.y))) };
+    // Prefer a just-off-edge floor snap over treating the click as a wall.
+    if (floor) return { kind: "tile", x: floor.x, y: floor.y, floor };
+    const raw = screenToTile(wpt.sx, wpt.sy);
+    if (raw.y < -0.45 && raw.x >= -0.2 && raw.x < gridSize + 0.2) {
+      return { kind: "wall", wall: "back", slot: Math.max(0, Math.min(gridSize - 1, Math.floor(raw.x))) };
     }
-    const tx = Math.floor(tile.x), ty = Math.floor(tile.y);
-    if (tx >= 0 && ty >= 0 && tx < gridSize && ty < gridSize) return { kind: "tile", x: tx, y: ty };
+    if (raw.x < -0.45 && raw.y >= -0.2 && raw.y < gridSize + 0.2) {
+      return { kind: "wall", wall: "left", slot: Math.max(0, Math.min(gridSize - 1, Math.floor(raw.y))) };
+    }
     return null;
   }
 
@@ -859,17 +901,16 @@ export function createRoom3D(container) {
     if (hit.kind === "wall") { onWallClick?.(hit.wall, hit.slot); return; }
     if (hit.kind === "furn" || hit.kind === "npc") { onFurnitureClick?.(hit.id, hit.type, hit.raw || {}); return; }
     if (hit.kind === "tile") onTileClick?.(hit.x, hit.y);
-    if (hit.kind === "person") onTileClick?.(Math.round(hit.tileX), Math.round(hit.tileY));
   }
 
   function handleHover(ev) {
+    const now = performance.now();
+    const wpt = worldFromClient(ev.clientX, ev.clientY, now);
+    const floor = pickFloorTile(wpt.sx, wpt.sy);
+    hoverTile = floor;
+    if (floor) onTileHover?.(floor.x, floor.y);
     const hit = hitAt(ev.clientX, ev.clientY);
-    if (hit?.kind === "tile") {
-      hoverTile = { x: hit.x, y: hit.y };
-      onTileHover?.(hit.x, hit.y);
-    } else if (hit?.kind === "wall") {
-      onWallHover?.(hit.wall, hit.slot);
-    }
+    if (hit?.kind === "wall") onWallHover?.(hit.wall, hit.slot);
   }
 
   canvas.addEventListener("pointerdown", (e) => {
@@ -1052,7 +1093,7 @@ export function createRoom3D(container) {
       if (!st && !p) return null;
       const x = (st?.x ?? p.x) + 0.5, y = (st?.y ?? p.y) + 0.5;
       const foot = tileToScreen(x, y);
-      const c = clientFromWorld(foot.sx, foot.sy - AV_H + 4);
+      const c = clientFromWorld(foot.sx, foot.sy - AV_GROUND_Y + 8);
       const f = clientFromWorld(foot.sx, foot.sy);
       const rect = container.getBoundingClientRect();
       return { x: c.x - rect.left, y: c.y - rect.top, footY: f.y - rect.top, visible: c.visible };
@@ -1062,6 +1103,18 @@ export function createRoom3D(container) {
     setNpcs(list) { npcs = list || []; },
     onTileClick(fn) { onTileClick = fn; },
     onTileHover(fn) { onTileHover = fn; },
+    setFurnInteractive(fn) { isFurnInteractive = fn || null; },
+    setMoveTarget(tx, ty) { moveTarget = (tx == null || ty == null) ? null : { x: tx | 0, y: ty | 0 }; },
+    getMoveTarget() { return moveTarget ? { ...moveTarget } : null; },
+    getHoverTile() { return hoverTile ? { ...hoverTile } : null; },
+    pickFloorTileAt(cx, cy) {
+      const wpt = worldFromClient(cx, cy, performance.now());
+      return pickFloorTile(wpt.sx, wpt.sy);
+    },
+    projectWorld(tx, ty) {
+      const p = tileToScreen(tx, ty);
+      return clientFromWorld(p.sx, p.sy);
+    },
     onFurnitureClick(fn) { onFurnitureClick = fn; },
     onSwitchClick(fn) { onSwitchClick = fn; },
     onWallClick(fn) { onWallClick = fn; },

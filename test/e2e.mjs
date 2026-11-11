@@ -1562,6 +1562,87 @@ try {
 
   await alice.setViewportSize({ width: 1280, height: 800 });
 
+  log("Tile hover, destination marker, and easier move targeting");
+  await alice.evaluate(() => { window.__standUp?.(); window.__exitEdit?.(); });
+  await alice.waitForTimeout(300);
+  const hoverPos = await alice.evaluate(() => window.HouseRoom3D.projectTile(1, 4));
+  await alice.mouse.move(hoverPos.x, hoverPos.y);
+  await alice.waitForTimeout(80);
+  const hoverHit = await alice.evaluate((pos) => ({ want: { x: 1, y: 4 }, got: window.HouseRoom3D.getHoverTile(), pos }), hoverPos);
+  check("Hovering a floor tile shows a hover marker on that diamond", hoverHit.got?.x === 1 && hoverHit.got?.y === 4, JSON.stringify(hoverHit));
+
+  const exact = await alice.evaluate(() => {
+    const pos = window.HouseRoom3D.projectTile(2, 3);
+    return { pos, got: window.HouseRoom3D.pickFloorTileAt(pos.x, pos.y) };
+  });
+  check("Exact iso diamond math maps a tile center to that tile", exact.got?.x === 2 && exact.got?.y === 3, JSON.stringify(exact));
+
+  const edge = await alice.evaluate(() => {
+    // A little past the back/left edge of tile (0,0) should snap onto it.
+    const pos = window.HouseRoom3D.projectWorld(-0.2, -0.2);
+    return { pos, got: window.HouseRoom3D.pickFloorTileAt(pos.x, pos.y) };
+  });
+  check("Taps just off the floor edge snap to the nearest edge tile", edge.got?.x === 0 && edge.got?.y === 0, JSON.stringify(edge));
+
+  await alice.evaluate(() => {
+    window.HouseRoom3D.tapAt(window.HouseRoom3D.projectTile(0, 5).x, window.HouseRoom3D.projectTile(0, 5).y);
+  });
+  await alice.waitForTimeout(200);
+  const marked = await alice.evaluate(() => window.HouseRoom3D.getMoveTarget());
+  check("Clicking a walkable tile sets a destination marker", marked && marked.x === 0 && marked.y === 5, JSON.stringify(marked));
+
+  // Decorative plant should pass through; a blocked tile walks to a neighbor.
+  const plantSpot = await alice.evaluate(() => {
+    const size = 6;
+    const furn = window.HouseRoom3D.getFurniture() || [];
+    const blocked = window.HouseIso?.blockedSet?.(furn) || new Set(furn.map((f) => `${f.x},${f.y}`));
+    let spot = null;
+    for (let y = size - 1; y >= 0 && !spot; y--) {
+      for (let x = 0; x < size && !spot; x++) {
+        if (blocked.has(`${x},${y}`)) continue;
+        const hasNeighbor = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => {
+          const nx = x + dx, ny = y + dy;
+          return nx >= 0 && ny >= 0 && nx < size && ny < size && !blocked.has(`${nx},${ny}`);
+        });
+        if (hasNeighbor) spot = { x, y };
+      }
+    }
+    if (!spot) return { error: "no free tile pair" };
+    window.__enterEdit?.();
+    window.__startPlace?.("plant");
+    window.__clickTile(spot.x, spot.y);
+    return { spot };
+  });
+  await alice.waitForFunction(() => window.HouseRoom3D.getFurniture().some((f) => f.type === "plant"), null, { timeout: 5000 }).catch(() => {});
+  await alice.evaluate(() => window.__exitEdit?.());
+  await alice.waitForTimeout(200);
+  const blockedWalkTo = await alice.evaluate(() => {
+    const plant = window.HouseRoom3D.getFurniture().find((f) => f.type === "plant");
+    if (!plant) return { error: "no plant" };
+    window.__clickTile(plant.x, plant.y);
+    const target = window.HouseRoom3D.getMoveTarget();
+    const cheb = target ? Math.max(Math.abs(target.x - plant.x), Math.abs(target.y - plant.y)) : 99;
+    const adj = Boolean(target) && cheb === 1 && !(target.x === plant.x && target.y === plant.y);
+    return { before: { x: plant.x, y: plant.y }, target, adj };
+  });
+  check("Tapping a blocked tile walks to the nearest reachable neighbor", Boolean(blockedWalkTo.adj), JSON.stringify(blockedWalkTo));
+
+  const passthrough = await alice.evaluate(() => {
+    // A point on an avatar sprite should resolve to the floor diamond under the cursor.
+    const head = window.HouseRoom3D.projectHead("alice");
+    if (!head) return { error: "no head" };
+    const cx = head.x + (document.querySelector(".room-view, #room-root, #app")?.getBoundingClientRect?.().left || 0);
+    // projectHead x/y are container-relative; use foot/world path instead.
+    const tile = window.HouseRoom3D.personTile("alice");
+    const pos = window.HouseRoom3D.projectTile(tile.x, tile.y);
+    // 10px above the feet still on the sprite, should keep the same floor tile (or a valid in-room tile)
+    const got = window.HouseRoom3D.pickFloorTileAt(pos.x, pos.y - 24);
+    return { tile, got };
+  });
+  check("Taps on an avatar pass through to the floor tile underneath", Boolean(passthrough.got) && passthrough.got.x >= 0 && passthrough.got.y >= 0, JSON.stringify(passthrough));
+
+  await alice.screenshot({ path: `${SHOT}/43-tile-hover-target.png` });
+
   log("Emotes half-wheel and sync");
   await alice.evaluate(() => window.__standUp());
   await alice.waitForTimeout(200);

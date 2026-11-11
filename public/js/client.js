@@ -480,6 +480,11 @@ import { initChessUI } from "./chess-ui.js";
     window.HouseRoom3D = state.room3d;
     state.room3d.onTileClick(handleTileClick);
     state.room3d.onTileHover((tx, ty) => updatePlaceHighlight(tx, ty));
+    state.room3d.setFurnInteractive?.((type) => {
+      if (state.editMode || state.pendingPlace || state.movingId) return true;
+      if (state.room?.shop && isShopProp(type)) return true;
+      return isUseableFurn(type);
+    });
     state.room3d.onFurnitureClick(handleFurnitureClick);
     state.room3d.onSwitchClick(() => {
       const on = !(state.room?.lightsOn !== false);
@@ -1385,6 +1390,62 @@ import { initChessUI } from "./chess-ui.js";
     return x >= 0 && y >= 0 && x < size && y < size;
   }
 
+  function isUseableFurn(type) {
+    return [
+      "couch", "chair", "hoverchair", "capsulecouch",
+      "tv", "holotv", "chesstable", "fridge", "punchbag", "heavybag",
+      "benchpress", "treadmill", "cubics", "clothescab", "coffeemachine",
+    ].includes(type);
+  }
+
+  function requestWalkTo(tx, ty) {
+    const me = state.people.get(state.me?.username);
+    if (me?.sitting) {
+      socket.emit("standUp");
+      me.sitting = false;
+    }
+    const size = state.room?.size || 6;
+    const from = { x: me?.x ?? tx, y: me?.y ?? ty };
+    const dest = nearestWalkable(from, tx, ty, blockedNow(), size);
+    if (!dest) {
+      toast("You can't walk there.");
+      return false;
+    }
+    if (me) {
+      const dx = dest.x - me.x, dy = dest.y - me.y;
+      if (dx || dy) me.facing = { x: dx, z: dy };
+    }
+    if (phoneOpen()) closePhone();
+    state.room3d?.setMoveTarget?.(dest.x, dest.y);
+    socket.emit("move", { x: dest.x, y: dest.y });
+    return true;
+  }
+
+  function nearestWalkable(from, tx, ty, blocked, size, extraTiles) {
+    const pathTo = (x, y) => HouseIso.pathfind(from, { x, y }, blocked, size);
+    if (inBoundsTile(tx, ty, size) && !blocked.has(tx + "," + ty)) {
+      const path = pathTo(tx, ty);
+      if (path) return { x: tx, y: ty };
+    }
+    const seeds = extraTiles ? extraTiles.slice() : [{ x: tx, y: ty }];
+    const seen = new Set();
+    const cands = [];
+    for (const t of seeds) {
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+        const x = t.x + dx, y = t.y + dy;
+        const k = x + "," + y;
+        if (seen.has(k) || !inBoundsTile(x, y, size) || blocked.has(k)) continue;
+        seen.add(k);
+        cands.push({ x, y, d: Math.hypot(x - from.x, y - from.y) });
+      }
+    }
+    cands.sort((a, b) => a.d - b.d);
+    for (const c of cands) {
+      if (pathTo(c.x, c.y)) return { x: c.x, y: c.y };
+    }
+    return null;
+  }
+
   function approachFurniture(furn, then) {
     const me = state.people.get(state.me?.username);
     if (!me) return;
@@ -1416,6 +1477,7 @@ import { initChessUI } from "./chess-ui.js";
       return;
     }
     state.pendingArrive = { x: dest.x, y: dest.y, fn: then };
+    state.room3d?.setMoveTarget?.(dest.x, dest.y);
     socket.emit("move", { x: dest.x, y: dest.y });
   }
 
@@ -1644,6 +1706,20 @@ import { initChessUI } from "./chess-ui.js";
         socket.emit("useCoffee", { id });
         toast("Brewing a cup…");
       });
+      return;
+    }
+    // Decorative / unused furniture: walk to the nearest adjacent tile.
+    const tiles = HouseIso.tilesFor(furn.type, furn.x, furn.y, furn.rot);
+    const me = state.people.get(state.me?.username);
+    const dest = nearestWalkable({ x: me?.x ?? furn.x, y: me?.y ?? furn.y }, furn.x, furn.y, blockedNow(), state.room?.size || 6, tiles);
+    if (dest) {
+      if (me?.sitting) {
+        socket.emit("standUp");
+        me.sitting = false;
+      }
+      if (phoneOpen()) closePhone();
+      state.room3d?.setMoveTarget?.(dest.x, dest.y);
+      socket.emit("move", { x: dest.x, y: dest.y });
     }
   }
 
@@ -2678,22 +2754,7 @@ import { initChessUI } from "./chess-ui.js";
       state.room3d?.highlightFurniture(null);
       return;
     }
-    const me = state.people.get(state.me?.username);
-    if (me?.sitting) {
-      socket.emit("standUp");
-      me.sitting = false;
-    }
-    const path = HouseIso.pathfind({ x: me?.x ?? tx, y: me?.y ?? ty }, { x: tx, y: ty }, blockedNow(), state.room?.size || 6);
-    if (!path) {
-      toast("You can't walk there.");
-      return;
-    }
-    if (me) {
-      const dx = tx - me.x, dy = ty - me.y;
-      if (dx || dy) me.facing = { x: dx, z: dy };
-    }
-    if (phoneOpen()) closePhone();
-    socket.emit("move", { x: tx, y: ty });
+    requestWalkTo(tx, ty);
   }
 
   $("#password-form").addEventListener("submit", (e) => {
