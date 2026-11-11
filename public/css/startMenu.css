@@ -1,0 +1,252 @@
+/* Arcade start menu — sits in the middle of the empty cube. */
+@import url("https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap");
+
+#view-login.start-view {
+  position: relative;
+  background: #000;
+  overflow: hidden;
+}
+
+.start-room {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: #000;
+}
+
+.start-stage {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  padding: calc(var(--safe-top) + 12px) calc(16px + var(--safe-right)) calc(var(--safe-bottom) + 12px) calc(16px + var(--safe-left));
+  pointer-events: none;
+}
+
+.start-menu,
+.start-panel {
+  pointer-events: auto;
+  font-family: "Press Start 2P", "Nunito", monospace;
+  color: #fff8e8;
+  text-align: center;
+  width: min(420px, 100%);
+  padding: 22px 18px 18px;
+  background: rgba(8, 6, 16, 0.55);
+  border: 4px solid #f4c15d;
+  box-shadow:
+    0 0 0 4px #3d2c29,
+    0 0 0 6px #f4c15d,
+    0 12px 0 #1a1020,
+    0 0 28px rgba(244, 193, 93, 0.35);
+  image-rendering: pixelated;
+}
+
+.start-logo {
+  font-size: clamp(16px, 4.2vw, 22px);
+  line-height: 1.4;
+  letter-spacing: 0.08em;
+  color: #fff4c4;
+  text-shadow:
+    0 0 8px rgba(244, 193, 93, 0.85),
+    3px 3px 0 #5a2a12,
+    0 0 18px rgba(255, 122, 89, 0.45);
+  margin: 0 0 8px;
+  animation: start-logo-pulse 2.4s ease-in-out infinite;
+}
+
+.start-tag {
+  font-size: 7px;
+  line-height: 1.7;
+  color: #c4b8ff;
+  margin: 0 0 18px;
+  letter-spacing: 0.04em;
+}
+
+.start-options {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.start-options li {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 10px 28px;
+  font-size: clamp(9px, 2.8vw, 11px);
+  line-height: 1.4;
+  color: #d8c8b0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  border-radius: 0;
+}
+
+.start-options li .start-cursor {
+  position: absolute;
+  left: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #f4c15d;
+  font-size: 11px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.start-options li.is-selected {
+  color: #fffdf4;
+  text-shadow:
+    0 0 8px rgba(255, 230, 140, 0.95),
+    0 0 16px rgba(255, 122, 89, 0.55);
+  background: rgba(255, 196, 80, 0.12);
+  box-shadow: inset 0 0 0 2px rgba(244, 193, 93, 0.55);
+}
+
+.start-options li.is-selected .start-cursor {
+  opacity: 1;
+  animation: start-cursor-blink 0.7s steps(1, end) infinite;
+}
+
+.start-hint {
+  margin: 16px 0 0;
+  font-size: 7px;
+  line-height: 1.6;
+  color: #8a7a68;
+  letter-spacing: 0.02em;
+}
+
+.start-panel h2,
+#start-form-title {
+  font-family: inherit;
+  font-size: clamp(10px, 3vw, 12px);
+  line-height: 1.5;
+  color: #fff4c4;
+  text-shadow: 2px 2px 0 #5a2a12;
+  margin: 0 0 12px;
+  letter-spacing: 0;
+}
+
+.start-about-lede,
+#start-form-hint {
+  font-family: inherit;
+  font-size: 8px;
+  line-height: 1.8;
+  color: #e8dcc8;
+  margin: 0 0 16px;
+  text-align: left;
+}
+
+.start-panel .field label {
+  font-family: inherit;
+  font-size: 8px;
+  color: #c4b8ff;
+  letter-spacing: 0.04em;
+}
+
+.start-panel input[type="text"] {
+  font-family: "Press Start 2P", monospace;
+  font-size: 11px;
+  border: 3px solid #f4c15d;
+  border-radius: 0;
+  background: #1a1424;
+  color: #fff8e8;
+  padding: 12px 10px;
+  box-shadow: inset 0 0 0 2px #3d2c29;
+  caret-color: #f4c15d;
+}
+
+.start-panel input[type="text"]:focus {
+  border-color: #fff4c4;
+  outline: none;
+  box-shadow: inset 0 0 0 2px #3d2c29, 0 0 12px rgba(244, 193, 93, 0.55);
+}
+
+.start-form-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.start-panel .btn,
+.start-back {
+  font-family: "Press Start 2P", monospace;
+  font-size: 9px;
+  border-radius: 0;
+  border: 3px solid #f4c15d;
+  padding: 12px 14px;
+  min-height: 44px;
+  box-shadow: 3px 3px 0 #1a1020;
+  letter-spacing: 0.04em;
+}
+
+.start-back {
+  background: #2a2230;
+  color: #fff8e8;
+}
+
+.start-panel .btn {
+  background: #ff7a59;
+  color: #fff;
+}
+
+.start-panel .btn:hover,
+.start-back:hover {
+  filter: brightness(1.08);
+  box-shadow: 3px 3px 0 #1a1020, 0 0 12px rgba(244, 193, 93, 0.45);
+}
+
+.start-panel .btn:active,
+.start-back:active {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 #1a1020;
+}
+
+.start-dust {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.start-dust span {
+  position: absolute;
+  width: 3px;
+  height: 3px;
+  background: rgba(255, 248, 220, 0.55);
+  box-shadow: 0 0 6px rgba(255, 244, 196, 0.6);
+  animation: start-dust-drift linear infinite;
+}
+
+@keyframes start-logo-pulse {
+  0%, 100% { text-shadow: 0 0 8px rgba(244, 193, 93, 0.7), 3px 3px 0 #5a2a12, 0 0 18px rgba(255, 122, 89, 0.35); }
+  50% { text-shadow: 0 0 16px rgba(255, 244, 196, 1), 3px 3px 0 #5a2a12, 0 0 28px rgba(255, 122, 89, 0.7); }
+}
+
+@keyframes start-cursor-blink {
+  0%, 62% { opacity: 1; }
+  63%, 100% { opacity: 0.25; }
+}
+
+@keyframes start-dust-drift {
+  0% { transform: translateY(0); opacity: 0; }
+  15% { opacity: 0.7; }
+  100% { transform: translateY(-110px); opacity: 0; }
+}
+
+@media (max-width: 480px) {
+  .start-menu,
+  .start-panel {
+    width: min(292px, 78%);
+    padding: 14px 10px 12px;
+  }
+  .start-options li { min-height: 44px; padding: 8px 22px; }
+  .start-hint { margin-top: 12px; }
+}

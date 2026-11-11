@@ -1,4 +1,5 @@
 import { createRoom3D, createAvatarPreview } from "./isoRoom.js";
+import { initStartMenu } from "./startMenu.js";
 import { CLOTHING_STOCK, PET_STOCK, PUBLIC_PLACES, clothingSlot, CLOTHING_SLOTS, HAIR_STYLES as CAT_HAIR_STYLES, HAIR_LABELS, TOP_LABELS, BOTTOM_LABELS, ACC_LABELS, BASE_TOPS, BASE_BOTTOMS, BASE_ACCESSORIES, TOPS as CAT_TOPS, BOTTOMS as CAT_BOTTOMS, ACCESSORIES as CAT_ACCESSORIES } from "./storeCatalog.js";
 import { ART_PIECES, paintArtThumb, registerArtCatalog, installPaintings } from "./artPieces.js";
 import { installWallLayout, switchFloorTile } from "./wallLayout.js";
@@ -11,6 +12,8 @@ import { initChessUI } from "./chess-ui.js";
   const $ = (sel) => document.querySelector(sel);
   const SHOW = (el) => el && el.classList.remove("hidden");
   const HIDE = (el) => el && el.classList.add("hidden");
+
+  const startMenu = initStartMenu();
 
   window.__lastSays = [];
   window.__joinResults = [];
@@ -75,6 +78,8 @@ import { initChessUI } from "./chess-ui.js";
       if (v === name) SHOW(el);
       else HIDE(el);
     });
+    if (name === "login") startMenu.show();
+    else startMenu.hide();
   }
 
   let lastTvToastKey = "";
@@ -147,6 +152,7 @@ import { initChessUI } from "./chess-ui.js";
   /* ---------- login preview ---------- */
   function paintLoginPreview() {
     const row = $("#login-preview");
+    if (!row) return;
     const samples = [
       { skin: "#f1c27d", hair: "bun", hairColor: "#6b3a2a", shirt: "#ff7a59" },
       { skin: "#c68642", hair: "curly", hairColor: "#2b1d16", shirt: "#6c7bff" },

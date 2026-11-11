@@ -4,6 +4,7 @@ import { spawn } from "child_process";
 import path from "path";
 import { fileURLToPath } from "url";
 import { ART_PIECES, PAINTING_CATALOG, PAINTING_IDS, ART_TILE_SPAN } from "../public/js/artPieces.js";
+import { openStartForm } from "./startMenuHelp.mjs";
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SHOT = process.env.SHOT_DIR || path.join(ROOT, "screenshots");
@@ -21,7 +22,7 @@ function check(name, ok, extra = "") {
 
 async function login(page, username) {
   await page.goto(BASE, { waitUntil: "domcontentloaded" });
-  await page.waitForSelector('[data-testid="username-input"]');
+  await openStartForm(page);
   await page.fill('[data-testid="username-input"]', username);
   await page.click('[data-testid="login-btn"]');
   await page.waitForSelector('body[data-view="creator"]', { timeout: 30000 });

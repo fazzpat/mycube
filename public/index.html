@@ -15,8 +15,9 @@
   <title>MyCube</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;700;800&family=Press+Start+2P&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/css/styles.css" />
+  <link rel="stylesheet" href="/css/startMenu.css" />
   <link rel="stylesheet" href="/css/chess.css" />
   <script type="importmap">
   { "imports": { "three": "/vendor/three.module.js" } }
@@ -25,21 +26,44 @@
 <body>
   <div class="app" id="app">
     <!-- LOGIN -->
-    <section id="view-login" class="view">
-      <div class="center-stage">
-        <div class="card hero-card">
-          <div class="brand" style="justify-content:center;margin-bottom:8px">
-            <div class="brand-mark cube-logo" aria-hidden="true"><svg viewBox="0 0 32 32" width="28" height="28"><path d="M16 3 L29 10.5 L16 18 L3 10.5 Z" fill="#d4c4ff"/><path d="M3 10.5 L16 18 L16 30 L3 22.5 Z" fill="#7c5cff"/><path d="M16 18 L29 10.5 L29 22.5 L16 30 Z" fill="#4e35c9"/></svg></div> MyCube
-          </div>
-          <h1>Just another contact list.</h1>
-          <p class="lede">An alternative to texting and group chats. Tap a friend to jump into their cube and hang out live — bubbles appear over your heads, then they’re gone.</p>
-          <div class="preview-row" id="login-preview"></div>
+    <section id="view-login" class="view start-view">
+      <div id="start-room" class="start-room" data-testid="start-room" aria-hidden="true"></div>
+      <div class="start-dust" aria-hidden="true">
+        <span style="left:12%;bottom:8%;animation-duration:7s;animation-delay:0s"></span>
+        <span style="left:28%;bottom:18%;animation-duration:9s;animation-delay:1.4s"></span>
+        <span style="left:47%;bottom:6%;animation-duration:8s;animation-delay:2.2s"></span>
+        <span style="left:63%;bottom:22%;animation-duration:10s;animation-delay:0.6s"></span>
+        <span style="left:81%;bottom:12%;animation-duration:7.5s;animation-delay:3s"></span>
+      </div>
+      <div class="start-stage">
+        <div id="start-menu" class="start-menu" data-testid="start-menu" role="menu" aria-label="MyCube start menu" tabindex="0">
+          <div class="start-logo" data-testid="start-logo">MYCUBE</div>
+          <p class="start-tag">JUST ANOTHER CONTACT LIST</p>
+          <ul class="start-options" id="start-options" data-testid="start-options">
+            <li data-testid="start-option-start" data-action="start" role="menuitem"><span class="start-cursor" data-testid="start-menu-cursor" aria-hidden="true">▶</span>PRESS START</li>
+            <li data-testid="start-option-signin" data-action="signin" role="menuitem"><span class="start-cursor" aria-hidden="true">▶</span>SIGN IN</li>
+            <li data-testid="start-option-new" data-action="new" role="menuitem"><span class="start-cursor" aria-hidden="true">▶</span>NEW AVATAR</li>
+            <li data-testid="start-option-about" data-action="about" role="menuitem"><span class="start-cursor" aria-hidden="true">▶</span>ABOUT</li>
+          </ul>
+          <p class="start-hint">↑↓ SELECT  ·  ENTER / TAP OK</p>
+        </div>
+        <div id="start-about" class="start-panel hidden" data-testid="start-about">
+          <h2>ABOUT MYCUBE</h2>
+          <p class="start-about-lede">An alternative to texting and group chats. Tap a friend to jump into their cube and hang out live — bubbles appear over your heads, then they’re gone.</p>
+          <button class="start-back" data-testid="start-about-back" type="button">BACK</button>
+        </div>
+        <div id="start-form" class="start-panel hidden" data-testid="start-form">
           <form id="login-form">
+            <h2 id="start-form-title">ENTER YOUR NAME</h2>
+            <p id="start-form-hint">Jump into your cube.</p>
             <div class="field" style="text-align:left">
-              <label for="username-input">Pick a username</label>
+              <label for="username-input">USERNAME</label>
               <input id="username-input" data-testid="username-input" type="text" maxlength="16" autocomplete="username" placeholder="e.g. maple" required />
             </div>
-            <button class="btn" data-testid="login-btn" type="submit">Continue</button>
+            <div class="start-form-actions">
+              <button class="start-back" data-testid="start-form-back" id="start-form-back" type="button">BACK</button>
+              <button class="btn" data-testid="login-btn" type="submit">CONTINUE</button>
+            </div>
           </form>
         </div>
       </div>

@@ -4,6 +4,7 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import path from "path";
 import { fileURLToPath } from "url";
+import { openStartForm } from "./startMenuHelp.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -16,7 +17,7 @@ function log(msg) {
 
 async function login(page, username) {
   await page.goto(BASE, { waitUntil: "domcontentloaded" });
-  await page.waitForSelector('[data-testid="username-input"]');
+  await openStartForm(page);
   await page.fill('[data-testid="username-input"]', username);
   await page.click('[data-testid="login-btn"]');
   await page.waitForSelector('body[data-view="creator"]', { timeout: 30000 });
@@ -321,7 +322,10 @@ async function runAppShellFit(browser) {
   const page = await ctx.newPage();
   page.setDefaultTimeout(20000);
   await page.goto(BASE, { waitUntil: "domcontentloaded" });
-  await page.waitForSelector('[data-testid="username-input"]');
+  await page.waitForSelector('[data-testid="start-menu"]');
+  await page.waitForTimeout(200);
+  await assertInsideViewport(page, ['[data-testid="start-menu"]', '[data-testid="start-option-start"]'], "The arcade start menu fits the iPhone 14 viewport");
+  await openStartForm(page);
   await page.waitForTimeout(200);
   const pwa = await page.evaluate(async () => {
     const man = document.querySelector('link[rel="manifest"]');
@@ -951,6 +955,57 @@ bob.setDefaultTimeout(15000);
 
 try {
   await mkdir(SHOT, { recursive: true });
+
+  log("Arcade start menu");
+  await alice.goto(BASE, { waitUntil: "domcontentloaded" });
+  await alice.waitForSelector('[data-testid="start-menu"]', { timeout: 20000 });
+  await alice.waitForTimeout(400);
+  const startLayout = await alice.evaluate(() => {
+    const menu = document.querySelector('[data-testid="start-menu"]');
+    const room = document.querySelector('[data-testid="start-room"]');
+    const canvas = room && room.querySelector("canvas");
+    const mr = menu.getBoundingClientRect();
+    const rr = (canvas || room).getBoundingClientRect();
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const menuCx = mr.left + mr.width / 2, menuCy = mr.top + mr.height / 2;
+    const roomCx = rr.left + rr.width / 2, roomCy = rr.top + rr.height / 2;
+    return {
+      hasCanvas: Boolean(canvas && canvas.width > 8 && canvas.height > 8),
+      menuW: mr.width, menuH: mr.height,
+      centered: Math.abs(menuCx - roomCx) < 48 && Math.abs(menuCy - roomCy) < 80 && Math.abs(menuCx - vw / 2) < 48,
+      selected: document.querySelector("[data-action].is-selected")?.getAttribute("data-action") || "",
+      options: [...document.querySelectorAll("#start-options [data-action]")].map((el) => el.getAttribute("data-action")),
+    };
+  });
+  check(
+    "The first screen is an empty cube with an arcade menu in the middle",
+    Boolean(startLayout.hasCanvas && startLayout.centered && startLayout.menuW > 80),
+    JSON.stringify(startLayout)
+  );
+  check(
+    "PRESS START is selected by default and every start-flow action is listed",
+    startLayout.selected === "start" && startLayout.options.join(",") === "start,signin,new,about",
+    JSON.stringify(startLayout)
+  );
+  await alice.keyboard.press("ArrowDown");
+  const afterDown = await alice.evaluate(() => window.__startMenu?.index() + ":" + document.querySelector("[data-action].is-selected")?.getAttribute("data-action"));
+  check("Arrow keys move the blinking arcade cursor", afterDown === "1:signin", afterDown);
+  await alice.locator('[data-testid="start-option-about"]').click();
+  await alice.waitForSelector('[data-testid="start-about"]:not(.hidden)');
+  const aboutText = await alice.locator('[data-testid="start-about"]').innerText();
+  check(
+    "ABOUT opens the existing product copy",
+    /contact list|bubbles appear/i.test(aboutText),
+    aboutText.slice(0, 160)
+  );
+  await alice.locator('[data-testid="start-about-back"]').click();
+  await alice.waitForSelector('[data-testid="start-menu"]:not(.hidden)');
+  await alice.locator('[data-testid="start-option-start"]').click();
+  await alice.waitForSelector('[data-testid="username-input"]');
+  check(
+    "PRESS START opens the existing username form so login still works",
+    await alice.locator('[data-testid="login-btn"]').isVisible() && await alice.locator('[data-testid="username-input"]').isVisible()
+  );
 
   log("Alice and Bob create characters");
   await login(alice, "alice");

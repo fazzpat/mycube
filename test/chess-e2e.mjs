@@ -4,6 +4,7 @@ import { spawn } from "child_process";
 import path from "path";
 import { fileURLToPath } from "url";
 import { once } from "events";
+import { openStartForm } from "./startMenuHelp.mjs";
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SHOT = process.env.SHOT_DIR || path.join(ROOT, "screenshots");
@@ -20,7 +21,7 @@ function check(name, ok, extra = "") {
 
 async function login(page, username) {
   await page.goto(BASE, { waitUntil: "domcontentloaded" });
-  await page.waitForSelector('[data-testid="username-input"]');
+  await openStartForm(page);
   await page.fill('[data-testid="username-input"]', username);
   await page.click('[data-testid="login-btn"]');
   await page.waitForSelector('body[data-view="creator"]', { timeout: 30000 });
@@ -235,6 +236,7 @@ try {
   // If it shows login, log back in as wren (avatar already saved).
   const view = await white.waitForFunction(() => document.body.dataset.view, null, { timeout: 10000 }).then(() => white.evaluate(() => document.body.dataset.view));
   if (view === "login") {
+    await openStartForm(white);
     await white.fill('[data-testid="username-input"]', "wren");
     await white.click('[data-testid="login-btn"]');
   }

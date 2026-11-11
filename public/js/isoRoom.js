@@ -494,15 +494,21 @@ export function createAvatarPreview(container) {
   };
 }
 
-export function createRoom3D(container) {
+export function createRoom3D(container, opts = {}) {
+  const backdrop = Boolean(opts.backdrop);
   container.innerHTML = "";
-  container.style.position = "relative";
+  container.style.position = backdrop ? "absolute" : "relative";
   container.style.overflow = "hidden";
   container.style.background = "#000";
+  if (backdrop) {
+    container.style.inset = "0";
+    container.style.width = "100%";
+    container.style.height = "100%";
+  }
 
   const canvas = document.createElement("canvas");
   canvas.className = "iso-room";
-  canvas.style.cssText = "position:absolute;inset:0;width:100%;height:100%;image-rendering:pixelated;image-rendering:crisp-edges;z-index:1;touch-action:none";
+  canvas.style.cssText = "position:absolute;inset:0;width:100%;height:100%;image-rendering:pixelated;image-rendering:crisp-edges;z-index:1;touch-action:none" + (backdrop ? ";pointer-events:none" : "");
   container.appendChild(canvas);
   const overlay = document.createElement("div");
   overlay.className = "iso-overlay bubble-layer";
@@ -617,7 +623,8 @@ export function createRoom3D(container) {
     const sx = viewW / Math.max(1, b.w + 16);
     const sy = viewH / Math.max(1, b.h + 16);
     const fit = Math.min(sx, sy);
-    zoom = fit >= 1 ? 1 : Math.max(0.45, fit);
+    if (backdrop) zoom = Math.max(0.45, Math.min(fit * 0.92, 2.8));
+    else zoom = fit >= 1 ? 1 : Math.max(0.45, fit);
   }
   function personWalking() {
     const name = followName || (people[0] && people[0].username);
@@ -1457,17 +1464,17 @@ export function createRoom3D(container) {
     });
   }
 
-  if (isPhoneView()) {
+  if (backdrop || !isPhoneView()) {
+    camMode = "room";
+    zoom = 1;
+    zoomTarget = 1;
+    autoFit = true;
+  } else {
     camMode = "follow";
     userZoom = FOLLOW_ZOOM_DEFAULT;
     zoom = FOLLOW_ZOOM_DEFAULT;
     zoomTarget = FOLLOW_ZOOM_DEFAULT;
     autoFit = false;
-  } else {
-    camMode = "room";
-    zoom = 1;
-    zoomTarget = 1;
-    autoFit = true;
   }
   resize();
   requestAnimationFrame(render);
@@ -1653,9 +1660,13 @@ export function createRoom3D(container) {
     },
     dispose() { alive = false; container.innerHTML = ""; },
   };
-  window.HouseRoom3D = api;
+  if (!backdrop) window.HouseRoom3D = api;
   return api;
 }
 
-export default { createRoom3D, createAvatarPreview, paintAvatarSheet, paintStoreThumb, paintPetSheet, paintFurnitureSheet, AVATAR_SHEET_LOOKS, PET_W, PET_H, FURN_SHEET_TYPES };
+export function createEmptyRoomBackdrop(container) {
+  return createRoom3D(container, { backdrop: true });
+}
+
+export default { createRoom3D, createEmptyRoomBackdrop, createAvatarPreview, paintAvatarSheet, paintStoreThumb, paintPetSheet, paintFurnitureSheet, AVATAR_SHEET_LOOKS, PET_W, PET_H, FURN_SHEET_TYPES };
 
