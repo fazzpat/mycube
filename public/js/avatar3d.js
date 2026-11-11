@@ -586,12 +586,12 @@ function buildPalette(av) {
 
 /* ---------- geometry per view ---------- */
 function headGeom(key) {
-  // Big squarish-round head, about half the figure height. Chin tucks onto the collar (~y=39).
+  // Big near-circle head, about half the figure height. Chin still overlaps the collar (~y=39).
   // Leave ~10px above the skull so buns, spikes, and a big afro puff can sit on the crown.
-  if (key === "e") return { cx: 25, cy: 24.8, rx: 12.8, ry: 14.4 };
-  if (key === "se") return { cx: 21.8, cy: 24.6, rx: 13.6, ry: 14.6 };
-  if (key === "ne") return { cx: 23.6, cy: 24.6, rx: 14.0, ry: 14.6 };
-  return { cx: 24, cy: 24.6, rx: 14.4, ry: 14.6 };
+  if (key === "e") return { cx: 25, cy: 24.8, rx: 13.8, ry: 13.8 };
+  if (key === "se") return { cx: 21.8, cy: 24.6, rx: 14.3, ry: 14.3 };
+  if (key === "ne") return { cx: 23.6, cy: 24.6, rx: 14.4, ry: 14.4 };
+  return { cx: 24, cy: 24.6, rx: 14.5, ry: 14.5 };
 }
 
 function neckX(view, upper) {
@@ -660,33 +660,29 @@ function resolvedDirs(flags) {
 
 
 function drawJawLine(buf, g, pal, upper) {
-  // Darker-skin outline around the chin and jaw so the head stays a round shape
-  // even where it overlaps the shirt.
+  // 1px darker-skin contour on the lower silhouette only. Never paint a second
+  // row (that read as a strap across the face). The chin stays a smooth curve.
   const cx = g.cx, cy = g.cy + upper + 0.4, rx = g.rx, ry = g.ry;
-  const jaw = mix(pal.skin.sh || pal.skin.mid || pal.skin, rgb(52, 30, 24), 0.42);
-  const yMid = cy + ry * 0.12;
-  const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1]];
-  const rim = [];
+  const jaw = mix(pal.skin.sh || pal.skin.mid || pal.skin, rgb(52, 30, 24), 0.36);
+  const y0 = Math.floor(cy + ry * 0.20);
+  const y1 = Math.ceil(cy + ry + 2);
   const x0 = Math.floor(cx - rx - 2), x1 = Math.ceil(cx + rx + 2);
-  const y0 = Math.floor(yMid), y1 = Math.ceil(cy + ry + 2);
+  const out = [[0, 1], [1, 1], [-1, 1], [1, 0], [-1, 0]];
   for (let y = y0; y <= y1; y++) {
     for (let x = x0; x <= x1; x++) {
       if (x < 0 || y < 0 || x >= AV_W || y >= AV_H) continue;
       const p = buf[y * AV_W + x];
       if (!p || !/^skin-head|^skin-face|^ear/.test(p.kind || "")) continue;
-      let edge = false;
-      for (const [dx, dy] of dirs) {
+      let outward = false;
+      for (const [dx, dy] of out) {
         const xx = x + dx, yy = y + dy;
-        if (xx < 0 || yy < 0 || xx >= AV_W || yy >= AV_H) { edge = true; break; }
+        if (xx < 0 || yy < 0 || xx >= AV_W || yy >= AV_H) { outward = true; break; }
         const n = buf[yy * AV_W + xx];
-        if (!n || n.kind === "ink" || n.kind === "sticker" || n.kind === "shadow") { edge = true; break; }
+        if (!n || n.kind === "ink" || n.kind === "sticker" || n.kind === "shadow") { outward = true; break; }
       }
-      if (edge) rim.push([x, y]);
+      if (!outward) continue;
+      plot(buf, x, y, jaw, "skin-jaw", 51);
     }
-  }
-  for (const [x, y] of rim) {
-    plot(buf, x, y, jaw, "skin-jaw", 51);
-    plot(buf, x, y + 1, jaw, "skin-jaw", 51);
   }
 }
 
@@ -694,8 +690,8 @@ function drawHead(buf, key, pal, upper, emote) {
   const g = headGeom(key);
   const cy = g.cy + upper;
   const flat = { shade: "flat" };
-  // Soft squarish-round skull; flatten the crown a little so it reads like the reference.
-  egg(buf, g.cx, cy + 0.4, g.rx, g.ry, pal.skin, "skin-head", 40, { shade: "flat", widen: 0.02, flatten: 0.32 });
+  // True circle (rx == ry, no flatten) so the jaw and cheeks stay a smooth curve.
+  ellipse(buf, g.cx, cy + 0.4, g.rx, g.ry, pal.skin, "skin-head", 40, flat);
   drawJawLine(buf, g, pal, upper);
   if (key === "s") {
     ellipse(buf, g.cx - g.rx + 1, cy + 2.2, 2.8, 3.4, pal.skin, "ear", 35, flat);
@@ -1667,11 +1663,19 @@ function walkPose(frame, walking, sit) {
   };
 }
 
+function handClearance(t, side, squash = 0) {
+  // Palm radius 4 plus 1px ink, so the mitten can touch the torso edge but not sit inside it.
+  // Follow walk squash so a wider or narrower bean does not leave a gap or tuck the hand in.
+  const hw = t.hw * (1 + (squash || 0));
+  return t.cx + side * (hw + 5.2);
+}
+
 function handPose(kind, side, pose, t, upper, key, frame) {
-  const cuffX = t.cx + side * (key === "e" ? (t.hw - 0.4) : (t.hw - 0.2));
+  const squash = pose.squash || 0;
+  const cuffX = t.cx + side * t.hw * (1 + squash);
   const cuffY = t.y0 + upper + 4;
-  let hx = cuffX + side * 2.4;
-  let hy = t.y0 + upper + t.h * 0.72;
+  let hx = handClearance(t, side, squash);
+  let hy = t.y0 + upper + t.h * 0.70;
   if (kind === "wave" || kind === "cheer") {
     if (side > 0 || kind === "cheer") { hx = t.cx + side * 13; hy = (t.y0 + upper) - 8; }
   } else if (kind === "dance") {
@@ -1702,10 +1706,11 @@ function handPose(kind, side, pose, t, upper, key, frame) {
     hy = t.y0 + upper + 9;
   }
   const hand = side < 0 ? pose.handL : pose.handR;
-  if (hand && kind !== "wave" && kind !== "dance" && kind !== "phone" && !String(kind || "").startsWith("phone") && kind !== "cry") {
-    const dx = hand.dx || 0;
-    hx += key === "e" ? side * dx : dx;
+  const special = kind === "wave" || kind === "dance" || kind === "cheer" || kind === "phone" || String(kind || "").startsWith("phone") || kind === "cry" || kind === "hold" || kind === "punch" || kind === "clap" || kind === "shrug";
+  if (hand && !special) {
+    // Walk motion is a small vertical bob. Hands stay seated at the torso edge.
     hy += hand.dy || 0;
+    hx = handClearance(t, side, squash);
   }
   return { x: hx, y: hy, cuffX, cuffY };
 }
@@ -2542,6 +2547,50 @@ export function inspectAvatarGeometry(avatar = {}, flags = {}, frame = 0) {
   };
 }
 
+export function inspectHandClearance(avatar = {}, flags = {}, frame = 0) {
+  // Count mitten fill pixels that land on the torso. Idle and walk hands must stay outside.
+  const av = normalizeAvatar(avatar);
+  const { bodyDir } = resolvedDirs(flags);
+  const bodyView = viewOfDir(bodyDir);
+  const pal = buildPalette(av);
+  const sit = Boolean(flags.sitting);
+  const walk = Boolean(flags.walking) && !sit;
+  const pose = walkPose(frame, walk, sit);
+  pose.armKind = armKindFromFlags(flags, frame);
+  const breathe = (!walk && !sit) ? ((frame % 16) < 8 ? 0 : -1) : 0;
+  const bob = walk ? (pose.bob || 0) : 0;
+  const upper = sit ? AV_SEAT_DROP : (bob + breathe);
+  const bk = bodyView.key;
+  let body = makeBuf();
+  drawTorso(body, av, bk, pal, upper, sit, pose.squash || 0);
+  drawCuffs(body, av, bk, pal, upper, sit);
+  if (bodyView.flip) body = flipBuf(body, true);
+  body = addInkOutline(body);
+  const t = torsoBox(bk, sit);
+  const aKind = pose.armKind || "idle";
+  const leftKind = aKind === "wave" || aKind === "hold" || aKind === "punch" ? "idle"
+    : (String(aKind).startsWith("phone") ? "phoneTap" : aKind);
+  const leftHand = handPose(leftKind, -1, pose, t, upper, bk, frame);
+  const rightHand = handPose(aKind, 1, pose, t, upper, bk, frame);
+  function flipX(x) { return bodyView.flip ? AV_W - 1 - x : x; }
+  const hands = [
+    { x: flipX(leftHand.x), y: leftHand.y, side: -1 },
+    { x: flipX(rightHand.x), y: rightHand.y, side: 1 },
+  ];
+  let overlap = 0, samples = [];
+  for (const hp of hands) {
+    const spr = makeBuf();
+    drawMitten(spr, hp.x, hp.y, pal, hp.side);
+    for (let i = 0; i < spr.length; i++) {
+      const h = spr[i], b = body[i];
+      if (!isFill(h) || !isFill(b) || !isTorsoish(b.kind)) continue;
+      overlap++;
+      if (samples.length < 4) samples.push({ x: i % AV_W, y: (i / AV_W) | 0, hand: h.kind, body: b.kind });
+    }
+  }
+  return { overlap, ok: overlap === 0, samples };
+}
+
 
 
 if (typeof window !== "undefined") {
@@ -2560,6 +2609,7 @@ if (typeof window !== "undefined") {
   window.__paintHaircutSheet = paintHaircutSheet;
   window.__countNearWhiteEdgePixels = countNearWhiteEdgePixels;
   window.__inspectAvatarGeometry = inspectAvatarGeometry;
+  window.__inspectHandClearance = inspectHandClearance;
   window.__paintHairHatFit = paintHairHatFit;
   window.__paintClothesCatalog = paintClothesCatalog;
 }
