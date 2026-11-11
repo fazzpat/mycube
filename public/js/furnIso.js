@@ -674,6 +674,58 @@ function panelTopFrontEdge(rect, rot, lift) {
   return { left: t.N, right: t.W };
 }
 
+function canvasX(ctx, x) {
+  const tr = ctx.getTransform();
+  return x * tr.a + tr.e;
+}
+
+function fromCanvasX(ctx, cx) {
+  const tr = ctx.getTransform();
+  return (cx - tr.e) / (tr.a || 1);
+}
+
+function canvasPoint(ctx, p) {
+  const tr = ctx.getTransform();
+  return { x: p.x * tr.a + p.y * tr.c + tr.e, y: p.x * tr.b + p.y * tr.d + tr.f };
+}
+
+/** Inclusive pixel columns of a filled front-face rect that match `isColor`. */
+function rasterFaceBounds(ctx, corners, u0, v0, u1, v1, isColor) {
+  const [bl, br, tr, tl] = corners;
+  const p = (u, v) => lerp2(lerp2(bl, br, u), lerp2(tl, tr, u), v);
+  const pts = [p(u0, v0), p(u1, v0), p(u1, v1), p(u0, v1)].map((q) => canvasPoint(ctx, q));
+  const x0 = Math.max(0, Math.floor(Math.min(...pts.map((q) => q.x)) - 1));
+  const x1 = Math.min(ctx.canvas.width - 1, Math.ceil(Math.max(...pts.map((q) => q.x)) + 1));
+  const y0 = Math.max(0, Math.floor(Math.min(...pts.map((q) => q.y)) - 1));
+  const y1 = Math.min(ctx.canvas.height - 1, Math.ceil(Math.max(...pts.map((q) => q.y)) + 1));
+  if (x1 < x0 || y1 < y0) return null;
+  const img = ctx.getImageData(x0, y0, x1 - x0 + 1, y1 - y0 + 1);
+  const d = img.data;
+  let L = Infinity, R = -Infinity;
+  for (let y = 0; y < img.height; y++) {
+    for (let x = 0; x < img.width; x++) {
+      const i = (y * img.width + x) * 4;
+      if (d[i + 3] < 200) continue;
+      if (!isColor(d[i], d[i + 1], d[i + 2])) continue;
+      const cx = x0 + x;
+      if (cx < L) L = cx;
+      if (cx > R) R = cx;
+    }
+  }
+  if (!Number.isFinite(L)) return null;
+  return { L, R, C: (L + R) / 2 };
+}
+
+function isCrtGlass(r, g, b) {
+  // Front CRT fill / wash / highlight, not the neon-green Tetris side or marquee.
+  if (g < 160) return false;
+  if (g <= r + 20) return false;
+  if (b > 160) return false;
+  // Tetris / marquee neon is near #39ff14 (very high G, low R)
+  if (g >= 240 && r <= 80 && b <= 50) return false;
+  return true;
+}
+
 /** Tiny joystick + two 2–3px buttons in one iso-aligned row, group mid at midX, y on the edge. */
 function paintTinyControlRow(ctx, edgeLeft, edgeRight, midX, lights) {
   const dx = edgeRight.x - edgeLeft.x;
@@ -681,7 +733,8 @@ function paintTinyControlRow(ctx, edgeLeft, edgeRight, midX, lights) {
   const midY = edgeLeft.y + (midX - edgeLeft.x) * slope;
   const ball = 3, btn = 2, gap = 2;
   const total = ball + gap + btn + gap + btn;
-  const x0 = Math.round(midX - total / 2);
+  // Round in canvas-pixel space so the inclusive midpoint lands on the raster screen center.
+  const x0 = fromCanvasX(ctx, Math.round(canvasX(ctx, midX) - (total - 1) / 2));
   const yAt = (x) => Math.round(midY + (x - midX) * slope);
   const shaft = lights ? "#4a4a52" : "#2a2a30";
   const red = lights ? "#e82838" : "#4a1820";
@@ -957,39 +1010,59 @@ function drawRetroArcade(ctx, tw, th, rot, lights, flicker = 0) {
     }
   }
 
-  // Control ledge sits directly under the screen and is slightly wider than the CRT.
+  // Control ledge: a front apron + a shallow lip, snapped to the rasterized
+  // CRT so both sides have the same overhang and the control mid hits the
+  // screen's center column. A deep iso box is not used — its top diamond
+  // always overshoots to one side of the front face.
   const SCREEN_U0 = 0.13, SCREEN_U1 = 0.87;
-  const LEDGE_U0 = 0.10, LEDGE_U1 = 0.90;
-  const panelLift = 15;
+  const GLASS_V0 = 0.46, GLASS_V1 = 0.93;
+  const LEDGE_PAD_PX = 1; // equal 1px overhang past the CRT on both sides
+  const panelLift = 13;
   const panelH = 6;
-  const panelBox = sliceFrontRange(bx, by, bw, bh, r, 0.32, LEDGE_U0, LEDGE_U1);
-  const panelPal = pal("#141418", lights);
-  if (lights) {
-    panelPal.top = "#2c2c34";
-    panelPal.left = "#1c1c22";
-    panelPal.right = "#0c0c10";
-    panelPal.outline = "#050508";
-  }
-  box(ctx, panelBox.x, panelBox.y, panelBox.w, panelBox.h, panelLift, panelH, panelPal);
-  if (front) {
-    const pc = faceCorners(panelBox.x, panelBox.y, panelBox.w, panelBox.h, panelLift, panelH, front);
-    faceRect(ctx, pc, 0.04, 0.05, 0.96, 0.95, lights ? "#1a1a20" : "#101014", panelPal.outline);
-    faceRect(ctx, pc, 0.04, 0.86, 0.96, 0.95, neon, null);
-  }
-  // Tiny joystick + red/yellow dots in one row, midpoint on the screen's front-face center.
+  const lipH = 3;
   const which = front || (r === 2 ? "-y" : r === 3 ? "-x" : r === 1 ? "+x" : "+y");
   const sfc = faceCorners(bx, by, bw, bh, 0, BODY, which);
   const [sbl, sbr, str, stl] = sfc;
-  const screenMid = lerp2(
-    lerp2(sbl, sbr, (SCREEN_U0 + SCREEN_U1) / 2),
-    lerp2(stl, str, (SCREEN_U0 + SCREEN_U1) / 2),
-    0.5
-  );
-  const edge = panelTopFrontEdge(panelBox, r, panelLift + panelH);
-  const topMid = pt(panelBox.x + panelBox.w / 2, panelBox.y + panelBox.h / 2, panelLift + panelH);
-  const insetEdge = (p) => lerp2(p, topMid, 0.42);
-  const left = insetEdge(edge.left), right = insetEdge(edge.right);
-  paintTinyControlRow(ctx, left, right, screenMid.x, lights);
+  const facePt = (u, v) => lerp2(lerp2(sbl, sbr, u), lerp2(stl, str, u), v);
+  const vTop = (panelLift + panelH) / BODY;
+  const fl = facePt(0, vTop), fr = facePt(1, vTop);
+  const slope = Math.abs(fr.x - fl.x) < 0.001 ? 0 : (fr.y - fl.y) / (fr.x - fl.x);
+  const yAt = (x) => fl.y + (x - fl.x) * slope;
+  const glass = rasterFaceBounds(ctx, sfc, SCREEN_U0, GLASS_V0, SCREEN_U1, GLASS_V1, isCrtGlass);
+  let ledL, ledR, midX;
+  if (glass) {
+    ledL = fromCanvasX(ctx, glass.L - LEDGE_PAD_PX);
+    ledR = fromCanvasX(ctx, glass.R + LEDGE_PAD_PX);
+    midX = fromCanvasX(ctx, glass.C);
+  } else {
+    const sl = facePt(SCREEN_U0, (GLASS_V0 + GLASS_V1) / 2);
+    const sr = facePt(SCREEN_U1, (GLASS_V0 + GLASS_V1) / 2);
+    const lo = Math.min(sl.x, sr.x), hi = Math.max(sl.x, sr.x);
+    ledL = lo - LEDGE_PAD_PX;
+    ledR = hi + LEDGE_PAD_PX;
+    midX = (lo + hi) / 2;
+  }
+  const apronFill = lights ? "#1a1a20" : "#101014";
+  const lipFill = lights ? "#2c2c34" : "#1a1a20";
+  const cLedL = Math.round(canvasX(ctx, ledL));
+  const cLedR = Math.round(canvasX(ctx, ledR));
+  const lo = Math.min(cLedL, cLedR), hi = Math.max(cLedL, cLedR);
+  const ox = ctx.getTransform().e, oy = ctx.getTransform().f;
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  for (let cx = lo; cx <= hi; cx++) {
+    const cy = Math.round(yAt(cx - ox) + oy);
+    ctx.fillStyle = lipFill;
+    ctx.fillRect(cx, cy - lipH, 1, lipH);
+    ctx.fillStyle = neon;
+    ctx.fillRect(cx, cy, 1, 1);
+    ctx.fillStyle = apronFill;
+    ctx.fillRect(cx, cy + 1, 1, panelH - 1);
+  }
+  ctx.restore();
+  const edgeLeft = { x: fromCanvasX(ctx, lo), y: yAt(fromCanvasX(ctx, lo)) - lipH / 2 };
+  const edgeRight = { x: fromCanvasX(ctx, hi), y: yAt(fromCanvasX(ctx, hi)) - lipH / 2 };
+  paintTinyControlRow(ctx, edgeLeft, edgeRight, midX, lights);
 
   // Smaller, less overhanging marquee on top; CUBICS stays one readable line.
   // Keep a little width so the six letters still fit; shrink height and forward depth.
