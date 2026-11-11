@@ -22,12 +22,13 @@ for (const n of [6, 8, 10]) {
   const sw = switchSlot(n);
   const wins = windowSlots(n);
   const reserved = reservedWallSlots(n);
-  check(`Door sits at the far-right end of the back wall (n=${n})`, door === n - 1);
-  check(`Switch sits in the slot beside the door (n=${n})`, sw === n - 2);
-  check(`Door and switch are reserved on the back wall (n=${n})`, reserved.back.has(door) && reserved.back.has(sw));
-  check(`Window does not overlap the door or switch (n=${n})`, !wins.includes(door) && !wins.includes(sw), JSON.stringify({ wins, door, sw }));
-  check(`Left wall has no reserved door/switch slots (n=${n})`, reserved.left.size === 0);
-  check(`isReservedWallSlot covers door and switch (n=${n})`, isReservedWallSlot("back", door, n) && isReservedWallSlot("back", sw, n) && !isReservedWallSlot("left", 3, n));
+  const mid = Math.round((n - 1) / 2);
+  check(`Door sits in the middle of the left wall (n=${n})`, door === mid, JSON.stringify({ door, mid }));
+  check(`Switch sits in the slot beside the door (n=${n})`, sw === mid - 1);
+  check(`Door and switch are reserved on the left wall (n=${n})`, reserved.left.has(door) && reserved.left.has(sw) && reserved.left.size === 2, JSON.stringify({ left: [...reserved.left], door, sw }));
+  check(`Window is reserved only on the back wall (n=${n})`, wins.length > 0 && wins.every((s) => reserved.back.has(s)) && reserved.back.size === wins.length, JSON.stringify({ wins, back: [...reserved.back] }));
+  check(`The old far-right back-wall door slot is free for art (n=${n})`, !reserved.back.has(n - 1));
+  check(`isReservedWallSlot covers door and switch (n=${n})`, isReservedWallSlot("left", door, n) && isReservedWallSlot("left", sw, n) && !isReservedWallSlot("back", 0, n) && !isReservedWallSlot("back", n - 1, n));
 }
 
 const metrics = chessBoardMetrics();

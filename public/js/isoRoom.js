@@ -679,10 +679,10 @@ export function createRoom3D(container) {
     const t0 = s + 0.58, t1 = s + 0.96;
     const u0 = 36, u1 = 58;
     return [
-      wallPt("back", t0, u1),
-      wallPt("back", t1, u1),
-      wallPt("back", t1, u0),
-      wallPt("back", t0, u0),
+      wallPt("left", t0, u1),
+      wallPt("left", t1, u1),
+      wallPt("left", t1, u0),
+      wallPt("left", t0, u0),
     ];
   }
   function lightSwitchPos() {
@@ -877,13 +877,13 @@ export function createRoom3D(container) {
           const u0 = skirtH + r * rowH + 0.8;
           const u1 = skirtH + (r + 1) * rowH - 0.8;
           const t0 = i + 0.06, t1 = i + 1 - 0.06;
-          if (wall === "back" && t0 < doorT1 && t1 > doorT0 && u0 < doorH) continue;
+          if (wall === "left" && t0 < doorT1 && t1 > doorT0 && u0 < doorH) continue;
           const fill = (i + r) % 2 ? tileA : tileB;
           fillPoly(ctx, [inner(t0, u0), inner(t1, u0), inner(t1, u1), inner(t0, u1)], fill, grout);
         }
       }
       // skirting board
-      if (wall === "back") {
+      if (wall === "left") {
         fillPoly(ctx, [inner(0, 0), inner(doorT0, 0), inner(doorT0, 7), inner(0, 7)], skirt, cap);
         fillPoly(ctx, [inner(doorT1, 0), inner(n, 0), inner(n, 7), inner(doorT1, 7)], skirt, cap);
       } else {
@@ -899,7 +899,7 @@ export function createRoom3D(container) {
         ctx.strokeStyle = pal.trim;
         ctx.lineWidth = 1;
         let a = inner(0, 8), b = inner(n, 8);
-        if (wall === "back") { a = inner(0, 8); b = inner(doorT0, 8); ctx.beginPath(); ctx.moveTo(a.sx, a.sy); ctx.lineTo(b.sx, b.sy); ctx.stroke(); a = inner(doorT1, 8); b = inner(n, 8); }
+        if (wall === "left") { a = inner(0, 8); b = inner(doorT0, 8); ctx.beginPath(); ctx.moveTo(a.sx, a.sy); ctx.lineTo(b.sx, b.sy); ctx.stroke(); a = inner(doorT1, 8); b = inner(n, 8); }
         ctx.beginPath(); ctx.moveTo(a.sx, a.sy); ctx.lineTo(b.sx, b.sy); ctx.stroke();
         a = inner(0, WALL_H - 6); b = inner(n, WALL_H - 6);
         ctx.beginPath(); ctx.moveTo(a.sx, a.sy); ctx.lineTo(b.sx, b.sy); ctx.stroke();
@@ -907,7 +907,7 @@ export function createRoom3D(container) {
     }
 
     function drawEntryDoor() {
-      const inner = (t, up) => wallPt("back", t, up);
+      const inner = (t, up) => wallPt("left", t, up);
       const frameC = lightsOn ? "#3a2418" : "#221610";
       const wood = lightsOn ? "#6b3e22" : "#3a2416";
       const woodLite = lightsOn ? "#8a5630" : "#4a3020";
@@ -926,7 +926,7 @@ export function createRoom3D(container) {
       const kt0 = doorT0 + 0.08, kt1 = doorT0 + 0.16;
       const kh0 = doorH * 0.44, kh1 = doorH * 0.52;
       fillPoly(ctx, [inner(kt0, kh0), inner(kt1, kh0), inner(kt1, kh1), inner(kt0, kh1)], knob, "#2a2010");
-      const kmid = wallPt("back", (kt0 + kt1) / 2, (kh0 + kh1) / 2);
+      const kmid = wallPt("left", (kt0 + kt1) / 2, (kh0 + kh1) / 2);
       ctx.fillStyle = lightsOn ? "#efe0b0" : "#8a7038";
       ctx.beginPath();
       ctx.arc(kmid.sx, kmid.sy, 1.6, 0, Math.PI * 2);
@@ -959,7 +959,7 @@ export function createRoom3D(container) {
 
     drawEntryDoor();
 
-    // window on reserved back slots (kept left of the door and switch)
+    // window on reserved back slots (centered; door lives on the left wall)
     const winSlots = layoutWindowSlots(n);
     if (winSlots.length) {
       const t0 = winSlots[0] + 0.18, t1 = winSlots[winSlots.length - 1] + 0.82;
@@ -1455,6 +1455,7 @@ export function createRoom3D(container) {
     lightState() { return { room: lightsOn, lamps: lightsOn }; },
     doorSlot() { return doorSlot(); },
     switchSlot() { return switchSlot(); },
+    doorWall() { return "left"; },
     onWallClick(fn) { onWallClick = fn; },
     onWallHover(fn) { onWallHover = fn; },
     simulateWallClick(wall, slot) { onWallClick?.(wall, slot); },

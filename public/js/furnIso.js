@@ -194,16 +194,23 @@ function faceImage(ctx, corners, u0, v0, u1, v1, img) {
   ctx.restore();
 }
 
-function tvLayout(tw, th) {
+const TV_SCREEN_UV = { u0: 0.05, v0: 0.08, u1: 0.95, v1: 0.90 };
+
+function tvLayout(tw, th, rot = 0) {
   const full = insetBox(tw, th);
-  const standH = 8;
-  const bodyH = 28;
-  const body = { x: full.x + 0.08, y: full.y + 0.1, w: full.w - 0.16, h: full.h - 0.2 };
+  const standH = 10;
+  const bodyH = 22;
+  const r = normalizeFurnRot(rot);
+  const panel = backRect(tw, th, r, 0.16);
+  const pad = 0.05;
+  const body = r % 2 === 0
+    ? { x: panel.x + pad, y: panel.y, w: Math.max(0.2, panel.w - pad * 2), h: panel.h }
+    : { x: panel.x, y: panel.y + pad, w: panel.w, h: Math.max(0.2, panel.h - pad * 2) };
   return { full, standH, bodyH, body };
 }
 
 function tvFrontCorners(tw, th, rot) {
-  const L = tvLayout(tw, th);
+  const L = tvLayout(tw, th, rot);
   const front = visibleFront(rot);
   if (!front) return null;
   return faceCorners(L.body.x, L.body.y, L.body.w, L.body.h, L.standH, L.bodyH, front);
@@ -517,58 +524,61 @@ function drawLamp(ctx, tw, th, lights, lava) {
 }
 
 function drawTV(ctx, tw, th, rot, lights, on, holo, screen) {
-  const L = tvLayout(tw, th);
-  const wood = pal("#5a3a28", lights);
-  const cream = pal(holo ? "#3a3a44" : "#e8dcc8", lights);
-  const bezel = pal("#2a2622", lights);
-  shadow(ctx, L.full.x, L.full.y, L.full.w, L.full.h, 0.32);
-  // Chunky stand
-  box(ctx, L.full.x + L.full.w * 0.28, L.full.y + L.full.h * 0.28, L.full.w * 0.44, L.full.h * 0.44, 0, L.standH, wood);
-  box(ctx, L.full.x + 0.18, L.full.y + 0.18, L.full.w - 0.36, L.full.h - 0.36, L.standH - 2, 3, wood);
-  // CRT cabinet
-  box(ctx, L.body.x, L.body.y, L.body.w, L.body.h, L.standH, L.bodyH, cream);
+  const L = tvLayout(tw, th, rot);
+  const wood = pal(holo ? "#3a3a44" : "#6b4a2c", lights);
+  const woodDark = pal(holo ? "#2a2a32" : "#4a3220", lights);
+  const bezel = pal("#1a1c20", lights);
+  const uv = TV_SCREEN_UV;
+  shadow(ctx, L.full.x, L.full.y, L.full.w, L.full.h, 0.3);
+  const leg = 0.12, inset = 0.08;
+  const spots = [
+    [L.full.x + inset, L.full.y + inset],
+    [L.full.x + L.full.w - leg - inset, L.full.y + inset],
+    [L.full.x + inset, L.full.y + L.full.h - leg - inset],
+    [L.full.x + L.full.w - leg - inset, L.full.y + L.full.h - leg - inset],
+  ];
+  for (const [lx, ly] of spots) box(ctx, lx, ly, leg, leg, 0, L.standH - 2, woodDark);
+  box(ctx, L.full.x, L.full.y, L.full.w, L.full.h, 2, L.standH - 2, wood);
+  box(ctx, L.full.x - 0.02, L.full.y - 0.02, L.full.w + 0.04, L.full.h + 0.04, L.standH, 2, pal(holo ? "#4a4a54" : "#8a5a32", lights));
   const front = visibleFront(rot);
+  if (front) {
+    const sc = faceCorners(L.full.x, L.full.y, L.full.w, L.full.h, 2, L.standH - 2, front);
+    faceRect(ctx, sc, 0.08, 0.18, 0.46, 0.82, lights ? "#4a3220" : "#2a1c14", wood.outline);
+    faceRect(ctx, sc, 0.54, 0.18, 0.92, 0.82, lights ? "#4a3220" : "#2a1c14", wood.outline);
+    faceRect(ctx, sc, 0.28, 0.36, 0.34, 0.62, lights ? "#c4a35a" : "#6a5a30", null);
+    faceRect(ctx, sc, 0.74, 0.36, 0.80, 0.62, lights ? "#c4a35a" : "#6a5a30", null);
+  }
+  const neckW = Math.min(L.body.w, L.body.h) * 0.28;
+  box(ctx, L.body.x + (L.body.w - neckW) / 2, L.body.y + (L.body.h - neckW) / 2, neckW, neckW, L.standH + 2, 3, bezel);
+  box(ctx, L.body.x, L.body.y, L.body.w, L.body.h, L.standH, L.bodyH, bezel);
   const r = normalizeFurnRot(rot);
   if (front) {
     const fc = faceCorners(L.body.x, L.body.y, L.body.w, L.body.h, L.standH, L.bodyH, front);
-    // Rounded bezel
-    faceRect(ctx, fc, 0.05, 0.08, 0.95, 0.86, lights ? "#2a2622" : "#161412", bezel.outline);
-    faceRect(ctx, fc, 0.10, 0.14, 0.78, 0.80, on && lights ? "#0a1020" : "#09090c", "#111");
-    if (screen && on && lights) {
-      faceImage(ctx, fc, 0.11, 0.15, 0.77, 0.79, screen);
-    } else if (on && lights) {
-      faceRect(ctx, fc, 0.11, 0.15, 0.77, 0.79, holo ? "#1a2840" : "#152238", null);
+    faceRect(ctx, fc, 0.02, 0.03, 0.98, 0.97, lights ? "#14161a" : "#0c0c0e", bezel.outline);
+    const lit = on && lights;
+    faceRect(ctx, fc, uv.u0, uv.v0, uv.u1, uv.v1, lit ? "#0a1020" : "#09090c", "#111");
+    if (screen && lit) {
+      faceImage(ctx, fc, uv.u0, uv.v0, uv.u1, uv.v1, screen);
+    } else if (lit) {
+      faceRect(ctx, fc, uv.u0, uv.v0, uv.u1, uv.v1, holo ? "#1a2840" : "#152238", null);
     }
-    // Glass highlight + slight curve
     if (lights) {
       ctx.save();
-      ctx.globalAlpha = 0.28;
-      faceRect(ctx, fc, 0.13, 0.52, 0.32, 0.76, "#e8f0ff", null);
-      ctx.globalAlpha = 0.16;
-      faceRect(ctx, fc, 0.14, 0.18, 0.72, 0.28, "#ffffff", null);
+      ctx.globalAlpha = lit ? 0.18 : 0.08;
+      faceRect(ctx, fc, uv.u0 + 0.04, uv.v0 + 0.06, uv.u0 + 0.28, uv.v1 - 0.08, "#e8f0ff", null);
+      ctx.globalAlpha = lit ? 0.10 : 0.05;
+      faceRect(ctx, fc, uv.u0 + 0.06, uv.v0 + 0.04, uv.u1 - 0.08, uv.v0 + 0.16, "#ffffff", null);
       ctx.restore();
     }
-    // CUBEVISION plate and buttons
-    faceRect(ctx, fc, 0.80, 0.18, 0.93, 0.34, lights ? "#c9a25a" : "#6a5a30", "#3a2a14");
-    faceGlyph(ctx, fc, "CUBE", lights ? "#2a1c10" : "#111", 0.805, 0.20, 0.925, 0.33);
-    faceRect(ctx, fc, 0.82, 0.42, 0.87, 0.50, lights ? "#d42838" : "#622", null);
-    faceRect(ctx, fc, 0.88, 0.42, 0.93, 0.50, lights ? "#3d8a3a" : "#242", null);
-    faceRect(ctx, fc, 0.82, 0.54, 0.87, 0.62, lights ? "#3a6aaa" : "#224", null);
+    faceRect(ctx, fc, 0.46, 0.015, 0.54, 0.04, lights ? "#2a2c30" : "#161616", null);
+    faceRect(ctx, fc, 0.88, 0.015, 0.93, 0.04, on && lights ? "#3d8a3a" : "#622", null);
   } else {
-    // Back of the set: vents and a cable
     const back = r === 2 ? "-y" : "-x";
     const fc = faceCorners(L.body.x, L.body.y, L.body.w, L.body.h, L.standH, L.bodyH, back);
-    faceRect(ctx, fc, 0.15, 0.25, 0.85, 0.70, lights ? "#c8bca8" : "#5a5248", cream.outline);
-    faceRect(ctx, fc, 0.22, 0.32, 0.78, 0.40, lights ? "#3a3228" : "#1a1612", null);
-    faceRect(ctx, fc, 0.22, 0.44, 0.78, 0.52, lights ? "#3a3228" : "#1a1612", null);
-    faceRect(ctx, fc, 0.46, 0.10, 0.54, 0.22, "#2a2a2e", null);
+    faceRect(ctx, fc, 0.08, 0.08, 0.92, 0.92, lights ? "#2a2c32" : "#16181c", bezel.outline);
+    faceRect(ctx, fc, 0.18, 0.22, 0.82, 0.30, lights ? "#1a1c20" : "#0c0c0e", null);
+    faceRect(ctx, fc, 0.46, 0.08, 0.54, 0.18, "#1a1a1e", null);
   }
-  // Rabbit-ear antenna (visible on top for all orientations)
-  const ant = pal("#6a6460", lights);
-  const midX = L.body.x + L.body.w * 0.5, midY = L.body.y + L.body.h * 0.18;
-  box(ctx, midX - 0.04, midY, 0.08, 0.08, L.standH + L.bodyH, 8, ant);
-  box(ctx, midX - 0.22, midY, 0.08, 0.08, L.standH + L.bodyH + 6, 1, ant);
-  box(ctx, midX + 0.14, midY, 0.08, 0.08, L.standH + L.bodyH + 5, 1, ant);
 }
 
 export function tvGlowColor() {
@@ -909,7 +919,7 @@ export function drawFurnitureSprite(type, opts = {}) {
   ctx.save();
   ctx.translate(m.ox, m.oy);
   const fc = tvFrontCorners(m.tw, m.th, rot);
-  if (fc) faceImage(ctx, fc, 0.11, 0.15, 0.77, 0.79, screen);
+  if (fc) faceImage(ctx, fc, TV_SCREEN_UV.u0, TV_SCREEN_UV.v0, TV_SCREEN_UV.u1, TV_SCREEN_UV.v1, screen);
   ctx.restore();
   return { c: s, w: body.w, h: body.h };
 }

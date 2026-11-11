@@ -160,11 +160,11 @@ try {
   await alice.evaluate(() => window.__enterEdit());
   const placements = [
     ["art_ocean", "back", 0],
-    ["art_peaks", "back", 3],
-    ["art_nightwood", "left", 3],
+    ["art_peaks", "back", 1],
+    ["art_nightwood", "back", 5],
     ["art_farm", "left", 0],
     ["art_skyline", "left", 1],
-    ["art_gridsun", "left", 2],
+    ["art_gridsun", "left", 5],
   ];
   const blockedBefore = await alice.evaluate(() => [...(window.HouseIso.blockedSet(window.HouseRoom3D.getFurniture()) || [])]);
   for (const [type, wall, slot] of placements) {

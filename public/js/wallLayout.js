@@ -1,24 +1,23 @@
 /* Built-in wall features: window, entry door, and light switch.
-   The visible right-hand wall is the "back" wall (iso +X). The door sits
-   at that wall's far-right end and scales with the room size. */
+   The door sits in the middle of the left wall (iso -X) and scales with
+   room size. The window stays on the back wall. */
 
 export function doorWall() {
-  return "back";
+  return "left";
 }
 
 export function doorSlot(n) {
   const size = Math.max(4, n || 6);
-  return size - 1;
+  return Math.round((size - 1) / 2);
 }
 
 export function switchSlot(n) {
-  const size = Math.max(4, n || 6);
-  return Math.max(0, size - 2);
+  return Math.max(0, doorSlot(n) - 1);
 }
 
 export function windowSlots(n) {
   const size = Math.max(4, n || 6);
-  const winX = -size * 0.18;
+  const winX = 0;
   const out = [];
   for (let s = 0; s < size; s++) {
     const cx = s + 0.5 - size / 2;
@@ -30,17 +29,16 @@ export function windowSlots(n) {
 export function reservedWallSlots(size) {
   const n = Math.max(4, size || 6);
   const back = new Set(windowSlots(n));
-  back.add(doorSlot(n));
-  back.add(switchSlot(n));
-  return { back, left: new Set() };
+  const left = new Set([doorSlot(n), switchSlot(n)]);
+  return { back, left };
 }
 
 export function switchFloorTile(n) {
-  return { x: switchSlot(n), y: 0 };
+  return { x: 0, y: switchSlot(n) };
 }
 
 export function doorFloorTile(n) {
-  return { x: doorSlot(n), y: 0 };
+  return { x: 0, y: doorSlot(n) };
 }
 
 export function isReservedWallSlot(wall, slot, size) {
@@ -50,7 +48,8 @@ export function isReservedWallSlot(wall, slot, size) {
 }
 
 export function windowCenterOffset(n) {
-  return -(Math.max(4, n || 6) * 0.18);
+  void n;
+  return 0;
 }
 
 export function installWallLayout(iso) {
