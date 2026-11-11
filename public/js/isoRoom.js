@@ -868,6 +868,7 @@ export function createRoom3D(container, opts = {}) {
         shoePop: shoePopAt(p.username, (p.avatar || {}).shoes, now),
       };
       const spr = drawAvatarSprite(p.avatar || {}, flags, frame);
+      st.figTop = spr.top;
       const foot = tileToScreen(x + 0.5, y + 0.5);
       let depth = x + y + 0.45;
       if (p.sitting) {
@@ -1578,7 +1579,9 @@ export function createRoom3D(container, opts = {}) {
       if (!st && !p) return null;
       const x = (st?.x ?? p.x) + 0.5, y = (st?.y ?? p.y) + 0.5;
       const foot = tileToScreen(x, y);
-      const c = clientFromWorld(foot.sx, foot.sy - AV_GROUND_Y + (AV_HEAD_TOP || 2));
+      // Sit the name tag just above the visible hair/head, not the empty canvas pad.
+      const top = (st?.figTop != null) ? st.figTop : (AV_HEAD_TOP || 2);
+      const c = clientFromWorld(foot.sx, foot.sy - AV_GROUND_Y + top);
       const f = clientFromWorld(foot.sx, foot.sy);
       const rect = container.getBoundingClientRect();
       return { x: c.x - rect.left, y: c.y - rect.top, footY: f.y - rect.top, visible: c.visible };

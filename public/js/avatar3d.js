@@ -1,10 +1,14 @@
-/* Original MyCube chibi paper-doll avatars. Native 48x64, integer blit, part-colored ink. */
-export const AV_W = 48;
-export const AV_H = 64;
-export const AV_GROUND_Y = 61;
-export const AV_HEAD_TOP = 1;
+/* Original MyCube chibi paper-doll avatars. Integer blit, part-colored ink.
+   Core figure is 48x64 (feet at y=61) with padding so a wide afro and tall
+   spikes never clip the sprite canvas. Ground and body anchors stay put. */
+export const AV_PAD_X = 8;
+export const AV_PAD_TOP = 8;
+export const AV_W = 48 + AV_PAD_X * 2;
+export const AV_H = 64 + AV_PAD_TOP;
+export const AV_GROUND_Y = 61 + AV_PAD_TOP;
+export const AV_HEAD_TOP = 1 + AV_PAD_TOP;
 const AV_SEAT_DROP = 8;
-const CX = 24;
+const CX = 24 + AV_PAD_X;
 
 export function facingIndex8(facing, dirX, dirY) {
   let dx = 0, dy = 1;
@@ -600,11 +604,12 @@ function buildPalette(av) {
 /* ---------- geometry per view ---------- */
 function headGeom(key) {
   // Big near-circle head, about half the figure height. Chin still overlaps the collar (~y=39).
-  // Leave ~10px above the skull so buns, spikes, and a big afro puff can sit on the crown.
-  if (key === "e") return { cx: 25, cy: 24.8, rx: 13.8, ry: 13.8 };
-  if (key === "se") return { cx: 21.8, cy: 24.6, rx: 14.3, ry: 14.3 };
-  if (key === "ne") return { cx: 23.6, cy: 24.6, rx: 14.4, ry: 14.4 };
-  return { cx: 24, cy: 24.6, rx: 14.5, ry: 14.5 };
+  // Padding above and beside the skull lets a round afro and tall spikes sit on the crown.
+  const ox = AV_PAD_X, oy = AV_PAD_TOP;
+  if (key === "e") return { cx: 25 + ox, cy: 24.8 + oy, rx: 13.8, ry: 13.8 };
+  if (key === "se") return { cx: 21.8 + ox, cy: 24.6 + oy, rx: 14.3, ry: 14.3 };
+  if (key === "ne") return { cx: 23.6 + ox, cy: 24.6 + oy, rx: 14.4, ry: 14.4 };
+  return { cx: 24 + ox, cy: 24.6 + oy, rx: 14.5, ry: 14.5 };
 }
 
 function neckX(view, upper) {
@@ -1260,20 +1265,17 @@ function drawAfroCloud(buf, g, cy, pal, key, opts = {}) {
   const compressed = Boolean(opts.compressed);
   const hy = cy + 0.4;
   const px = g.cx + (key === "e" ? 0.4 : 0);
-  let pr = g.rx * (compressed ? 1.22 : 1.50);
-  let pry = compressed ? g.ry * 0.95 : pr;
-  let cyPuff = compressed ? (hy - g.ry * 0.20) : (hy - g.ry * 0.52);
-  // Side view: keep the full circle on-canvas so it reads as a round cloud, not a rear slab.
-  if (key === "e" && !compressed) {
-    pr = g.rx * 1.44;
-    pry = pr;
-    cyPuff = Math.max(pr + 1.0, hy - g.ry * 0.36);
-  }
+  // ~1.4× head width, truly circular. Bump centers sit inside that radius so the
+  // scalloped silhouette is the circle, not a larger jagged halo.
+  const pr = g.rx * (compressed ? 1.18 : 1.40);
+  const pry = compressed ? g.ry * 0.92 : pr;
+  const cyPuff = compressed ? (hy - g.ry * 0.18) : (hy - g.ry * 0.40);
   const mid = pal.hair.mid || pal.hair;
   const sh = pal.hair.sh || mid;
   const hi = animeHairHi(pal);
-  // Keep puff pixels on or above y=40 so the back view stays compact and seated.
-  const yMax = 40;
+  // Jaw/nape line for skull-bot math. Pixels below it stay hanging locks so a
+  // back-view cloud does not flatten or inflate the compact measurement.
+  const skullBotLimit = AV_PAD_TOP + 40;
 
   function inFace(px0, py) {
     if (key === "n" || key === "ne") return false;
@@ -1284,7 +1286,7 @@ function drawAfroCloud(buf, g, cy, pal, key, opts = {}) {
     return py > arch && Math.abs(faceNx) < 0.62;
   }
   function kindAt(py) {
-    return "hair-puff";
+    return py > skullBotLimit ? "hair-lock" : "hair-puff";
   }
   function colAt(x, y, px0, py) {
     const nx = x / (pr || 1), ny = y / (pry || 1);
@@ -1300,7 +1302,7 @@ function drawAfroCloud(buf, g, cy, pal, key, opts = {}) {
       for (let x = -rad; x <= rad; x++) {
         if (x * x + y * y > br * br) continue;
         const py = cy0 + y, px0 = cx0 + x;
-        if (py > yMax || inFace(px0, py)) continue;
+        if (inFace(px0, py)) continue;
         plot(buf, Math.round(px0), Math.round(py), colAt(cx0 - px + x, cy0 - cyPuff + y, px0, py), kindAt(py), depth);
       }
     }
@@ -1313,7 +1315,7 @@ function drawAfroCloud(buf, g, cy, pal, key, opts = {}) {
     for (let x = -rxi; x <= rxi; x++) {
       if ((x / baseRx) * (x / baseRx) + (y / baseRy) * (y / baseRy) > 1) continue;
       const py = cyPuff + y, px0 = px + x;
-      if (py > yMax || inFace(px0, py)) continue;
+      if (inFace(px0, py)) continue;
       plot(buf, Math.round(px0), Math.round(py), colAt(x, y, px0, py), kindAt(py), 46);
     }
   }
@@ -1322,10 +1324,10 @@ function drawAfroCloud(buf, g, cy, pal, key, opts = {}) {
   const bumps = 22;
   for (let i = 0; i < bumps; i++) {
     const ang = (i / bumps) * Math.PI * 2 - Math.PI / 2;
-    const wobble = ((i * 5 + 3) % 7) * 0.03;
-    const br = 2.85 + ((i * 3) % 5) * 0.12;
-    const bx = px + Math.cos(ang) * pr * (0.90 + wobble);
-    const by = cyPuff + Math.sin(ang) * pry * (0.90 + wobble);
+    const wobble = ((i * 5 + 3) % 7) * 0.02;
+    const br = 2.55 + ((i * 3) % 5) * 0.12;
+    const bx = px + Math.cos(ang) * pr * (0.86 + wobble);
+    const by = cyPuff + Math.sin(ang) * pry * (0.86 + wobble);
     if (inFace(bx, by)) continue;
     stampDot(bx, by, br, 47);
   }
@@ -1733,12 +1735,12 @@ function torsoBox(key, sit) {
   // Short squishy bean. The chin overlaps the top of the torso by a few pixels
   // so the round head sits on the shoulders, layered in front of the shirt.
   // Wider than it is tall, tucked onto the boots (~y=52).
-  const y0 = 36;
+  const y0 = 36 + AV_PAD_TOP;
   const h = 16;
-  if (key === "e") return { cx: 25, y0, hw: 10.8, h };
-  if (key === "se") return { cx: 22.6, y0, hw: 12.0, h };
-  if (key === "ne") return { cx: 23.8, y0, hw: 12.1, h };
-  return { cx: 24, y0, hw: 12.8, h };
+  if (key === "e") return { cx: 25 + AV_PAD_X, y0, hw: 10.8, h };
+  if (key === "se") return { cx: 22.6 + AV_PAD_X, y0, hw: 12.0, h };
+  if (key === "ne") return { cx: 23.8 + AV_PAD_X, y0, hw: 12.1, h };
+  return { cx: 24 + AV_PAD_X, y0, hw: 12.8, h };
 }
 
 function drawTorso(buf, av, key, pal, upper, sit, squash = 0) {
@@ -2305,7 +2307,7 @@ function composeAvatar(av, flags, frame) {
   function flipX(x) { return bodyView.flip ? AV_W - 1 - x : x; }
 
   const footGap = 2;
-  const cuffBottom = (av.bottom === "shorts" ? t.y0 + upper + t.h + 1 : 50 + (sit ? 2 : 0));
+  const cuffBottom = (av.bottom === "shorts" ? t.y0 + upper + t.h + 1 : (50 + AV_PAD_TOP) + (sit ? 2 : 0));
   function footPos(side, foot) {
     const baseX = bk === "e"
       ? t.cx + (side > 0 ? 6.0 : -4.4) + (foot.dx || 0) * 0.6
@@ -2388,7 +2390,13 @@ function bufToCanvas(buf, shadows) {
     ctx.ellipse(sh.x, sh.y, sh.rx || 6.5, sh.ry || 2.0, 0, 0, Math.PI * 2);
     ctx.fill();
   }
-  return { c, w: AV_W, h: AV_H };
+  let top = AV_H;
+  for (let y = 0; y < AV_H; y++) {
+    for (let x = 0; x < AV_W; x++) {
+      if (buf[y * AV_W + x]) { top = y; y = AV_H; break; }
+    }
+  }
+  return { c, w: AV_W, h: AV_H, top };
 }
 
 const cache = new Map();
@@ -3010,7 +3018,7 @@ export function inspectAvatarGeometry(avatar = {}, flags = {}, frame = 0) {
   }
   // Back views of a full cap (afro, long hair) may hide every skin pixel. Use the helmet itself.
   if (skullBot < 0) {
-    for (let y = 0; y < 46; y++) {
+    for (let y = 0; y < AV_PAD_TOP + 46; y++) {
       for (let x = 0; x < AV_W; x++) {
         const p = buf[y * AV_W + x];
         if (!isFill(p)) continue;
