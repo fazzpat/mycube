@@ -1125,6 +1125,30 @@ try {
   });
   check("Avatar and pet silhouette edges have no white or cream outline", outline.count === 0, JSON.stringify(outline));
 
+  const shape = await alice.evaluate(async () => {
+    const avMod = await import("/js/avatar3d.js?shape=1");
+    const looks = [
+      { skin: "#f0c9a8", hair: "spiky", hairColor: "#f4d27a", shirt: "#ef5a5a", top: "tshirt", bottom: "jeans", bottomColor: "#3d4f7c", shoes: "white" },
+      { skin: "#c98a62", hair: "ponytail", hairColor: "#f4d27a", shirt: "#6c7bff", top: "hoodie", bottom: "baggy", bottomColor: "#3d4f7c", shoes: "black" },
+      { skin: "#8d5524", hair: "afropuff", hairColor: "#2b1a12", shirt: "#3d8a3a", top: "varsity", bottom: "jeans", bottomColor: "#2a2a2e", shoes: "gum" },
+      { skin: "#f0c9a8", hair: "spacebuns", hairColor: "#b48cff", shirt: "#f4efe6", top: "tshirt", bottom: "skirt", bottomColor: "#c45a3a", shoes: "white" },
+    ];
+    const samples = [];
+    for (const look of looks) {
+      for (const dir of [0, 1, 7, 5]) {
+        const g = avMod.inspectAvatarGeometry(look, { bodyDir: dir, headDir: dir, blink: "open" }, 0);
+        samples.push({ hair: look.hair, dir, ...g });
+      }
+    }
+    const bad = samples.filter((s) => !s.seated || !s.squishy || !s.compact);
+    return {
+      ok: bad.length === 0,
+      bad: bad.slice(0, 8),
+      sample: samples[0],
+    };
+  });
+  check("Avatars are short and squishy with the head seated on the shoulders", Boolean(shape.ok), JSON.stringify(shape));
+
   log("Speech bubbles: visible in-room, then they rise in row order");
   await alice.evaluate(() => window.__clickTile(2, 3));
   await bob.evaluate(() => window.__clickTile(4, 3));
