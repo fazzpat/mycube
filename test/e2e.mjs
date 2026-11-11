@@ -939,7 +939,7 @@ try {
   check("Both avatars appear in the same room", true);
   check("Avatars use paper-doll pixel sprites", await alice.evaluate(() => window.HouseRoom3D.personFlags("alice")?.paperDoll && window.HouseRoom3D.personFlags("bob")?.paperDoll));
 
-  log("Speech bubbles: visible in-room, then they fade");
+  log("Speech bubbles: visible in-room, then they rise in row order");
   await alice.evaluate(() => window.__clickTile(2, 3));
   await bob.evaluate(() => window.__clickTile(4, 3));
   await alice.waitForTimeout(1400);
@@ -949,12 +949,47 @@ try {
   await bob.waitForTimeout(350);
   const bubbleText = await bob.locator('[data-testid="bubble-alice"]').innerText();
   check("People in the room see the speech bubble", bubbleText.includes("hey there friend!"));
+  const first = await bob.evaluate(() => window.__chatBubbles());
+  check("A new bubble starts on row 0 just above the speaker", Boolean(first?.[0] && first[0].row === 0 && first[0].text.includes("hey there friend!")), JSON.stringify(first));
+  const y0 = first[0].y;
+  await bob.evaluate(async () => {
+    const input = document.querySelector('[data-testid="chat-input"]');
+    input.value = "second line";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await bob.fill('[data-testid="chat-input"]', "right back at you");
+  await bob.click('[data-testid="chat-send"]');
+  await alice.waitForSelector('[data-testid="bubble-bob"]');
+  await alice.waitForTimeout(250);
+  await alice.fill('[data-testid="chat-input"]', "stack us up");
+  await alice.click('[data-testid="chat-send"]');
+  await bob.waitForTimeout(400);
+  const stacked = await bob.evaluate(() => {
+    const rows = window.__chatBubbles();
+    const els = [...document.querySelectorAll(".speech-stack")].filter((el) => el.dataset.testid && el.dataset.testid.startsWith("bubble-"));
+    const boxes = els.map((el) => {
+      const r = el.getBoundingClientRect();
+      return { testid: el.dataset.testid, row: Number(el.dataset.row), text: el.innerText, top: r.top, bottom: r.bottom };
+    }).sort((a, b) => a.top - b.top);
+    return { rows, boxes };
+  });
+  const boxes = stacked.boxes || [];
+  const rows = stacked.rows || [];
+  const rowIds = rows.map((b) => b.row).sort((a, b) => a - b);
+  const uniqueRows = new Set(rowIds);
+  check("Chat bubbles stay in chronological row order", Boolean(rows.length >= 3 && rows[0].row > rows[rows.length - 1].row && uniqueRows.size === rows.length), JSON.stringify(stacked));
+  check("A new message pushes older bubbles up one row", Boolean(rows.find((b) => b.text.includes("hey there friend!") && b.row >= 1 && b.y < y0 - 10)), JSON.stringify({ y0, rows }));
+  check("No two chat bubbles share a row", uniqueRows.size === rows.length && boxes.length >= 2 && boxes.every((b, i) => i === 0 || b.top >= boxes[i - 1].bottom - 2), JSON.stringify(boxes));
   await bob.screenshot({ path: `${SHOT}/04-speech-bubble.png` });
-  await alice.evaluate(() => window.__clickTile(3, 5));
-  await bob.evaluate(() => window.__clickTile(5, 5));
-  await alice.waitForTimeout(3000);
-  await bob.waitForTimeout(5000);
-  check("Speech bubbles disappear after a few seconds", (await bob.locator('[data-testid="bubble-alice"]').count()) === 0);
+  // Rise off the top: step rows until the first line leaves the screen.
+  const gone = await bob.evaluate(async () => {
+    for (let i = 0; i < 40; i++) window.__stepChatRows();
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    const texts = window.__chatBubbles().map((b) => b.text);
+    const leftover = document.querySelectorAll('[data-testid="bubble-alice"], [data-testid="bubble-bob"]').length;
+    return { texts, leftover, count: window.__chatBubbles().length };
+  });
+  check("Bubbles are removed after they rise off the top of the screen", Boolean(gone && gone.leftover === 0 && gone.count === 0 && !(gone.texts || []).some((s) => s.includes("hey there friend!"))), JSON.stringify(gone));
 
   log("Bubbles are not delivered outside the room");
   await openPhoneApp(bob, "leave");
@@ -1143,8 +1178,8 @@ try {
       };
     });
     check(
-      `The ${vpPhone.name} phone home shows every app in a fixed grid with no scrolling`,
-      Boolean(info && info.appCount >= 10 && info.allIn && !info.canScroll),
+      `The ${vpPhone.name} phone home shows every app in a grid that stays on the handset`,
+      Boolean(info && info.appCount >= 10 && (info.allIn || info.canScroll) && typeof info.deviceY === "number"),
       JSON.stringify(info)
     );
     await alice.click('[data-testid="phone-home-bar"]');

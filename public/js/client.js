@@ -52,6 +52,8 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
     storeKind: null,
     storeSel: null,
     storePreview: null,
+    chatFloats: [],
+    chatQuietAt: 0,
   };
 
   function setView(name) {
@@ -487,6 +489,8 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
   function mountRoom(room) {
     state.room = room;
     state.people = new Map();
+    state.chatFloats = [];
+    state.chatQuietAt = 0;
     (room.people || []).forEach((p) => {
       const rec = personRecord(p);
       rec.x = p.x;
@@ -554,6 +558,41 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
     const tab = nameTabOf(p.username);
     const fade = fading ? " fade" : "";
     return `<div class="speech-bubble${fade}"><span class="bubble-name" style="background:${tab.bg};color:${tab.fg}">${escapeHtml(displayOf(p))}</span><span class="bubble-text">${escapeHtml(text)}</span></div>`;
+  }
+
+  const CHAT_ROW_H = 24;
+  function pushChatFloat(p, text) {
+    const layer = document.getElementById("bubble-layer");
+    const W = layer?.clientWidth || 1;
+    let x = W / 2, headY = 160;
+    const pos = state.room3d?.projectHead?.(p.username);
+    if (pos) {
+      x = pos.x;
+      // Just above the head (and the name tag that sits over it).
+      headY = (pos.y || 160) - 22;
+    }
+    if (!state.chatFloats) state.chatFloats = [];
+    for (const b of state.chatFloats) {
+      b.row += 1;
+      b.targetY -= CHAT_ROW_H;
+    }
+    state.chatFloats.push({
+      id: p.username + "-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6),
+      username: p.username,
+      text,
+      x,
+      targetY: headY,
+      row: 0,
+    });
+    state.chatQuietAt = Date.now();
+  }
+  function stepChatRows() {
+    if (!state.chatFloats) state.chatFloats = [];
+    for (const b of state.chatFloats) {
+      b.row += 1;
+      b.targetY -= CHAT_ROW_H;
+    }
+    state.chatQuietAt = Date.now();
   }
 
   function paintOverlays() {
@@ -646,50 +685,67 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
         state.lastBoxing.set(p.username, nowBox);
       }
     }
-    // MyCoke strips: all live messages sit near the top, staggered by speaker X.
-    // Older lines step upward as new ones arrive.
-    const msgs = [];
-    for (const p of state.people.values()) {
-      for (const b of (p._activeBubbles || [])) {
-        msgs.push({ p, b, x: p._bubbleX || 0 });
+    // Habbo/MyCoke rows: newest just above head height; each new line
+    // and each quiet tick pushes every older bubble up exactly one row.
+    const CHAT_ROW_H = 24;
+    const CHAT_ROW_MS = 4500;
+    const CHAT_FADE_TOP = 16;
+    if (!state.chatFloats) state.chatFloats = [];
+    if (state.chatFloats.length && state.chatQuietAt && now - state.chatQuietAt >= CHAT_ROW_MS) {
+      for (const b of state.chatFloats) {
+        b.row += 1;
+        b.targetY -= CHAT_ROW_H;
       }
+      state.chatQuietAt = now;
     }
-    msgs.sort((a, b) => (a.b.until || 0) - (b.b.until || 0));
-    const ENTRY = Math.max(PAD + 44, Math.min(96, Math.round(H * 0.09) + 44));
-    const STEP = 22;
     const usedIds = new Set();
     const latestOf = new Map();
-    for (const m of msgs) latestOf.set(m.p.username, m);
-    msgs.forEach((m, i) => {
-      const isLatest = latestOf.get(m.p.username) === m;
-      const testid = isLatest ? ("bubble-" + m.p.username) : ("bubble-" + m.p.username + "-" + (m.b.id || i));
+    for (const b of state.chatFloats) latestOf.set(b.username, b);
+    const remain = [];
+    for (const b of state.chatFloats) {
+      const p = state.people.get(b.username);
+      if (p) {
+        const pos = state.room3d.projectHead(p.username);
+        if (pos) b.x = pos.x;
+      }
+      const isLatest = latestOf.get(b.username) === b;
+      const testid = isLatest ? ("bubble-" + b.username) : ("bubble-" + b.username + "-" + b.id);
       usedIds.add(testid);
-      let el = layer.querySelector(`[data-testid="${cssEscape(testid)}"]`);
+      let el = layer.querySelector(`[data-chat-id="${cssEscape(b.id)}"]`);
       if (!el) {
         el = document.createElement("div");
         el.className = "speech-stack";
-        el.dataset.testid = testid;
+        el.dataset.chatId = b.id;
         layer.appendChild(el);
       }
-      const fading = m.b.until - now < 900;
-      const sig = m.b.id + ":" + m.b.text + ":" + (fading ? "1" : "0");
+      el.dataset.testid = testid;
+      el.dataset.row = String(b.row);
+      const sig = b.id + ":" + b.text;
       if (el.dataset.sig !== sig) {
         el.dataset.sig = sig;
-        el.innerHTML = bubbleMarkup(m.p, m.b.text, fading);
+        el.innerHTML = bubbleMarkup(p || { username: b.username, avatar: { displayName: b.username } }, b.text, false);
       }
       const w = el.offsetWidth || 80;
-      const age = msgs.length - 1 - i;
-      let bx = Math.min(Math.max(m.x, PAD + w / 2), W - PAD - w / 2);
-      let by = ENTRY - age * STEP;
-      if (by < PAD + 8) by = PAD + 8;
+      const bx = Math.min(Math.max(b.x, PAD + w / 2), W - PAD - w / 2);
+      const by = b.targetY;
       el.style.left = bx + "px";
       el.style.top = by + "px";
-      seen.add("b:" + m.p.username);
-    });
+      const offTop = by < -8;
+      const nearTop = by <= CHAT_FADE_TOP;
+      el.classList.toggle("fade-top", nearTop);
+      if (offTop) el.remove();
+      else {
+        remain.push(b);
+        seen.add("b:" + b.username);
+      }
+    }
+    state.chatFloats = remain;
     layer.querySelectorAll(".speech-stack").forEach((el) => {
       const id = el.dataset.testid || "";
       if (id.startsWith("typing-")) return;
-      if (!usedIds.has(id)) el.remove();
+      if (!el.dataset.chatId || !usedIds.has(id)) {
+        if (!id.startsWith("typing-")) el.remove();
+      }
     });
     // impact flashes on bags
     for (const [id, use] of Object.entries(state.room?.uses || {})) {
@@ -758,7 +814,7 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
         const dx = next.x - p.x;
         const dy = next.y - p.y;
         const dist = Math.hypot(dx, dy);
-        const speed = 3.4;
+        const speed = 2.55;
         if (dist < 0.08) {
           p.x = next.x;
           p.y = next.y;
@@ -786,9 +842,6 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
       }
       if (p.bubble && tnow >= p.bubbleUntil) {
         p.bubble = null;
-        changed = true;
-      } else if (p.bubble && p.bubbleUntil - tnow < 900) {
-        changed = true;
       }
     }
     if (changed) renderPeople();
@@ -2444,12 +2497,16 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
     }
   });
   const phoneDevice = $("#phone-device");
-  const stopPhoneScroll = (e) => {
+  const phoneScrollRoot = (el) => el?.closest?.(".phone-grid, .phone-app-body");
+  const stopPhonePageScroll = (e) => {
+    // The handset stays put; only the grid / app body may pan vertically.
+    if (phoneScrollRoot(e.target)) return;
     e.preventDefault();
   };
-  phoneDevice?.addEventListener("touchmove", stopPhoneScroll, { passive: false });
+  phoneDevice?.addEventListener("touchmove", stopPhonePageScroll, { passive: false });
   $("#phone-overlay")?.addEventListener("touchmove", (e) => {
-    if (e.target && (e.target === phoneDevice || phoneDevice?.contains(e.target) || e.target.closest?.(".phone-device, .phone-home, .phone-grid, .phone-screen"))) {
+    if (phoneScrollRoot(e.target)) return;
+    if (e.target && (e.target === phoneDevice || phoneDevice?.contains(e.target) || e.target.closest?.(".phone-device, .phone-home, .phone-screen"))) {
       e.preventDefault();
     }
   }, { passive: false });
@@ -3031,6 +3088,7 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
     p.bubbles = (p.bubbles || []).filter((b) => Date.now() < b.until);
     p.bubbles.push({ text, until, id: until + "-" + p.bubbles.length, shout: Boolean(shout) });
     if (p.bubbles.length > 4) p.bubbles.shift();
+    pushChatFloat(p, text);
     const others = [...state.people.values()].filter((o) => o.username !== p.username);
     if (others.length) {
       let best = others[0], bestD = Infinity;
@@ -3316,6 +3374,9 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
   window.__buyStoreSel = () => socket.emit("buyStoreItem", { kind: state.storeKind, id: state.storeSel });
 
   window.__closePhone = () => closePhone();
+  window.__chatBubbles = () => (state.chatFloats || []).map((b) => ({ id: b.id, username: b.username, text: b.text, row: b.row, x: b.x, y: b.targetY }));
+  window.__stepChatRows = () => { stepChatRows(); paintOverlays(); return window.__chatBubbles(); };
+
   window.__openEmoteWheel = openEmoteWheel;
   window.__closeEmoteWheel = closeEmoteWheel;
   window.__playEmote = playActionEmote;

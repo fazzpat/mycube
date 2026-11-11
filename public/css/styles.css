@@ -690,7 +690,11 @@ input:focus { border-color: var(--coral); }
   transform: translateX(-50%) rotate(45deg);
 }
 .speech-stack .speech-bubble:not(:last-child) .bubble-tail { display: none; }
-.speech-bubble.fade { opacity: 0; transition: opacity .85s ease; }
+.speech-bubble.fade { opacity: 1; transition: none; }
+.speech-stack {
+  transition: top 180ms ease-out, left 160ms ease-out, opacity 140ms linear;
+}
+.speech-stack.fade-top { opacity: 0; }
 @keyframes bubblePop {
   from { transform: translateY(10px) scale(.86); opacity: 0; }
   to { transform: translateY(0) scale(1); opacity: 1; }
@@ -2444,23 +2448,33 @@ input, select, textarea, .chat-input, [data-testid="chat-input"] {
 .phone-home,
 .phone-screen,
 .phone-screens,
-.phone-app-screen,
-.phone-app-body,
-.phone-grid {
+.phone-app-screen {
   overflow: hidden !important;
   overscroll-behavior: none !important;
   -webkit-overflow-scrolling: auto;
 }
+.phone-device {
+  overflow: hidden !important;
+  overscroll-behavior: none !important;
+  touch-action: manipulation;
+}
+.phone-app-body,
+.phone-grid {
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  overscroll-behavior: none !important;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+}
 .phone-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  grid-template-rows: repeat(4, minmax(0, 1fr));
+  grid-auto-rows: min-content;
   gap: 2px 2px;
   padding: 1px 4px 2px;
   flex: 1;
   min-height: 0;
-  align-content: stretch;
-  touch-action: manipulation;
+  align-content: start;
 }
 .phone-app { min-height: 0; }
 .phone-app-icon { width: 30px; height: 30px; border-radius: 8px; }
@@ -2472,8 +2486,8 @@ input, select, textarea, .chat-input, [data-testid="chat-input"] {
   flex-direction: column !important;
   align-items: flex-start !important;
   gap: 3px !important;
-  transform: translate(-50%, 0) !important;
-  transform-origin: top center;
+  transform: translate(-50%, -100%) !important;
+  transform-origin: bottom center;
   pointer-events: none;
   z-index: 30;
 }
