@@ -4,7 +4,7 @@ import { spawn } from "child_process";
 import path from "path";
 import { fileURLToPath } from "url";
 import { ART_PIECES, PAINTING_CATALOG, PAINTING_IDS, ART_TILE_SPAN } from "../public/js/artPieces.js";
-import { openStartForm, clickCreatorOption, goToLobby } from "./startMenuHelp.mjs";
+import { openStartForm, clickCreatorOption, goToLobby, seedAndLogin, openCharacterEditor } from "./startMenuHelp.mjs";
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SHOT = process.env.SHOT_DIR || path.join(ROOT, "screenshots");
@@ -21,15 +21,11 @@ function check(name, ok, extra = "") {
 }
 
 async function login(page, username) {
-  await page.goto(BASE, { waitUntil: "domcontentloaded" });
-  await openStartForm(page);
-  await page.fill('[data-testid="username-input"]', username);
-  await page.click('[data-testid="login-btn"]');
-  await page.waitForSelector('body[data-view="creator"]', { timeout: 30000 });
-  await page.waitForSelector('[data-testid="save-avatar"]', { timeout: 10000 });
+  await seedAndLogin(page, username, BASE);
 }
 
 async function customize(page, displayName) {
+  await openCharacterEditor(page);
   await page.fill('[data-testid="display-name"]', displayName);
   await clickCreatorOption(page, "hair-1");
   await clickCreatorOption(page, "shirt-2");
@@ -37,6 +33,7 @@ async function customize(page, displayName) {
 }
 
 async function saveAvatar(page) {
+  await openCharacterEditor(page);
   await page.click('[data-testid="save-avatar"]');
   await page.waitForSelector('body[data-view="room"]', { timeout: 15000 });
 }

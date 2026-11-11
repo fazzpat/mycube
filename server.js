@@ -1119,7 +1119,107 @@ io.on("connection", (socket) => {
     joinUserToRoom(user, room, sock);
   }
 
-    socket.on("login", ({ username } = {}) => {
+  function defaultAvatar(username) {
+    return sanitizeAvatar({ displayName: String(username || "Friend").slice(0, 16) });
+  }
+
+  const GUEST_ADJ = ["Sunny", "Brave", "Cozy", "Lucky", "Swift", "Merry", "Calm", "Bold", "Kind", "Zippy", "Happy", "Chill"];
+  const GUEST_NOUN = ["Cube", "Fox", "Bean", "Puff", "Star", "Moss", "Spark", "Bud", "Dot", "Pal", "Pip", "Kid"];
+
+  function allocateGuestUsername() {
+    for (let i = 0; i < 80; i++) {
+      const adj = GUEST_ADJ[Math.floor(Math.random() * GUEST_ADJ.length)];
+      const noun = GUEST_NOUN[Math.floor(Math.random() * GUEST_NOUN.length)];
+      const num = String(10 + Math.floor(Math.random() * 90));
+      const name = adj + noun + num;
+      if (name.length >= 2 && name.length <= 16 && !users.has(name.toLowerCase())) return name;
+    }
+    for (let i = 1; i < 10000; i++) {
+      const name = "Guest" + i;
+      if (!users.has(name.toLowerCase())) return name;
+    }
+    return ("Guest" + Date.now().toString(36)).slice(0, 16);
+  }
+
+  function makeUser(username) {
+    return {
+      username,
+      avatar: defaultAvatar(username),
+      coins: START_COINS,
+      inventory: [],
+      friends: [],
+      socketId: null,
+      roomId: null,
+      x: 3,
+      y: 5,
+      sitting: false,
+      emote: null,
+      collection: emptyCollection(),
+      heldProp: null,
+      activePet: null,
+      extraSpins: 0,
+      freeSpinUsed: false,
+      hangoutEarnedToday: 0,
+      hangoutAccrued: 0,
+      adsWatchedToday: 0,
+      adSpinsToday: 0,
+      economyDate: null,
+    };
+  }
+
+  function syncHomeCubeName(user) {
+    if (!user?.homeRoomId) return;
+    const room = rooms.get(user.homeRoomId);
+    if (!room || !room.owner || room.owner.toLowerCase() !== user.username.toLowerCase()) return;
+    const next = homeCubeName(user);
+    if (room.name === next) return;
+    room.name = next;
+    io.emit("roomsUpdated", publicRooms());
+  }
+
+  function finishLogin(user, sock, { isNew = false } = {}) {
+    if (!user.avatar) user.avatar = defaultAvatar(user.username);
+    if (!user.collection) user.collection = emptyCollection();
+    user.socketId = sock.id;
+    sock.data.userKey = user.username.toLowerCase();
+    ensureDay(user);
+    let daily = 0;
+    if (user.lastLoginBonusOn !== todayStamp()) {
+      user.lastLoginBonusOn = todayStamp();
+      user.coins += DAILY_LOGIN_BONUS;
+      daily = DAILY_LOGIN_BONUS;
+    }
+    const resumeRoom = user.roomId ? rooms.get(user.roomId) : null;
+    sock.emit("loggedIn", {
+      user: publicUser(user),
+      rooms: publicRooms(),
+      resumeRoomId: resumeRoom ? resumeRoom.id : null,
+      homeRoomId: user.homeRoomId || null,
+      isNew: Boolean(isNew),
+    });
+    if (daily) sock.emit("coinsEarned", { amount: daily, reason: "daily", coins: user.coins });
+    if (resumeRoom) {
+      sock.join(resumeRoom.id);
+      const playing = findActiveChess(resumeRoom, user.username);
+      if (playing) {
+        clearChessAway(playing.game, user.username);
+        emitRoom(resumeRoom, "chessUpdated", { id: playing.id, game: publicChess(playing.game) });
+      }
+      sock.emit("joinedRoom", roomState(resumeRoom));
+    } else {
+      enterHomeRoom(user, sock);
+    }
+    notifyFriendWatchers(user);
+  }
+
+  socket.on("guestLogin", () => {
+    const username = allocateGuestUsername();
+    const user = makeUser(username);
+    users.set(username.toLowerCase(), user);
+    finishLogin(user, socket, { isNew: true });
+  });
+
+  socket.on("login", ({ username } = {}) => {
     username = String(username || "").trim();
     if (!/^[a-zA-Z0-9_]{2,16}$/.test(username)) {
       socket.emit("errorMsg", {
@@ -1133,58 +1233,13 @@ io.on("connection", (socket) => {
       socket.emit("errorMsg", { message: "That name is already hanging out here." });
       return;
     }
+    let isNew = false;
     if (!user) {
-      user = {
-        username,
-        avatar: null,
-        coins: START_COINS,
-        inventory: [],
-        friends: [],
-        socketId: socket.id,
-        roomId: null,
-        x: 3,
-        y: 5,
-        sitting: false,
-        emote: null,
-        collection: emptyCollection(),
-        heldProp: null,
-        activePet: null,
-        extraSpins: 0,
-        freeSpinUsed: false,
-        hangoutEarnedToday: 0,
-        hangoutAccrued: 0,
-        adsWatchedToday: 0,
-        adSpinsToday: 0,
-        economyDate: null,
-      };
+      user = makeUser(username);
       users.set(key, user);
-    } else {
-      user.socketId = socket.id;
+      isNew = true;
     }
-    if (!user.collection) user.collection = emptyCollection();
-    socket.data.userKey = key;
-    ensureDay(user);
-    let daily = 0;
-    if (user.lastLoginBonusOn !== todayStamp()) {
-      user.lastLoginBonusOn = todayStamp();
-      user.coins += DAILY_LOGIN_BONUS;
-      daily = DAILY_LOGIN_BONUS;
-    }
-    const resumeRoom = user.roomId ? rooms.get(user.roomId) : null;
-    socket.emit("loggedIn", { user: publicUser(user), rooms: publicRooms(), resumeRoomId: resumeRoom ? resumeRoom.id : null, homeRoomId: user.homeRoomId || null });
-    if (daily) socket.emit("coinsEarned", { amount: daily, reason: "daily", coins: user.coins });
-    if (resumeRoom) {
-      socket.join(resumeRoom.id);
-      const playing = findActiveChess(resumeRoom, user.username);
-      if (playing) {
-        clearChessAway(playing.game, user.username);
-        emitRoom(resumeRoom, "chessUpdated", { id: playing.id, game: publicChess(playing.game) });
-      }
-      socket.emit("joinedRoom", roomState(resumeRoom));
-    } else if (user.avatar) {
-      enterHomeRoom(user, socket);
-    }
-    notifyFriendWatchers(user);
+    finishLogin(user, socket, { isNew });
   });
 
   socket.on("updateAvatar", (raw) => {
@@ -1206,6 +1261,7 @@ io.on("connection", (socket) => {
     const firstAvatar = !user.avatar;
     user.avatar = next;
     if (!user.avatar.displayName) user.avatar.displayName = user.username;
+    syncHomeCubeName(user);
     emitProfile(user);
     if (firstAvatar && !user.roomId) {
       enterHomeRoom(user, socket);

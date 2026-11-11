@@ -53,3 +53,23 @@ export async function goToLobby(page) {
   await page.evaluate(() => window.__leaveRoom?.());
   await page.waitForSelector('body[data-view="lobby"]', { timeout: 15000 });
 }
+
+export async function seedAndLogin(page, username, baseUrl) {
+  await page.addInitScript((u) => {
+    try {
+      localStorage.setItem("hearthUser", u);
+      sessionStorage.setItem("hearthUser", u);
+    } catch {}
+  }, username);
+  await page.goto(baseUrl, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector('body[data-view="room"]', { timeout: 30000 });
+}
+
+export async function openCharacterEditor(page) {
+  const view = await page.evaluate(() => document.body.dataset.view);
+  if (view !== "creator") {
+    await page.evaluate(() => window.__openCharacterEditor?.());
+  }
+  await page.waitForSelector('body[data-view="creator"]', { timeout: 15000 });
+  await page.waitForSelector('[data-testid="creator-window"]', { timeout: 10000 });
+}

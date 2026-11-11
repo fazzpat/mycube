@@ -27,7 +27,7 @@
 <body>
   <div class="app" id="app">
     <!-- LOGIN -->
-    <section id="view-login" class="view start-view">
+    <section id="view-login" class="view start-view hidden">
       <div id="start-room" class="start-room" data-testid="start-room" aria-hidden="true"></div>
       <div class="start-dust" aria-hidden="true">
         <span style="left:12%;bottom:8%;animation-duration:7s;animation-delay:0s"></span>
@@ -367,6 +367,12 @@
                     <svg viewBox="0 0 32 32" width="28" height="28"><path d="M7 23h14l-3-8h-8z" fill="#fff"/><path d="M12 6h8l-2 9h-6z" fill="#fff6"/><rect x="13" y="3" width="6" height="5" rx="2" fill="#ffe08a"/><path d="M6 25h16v3H6z" fill="#fff" opacity=".9"/></svg>
                   </span>
                   <span class="phone-app-label">Edit Room</span>
+                </button>
+                <button type="button" class="phone-app" data-testid="phone-app-edit-character" data-app="edit-character">
+                  <span class="phone-app-icon" style="background:linear-gradient(180deg,#ffd36b,#f4c15d)">
+                    <svg viewBox="0 0 32 32" width="28" height="28"><circle cx="16" cy="11" r="5" fill="#fff"/><path d="M6 27c1-7 5-10 10-10s9 3 10 10z" fill="#fff"/><path d="M22 8l3-1 1 3-3 1z" fill="#7c5cff"/></svg>
+                  </span>
+                  <span class="phone-app-label">Edit Character</span>
                 </button>
                 <button type="button" class="phone-app" data-testid="phone-app-emotes" data-app="emotes">
                   <span class="phone-app-icon" style="background:linear-gradient(180deg,#ffe08a,#ff7a59)">

@@ -4,7 +4,7 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import path from "path";
 import { fileURLToPath } from "url";
-import { openStartForm, openCreatorTab, clickCreatorOption, goToLobby } from "./startMenuHelp.mjs";
+import { openStartForm, openCreatorTab, clickCreatorOption, goToLobby, seedAndLogin, openCharacterEditor } from "./startMenuHelp.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -16,15 +16,11 @@ function log(msg) {
 }
 
 async function login(page, username) {
-  await page.goto(BASE, { waitUntil: "domcontentloaded" });
-  await openStartForm(page);
-  await page.fill('[data-testid="username-input"]', username);
-  await page.click('[data-testid="login-btn"]');
-  await page.waitForSelector('body[data-view="creator"]', { timeout: 30000 });
-  await page.waitForSelector('[data-testid="save-avatar"]', { timeout: 10000 });
+  await seedAndLogin(page, username, BASE);
 }
 
 async function customize(page, { displayName, hair, shirt, skin, glasses, hairColor, top, accessory } = {}) {
+  await openCharacterEditor(page);
   if (displayName != null) await page.fill('[data-testid="display-name"]', displayName);
   if (skin != null) await clickCreatorOption(page, `skin-${skin}`);
   if (hair != null) await clickCreatorOption(page, `hair-${hair}`);
@@ -43,6 +39,7 @@ async function customize(page, { displayName, hair, shirt, skin, glasses, hairCo
 }
 
 async function saveAvatar(page) {
+  await openCharacterEditor(page);
   await page.click('[data-testid="save-avatar"]');
   await page.waitForSelector('body[data-view="room"]', { timeout: 15000 });
 }
@@ -476,25 +473,45 @@ async function assertCreatorTabsFit(page, viewportName, viewport) {
 }
 
 async function runCreatorPhoneAndBoot(browser) {
-  log("New visitors see the arcade start menu; returning users enter their cube");
+  log("Everyone boots straight into their own cube");
   const fresh = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   const fp = await fresh.newPage();
   fp.setDefaultTimeout(20000);
   await fp.goto(BASE, { waitUntil: "domcontentloaded" });
-  await fp.waitForSelector('[data-testid="start-menu"]', { timeout: 15000 });
-  const bootView = await fp.evaluate(() => document.body.dataset.view);
-  check("A new visitor with no account sees the arcade start menu", bootView === "login" && await fp.locator('[data-testid="start-menu"]').isVisible(), bootView);
+  await fp.waitForSelector('body[data-view="room"]', { timeout: 20000 });
+  const boot = await fp.evaluate(() => ({
+    view: document.body.dataset.view,
+    menu: Boolean(document.querySelector('[data-testid="start-menu"]') && !document.getElementById("view-login")?.classList.contains("hidden")),
+    title: document.querySelector('[data-testid="room-title"]')?.textContent || "",
+    user: localStorage.getItem("hearthUser") || sessionStorage.getItem("hearthUser") || "",
+    hasPhone: Boolean(document.querySelector('[data-testid="phone-btn"]')),
+  }));
+  check(
+    "A fresh visitor boots straight into their own home cube",
+    boot.view === "room" && !boot.menu && /'s Cube/i.test(boot.title) && /^[a-zA-Z0-9_]{2,16}$/.test(boot.user) && boot.hasPhone,
+    JSON.stringify(boot)
+  );
+  const other = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const op = await other.newPage();
+  await op.goto(BASE, { waitUntil: "domcontentloaded" });
+  await op.waitForSelector('body[data-view="room"]', { timeout: 20000 });
+  const otherUser = await op.evaluate(() => localStorage.getItem("hearthUser") || "");
+  check("Auto-created guest usernames do not collide", otherUser && otherUser !== boot.user, JSON.stringify({ first: boot.user, second: otherUser }));
+  await other.close();
   await fresh.close();
 
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   const page = await ctx.newPage();
   page.setDefaultTimeout(20000);
   await login(page, "returnee");
+  await page.waitForSelector('body[data-view="room"]');
+  const landed = await page.evaluate(() => document.querySelector('[data-testid="room-title"]')?.textContent || "");
+  check("A named account boots into its own cube with a default look", /returnee/i.test(landed) && await page.locator('body[data-view="room"]').count() === 1, landed);
   await customize(page, { displayName: "Returnee", hair: 2, shirt: 1, skin: 2, glasses: false });
   await saveAvatar(page);
   await page.waitForSelector('body[data-view="room"]');
   const homeTitle = await page.evaluate(() => document.querySelector('[data-testid="room-title"]')?.textContent || "");
-  check("After creating a character, a new user lands in their own cube", /returnee/i.test(homeTitle) && await page.locator('body[data-view="room"]').count() === 1, homeTitle);
+  check("Renaming in the phone editor updates the home cube name", /returnee/i.test(homeTitle), homeTitle);
 
   await page.evaluate(() => window.__debugKit?.({ furniture: ["capsulecouch", "holotv", "lamp"] }));
   await page.waitForTimeout(150);
@@ -507,7 +524,9 @@ async function runCreatorPhoneAndBoot(browser) {
   await page.evaluate(() => window.__exitEdit?.());
   const placed = await page.evaluate(() => (window.HouseRoom3D?.getFurniture?.() || []).length);
   check("Home cube accepted furniture for the in-room creator backdrop", placed >= 2, String(placed));
-  await openPhoneApp(page, "wardrobe");
+  await openPhone(page);
+  check("The phone menu has an Edit Character entry", await page.locator('[data-testid="phone-app-edit-character"]').isVisible());
+  await page.click('[data-testid="phone-app-edit-character"]');
   await page.waitForSelector('[data-testid="creator-window"]');
   await page.waitForTimeout(400);
   const inRoomBd = await page.evaluate(() => ({
@@ -521,6 +540,7 @@ async function runCreatorPhoneAndBoot(browser) {
   );
   await page.click('[data-testid="creator-back"]');
   await page.waitForSelector('body[data-view="room"]');
+  const savedLook = await page.evaluate(() => window.__storeState?.()?.me?.avatar || {});
 
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForSelector('body[data-view="room"]', { timeout: 20000 });
@@ -528,11 +548,17 @@ async function runCreatorPhoneAndBoot(browser) {
     view: document.body.dataset.view,
     menu: Boolean(document.querySelector('[data-testid="start-menu"]') && !document.getElementById("view-login")?.classList.contains("hidden")),
     title: document.querySelector('[data-testid="room-title"]')?.textContent || "",
+    avatar: window.__storeState?.()?.me?.avatar || {},
   }));
   check(
-    "A returning user with a remembered login skips the start menu and boots into their own cube",
+    "A returning user with a remembered login boots into their own cube",
     afterReload.view === "room" && !afterReload.menu && /returnee/i.test(afterReload.title),
-    JSON.stringify(afterReload)
+    JSON.stringify({ view: afterReload.view, menu: afterReload.menu, title: afterReload.title })
+  );
+  check(
+    "Phone editor name and look changes persist after reload",
+    afterReload.avatar.displayName === "Returnee" && afterReload.avatar.hair === savedLook.hair && afterReload.avatar.shirt === savedLook.shirt,
+    JSON.stringify({ savedLook, after: afterReload.avatar })
   );
 
   await page.evaluate(() => window.__signOut?.());
@@ -545,10 +571,10 @@ async function runCreatorPhoneAndBoot(browser) {
   const cp = await cctx.newPage();
   cp.setDefaultTimeout(20000);
   await login(cp, "fituser");
-  await cp.waitForSelector('[data-testid="creator-window"]');
+  await openCharacterEditor(cp);
   await cp.waitForTimeout(650);
-  const emptyBd = await cp.evaluate(() => window.__creatorMenu?.usingRoomBackdrop?.());
-  check("A new user's creator uses the empty cube backdrop", emptyBd === false, String(emptyBd));
+  const homeBd = await cp.evaluate(() => window.__creatorMenu?.usingRoomBackdrop?.());
+  check("A new user's phone editor uses their home cube as the backdrop", homeBd === true, String(homeBd));
   for (const vp of CREATOR_PHONES) {
     await cp.setViewportSize({ width: vp.width, height: vp.height });
     await cp.waitForTimeout(200);
@@ -564,9 +590,13 @@ async function runAppShellFit(browser) {
   const page = await ctx.newPage();
   page.setDefaultTimeout(20000);
   await page.goto(BASE, { waitUntil: "domcontentloaded" });
-  await page.waitForSelector('[data-testid="start-menu"]');
+  await page.waitForSelector('body[data-view="room"]', { timeout: 20000 });
   await page.waitForTimeout(200);
-  await assertInsideViewport(page, ['[data-testid="start-menu"]', '[data-testid="start-option-start"]'], "The arcade start menu fits the iPhone 14 viewport");
+  await assertInsideViewport(page, ['[data-testid="room-title"]', '[data-testid="phone-btn"]'], "A fresh visit's home cube fits the iPhone 14 viewport");
+  await page.evaluate(() => window.__signOut?.());
+  await page.waitForSelector('[data-testid="start-menu"]', { timeout: 15000 });
+  await page.waitForTimeout(200);
+  await assertInsideViewport(page, ['[data-testid="start-menu"]', '[data-testid="start-option-start"]'], "The arcade start menu fits the iPhone 14 viewport after sign out");
   await openStartForm(page);
   await page.waitForTimeout(200);
   const pwa = await page.evaluate(async () => {
@@ -598,6 +628,8 @@ async function runAppShellFit(browser) {
   await checkShellOverflow(page, "The app shell does not scroll the sign-in page");
 
   await login(page, "pia");
+  await page.waitForTimeout(200);
+  await openCharacterEditor(page);
   await page.waitForTimeout(200);
   await assertInsideViewport(page, [".topbar", '[data-testid="display-name"]', '[data-testid="save-avatar"]'], "Character creator chrome fits the iPhone 14 viewport");
   const prev = page.viewportSize();
@@ -1200,8 +1232,24 @@ bob.setDefaultTimeout(15000);
 try {
   await mkdir(SHOT, { recursive: true });
 
-  log("Arcade start menu");
+  log("A fresh visit lands in your cube");
   await alice.goto(BASE, { waitUntil: "domcontentloaded" });
+  await alice.waitForSelector('body[data-view="room"]', { timeout: 20000 });
+  await alice.waitForTimeout(400);
+  const firstBoot = await alice.evaluate(() => ({
+    view: document.body.dataset.view,
+    menu: Boolean(document.querySelector('[data-testid="start-menu"]') && !document.getElementById("view-login")?.classList.contains("hidden")),
+    title: document.querySelector('[data-testid="room-title"]')?.textContent || "",
+    user: localStorage.getItem("hearthUser") || "",
+  }));
+  check(
+    "The first screen is the player's own cube, not the start menu",
+    firstBoot.view === "room" && !firstBoot.menu && /'s Cube/i.test(firstBoot.title),
+    JSON.stringify(firstBoot)
+  );
+
+  log("Sign out reveals the arcade start menu for switching accounts");
+  await alice.evaluate(() => window.__signOut?.());
   await alice.waitForSelector('[data-testid="start-menu"]', { timeout: 20000 });
   await alice.waitForTimeout(400);
   const startLayout = await alice.evaluate(() => {
@@ -1254,6 +1302,9 @@ try {
   log("Alice and Bob create characters");
   await login(alice, "alice");
   log("Arcade character creator");
+  await openPhone(alice);
+  check("Edit Character is on the in-game phone", await alice.locator('[data-testid="phone-app-edit-character"]').isVisible());
+  await alice.click('[data-testid="phone-app-edit-character"]');
   await alice.waitForSelector('[data-testid="creator-window"]');
   await alice.waitForTimeout(400);
   const creatorLayout = await alice.evaluate(() => {

@@ -1,6 +1,6 @@
 import { createRoom3D, createAvatarPreview } from "./isoRoom.js";
 import { initStartMenu } from "./startMenu.js";
-import { initCreatorMenu } from "./creatorMenu.js";
+import { initCreatorMenu, openFromPhone } from "./creatorMenu.js";
 import { CLOTHING_STOCK, PET_STOCK, PUBLIC_PLACES, clothingSlot, CLOTHING_SLOTS, HAIR_STYLES as CAT_HAIR_STYLES, HAIR_LABELS, TOP_LABELS, BOTTOM_LABELS, ACC_LABELS, BASE_TOPS, BASE_BOTTOMS, BASE_ACCESSORIES, TOPS as CAT_TOPS, BOTTOMS as CAT_BOTTOMS, ACCESSORIES as CAT_ACCESSORIES } from "./storeCatalog.js";
 import { ART_PIECES, paintArtThumb, registerArtCatalog, installPaintings } from "./artPieces.js";
 import { installWallLayout, switchFloorTile } from "./wallLayout.js";
@@ -2318,14 +2318,8 @@ import { initChessUI } from "./chess-ui.js";
       state.shopTab = "pets";
       app = "shop";
     }
-    if (app === "wardrobe") {
-      closePhone();
-      state.creatorReturn = "room";
-      state.draft = { ...HearthAvatar.defaults(), ...(state.me.avatar || {}) };
-      $("#display-name").value = state.draft.displayName || state.me.username;
-      paintCreator();
-      SHOW($("#creator-back"));
-      setView("creator");
+    if (app === "edit-character" || app === "wardrobe") {
+      openCharacterEditor("room");
       return;
     }
     if (app === "emotes") {
@@ -2538,6 +2532,18 @@ import { initChessUI } from "./chess-ui.js";
     if (state.phoneApp === "props") paintProps();
     if (state.phoneApp === "coins") paintPhoneCoins();
     if (state.phoneApp === "upgrade") paintUpgrade();
+  }
+
+  function openCharacterEditor(returnTo = "room") {
+    if (!openFromPhone()) return;
+    closePhone();
+    state.creatorReturn = returnTo;
+    state.draft = { ...HearthAvatar.defaults(), ...(state.me?.avatar || {}) };
+    const nameEl = $("#display-name");
+    if (nameEl) nameEl.value = state.draft.displayName || state.me?.username || "";
+    paintCreator();
+    SHOW($("#creator-back"));
+    setView("creator");
   }
 
   function returnFromCreator() {
@@ -3098,21 +3104,16 @@ import { initChessUI } from "./chess-ui.js";
 
 
   /* ---------- socket ---------- */
-  socket.on("loggedIn", ({ user, rooms }) => {
+  socket.on("loggedIn", ({ user, rooms, isNew }) => {
     state.me = user;
     ingestRooms(rooms);
     try {
       sessionStorage.setItem("hearthUser", user.username);
       localStorage.setItem("hearthUser", user.username);
     } catch {}
-    if (!user.avatar) {
-      state.draft = { ...HearthAvatar.defaults(), displayName: user.username };
-      $("#display-name").value = user.username;
-      paintCreator();
-      setView("creator");
-    } else {
-      state.draft = { ...user.avatar };
-      // Returning users with an avatar enter their cube via joinedRoom.
+    state.draft = { ...HearthAvatar.defaults(), ...(user.avatar || {}), displayName: user.avatar?.displayName || user.username };
+    if (isNew) {
+      toast(`Welcome to your cube, ${state.draft.displayName}. Open your phone to edit your look or name.`);
     }
   });
 
@@ -3153,6 +3154,10 @@ import { initChessUI } from "./chess-ui.js";
       const meta = rooms.find((r) => r.id === state.room.id);
       if (meta) {
         if ("locked" in meta) state.room.locked = meta.locked;
+        if (meta.name) {
+          state.room.name = meta.name;
+          $("#room-title").textContent = "Cube: " + meta.name;
+        }
         $("#room-meta").textContent = "Owner: " + state.room.owner;
       }
     }
@@ -3606,12 +3611,14 @@ import { initChessUI } from "./chess-ui.js";
 
   paintLoginPreview();
 
+  window.__openCharacterEditor = () => openCharacterEditor("room");
+
   let remembered = "";
   try { remembered = localStorage.getItem("hearthUser") || sessionStorage.getItem("hearthUser") || ""; } catch {}
   if (remembered) {
     socket.emit("login", { username: remembered });
   } else {
-    setView("login");
+    socket.emit("guestLogin");
   }
 
   socket.on("loggedOut", () => {

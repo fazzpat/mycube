@@ -12,6 +12,12 @@ const TABS = [
   { id: "shoes", label: "SHOES" },
 ];
 
+/* Phone hook: Edit Character calls this; the client then shows the overlay
+   via setView("creator"), which invokes show() without leaving the cube. */
+export function openFromPhone() {
+  return true;
+}
+
 export function initCreatorMenu({ onShow, getBackdropRoom } = {}) {
   const roomEl = document.getElementById("creator-room");
   const viewEl = document.getElementById("view-creator");
