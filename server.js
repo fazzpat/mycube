@@ -931,7 +931,7 @@ function seatWorld(furn, seatNum) {
 }
 
 function startHeldItem(user, kind) {
-  const durations = { sandwich: 7500, soda: 6500, water: 6000, coffee: 10800 };
+  const durations = { sandwich: 20000, pizza: 20000, soda: 45000, chicken: 20000, water: 45000, coffee: 50000 };
   clearHeldTimer(user);
   if (user.heldProp) {
     user.stowedProp = user.heldProp;
@@ -2145,8 +2145,10 @@ io.on("connection", (socket) => {
     const room = rooms.get(user.roomId);
     const furn = room?.furniture.find((f) => f.id === id && f.type === "fridge");
     if (!furn) return;
-    if (!["sandwich", "soda", "water"].includes(item)) return;
-    startHeldItem(user, item);
+    const allowed = ["pizza", "soda", "chicken", "water", "sandwich"];
+    if (!allowed.includes(item)) return;
+    const kind = item === "sandwich" ? "pizza" : item;
+    startHeldItem(user, kind);
     if (room?.uses?.[id]?.user === user.username) {
       delete room.uses[id];
       emitRoom(room, "useUpdated", { id, use: null });

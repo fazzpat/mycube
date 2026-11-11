@@ -249,12 +249,25 @@
       <div id="activity-chip" class="activity-chip hidden" data-testid="activity-chip"></div>
       <div id="fridge-picker" class="fridge-picker hidden" data-testid="fridge-picker">
         <div class="fridge-picker-title">Grab a snack</div>
-        <div class="fridge-picker-row">
-          <button type="button" class="btn" data-fridge="sandwich" data-testid="fridge-sandwich">🥪 Sandwich</button>
-          <button type="button" class="btn" data-fridge="soda" data-testid="fridge-soda">🥤 Soda</button>
-          <button type="button" class="btn" data-fridge="water" data-testid="fridge-water">💧 Water</button>
+        <div class="fridge-picker-grid">
+          <button type="button" class="fridge-item" data-fridge="pizza" data-testid="fridge-pizza">
+            <canvas class="fridge-thumb" data-fridge-thumb="pizza" width="40" height="40"></canvas>
+            <span class="fridge-item-name">Pizza</span>
+          </button>
+          <button type="button" class="fridge-item" data-fridge="soda" data-testid="fridge-soda">
+            <canvas class="fridge-thumb" data-fridge-thumb="soda" width="40" height="40"></canvas>
+            <span class="fridge-item-name">Soda</span>
+          </button>
+          <button type="button" class="fridge-item" data-fridge="chicken" data-testid="fridge-chicken">
+            <canvas class="fridge-thumb" data-fridge-thumb="chicken" width="40" height="40"></canvas>
+            <span class="fridge-item-name">Chicken</span>
+          </button>
+          <button type="button" class="fridge-item" data-fridge="water" data-testid="fridge-water">
+            <canvas class="fridge-thumb" data-fridge-thumb="water" width="40" height="40"></canvas>
+            <span class="fridge-item-name">Water</span>
+          </button>
         </div>
-        <button type="button" class="btn secondary small" id="fridge-close" data-testid="fridge-close">Close</button>
+        <button type="button" class="fridge-close" id="fridge-close" data-testid="fridge-close">Close</button>
       </div>
       <div id="chess-panel" class="chess-panel hidden" data-testid="chess-panel">
         <div class="chess-top">

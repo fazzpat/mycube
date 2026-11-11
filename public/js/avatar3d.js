@@ -3418,6 +3418,81 @@ export function inspectPhoneHold(avatar = {}, flags = {}, frame = 0) {
   };
 }
 
+
+export function heldItemHandAnchor(avatar = {}, flags = {}, frame = 0) {
+  // Read-only hook: returns the holding-hand pixel in the avatar sprite.
+  // Does not change how the avatar is drawn.
+  const av = normalizeAvatar(avatar);
+  const { bodyDir } = resolvedDirs(flags);
+  const bodyView = viewOfDir(bodyDir);
+  const sit = Boolean(flags.sitting);
+  const walk = Boolean(flags.walking) && !sit;
+  const pose = walkPose(frame, walk, sit);
+  pose.armKind = armKindFromFlags(flags, frame);
+  const breathe = (!walk && !sit) ? ((frame % 16) < 8 ? 0 : -1) : 0;
+  const bob = walk ? (pose.bob || 0) : 0;
+  const upper = sit ? AV_SEAT_DROP : (bob + breathe);
+  const bk = bodyView.key;
+  const t = torsoBox(bk, sit);
+  const aKind = pose.armKind || "idle";
+  const rightHand = handPose(aKind, 1, pose, t, upper, bk, frame);
+  function flipX(x) { return bodyView.flip ? AV_W - 1 - x : x; }
+  return {
+    x: flipX(rightHand.x),
+    y: rightHand.y,
+    behind: bk === "n" || bk === "ne",
+    side: bodyView.flip ? -1 : 1,
+    flip: Boolean(bodyView.flip),
+    key: bk,
+  };
+}
+
+export function heldItemFaceAnchor(avatar = {}, flags = {}, frame = 0) {
+  // Read-only hook: eye, mouth, and head pixel positions in the avatar sprite.
+  const av = normalizeAvatar(avatar);
+  const { bodyDir, headDir, walk } = resolvedDirs(flags);
+  const bodyView = viewOfDir(bodyDir);
+  const headView = viewOfDir(headDir);
+  const sit = Boolean(flags.sitting);
+  const phoneIdle = Boolean(flags.usingPhone) && !walk && !sit;
+  const pose = walkPose(frame, walk, sit);
+  pose.armKind = armKindFromFlags(flags, frame);
+  const breathe = (!walk && !sit) ? ((frame % 16) < 8 ? 0 : -1) : 0;
+  const bob = walk ? (pose.bob || 0) : (phoneIdle ? ((frame % 16) < 8 ? 0 : 1) : 0);
+  const upper = sit ? AV_SEAT_DROP : (bob + breathe);
+  const motion0 = headMotion(frame, walk, sit, upper);
+  const motion = phoneIdle ? { y: (motion0.y || 0) + 3, x: (motion0.x || 0) + 2 } : motion0;
+  const headUpper = motion.y;
+  const hk = headView.key;
+  const visible = hk !== "n" && hk !== "ne";
+  const anchors = eyeAnchors(hk, headUpper, headView.flip);
+  const dx = neckX(bodyView, upper) - neckX(headView, headUpper) + (headView.flip ? -motion.x : motion.x);
+  const eyes = anchors.map((a) => ({ x: a.x + dx, y: a.y }));
+  let mx = 0, my = 0;
+  if (eyes.length) {
+    for (const a of eyes) mx += a.x;
+    mx = Math.round(mx / eyes.length);
+    if (hk === "e") mx = Math.round(eyes[0].x);
+    my = Math.round(eyes[0].y + 7);
+  }
+  const g = headGeom(hk);
+  const headX = (headView.flip ? AV_W - 1 - g.cx : g.cx) + dx;
+  const headY = g.cy + headUpper;
+  const pal = buildPalette(av);
+  const skin = pal.skin?.mid || pal.skin || { r: 240, g: 201, b: 168 };
+  return {
+    visible,
+    eyes,
+    mouth: eyes.length ? { x: mx, y: my } : null,
+    head: { x: headX, y: headY },
+    skin,
+    key: hk,
+    flip: Boolean(headView.flip),
+    w: AV_W,
+    h: AV_H,
+  };
+}
+
 if (typeof window !== "undefined") {
   window.__paintAvatarSheet = paintAvatarSheet;
   window.__inspectPhoneHold = inspectPhoneHold;
@@ -3436,6 +3511,8 @@ if (typeof window !== "undefined") {
   window.__countNearWhiteEdgePixels = countNearWhiteEdgePixels;
   window.__inspectAvatarGeometry = inspectAvatarGeometry;
   window.__inspectHandClearance = inspectHandClearance;
+  window.__heldItemHandAnchor = heldItemHandAnchor;
+  window.__heldItemFaceAnchor = heldItemFaceAnchor;
   window.__paintHairHatFit = paintHairHatFit;
   window.__paintClothesCatalog = paintClothesCatalog;
 }

@@ -5,7 +5,7 @@
   left: 50%;
   bottom: calc(var(--dock-h) + 8px);
   transform: translateX(-50%);
-  z-index: 36;
+  z-index: 54;
   width: min(400px, calc(100% - 12px));
   max-height: min(560px, calc(100dvh - var(--dock-h) - 16px));
   overflow: auto;

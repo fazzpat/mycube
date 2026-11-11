@@ -2744,6 +2744,11 @@ try {
 
   await alice.waitForTimeout(500);
   await alice.screenshot({ path: `${SHOT}/05-furniture.png` });
+  // Put the drink away so the hold chip does not cover later panels.
+  if (await alice.evaluate(() => Boolean(window.HouseRoom3D?.personFlags("alice")?.heldItem))) {
+    await alice.evaluate(() => window.__stowItem());
+    await alice.waitForFunction(() => !window.HouseRoom3D.personFlags("alice")?.heldItem, null, { timeout: 8000 });
+  }
 
   log("In-room phone menu");
   await alice.setViewportSize({ width: 390, height: 844 });
@@ -3389,6 +3394,8 @@ try {
   const fridgeId = await alice.evaluate(() => window.HouseRoom3D.getFurniture().find((f) => f.type === "fridge").id);
   await alice.evaluate((id) => window.__clickFurniture(id, "fridge"), fridgeId);
   await alice.waitForSelector('[data-testid="fridge-picker"]:not(.hidden)', { timeout: 15000 });
+  const fridgeChoices = await alice.evaluate(() => [...document.querySelectorAll("[data-fridge]")].map((b) => b.dataset.fridge));
+  check("Fridge picker offers pizza, soda, chicken, and water", [...fridgeChoices].sort().join(",") === "chicken,pizza,soda,water", JSON.stringify(fridgeChoices));
   await alice.click('[data-testid="fridge-soda"]');
   await bob.waitForFunction(() => window.HouseRoom3D.personFlags("alice")?.heldItem?.kind === "soda", null, { timeout: 8000 });
   check("Opening the fridge and taking a soda is visible to another viewer", true);

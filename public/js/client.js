@@ -16,6 +16,7 @@ import {
   getRecordAudioState, unlockRecordAudio, playRecordVinyl, vinylById,
   syncRoomRecordAudio, stopRecordAudio,
 } from "./recordPlayer.js";
+import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
 
 (() => {
   const socket = io({ transports: ["websocket", "polling"] });
@@ -2452,7 +2453,7 @@ import {
     clearInterval(state.gymAutoTimer);
     state.gymAutoTimer = null;
     if (me?.heldItem) {
-      chip.innerHTML = `<span class="item-sub">Holding ${me.heldItem.kind}</span><button class="btn small secondary" data-testid="stow-item" id="stow-item">Done</button>`;
+      chip.innerHTML = `<span class="item-sub">Holding ${heldItemLabel(me.heldItem)}</span><button class="btn small secondary" data-testid="stow-item" id="stow-item">Put away</button>`;
       SHOW(chip);
       chip.querySelector("#stow-item")?.addEventListener("click", () => socket.emit("stowItem"));
       return;
@@ -2476,6 +2477,7 @@ import {
 
   function showFridgePicker(id) {
     state.fridgeId = id;
+    paintFridgeThumbs(document);
     SHOW($("#fridge-picker"));
   }
   function hideFridgePicker() {

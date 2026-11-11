@@ -1,4 +1,5 @@
-import { drawAvatarSprite, paintAvatarSheet, paintStoreThumb, AVATAR_SHEET_LOOKS, AV_W, AV_H, AV_GROUND_Y, AV_HEAD_TOP, facingIndex8, tickChibiAnim, setChibiAnimOverride, getChibiAnim, mouthPhase } from "./avatar3d.js";
+import { drawAvatarSprite, paintAvatarSheet, paintStoreThumb, AVATAR_SHEET_LOOKS, AV_W, AV_H, AV_GROUND_Y, AV_HEAD_TOP, facingIndex8, tickChibiAnim, setChibiAnimOverride, getChibiAnim, mouthPhase, heldItemHandAnchor, heldItemFaceAnchor } from "./avatar3d.js";
+import { heldKindOf, drawHeldItemSprite, sipAnim, steamFrameAt as heldSteamFrameAt, drawSipFaceOverlay } from "./heldItems.js";
 import { drawPetSprite as drawPetPixel, paintPetSheet, paintPetThumb, PET_W, PET_H, PET_GROUND_Y } from "./petSprites.js";
 import { programAt } from "./cubechannel.js";
 import { getTvScreen, tvChannelName } from "./tvChannels.js";
@@ -952,7 +953,17 @@ export function createRoom3D(container, opts = {}) {
           if (fd + 0.08 > depth) depth = fd + 0.08;
         }
       }
-      list.push({ kind: "person", id: p.username, type: "person", depth, sx: foot.sx - AV_W / 2, sy: foot.sy - AV_GROUND_Y, w: AV_W, h: AV_H, spr, raw: p, tileX: x, tileY: y });
+      const personItem = { kind: "person", id: p.username, type: "person", depth, sx: foot.sx - AV_W / 2, sy: foot.sy - AV_GROUND_Y, w: AV_W, h: AV_H, spr, raw: p, tileX: x, tileY: y };
+      const heldKind = heldKindOf(p.heldItem);
+      if (heldKind && !flags.usingPhone) {
+        const anchor = heldItemHandAnchor(p.avatar || {}, flags, frame);
+        const face = heldItemFaceAnchor(p.avatar || {}, flags, frame);
+        const sip = sipAnim(p.heldItem, p.username, Date.now(), { walking });
+        const steam = heldKind === "coffee" ? heldSteamFrameAt(Date.now()) : 0;
+        const item = drawHeldItemSprite(heldKind, { steamFrame: steam, flip: anchor.flip, lights: lightsOn });
+        personItem.held = { item, anchor, face, sip };
+      }
+      list.push(personItem);
       if (p.activePet) {
         const sit = Boolean(st.petSit);
         const petWalking = Boolean(st.petWalking);
@@ -1328,7 +1339,29 @@ export function createRoom3D(container, opts = {}) {
         const d = tileToScreen(it.raw.x, it.raw.y + h);
         fillPoly(ctx, [a, b, c, d], "rgba(212, 180, 106, 0.28)", "#d4b46a");
       }
-      blit(it.spr, it.sx, it.sy, it.alpha ?? 1);
+      if (it.kind === "person" && it.held && it.held.item) {
+        const { item, anchor, face, sip } = it.held;
+        const lift = sip?.lift || 0;
+        const hx = it.sx + anchor.x;
+        const hy = it.sy + anchor.y;
+        let mx = hx, my = hy - 14;
+        if (face?.mouth) { mx = it.sx + face.mouth.x; my = it.sy + face.mouth.y + 1; }
+        else if (face?.head) { mx = it.sx + face.head.x; my = it.sy + face.head.y + 6; }
+        const gx = item.gx || 0, gy = item.gy || 0;
+        const lx = item.lx ?? gx, ly = item.ly ?? gy;
+        const ix = (hx - gx) * (1 - lift) + (mx - lx) * lift;
+        const iy = (hy - gy) * (1 - lift) + (my - ly) * lift;
+        const behind = Boolean(anchor.behind) && lift < 0.4;
+        if (behind) blit(item, ix, iy);
+        blit(it.spr, it.sx, it.sy, it.alpha ?? 1);
+        if (sip?.face) {
+          const ov = drawSipFaceOverlay(face);
+          if (ov) blit(ov, it.sx, it.sy);
+        }
+        if (!behind) blit(item, ix, iy);
+      } else {
+        blit(it.spr, it.sx, it.sy, it.alpha ?? 1);
+      }
       if (it.recNotes?.length) {
         const off = platterOffset(it.raw?.rot);
         drawNotes(ctx, it.sx + off.x, it.sy + off.y, it.recNotes, lightsOn);
