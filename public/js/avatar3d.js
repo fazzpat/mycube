@@ -1,7 +1,8 @@
 /* Original MyCube chibi paper-doll avatars. Integer blit, part-colored ink.
-   Core figure is 48x64 (feet at y=61) with padding so a wide afro and tall
-   spikes never clip the sprite canvas. Ground and body anchors stay put. */
-export const AV_PAD_X = 8;
+   Core figure is 48x64 (feet at y=61) with padding so a wide afro, tall
+   spikes, and handlebar pigtails never clip the sprite canvas. Ground and
+   body anchors stay put. */
+export const AV_PAD_X = 22;
 export const AV_PAD_TOP = 8;
 export const AV_W = 48 + AV_PAD_X * 2;
 export const AV_H = 64 + AV_PAD_TOP;
@@ -1611,7 +1612,9 @@ function drawHair(buf, av, key, pal, upper, hatOn, bob = 0, frame = 0, walk = fa
 }
 
 function drawPonyTail(buf, av, key, pal, upper, hatOn, bob = 0, frame = 0, walk = false) {
-  // High anime twin-tails: U-shaped ringlets springing from 10- and 2-o'clock bows.
+  // Handlebar pigtails: long thick tubes shoot out horizontally from 10- and
+  // 2-o'clock bows, then hook down at the ends like bicycle grips. Clear air
+  // stays between each bar and the cheek, so they never read as a helmet.
   const g = headGeom(key);
   const cy = g.cy + upper;
   const hy = cy + 0.4;
@@ -1619,43 +1622,45 @@ function drawPonyTail(buf, av, key, pal, upper, hatOn, bob = 0, frame = 0, walk 
   const stretchL = mot.spring * 1.00 + mot.idle * 0.45 + mot.bob * 0.12;
   const stretchR = mot.spring * -0.72 + mot.idle * 0.35 - mot.bob * 0.08;
   const depth = hatOn ? 63 : 50;
+  const headW = g.rx * 2;
 
-  // 10 o'clock (left) and 2 o'clock (right) on the head circle.
   const left = {
     x: g.cx + Math.cos(-5 * Math.PI / 6) * g.rx * 0.90,
     y: hy + Math.sin(-5 * Math.PI / 6) * g.ry * 0.90,
     side: -1,
     stretch: stretchL,
-    out: 8.0,
+    out: headW * 0.70,
   };
   const right = {
     x: g.cx + Math.cos(-Math.PI / 6) * g.rx * 0.92,
     y: hy + Math.sin(-Math.PI / 6) * g.ry * 0.88,
     side: 1,
     stretch: stretchR,
-    out: 8.6,
+    out: headW * 0.78,
   };
   if (key === "e") {
-    // Profile: far tail peeks behind (left); near tail toward the viewer, kept off the face.
+    // Profile: far bar sticks out behind the head; near bar toward the viewer, above the face.
     left.x = g.cx - g.rx * 0.82;
     left.y = hy - g.ry * 0.52;
-    left.out = 8.2;
-    right.x = g.cx + g.rx * 0.42;
-    right.y = hy - g.ry * 0.68;
-    right.out = 7.2;
+    left.out = headW * 0.72;
+    right.x = g.cx + g.rx * 0.48;
+    right.y = hy - g.ry * 0.70;
+    right.out = headW * 0.66;
   } else if (key === "se") {
+    // 3/4: near (right) toward the viewer; far (left) peeks behind.
     left.x = g.cx - g.rx * 0.78;
-    left.y = hy - g.ry * 0.48;
-    left.out = 7.4;
-    right.x = g.cx + g.rx * 1.00;
+    left.y = hy - g.ry * 0.50;
+    left.out = headW * 0.62;
+    right.x = g.cx + g.rx * 0.98;
     right.y = hy - g.ry * 0.54;
-    right.out = 9.0;
+    right.out = headW * 0.72;
   } else if (key === "ne") {
     left.x = g.cx - g.rx * 0.96;
     left.y = hy - g.ry * 0.50;
+    left.out = headW * 0.76;
     right.x = g.cx + g.rx * 0.70;
     right.y = hy - g.ry * 0.52;
-    right.out = 8.0;
+    right.out = headW * 0.68;
   }
 
   function lerp(a, b, t) { return a + (b - a) * t; }
@@ -1664,32 +1669,47 @@ function drawPonyTail(buf, av, key, pal, upper, hatOn, bob = 0, frame = 0, walk 
 
   function tail(t) {
     const s = t.stretch || 0;
-    const out = t.out + s * 1.35;
-    const lift = -3.1 - s * 0.95;
-    const drop = 6.6 - s * 0.85;
-    const hook = 3.6 + s * 0.35;
-    const p0 = { x: t.x, y: t.y };
-    const p1 = { x: t.x + t.side * out * 0.58, y: t.y + lift };
-    const p2 = { x: t.x + t.side * out, y: t.y + drop * 0.22 };
-    const p3 = { x: t.x + t.side * (out * 0.74), y: t.y + drop };
-    const p4 = { x: t.x + t.side * (out - hook), y: t.y + drop + 0.7 };
+    // Long horizontal shaft, then a downward U hook at the far end. Tips bob with the spring.
+    const out = t.out + s * 1.6;
+    const shaftY = t.y + s * -0.25;
+    const hookDrop = 6.4 + s * -1.35;
+    const hookIn = 3.4 + s * 0.25;
+    const p0 = { x: t.x, y: shaftY };
+    const p1 = { x: t.x + t.side * out * 0.48, y: shaftY - 0.15 };
+    const p2 = { x: t.x + t.side * out, y: shaftY + 0.35 };
+    const p3 = { x: t.x + t.side * (out + 0.4), y: shaftY + hookDrop * 0.55 };
+    const p4 = { x: t.x + t.side * (out - hookIn * 0.15), y: shaftY + hookDrop };
+    const p5 = { x: t.x + t.side * (out - hookIn), y: shaftY + hookDrop + 0.8 };
     function at(u) {
-      return (u < 0.5) ? quad(p0, p1, p2, u / 0.5) : quad(p2, p3, p4, (u - 0.5) / 0.5);
+      if (u < 0.62) return quad(p0, p1, p2, u / 0.62);
+      if (u < 0.84) return quad(p2, p3, p4, (u - 0.62) / 0.22);
+      return quad(p4, p4, p5, (u - 0.84) / 0.16);
     }
-    for (let i = 0; i <= 14; i++) {
-      const u = i / 14;
+    const half = 3.05;
+    for (let i = 0; i <= 20; i++) {
+      const u = i / 20;
       const p = at(u);
-      const midW = 3.10;
-      let half = 1.30 + (midW - 1.30) * Math.sin(u * Math.PI);
-      if (u > 0.82) half = 1.15 + (half - 1.15) * (1 - (u - 0.82) / 0.18);
-      ellipse(buf, p.x, p.y, half, half * 0.88, pal.hair, "hair-tail", depth, {});
+      let r = half;
+      if (u < 0.08) r = 2.2 + (half - 2.2) * (u / 0.08);
+      if (u > 0.82) r = 1.15 + (half - 1.15) * (1 - (u - 0.82) / 0.18);
+      ellipse(buf, p.x, p.y, r, r * 0.90, pal.hair, "hair-tail", depth, {});
     }
-    const tip = at(0.98), pre = at(0.86);
-    stampSpike(buf, pre.x, pre.y, 3.2, 1.20, Math.atan2(tip.y - pre.y, tip.x - pre.x), pal.hair, "hair-tail", depth, true);
+    const tip = at(0.98), pre = at(0.88);
+    stampSpike(buf, pre.x, pre.y, 3.4, 1.25, Math.atan2(tip.y - pre.y, tip.x - pre.x), pal.hair, "hair-tail", depth, true);
+    // Highlight streak along the top of the shaft, never a near-white silhouette.
+    const hi = animeHairHi(pal);
+    for (let i = 2; i <= 14; i++) {
+      const u = i / 20;
+      const p = at(u);
+      const n = at(Math.min(1, u + 0.05));
+      const ang = Math.atan2(n.y - p.y, n.x - p.x);
+      const hx = p.x + Math.cos(ang - Math.PI / 2) * (half * 0.48);
+      const hy2 = p.y + Math.sin(ang - Math.PI / 2) * (half * 0.48);
+      plotInside(buf, Math.round(hx), Math.round(hy2), hi, "hair-hi", depth + 1);
+    }
   }
 
   function bow(x, y) {
-    // Two loops and a knot, pink-red, darker outline via ink, tiny highlight. Never near-white.
     const mid = rgb(220, 52, 92);
     const sh = rgb(150, 24, 56);
     const hiCol = rgb(228, 96, 120);
@@ -1697,12 +1717,11 @@ function drawPonyTail(buf, av, key, pal, upper, hatOn, bob = 0, frame = 0, walk 
     ellipse(buf, x - 2.5, y - 0.1, 2.25, 1.70, palB, "hair-tie", depth + 3, { shade: "flat" });
     ellipse(buf, x + 2.5, y - 0.1, 2.25, 1.70, palB, "hair-tie", depth + 3, { shade: "flat" });
     ellipse(buf, x, y + 0.25, 1.45, 1.30, palB, "hair-tie", depth + 4, { shade: "flat" });
-    // Tiny ribbon tails under the knot.
     stampSpike(buf, x - 0.6, y + 1.0, 2.6, 0.85, Math.PI * 0.62, palB, "hair-tie", depth + 3, true);
     stampSpike(buf, x + 0.6, y + 1.0, 2.6, 0.85, Math.PI * 0.38, palB, "hair-tie", depth + 3, true);
     plotInside(buf, Math.round(x - 2.3), Math.round(y) - 1, hiCol, "hair-tie-hi", depth + 5);
     plotInside(buf, Math.round(x + 2.3), Math.round(y) - 1, hiCol, "hair-tie-hi", depth + 5);
-    plotInside(buf, Math.round(x), Math.round(y) - 0, hiCol, "hair-tie-hi", depth + 5);
+    plotInside(buf, Math.round(x), Math.round(y), hiCol, "hair-tie-hi", depth + 5);
   }
 
   tail(left);
