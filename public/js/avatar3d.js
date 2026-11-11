@@ -296,8 +296,7 @@ function stampSpike(dest, cx, cy, len, half, ang, pal, kind, depth, rounded = fa
       }
       if (!inside) continue;
       let col = pal.mid || pal;
-      if (pal.hi && along < len * 0.4 && perp < -half * 0.1) col = pal.hi;
-      else if (pal.sh && perp > half * 0.42) col = pal.sh;
+      if (pal.sh && (along > len * 0.58 || perp > half * 0.5)) col = pal.sh;
       plot(tmp, Math.round(cx + x), Math.round(cy + y), col, kind, depth);
     }
   }
@@ -308,8 +307,9 @@ function stampSpike(dest, cx, cy, len, half, ang, pal, kind, depth, rounded = fa
     const x = i % AV_W, y = (i / AV_W) | 0;
     if (p.kind === "ink") {
       const cur = dest[i];
-      if (cur && cur.kind !== "hair" && cur.kind !== "hair-cap" && cur.kind !== "hair-lock" && cur.kind !== "hair-bun" && cur.kind !== "ink" && (cur.depth || 0) > depth) continue;
-      // Let a clump's outline cut a dark groove through neighboring hair.
+      // Outline against skin/background only — never cut speckly grooves through other hair.
+      if (cur && /^(hair|hair-cap|hair-lock|hair-bun|hair-puff|hair-peek|hair-tail|hair-tip|hair-buzz|hair-hi|ink|clip|part)/.test(cur.kind || "")) continue;
+      if (cur && (cur.depth || 0) > depth) continue;
       dest[i] = { color: p.color, kind: "ink", depth: depth + 0.4 };
     } else {
       plot(dest, x, y, p.color, p.kind, depth);
@@ -886,43 +886,27 @@ function hairClumps(style, key) {
       { dx: 6.8, dy: -3.8, len: 7.4, half: 2.0, ang: up + 0.75 },
     ],
     frosted: [
-      { dx: 0, dy: -7.0, len: 12.2, half: 2.3, ang: up, frost: true },
-      { dx: -3.2, dy: -6.4, len: 11.2, half: 2.2, ang: up - 0.26, frost: true },
-      { dx: 3.2, dy: -6.4, len: 11.2, half: 2.2, ang: up + 0.26, frost: true },
-      { dx: -6.4, dy: -4.6, len: 9.6, half: 2.1, ang: up - 0.62, frost: true },
-      { dx: 6.4, dy: -4.6, len: 9.6, half: 2.1, ang: up + 0.62, frost: true },
-      { dx: -9.0, dy: -1.8, len: 7.4, half: 2.0, ang: up - 1.12, frost: true },
-      { dx: 9.0, dy: -1.8, len: 7.4, half: 2.0, ang: up + 1.12, frost: true },
-      { dx: -9.8, dy: 1.8, len: 5.8, half: 1.9, ang: Math.PI, frost: true },
-      { dx: 9.8, dy: 1.8, len: 5.8, half: 1.9, ang: 0, frost: true },
+      { dx: 0, dy: -6.6, len: 11.0, half: 2.8, ang: up, frost: true },
+      { dx: -4.4, dy: -5.8, len: 10.0, half: 2.7, ang: up - 0.40, frost: true },
+      { dx: 4.4, dy: -5.8, len: 10.0, half: 2.7, ang: up + 0.40, frost: true },
+      { dx: -8.2, dy: -3.2, len: 8.0, half: 2.5, ang: up - 0.88, frost: true },
+      { dx: 8.2, dy: -3.2, len: 8.0, half: 2.5, ang: up + 0.88, frost: true },
     ],
     buzz: [],
     swoop: [
-      { dx: 0, dy: -6.0, len: 8.0, half: 2.5, ang: up },
-      { dx: -4.2, dy: -5.2, len: 7.2, half: 2.3, ang: up - 0.48 },
-      { dx: 5.0, dy: -5.6, len: 9.4, half: 2.4, ang: up + 0.32 },
-      { dx: -8.0, dy: -2.2, len: 6.2, half: 2.1, ang: up - 1.02 },
-      { dx: 9.0, dy: -1.4, len: 6.8, half: 2.1, ang: up + 1.05 },
-      { dx: -9.4, dy: 1.8, len: 5.4, half: 1.9, ang: Math.PI },
-      { dx: 9.6, dy: 2.0, len: 5.6, half: 1.9, ang: 0 },
+      { dx: 0, dy: -5.8, len: 7.4, half: 2.8, ang: up },
+      { dx: -4.6, dy: -5.0, len: 6.8, half: 2.6, ang: up - 0.5 },
+      { dx: 5.0, dy: -5.4, len: 8.2, half: 2.7, ang: up + 0.34 },
+      { dx: -8.2, dy: -1.8, len: 5.8, half: 2.5, ang: up - 1.05 },
+      { dx: 8.4, dy: -1.4, len: 6.0, half: 2.5, ang: up + 1.05 },
     ],
-    cornrows: [
-      { dx: -3.8, dy: -6.4, len: 7.4, half: 1.2, ang: up },
-      { dx: 0, dy: -6.6, len: 7.8, half: 1.2, ang: up },
-      { dx: 3.8, dy: -6.4, len: 7.4, half: 1.2, ang: up },
-      { dx: -6.8, dy: -4.2, len: 6.2, half: 1.15, ang: up - 0.38 },
-      { dx: 6.8, dy: -4.2, len: 6.2, half: 1.15, ang: up + 0.38 },
-      { dx: -8.8, dy: 0.6, len: 5.0, half: 1.2, ang: Math.PI },
-      { dx: 8.8, dy: 0.6, len: 5.0, half: 1.2, ang: 0 },
-    ],
+    cornrows: [],
     shaggy: [
-      { dx: 0.4, dy: -6.6, len: 10.0, half: 2.2, ang: up + 0.08 },
-      { dx: -3.2, dy: -6.2, len: 11.0, half: 2.0, ang: up - 0.22 },
-      { dx: 4.4, dy: -5.8, len: 9.6, half: 2.2, ang: up + 0.36 },
-      { dx: -6.8, dy: -3.8, len: 8.2, half: 2.1, ang: up - 0.82 },
-      { dx: 7.8, dy: -3.0, len: 7.6, half: 2.0, ang: up + 0.92 },
-      { dx: -9.4, dy: 0.8, len: 6.2, half: 2.0, ang: Math.PI },
-      { dx: 9.6, dy: 1.4, len: 6.4, half: 2.1, ang: 0 },
+      { dx: 0.2, dy: -6.2, len: 9.4, half: 2.7, ang: up + 0.06 },
+      { dx: -4.4, dy: -5.6, len: 8.8, half: 2.6, ang: up - 0.36 },
+      { dx: 4.8, dy: -5.4, len: 8.6, half: 2.6, ang: up + 0.40 },
+      { dx: -8.0, dy: -2.6, len: 6.8, half: 2.5, ang: up - 0.92 },
+      { dx: 8.2, dy: -2.2, len: 6.8, half: 2.5, ang: up + 0.95 },
     ],
     ponytail: [
       { dx: -4.0, dy: -4.0, len: 5.0, half: 2.0, ang: up - 0.75 },
@@ -958,9 +942,8 @@ function hairClumps(style, key) {
     clumps = clumps.filter((c) => !c.fringe);
     if (!["buzz", "cornrows", "ponytail", "spacebuns", "afropuff"].includes(style)) {
       clumps = clumps.concat([
-        { dx: -3.4, dy: 1.6, len: 7.4, half: 2.5, ang: Math.PI * 0.5 },
-        { dx: 3.4, dy: 1.6, len: 7.4, half: 2.5, ang: Math.PI * 0.5 },
-        { dx: 0, dy: 0.8, len: 6.8, half: 2.7, ang: Math.PI * 0.5 },
+        { dx: -4.0, dy: 1.2, len: 7.0, half: 2.8, ang: Math.PI * 0.5 },
+        { dx: 4.0, dy: 1.2, len: 7.0, half: 2.8, ang: Math.PI * 0.5 },
       ]);
     }
   }
@@ -987,11 +970,11 @@ function drawAngelRing(buf, g, cy, pal) {
   const rx = g.rx * 0.58, ry = g.ry * 0.26;
   const cx = g.cx - g.rx * 0.10;
   const ay = hy - g.ry * 0.62;
-  for (let a = -2.45; a <= -0.45; a += 0.07) {
+  for (let a = -2.45; a <= -0.45; a += 0.04) {
     const x = cx + Math.cos(a) * rx;
     const y = ay + Math.sin(a) * ry;
-    plot(buf, Math.round(x), Math.round(y), hi, "hair-hi", 47);
-    plot(buf, Math.round(x + 1), Math.round(y), hi, "hair-hi", 47);
+    plotInside(buf, Math.round(x), Math.round(y), hi, "hair-hi", 47);
+    plotInside(buf, Math.round(x + 1), Math.round(y), hi, "hair-hi", 47);
   }
 }
 
@@ -1044,31 +1027,28 @@ function bangSpecs(style, key) {
   }
   if (style === "swoop") {
     return [
-      { dx: -2.4, dy: 0.6, len: 5.0, half: 1.9, ang: PI * 0.38 },
-      { dx: 0.6, dy: 0.8, len: 7.8, half: 2.2, ang: PI * 0.30 },
-      { dx: 3.8, dy: 1.2, len: 7.2, half: 2.0, ang: PI * 0.22 },
-      { dx: 6.4, dy: 1.4, len: 5.4, half: 1.7, ang: PI * 0.16 },
-      { dx: -7.8, dy: 3.2, len: 7.6, half: 1.6, ang: PI * 0.58, frame: true },
+      { dx: -3.0, dy: 0.2, len: 3.2, half: 1.8, ang: PI * 0.48 },
+      { dx: 1.4, dy: 0.2, len: 4.8, half: 2.0, ang: PI * 0.28, swoop: true },
+      { dx: 4.6, dy: 0.3, len: 3.0, half: 1.7, ang: PI * 0.22 },
+      { dx: -7.8, dy: 3.2, len: 7.6, half: 1.6, ang: PI * 0.62, frame: true },
     ];
   }
   if (style === "shaggy") {
     return [
-      { dx: -4.6, dy: 0.2, len: 4.2, half: 1.7, ang: PI * 0.62 },
-      { dx: -1.6, dy: 0.0, len: 4.8, half: 1.8, ang: PI * 0.54 },
-      { dx: 1.2, dy: 0.2, len: 4.0, half: 1.6, ang: PI * 0.44 },
-      { dx: 4.4, dy: 0.4, len: 4.6, half: 1.7, ang: PI * 0.36 },
-      { dx: -8.4, dy: 3.0, len: 8.0, half: 1.6, ang: PI * 0.58, frame: true },
-      { dx: 8.4, dy: 3.2, len: 7.4, half: 1.6, ang: PI * 0.42, frame: true },
+      { dx: -3.6, dy: 0.1, len: 3.2, half: 1.7, ang: PI * 0.58 },
+      { dx: 0.0, dy: -0.1, len: 3.4, half: 1.8, ang: PI * 0.50 },
+      { dx: 3.6, dy: 0.1, len: 3.2, half: 1.7, ang: PI * 0.42 },
+      { dx: -8.4, dy: 3.0, len: 8.0, half: 1.6, ang: PI * 0.62, frame: true },
+      { dx: 8.4, dy: 3.2, len: 7.4, half: 1.6, ang: PI * 0.38, frame: true },
     ];
   }
   if (style === "frosted") {
     return [
-      { dx: -4.0, dy: 0.2, len: 4.0, half: 1.6, ang: PI * 0.60 },
-      { dx: -1.2, dy: 0.0, len: 4.6, half: 1.7, ang: PI * 0.52 },
-      { dx: 1.8, dy: 0.0, len: 4.2, half: 1.6, ang: PI * 0.46 },
-      { dx: 4.6, dy: 0.3, len: 4.0, half: 1.5, ang: PI * 0.38 },
-      { dx: -8.6, dy: 3.0, len: 7.4, half: 1.6, ang: PI * 0.58, frame: true },
-      { dx: 8.6, dy: 3.0, len: 7.4, half: 1.6, ang: PI * 0.42, frame: true },
+      { dx: -3.4, dy: 0.1, len: 3.2, half: 1.6, ang: PI * 0.58 },
+      { dx: 0.2, dy: -0.1, len: 3.4, half: 1.7, ang: PI * 0.50 },
+      { dx: 3.6, dy: 0.1, len: 3.2, half: 1.6, ang: PI * 0.42 },
+      { dx: -8.6, dy: 3.0, len: 7.4, half: 1.6, ang: PI * 0.62, frame: true },
+      { dx: 8.6, dy: 3.0, len: 7.4, half: 1.6, ang: PI * 0.38, frame: true },
     ];
   }
   if (style === "afropuff") {
@@ -1107,16 +1087,34 @@ function bangSpecs(style, key) {
       { dx: 8.0, dy: 2.8, len: 6.0, half: 1.3, ang: PI * 0.42, frame: true },
     ];
   }
-  // ponytail, straightbangs, and default: 5 pointed bangs + two frame strands
+  // ponytail, straightbangs, and default: 3 pointed bangs + two frame strands
   return [
-    { dx: -4.6, dy: 0.1, len: 3.8, half: 1.6, ang: PI * 0.60 },
-    { dx: -2.2, dy: -0.1, len: 4.4, half: 1.7, ang: PI * 0.54 },
-    { dx: 0.0, dy: -0.2, len: 4.6, half: 1.7, ang: PI * 0.50 },
-    { dx: 2.2, dy: -0.1, len: 4.4, half: 1.7, ang: PI * 0.46 },
-    { dx: 4.6, dy: 0.1, len: 3.8, half: 1.6, ang: PI * 0.40 },
-    { dx: -8.6, dy: 3.0, len: 8.2, half: 1.6, ang: PI * 0.58, frame: true },
-    { dx: 8.6, dy: 3.0, len: 8.2, half: 1.6, ang: PI * 0.42, frame: true },
+    { dx: -3.6, dy: 0.0, len: 3.2, half: 1.7, ang: PI * 0.58 },
+    { dx: 0.0, dy: -0.2, len: 3.4, half: 1.8, ang: PI * 0.50 },
+    { dx: 3.6, dy: 0.0, len: 3.2, half: 1.7, ang: PI * 0.42 },
+    { dx: -8.6, dy: 3.0, len: 8.2, half: 1.6, ang: PI * 0.62, frame: true },
+    { dx: 8.6, dy: 3.0, len: 8.2, half: 1.6, ang: PI * 0.38, frame: true },
   ];
+}
+
+function hairSpikeCoversEye(key, g, upper, x0, y0, len, ang) {
+  if (key === "n" || key === "ne") return false;
+  const eyes = eyeAnchorsSimple(key, g, upper);
+  const ca = Math.cos(ang), sa = Math.sin(ang);
+  for (const e of eyes) {
+    for (const t of [0.45, 0.7, 1]) {
+      const px = x0 + ca * len * t, py = y0 + sa * len * t;
+      if (Math.abs(px - e.x) < 4.2 && Math.abs(py - e.y) < 4.6) return true;
+    }
+  }
+  return false;
+}
+
+function eyeAnchorsSimple(key, g, upper) {
+  const eyeY = g.cy + upper + g.ry * 0.36;
+  if (key === "e") return [{ x: g.cx + 4.4, y: eyeY }];
+  if (key === "se") return [{ x: g.cx - 4.2, y: eyeY }, { x: g.cx + 8.4, y: eyeY }];
+  return [{ x: g.cx - 7.4, y: eyeY }, { x: g.cx + 7.4, y: eyeY }];
 }
 
 function stampBangs(buf, av, key, pal, upper, hatOn) {
@@ -1126,16 +1124,36 @@ function stampBangs(buf, av, key, pal, upper, hatOn) {
   const hy = cy + 0.4;
   const { sx, sy } = hairScale(g);
   const hairline = hy - g.ry * 0.10;
+  const eyes = eyeAnchorsSimple(key, g, upper);
+  const eyeTop = eyes[0].y - 3.2;
   for (const c of bangSpecs(av.hair, key)) {
     if (hatOn && !c.frame && av.hair === "buzz") continue;
     let dx = c.dx, dy = c.dy;
-    if (key === "e") { dx = c.dx * 0.45 + 3.2; }
+    if (key === "e") { dx = c.frame ? (c.dx * 0.35 - 1.6) : (c.dx * 0.35 + 1.4); }
     else if (key === "se") { dx = c.dx * 0.9 - (c.frame ? 0 : 0.6); }
     const bx = g.cx + dx * sx;
-    // Plant bangs on the hairline; frame strands start at the temple.
+    // Plant bangs on the hairline; frame strands start at the temple and stay off the eyes.
     const by = c.frame ? (hy + g.ry * 0.06) : (hairline - 0.4 + dy * sy);
     let len = c.len * sy;
-    if (hatOn && !c.frame) len = Math.min(len, 6.2);
+    if (hatOn && !c.frame) len = Math.min(len, 5.2);
+    const sa = Math.sin(c.ang), ca = Math.cos(c.ang);
+    // Keep forehead bangs above the eyes. Emo may graze a single eye edge, never cover a pupil.
+    if (!c.frame && sa > 0.08) {
+      const yLimit = c.swoop ? (eyes[0].y - 1.4) : (eyeTop - 0.5);
+      if (by + sa * len > yLimit) len = Math.max(1.2, (yLimit - by) / sa);
+    }
+    if (c.frame) {
+      // If a frame strand would cross an eye, kick it farther to the side and cap its inward reach.
+      for (const e of eyes) {
+        for (const t of [0.35, 0.55, 0.8, 1]) {
+          const px = bx + ca * len * t, py = by + sa * len * t;
+          if (Math.abs(px - e.x) < 4.2 && Math.abs(py - e.y) < 4.6) {
+            len = Math.max(1.4, len * (t - 0.2));
+            break;
+          }
+        }
+      }
+    }
     stampSpike(buf, bx, by, len, c.half * sx, c.ang, pal.hair, c.frame ? "hair-lock" : "hair-peek", 62, Boolean(c.rounded));
   }
 }
@@ -1155,7 +1173,7 @@ function drawBobJaw(buf, g, cy, pal, key) {
 }
 
 function drawAfroCloud(buf, g, cy, pal, key) {
-  // Big round cloud of soft pointed clumps, centered on the skull and grown from the hairline.
+  // Big round cloud of a few soft clumps, centered on the skull and grown from the hairline.
   const hy = cy + 0.4;
   const px = g.cx + (key === "e" ? 1.2 : 0);
   const prx = key === "e" ? g.rx * 1.16 : g.rx * 1.20;
@@ -1169,24 +1187,77 @@ function drawAfroCloud(buf, g, cy, pal, key) {
       if ((x / prx) * (x / prx) + (y / pry) * (y / pry) > 1) continue;
       const py = hy - g.ry * 0.12 + y;
       const px0 = px + x;
-      // Keep the face open: don't fill the inner forehead/cheeks.
       const faceNx = (px0 - g.cx) / g.rx;
       if (key !== "n" && key !== "ne" && py > hairline + 0.5 && Math.abs(faceNx) < 0.62) continue;
-      const col = (y > 2 || x > 4) ? sh : mid;
+      const col = (y > 3 || x > 5) ? sh : mid;
       plot(buf, Math.round(px0), Math.round(py), col, "hair-puff", 46);
     }
   }
-  const n = 16;
+  const n = 8;
   for (let i = 0; i < n; i++) {
     const ang = (i / n) * Math.PI * 2 - Math.PI / 2;
-    // Skip the open face cone.
     if (key !== "n" && key !== "ne") {
-      const faceish = Math.sin(ang) > 0.15 && Math.abs(Math.cos(ang)) < 0.72;
+      const faceish = Math.sin(ang) > 0.12 && Math.abs(Math.cos(ang)) < 0.72;
       if (faceish) continue;
     }
-    const bx = px + Math.cos(ang) * (prx * 0.72);
-    const by = (hy - g.ry * 0.12) + Math.sin(ang) * (pry * 0.72);
-    stampSpike(buf, bx, by, 5.4 + (i % 3) * 0.8, 2.3, ang, pal.hair, "hair-puff", 47, true);
+    const bx = px + Math.cos(ang) * (prx * 0.70);
+    const by = (hy - g.ry * 0.12) + Math.sin(ang) * (pry * 0.70);
+    stampSpike(buf, bx, by, 6.4, 2.8, ang, pal.hair, "hair-puff", 47, true);
+  }
+}
+
+function drawCornrows(buf, g, cy, pal, key) {
+  // 3–4 distinct braided rows running front to back along the scalp.
+  const hy = cy + 0.4;
+  const hx = g.cx;
+  const mid = pal.hair.mid || pal.hair;
+  const sh = pal.hair.sh || mid;
+  const hairline = hy - g.ry * 0.10;
+  const rows = 4;
+  for (let r = 0; r < rows; r++) {
+    const u = (r + 0.5) / rows;
+    const offset = (u - 0.5) * 1.72;
+    const beads = [];
+    if (key === "e") {
+      // Side: rows hug the scalp from the front hairline, over the crown, to the nape.
+      const k = 0.90 - r * 0.10;
+      for (let i = 0; i < 7; i++) {
+        const t = i / 6;
+        const a = -0.20 - t * (Math.PI - 0.42);
+        beads.push({
+          x: hx + Math.cos(a) * (g.rx * 0.95),
+          y: hy + Math.sin(a) * (g.ry * k),
+        });
+      }
+    } else if (key === "n" || key === "ne") {
+      const x = hx + offset * g.rx * 0.78 + (key === "ne" ? -1.8 : 0);
+      const top = hy - g.ry * 0.90;
+      const bot = hy + g.ry * 0.78;
+      for (let i = 0; i < 6; i++) {
+        const t = i / 5;
+        beads.push({ x, y: top + t * (bot - top) });
+      }
+    } else {
+      let x = hx + offset * g.rx * 0.78;
+      if (key === "se") x -= 1.2;
+      const top = hy - g.ry * 0.94;
+      const bot = hairline + 0.2;
+      for (let i = 0; i < 6; i++) {
+        const t = i / 5;
+        beads.push({
+          x: hx + (x - hx) * (1 - t * 0.12),
+          y: bot + t * (top - bot),
+        });
+      }
+    }
+    for (let i = 0; i < beads.length; i++) {
+      const b = beads[i];
+      const col = (i > beads.length * 0.55) ? sh : mid;
+      ellipse(buf, b.x, b.y, 1.45, 1.25, col, "hair", 46, { shade: "flat" });
+      // A darker edge on each bead so the four rows stay distinct.
+      const ink = mix(mid, rgb(32, 18, 16), 0.45);
+      plot(buf, Math.round(b.x + 1.3), Math.round(b.y), ink, "hair", 47);
+    }
   }
 }
 
@@ -1216,11 +1287,14 @@ function drawHair(buf, av, key, pal, upper, hatOn) {
   } else {
     drawHairCap(buf, g, cy, pal, key, style);
     for (const c of hairClumps(style, key)) {
-      stampSpike(buf, g.cx + c.dx * sx, cy + c.dy * sy, c.len * sy, c.half * sx, c.ang, pal.hair, "hair", 45, Boolean(c.rounded));
+      const x0 = g.cx + c.dx * sx, y0 = cy + c.dy * sy, len = c.len * sy;
+      if (hairSpikeCoversEye(key, g, upper, x0, y0, len, c.ang)) continue;
+      stampSpike(buf, x0, y0, len, c.half * sx, c.ang, pal.hair, "hair", 45, Boolean(c.rounded));
     }
     if (style === "bobclips") drawBobJaw(buf, g, cy, pal, key);
     if (style === "afropuff") drawAfroCloud(buf, g, cy, pal, key);
-    drawAngelRing(buf, g, cy, pal);
+    if (style === "cornrows") drawCornrows(buf, g, cy, pal, key);
+    if (style !== "buzz" && style !== "cornrows") drawAngelRing(buf, g, cy, pal);
   }
   if (!hatOn && av.hair === "bun") {
     const bx = (key === "e" ? 4 : 11) * sx;
@@ -1238,46 +1312,42 @@ function drawHair(buf, av, key, pal, upper, hatOn) {
     }
   }
   if (!hatOn && av.hair === "frosted") {
-    const tipMid = mix(pal.hair.mid || pal.hair, rgb(236, 214, 150), 0.45);
     const tip = {
-      hi: mix(tipMid, rgb(255, 230, 160), 0.2),
-      mid: tipMid,
-      sh: mix(tipMid, pal.hair.sh || pal.hair.mid || pal.hair, 0.35),
+      mid: rgb(214, 172, 78),
+      sh: rgb(176, 126, 48),
+      hi: rgb(214, 172, 78),
     };
-    if (tip.hi.r >= 230 && tip.hi.g >= 220 && tip.hi.b >= 200) {
-      tip.hi = { r: 220, g: 200, b: 150 };
-    }
     for (const c of hairClumps("frosted", key)) {
-      const tx = g.cx + c.dx * sx + Math.cos(c.ang) * (c.len * sy * 0.62);
-      const ty = cy + c.dy * sy + Math.sin(c.ang) * (c.len * sy * 0.62);
-      stampSpike(buf, tx, ty, c.len * sy * 0.42, Math.max(1.4, c.half * sx * 0.7), c.ang, tip, "hair-tip", 46, false);
+      const x0 = g.cx + c.dx * sx, y0 = cy + c.dy * sy, len = c.len * sy;
+      if (hairSpikeCoversEye(key, g, upper, x0, y0, len, c.ang)) continue;
+      const tx = x0 + Math.cos(c.ang) * (len * 0.58);
+      const ty = y0 + Math.sin(c.ang) * (len * 0.58);
+      stampSpike(buf, tx, ty, len * 0.46, Math.max(1.6, c.half * sx * 0.78), c.ang, tip, "hair-tip", 46, false);
     }
   }
   if (!hatOn && av.hair === "spacebuns") {
-    const rad = 3.5;
+    const rad = 5.1;
     const skullTop = cy + 0.4 - g.ry;
-    // Attach the buns to the top sides of the cap, overlapping the helmet.
-    const by = skullTop + rad * 0.55;
+    // Sit the buns on the crown so most of each circle is visible above the cap.
+    const by = skullTop - rad * 0.12;
     function bun(bx, by0, kind) {
-      egg(buf, bx, by0, rad, rad, pal.hair, kind, 47, { widen: 0, flatten: 0 });
+      egg(buf, bx, by0, rad, rad * 0.96, pal.hair, kind, 47, { widen: 0, flatten: 0 });
       const ink = mix(pal.hair.mid || pal.hair, rgb(32, 18, 16), 0.55);
-      for (let a = 0; a < 16; a++) {
-        const ang = (a / 16) * Math.PI * 2;
-        plot(buf, Math.round(bx + Math.cos(ang) * (rad + 0.2)), Math.round(by0 + Math.sin(ang) * (rad + 0.2)), ink, "hair-bun-ink", 48);
+      for (let a = 0; a < 20; a++) {
+        const ang = (a / 20) * Math.PI * 2;
+        plot(buf, Math.round(bx + Math.cos(ang) * (rad + 0.15)), Math.round(by0 + Math.sin(ang) * (rad * 0.96 + 0.15)), ink, "hair-bun-ink", 48);
       }
-      // A couple of loose pointed strands off each bun.
-      stampSpike(buf, bx - 1.6, by0 + 1.2, 4.2, 1.3, Math.PI * 0.72, pal.hair, "hair-lock", 48, false);
-      stampSpike(buf, bx + 1.6, by0 + 1.2, 4.0, 1.2, Math.PI * 0.28, pal.hair, "hair-lock", 48, false);
+      // One short loose strand, kept off the face.
+      stampSpike(buf, bx + 0.6, by0 + rad * 0.45, 3.0, 1.15, Math.PI * 0.28, pal.hair, "hair-lock", 48, false);
     }
     if (key === "e") {
-      bun(g.cx + 2.2, by + 0.2, "hair-bun");
-      bun(g.cx - 5.4, by, "hair-bun-far");
+      bun(g.cx + 1.4, by, "hair-bun");
+      bun(g.cx - 6.6, by + 0.3, "hair-bun-far");
     } else {
-      const sep = (key === "se" || key === "ne" ? 6.6 : 7.6) * (g.rx / 14.5);
+      const sep = (key === "se" || key === "ne" ? 6.2 : 6.8) * (g.rx / 14.5);
       bun(g.cx - sep, by, "hair-bun");
       bun(g.cx + sep, by, "hair-bun");
-      // Skin part on the scalp only, from the crown down to the hairline.
-      const partTop = skullTop + 1.2;
+      const partTop = skullTop + 1.4;
       const partBot = (cy + 0.4) - g.ry * 0.10 - 0.4;
       if (partBot > partTop) rect(buf, g.cx - 0.8, partTop, g.cx + 0.8, partBot, pal.skin, "part", 49);
     }
@@ -1328,47 +1398,21 @@ function drawPonyTail(buf, av, key, pal, upper, hatOn) {
     ty = hatOn ? (cy + 1.4) : (skullTop + 2.6);
   }
   const depth = hatOn ? 63 : 50;
-  function lock(ox, oy, len, half, ang) {
+  function ribbon(ox, oy, len, half, ang) {
     stampSpike(buf, ox, oy, len, half, ang, pal.hair, "hair-tail", depth, false);
   }
-  // A short upward poof so the high pony reads above the crown (hidden under a hat).
-  if (!hatOn) {
-    const upAng = key === "e" ? -Math.PI * 0.72
-      : key === "se" || key === "ne" ? -Math.PI * 0.62
-      : key === "n" ? -Math.PI / 2 + 0.18
-      : -Math.PI / 2 + 0.28;
-    lock(tx, ty, 5.8, 2.2, upAng);
-  }
-  // Long hanging tail: down the back in back/side, down the side in front so it doesn't cross the face.
+  // One sleek tapered ribbon. No extra companion locks.
   if (key === "n" || key === "ne") {
-    const ang = Math.PI / 2 + (key === "ne" ? -0.18 : 0.16);
-    lock(tx, ty, 20, 2.9, ang);
-    lock(tx, ty, 17, 2.1, ang + 0.18);
-    lock(tx, ty, 14, 1.6, ang - 0.16);
+    // Long enough to hang past the nape and read as a ribbon on the back.
+    ribbon(tx, ty, 26, 2.5, Math.PI / 2 + (key === "ne" ? -0.12 : 0.12));
   } else if (key === "e") {
-    const ang = Math.PI * 0.72;
-    lock(tx, ty, 20, 2.9, ang);
-    lock(tx, ty, 17, 2.1, ang + 0.16);
-    lock(tx, ty, 14, 1.6, ang - 0.14);
+    ribbon(tx, ty, 22, 2.6, Math.PI * 0.72);
   } else if (key === "se") {
-    const ang = Math.PI * 0.74;
-    lock(tx, ty, 19, 2.8, ang);
-    lock(tx, ty, 16, 2.0, ang + 0.16);
-    lock(tx, ty, 13, 1.6, ang - 0.14);
+    ribbon(tx, ty, 22, 2.6, Math.PI * 0.74);
   } else if (hatOn) {
-    // Front + hat: exit from the temple, beside the face, never across the cheek.
-    const hx = g.cx + g.rx * 0.95;
-    const hy = cy + g.ry * 0.12;
-    lock(hx, hy, 14, 2.5, Math.PI * 0.52);
-    lock(hx + 0.7, hy, 11.5, 1.8, Math.PI * 0.42);
-    lock(hx - 0.4, hy, 10.5, 1.5, Math.PI * 0.62);
+    ribbon(g.cx + g.rx * 0.95, cy + g.ry * 0.12, 15, 2.6, Math.PI * 0.52);
   } else {
-    // Front: gather at the crown, then the tail falls down the right side of the head.
-    lock(tx, ty, 6.2, 2.0, 0.18);
-    const hx = tx + 5.2, hy = ty + 2.2;
-    lock(hx, hy, 16, 2.7, Math.PI * 0.48);
-    lock(hx + 0.8, hy, 13.5, 2.0, Math.PI * 0.40);
-    lock(hx - 0.5, hy, 12, 1.6, Math.PI * 0.58);
+    ribbon(tx, ty, 18, 2.7, Math.PI * 0.36);
   }
   // Hide the tie under a hat in front; keep it visible at the nape/side exit in other views.
   if (!hatOn || key === "n" || key === "ne" || key === "e") {
