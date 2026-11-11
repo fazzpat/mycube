@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#000000" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="MyCube" />
   <meta name="application-name" content="MyCube" />
   <link rel="manifest" href="/manifest.json" />
@@ -343,10 +343,14 @@
         <div class="store-slot-tabs hidden" data-testid="store-slot-tabs" id="store-slot-tabs"></div>
         <div class="inv-row hidden" id="inventory-row" data-testid="shop-inventory"></div>
         <div class="store-panel-body">
-          <div class="store-preview" id="store-preview" data-testid="store-preview"></div>
           <div class="store-grid" id="store-grid" data-testid="store-grid"></div>
         </div>
         <div class="store-panel-foot">
+          <div class="store-preview" id="store-preview" data-testid="store-preview"></div>
+          <div class="store-foot-meta">
+            <strong id="store-foot-name" data-testid="store-foot-name"></strong>
+            <span class="price" id="store-foot-price" data-testid="store-foot-price"></span>
+          </div>
           <button type="button" class="btn" id="store-tryon" data-testid="store-tryon">Try on</button>
           <button type="button" class="btn" id="store-wear" data-testid="store-wear" style="display:none">Wear</button>
           <button type="button" class="btn" id="store-buy" data-testid="store-buy" disabled>Buy</button>

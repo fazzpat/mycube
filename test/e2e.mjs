@@ -330,7 +330,8 @@ canvas.save(out)
   await execFileAsync("python3", ["-c", script, ...args]);
 }
 
-const PHONE_HUD = ['[data-testid="room-title"]', '#room-meta', '[data-testid="room-coins"]', '[data-testid="shop-toggle"]', '[data-testid="cam-toggle"]', '[data-testid="phone-btn"]', '[data-testid="emote-wheel-btn"]', '[data-testid="chat-dock"]'];
+const PHONE_HUD = ['[data-testid="leave-cube"]', '[data-testid="room-title"]', '#room-meta', '[data-testid="room-coins"]', '[data-testid="shop-toggle"]', '[data-testid="cam-toggle"]', '[data-testid="phone-btn"]', '[data-testid="emote-wheel-btn"]', '[data-testid="chat-dock"]'];
+const TOP_HUD = ['[data-testid="leave-cube"]', '[data-testid="room-coins"]', '[data-testid="shop-toggle"]'];
 
 async function checkShellOverflow(page, label) {
   const info = await page.evaluate(() => {
@@ -905,19 +906,63 @@ async function runCreatorPhoneAndBoot(browser) {
     const phone = document.querySelector("[data-testid=phone-overlay]");
     const room = document.getElementById("view-room")?.getBoundingClientRect();
     const pr = panel?.getBoundingClientRect();
+    const tabs = [...panel?.querySelectorAll(".store-tab") || []].map((el) => el.getBoundingClientRect());
+    const tabRow = tabs.length ? {
+      y0: Math.min(...tabs.map((r) => r.y)),
+      y1: Math.max(...tabs.map((r) => r.bottom)),
+    } : null;
+    const inv = document.querySelector("#inventory-row");
+    const invVisible = Boolean(inv && !inv.classList.contains("hidden") && inv.offsetParent && inv.textContent.trim());
+    const thumbs = [...panel?.querySelectorAll("canvas.store-thumb") || []].map((c) => {
+      const ctx = c.getContext("2d");
+      const d = ctx.getImageData(0, 0, c.width, c.height).data;
+      let ink = 0;
+      for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 8 && (d[i] + d[i + 1] + d[i + 2] < 720)) ink++;
+      return { w: c.width, h: c.height, ink };
+    });
+    const plaque = document.querySelector(".room-plaque")?.getBoundingClientRect();
+    const cart = document.querySelector("[data-testid=shop-toggle]");
+    const cartVis = cart && getComputedStyle(cart).visibility !== "hidden" && getComputedStyle(cart).display !== "none";
+    const toasts = document.getElementById("toasts");
+    const toastVis = toasts && getComputedStyle(toasts).visibility !== "hidden";
+    const overlapsHud = [];
+    if (cartVis && pr) overlapsHud.push("cart");
+    if (toastVis && pr) overlapsHud.push("toasts");
+    const plaqueVis = plaque && document.querySelector(".room-plaque") && getComputedStyle(document.querySelector(".room-plaque")).visibility !== "hidden";
+    if (plaqueVis && pr) overlapsHud.push("plaque");
     return {
       panelOpen: Boolean(panel && !panel.classList.contains("hidden")),
       phoneClosed: !phone || phone.classList.contains("hidden"),
-      panel: pr ? { w: Math.round(pr.width), h: Math.round(pr.height), x: Math.round(pr.x), y: Math.round(pr.y) } : null,
+      panel: pr ? { w: Math.round(pr.width), h: Math.round(pr.height), x: Math.round(pr.x), y: Math.round(pr.y), bottom: Math.round(pr.bottom) } : null,
       room: room ? { w: Math.round(room.width), h: Math.round(room.height), x: Math.round(room.x), y: Math.round(room.y) } : null,
       vw: window.innerWidth,
       vh: window.innerHeight,
+      tabH: tabRow ? Math.round(tabRow.y1 - tabRow.y0) : null,
+      invVisible,
+      thumbCount: thumbs.length,
+      thumbsWithArt: thumbs.filter((t) => t.ink > 8).length,
+      overlapsHud,
     };
   });
   check(
     "Opening the shop closes the phone and slides in a left side panel",
-    Boolean(shopUi.panelOpen && shopUi.phoneClosed && shopUi.panel && shopUi.panel.x <= 2 && shopUi.panel.y <= 2 && shopUi.panel.w >= 160 && shopUi.panel.w <= Math.min(360, Math.round(shopUi.vw * 0.62) + 2) && shopUi.panel.h >= Math.round(shopUi.vh * 0.55)),
+    Boolean(shopUi.panelOpen && shopUi.phoneClosed && shopUi.panel && shopUi.panel.x <= 2 && shopUi.panel.y <= 2 && shopUi.panel.w >= 160 && shopUi.panel.w <= Math.min(360, Math.round(shopUi.vw * 0.62) + 2)),
     JSON.stringify(shopUi)
+  );
+  check(
+    "The shop panel is about half as tall and ends around mid-screen",
+    Boolean(shopUi.panel && shopUi.panel.h <= Math.round(shopUi.vh * 0.55) && shopUi.panel.h >= Math.round(shopUi.vh * 0.28) && shopUi.panel.bottom <= Math.round(shopUi.vh * 0.62)),
+    JSON.stringify(shopUi.panel)
+  );
+  check(
+    "Shop tabs sit on one clean row and leftover inventory pills are hidden",
+    Boolean(shopUi.tabH != null && shopUi.tabH <= 36 && !shopUi.invVisible),
+    JSON.stringify({ tabH: shopUi.tabH, invVisible: shopUi.invVisible })
+  );
+  check(
+    "Each shop card shows an item thumbnail, and the cart, plaque, and toasts do not cover the panel",
+    Boolean(shopUi.thumbCount >= 3 && shopUi.thumbsWithArt >= 3 && shopUi.overlapsHud.length === 0),
+    JSON.stringify({ thumbCount: shopUi.thumbCount, thumbsWithArt: shopUi.thumbsWithArt, overlapsHud: shopUi.overlapsHud })
   );
   check(
     "The room stays in place when the shop panel opens",
@@ -1118,7 +1163,7 @@ async function runMobileAvatarClearTests(browser) {
       const mid = await measureAvatarPhoneClearance(page);
       check(
         `Edit Character at ${vp.name} (${place.label}) stays at the normal phone size and keeps the avatar in the room`,
-        mid.view === "room" && mid.box && mid.phone && mid.phone.w <= 280 && mid.phone.h <= 470 && mid.phoneFits && (place.kind === "sit" ? mid.sitting : !mid.sitting),
+        mid.view === "room" && mid.box && mid.phone && mid.phone.w <= 220 && mid.phone.h <= 360 && mid.phoneFits && (place.kind === "sit" ? mid.sitting : !mid.sitting),
         JSON.stringify({ place, mid, beforeTile: before?.tile })
       );
       check(
@@ -1166,7 +1211,7 @@ async function runPhoneEditPoseTests(browser) {
       JSON.stringify({ before, during, after })
     );
     if (homePhone && editPhone) {
-      const compact = editPhone.w <= 280 && editPhone.h <= 470;
+      const compact = editPhone.w <= 220 && editPhone.h <= 360;
       const restored = after.restored && Math.abs(after.restored.w - homePhone.w) <= 4 && Math.abs(after.restored.h - homePhone.h) <= 4;
       check(
         `${label}: the mobile editor stays compact and the phone restores on close`,
@@ -1439,7 +1484,10 @@ async function runAppShellFit(browser) {
 
   const sizes = [
     { name: "iPhone SE", width: 375, height: 667 },
+    { name: "iPhone 14", width: 390, height: 844 },
+    { name: "iPhone 15", width: 393, height: 852 },
     { name: "iPhone 14 Pro Max", width: 430, height: 932 },
+    { name: "compact Android", width: 360, height: 780 },
     { name: "Pixel 7", width: (devices["Pixel 7"]?.viewport?.width) || 412, height: (devices["Pixel 7"]?.viewport?.height) || 915 },
     { name: "iPhone 14 landscape", width: 844, height: 390 },
   ];
@@ -1464,18 +1512,73 @@ async function runAppShellFit(browser) {
     const root = document.documentElement;
     root.style.setProperty("--sat", "47px");
     root.style.setProperty("--sab", "34px");
+    window.__syncVisualTop?.();
     window.HouseRoom3D?.resize?.();
   });
   await page.waitForTimeout(350);
   await page.evaluate(() => window.__setCamMode?.("room"));
   await page.waitForTimeout(80);
   await assertInsideViewport(page, chrome, "In-room chrome stays inside a 47px top safe-area", { top: 47, bottom: 0 });
+  await assertInsideViewport(page, TOP_HUD, "Leave Cube, coins, and the shop cart stay in view under a 47px notch", { top: 47, bottom: 0 });
   await assertNoHudOverlap(page, PHONE_HUD, "In-room HUD does not overlap with a 47px notch inset");
   const titleTop = await page.locator('[data-testid="room-title"]').evaluate((el) => el.getBoundingClientRect().top);
   check("The in-room HUD sits below a 47px notch inset", titleTop >= 47, `titleTop=${titleTop.toFixed(1)}`);
   const fitSat = await page.evaluate(() => window.HouseRoom3D.roomFitsView());
   check("The whole cube stays in frame with a simulated notch", Boolean(fitSat?.ok), JSON.stringify(fitSat));
   await page.screenshot({ path: `${SHOT}/30-fit-top.png` });
+
+  // Real-phone bug: iOS can shift the visual viewport and hide the top HUD.
+  await page.evaluate(() => {
+    window.scrollTo(0, 180);
+    document.documentElement.scrollTop = 180;
+    if (document.body) document.body.scrollTop = 180;
+  });
+  await page.waitForTimeout(80);
+  const afterShift = await page.evaluate(() => ({
+    y: window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0,
+    vvTop: window.visualViewport?.offsetTop || 0,
+  }));
+  check("An iOS-style page scroll is snapped back to the top", afterShift.y === 0, JSON.stringify(afterShift));
+  await assertInsideViewport(page, TOP_HUD, "The top HUD stays visible after an iOS-style page shift", { top: 47, bottom: 0 });
+
+  await page.evaluate(() => window.__setKeyboardInset?.(280));
+  await page.waitForTimeout(80);
+  await assertInsideViewport(page, TOP_HUD, "The top HUD stays visible while a keyboard is open", { top: 47, bottom: 0 });
+  const kbHud = await page.evaluate(() => {
+    const box = (sel) => {
+      const el = document.querySelector(sel);
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return { top: +r.top.toFixed(1), bottom: +r.bottom.toFixed(1), visible: r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== "hidden" };
+    };
+    return {
+      leave: box("[data-testid=leave-cube]"),
+      coins: box("[data-testid=room-coins]"),
+      cart: box("[data-testid=shop-toggle]"),
+      inset: getComputedStyle(document.documentElement).getPropertyValue("--kb-inset").trim(),
+      scroll: window.scrollY || 0,
+    };
+  });
+  check(
+    "Leave Cube, coins, and the shop cart stay below the notch with the keyboard up",
+    Boolean(kbHud.leave?.visible && kbHud.coins?.visible && kbHud.cart?.visible
+      && kbHud.leave.top >= 45 && kbHud.coins.top >= 45 && kbHud.cart.top >= 45
+      && kbHud.scroll === 0 && kbHud.inset === "280px"),
+    JSON.stringify(kbHud)
+  );
+  await page.evaluate(() => window.__setKeyboardInset?.(0));
+
+  await page.locator('[data-testid="shop-toggle"]').click();
+  await page.waitForSelector('[data-testid="store-panel"]:not(.hidden)');
+  await assertInsideViewport(page, ['[data-testid="leave-cube"]', '[data-testid="room-coins"]'], "Leave Cube and coins stay visible while the shop is open", { top: 47, bottom: 0 });
+  await page.locator('[data-testid="store-close"]').click();
+  await page.waitForFunction(() => document.querySelector('[data-testid="store-panel"]')?.classList.contains("hidden"));
+
+  await openPhone(page);
+  await page.waitForTimeout(80);
+  await assertInsideViewport(page, TOP_HUD, "The top HUD stays visible while the phone is open", { top: 47, bottom: 0 });
+  await page.evaluate(() => window.__closePhone?.());
+  await page.waitForFunction(() => document.querySelector('[data-testid="phone-overlay"]')?.classList.contains("hidden"));
 
   await page.setViewportSize({ width: 390, height: 744 });
   await page.evaluate(() => window.HouseRoom3D?.resize?.());
@@ -2622,13 +2725,24 @@ try {
   );
   const vp = alice.viewportSize();
   check(
-    "The phone menu is a handheld in the corner with the room still visible above it",
-    Boolean(phoneBox && phoneBox.width >= 230 && phoneBox.width <= 280 && phoneBox.height >= 340 && phoneBox.height <= 420 && phoneBox.x < vp.width * 0.45 && phoneBox.x >= -4 && phoneBox.x < 40 && phoneBox.y >= 40),
+    "The phone menu is a small handheld in the corner with the room still visible above it",
+    Boolean(phoneBox && phoneBox.width <= 176 && phoneBox.width <= vp.width * 0.42 && phoneBox.height <= 250 && phoneBox.x < vp.width * 0.45 && phoneBox.x >= -4 && phoneBox.x < 40),
     JSON.stringify(phoneBox && { w: Math.round(phoneBox.width), h: Math.round(phoneBox.height), x: Math.round(phoneBox.x), y: Math.round(phoneBox.y), vw: vp.width, vh: vp.height })
   );
   const aliceOnPhone = await alice.waitForFunction(() => window.HouseRoom3D.personFlags("alice")?.usingPhone, null, { timeout: 8000 }).then(() => true).catch(() => false);
   const bobSeesPhone = await bob.waitForFunction(() => window.HouseRoom3D.personFlags("alice")?.usingPhone, null, { timeout: 8000 }).then(() => true).catch(() => false);
   check("Opening the phone menu makes your character pull out a phone", aliceOnPhone);
+  const poseHold = await alice.evaluate(async () => {
+    const mod = await import("/js/avatar3d.js?phonepose=1");
+    const av = window.__storeState?.()?.me?.avatar || {};
+    const views = [1, 0, 7, 5]; // front, 3/4, side, back
+    return views.map((dir) => ({ dir, ...mod.inspectPhoneHold(av, { bodyDir: dir, headDir: dir, usingPhone: true }, 0) }));
+  });
+  check(
+    "The phone-open pose holds the phone at the side, not in front of the face, in all main views",
+    Array.isArray(poseHold) && poseHold.length === 4 && poseHold.every((p) => p.hasPhone && p.atSide && !p.overlapsFace),
+    JSON.stringify(poseHold.map((p) => ({ dir: p.dir, hasPhone: p.hasPhone, atSide: p.atSide, overlapsFace: p.overlapsFace, phone: p.phone, face: p.face })))
+  );
   check("Other people in the cube see you scrolling on a phone", bobSeesPhone);
   await alice.waitForTimeout(500);
   await alice.screenshot({ path: `${SHOT}/29-corner-phone.png` });
@@ -2648,7 +2762,7 @@ try {
   );
   await alice.waitForTimeout(200);
   await alice.screenshot({ path: `${SHOT}/09-phone-app-open.png` });
-  await alice.click('[data-testid="shop-toggle"]');
+  await alice.click('[data-testid="store-close"]');
   await alice.waitForFunction(() => document.querySelector('[data-testid="store-panel"]')?.classList.contains("hidden"));
   await openPhone(alice);
   await alice.waitForSelector('[data-testid="phone-home"]:not(.hidden)', { state: "visible" });

@@ -1,4 +1,5 @@
 import { createRoom3D, createAvatarPreview } from "./isoRoom.js";
+import { drawFurnitureSprite } from "./furnIso.js";
 import { drawAvatarSprite, AV_W, AV_H } from "./avatar3d.js";
 import { initStartMenu } from "./startMenu.js";
 import { initCreatorMenu, openFromPhone, closeFromPhone, isPhoneEditOpen } from "./creatorMenu.js";
@@ -1046,24 +1047,8 @@ import {
   function paintShopInventory() {
     const inv = $("#inventory-row");
     if (!inv) return;
-    const show = !state.storeKind || state.storeKind === "furniture" || state.storeKind === "art";
-    inv.classList.toggle("hidden", !show);
-    if (!show) {
-      inv.innerHTML = "";
-      return;
-    }
-    const items = state.me?.inventory || [];
-    inv.innerHTML = items.length
-      ? items
-          .map(
-            (typ, i) =>
-              `<button class="inv-chip" data-testid="inv-${typ}-${i}" data-place="${typ}" type="button">${labelFor(typ)} — place</button>`
-          )
-          .join("")
-      : `<span class="empty">Nothing in your pocket yet.</span>`;
-    inv.querySelectorAll("[data-place]").forEach((b) =>
-      b.addEventListener("click", () => startPlace(b.dataset.place))
-    );
+    inv.classList.add("hidden");
+    inv.innerHTML = "";
   }
 
   function paintShop() {
@@ -2073,39 +2058,91 @@ import {
     return (col.clothes || []).some((c) => c.catalogId === stock.id);
   }
 
+  const storeThumbCache = new Map();
+
+  function storeThumbKey(kind, stock, avatar) {
+    const id = stock?.id || stock?.type || stock?.item || "";
+    if (kind === "clothes") {
+      const item = stock?.item || {};
+      return "clothes:" + id + ":" + (avatar?.skin || "") + ":" + (avatar?.hair || "") + ":" + JSON.stringify(item);
+    }
+    if (kind === "pets") return "pets:" + (stock?.item || id);
+    if (kind === "art") return "art:" + id;
+    return "furn:" + id;
+  }
+
+  function blitSpriteToThumb(ctx, spr, size, pad = 4) {
+    if (!spr?.c) return false;
+    const sc = Math.min((size - pad) / spr.w, (size - pad) / spr.h);
+    const dw = Math.max(1, Math.round(spr.w * sc));
+    const dh = Math.max(1, Math.round(spr.h * sc));
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(spr.c, 0, 0, spr.w, spr.h, Math.floor((size - dw) / 2), Math.floor((size - dh) / 2), dw, dh);
+    return true;
+  }
+
+  function paintStoreCardThumb(canvas, kind, stock, avatar) {
+    if (!canvas || !stock) return false;
+    const size = canvas.width || 56;
+    if (canvas.width !== size) canvas.width = size;
+    if (canvas.height !== size) canvas.height = size;
+    const ctx = canvas.getContext("2d");
+    ctx.imageSmoothingEnabled = false;
+    const key = storeThumbKey(kind, stock, avatar) + ":" + size;
+    let src = storeThumbCache.get(key);
+    if (!src) {
+      src = document.createElement("canvas");
+      src.width = size;
+      src.height = size;
+      const sctx = src.getContext("2d");
+      sctx.imageSmoothingEnabled = false;
+      sctx.fillStyle = "#efe6d4";
+      sctx.fillRect(0, 0, size, size);
+      if (kind === "furniture") {
+        const typ = stock.type || stock.id;
+        const spr = drawFurnitureSprite(typ, { lights: true, rot: 0, on: true });
+        if (!blitSpriteToThumb(sctx, spr, size)) {
+          const svg = typeof furnitureSVG === "function" ? furnitureSVG(typ) : "";
+          if (svg) {
+            src.dataset.svg = "1";
+          }
+        }
+      } else if (kind === "pets") {
+        if (typeof window.__paintPetThumb === "function") window.__paintPetThumb(src, stock.item);
+      } else if (kind === "art") {
+        paintArtThumb(src, stock.type || stock.id);
+      } else if (kind === "clothes") {
+        if (typeof window.__paintStoreThumb === "function") {
+          window.__paintStoreThumb(src, "clothes", stock.item, avatar || {});
+        }
+      }
+      storeThumbCache.set(key, src);
+    }
+    ctx.clearRect(0, 0, size, size);
+    ctx.drawImage(src, 0, 0);
+    return true;
+  }
+
   function paintStorePreview() {
+
     const el = $("#store-preview");
+    const nameEl = $("#store-foot-name");
+    const priceEl = $("#store-foot-price");
+    const kind = state.storeKind || "furniture";
+    const stock = storeStock(kind).find((s) => (s.id || s.type) === state.storeSel);
+    const owned = stock && ownsStoreItem(kind, stock);
+    const label = stock ? (stock.label || stock.name || stock.type || "") : "";
+    if (nameEl) nameEl.textContent = label;
+    if (priceEl) priceEl.textContent = !stock ? "" : owned ? "owned" : `${stock.price}c`;
+    if (state.storePreview) {
+      state.storePreview.dispose?.();
+      state.storePreview = null;
+    }
     if (!el) return;
-    const stock = storeStock(state.storeKind).find((s) => (s.id || s.type) === state.storeSel);
-    if (state.storeKind === "pets") {
-      if (state.storePreview) { state.storePreview.dispose?.(); state.storePreview = null; }
-      el.innerHTML = `<canvas width="96" height="90" data-testid="pet-preview-canvas" style="image-rendering:pixelated;width:96px;height:90px"></canvas><div style="padding:6px;text-align:center;font-weight:700">${stock ? escapeHtml(stock.label) : ""}</div>`;
-      const c = el.querySelector("canvas");
-      if (c && stock && typeof window.__paintPetThumb === "function") {
-        c.width = 96; c.height = 88;
-        window.__paintPetThumb(c, stock.item);
-      }
-      return;
-    }
-    if (state.storeKind === "furniture" || state.storeKind === "art") {
-      if (state.storePreview) { state.storePreview.dispose?.(); state.storePreview = null; }
-      if (state.storeKind === "art" && stock) {
-        el.innerHTML = `<canvas width="128" height="128" data-testid="art-preview-canvas" style="image-rendering:pixelated;width:128px;height:128px"></canvas><div style="padding:6px;text-align:center;font-weight:700">${escapeHtml(stock.name || stock.label || stock.type)}</div><div class="item-sub" style="text-align:center;padding:0 8px 8px">${escapeHtml(stock.description || "")}</div>`;
-        const c = el.querySelector("canvas");
-        if (c) paintArtThumb(c, stock.type || stock.id);
-      } else {
-        el.innerHTML = `<div style="padding:12px;text-align:center;font-weight:700">${stock ? escapeHtml(stock.name || stock.label || stock.type) : ""}</div>`;
-      }
-      return;
-    }
-    if (!state.storePreview) {
-      el.innerHTML = "";
-      state.storePreview = createAvatarPreview(el);
-    }
-    const base = { ...(state.me?.avatar || {}) };
-    if (stock?.item) Object.assign(base, stock.item);
-    state.storePreview.setAvatar(base);
-    state.storePreview.resize?.();
+    if (!stock) { el.innerHTML = ""; return; }
+    el.innerHTML = `<canvas width="40" height="40" class="store-thumb" data-testid="store-preview-canvas"></canvas>`;
+    const c = el.querySelector("canvas");
+    if (c) paintStoreCardThumb(c, kind, stock, state.me?.avatar || {});
   }
 
   function paintStoreTabs() {
@@ -2157,17 +2194,17 @@ import {
         const label = s.label || s.name || s.type;
         const owned = ownsStoreItem(kind, s);
         const sel = state.storeSel === id ? " selected" : "";
-        const thumb = (kind === "clothes" || kind === "pets" || kind === "art")
-          ? `<canvas class="store-thumb" width="28" height="28" data-thumb-id="${id}" style="image-rendering:pixelated"></canvas>`
-          : (typeof furnitureSVG === "function" ? furnitureSVG(s.type || id) : "");
+        const thumb = `<canvas class="store-thumb" width="56" height="56" data-testid="store-thumb-${id}" data-thumb-id="${id}"></canvas>`;
         const afford = !owned && coins >= (s.price || 0);
-        const buyLabel = owned ? "Owned" : "Buy";
-        return `<div class="store-item${sel}" data-testid="store-item-${id}" data-store-id="${id}">${thumb}<span class="meta">${escapeHtml(label)}${owned ? " · owned" : ""}</span><span class="price">${owned ? "owned" : s.price + "c"}</span><button type="button" class="btn small" data-testid="buy-${id}" data-buy="${id}" ${afford ? "" : "disabled"}>${buyLabel}</button></div>`;
+        const action = owned && (kind === "furniture" || kind === "art")
+          ? `<button type="button" class="btn small" data-testid="place-${id}" data-place="${id}">Place</button>`
+          : `<button type="button" class="btn small" data-testid="buy-${id}" data-buy="${id}" ${owned || afford ? (owned ? "disabled" : "") : "disabled"}>${owned ? "Owned" : "Buy"}</button>`;
+        return `<div class="store-item${sel}" data-testid="store-item-${id}" data-store-id="${id}">${thumb}<span class="meta">${escapeHtml(label)}${owned ? " · owned" : ""}</span><span class="price">${owned ? "owned" : s.price + "c"}</span>${action}</div>`;
       })
       .join("");
     grid.querySelectorAll("[data-store-id]").forEach((b) => {
       b.addEventListener("click", (e) => {
-        if (e.target.closest("[data-buy]")) return;
+        if (e.target.closest("[data-buy], [data-place]")) return;
         state.storeSel = b.dataset.storeId;
         paintStorePanel();
         paintStorePreview();
@@ -2183,13 +2220,15 @@ import {
         else socket.emit("buyStoreItem", { kind, id });
       });
     });
+    grid.querySelectorAll("[data-place]").forEach((b) => {
+      b.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (b.dataset.place) startPlace(b.dataset.place);
+      });
+    });
     grid.querySelectorAll("canvas.store-thumb").forEach((c) => {
       const stock = stockList.find((s) => (s.id || s.type) === c.dataset.thumbId);
-      if (!stock) return;
-      if (kind === "art") paintArtThumb(c, stock.type || stock.id);
-      else if (typeof window.__paintStoreThumb === "function") {
-        window.__paintStoreThumb(c, kind, stock.item || stock, state.me?.avatar || {});
-      }
+      if (stock) paintStoreCardThumb(c, kind, stock, state.me?.avatar || {});
     });
     const buy = $("#store-buy");
     const stock = stockList.find((s) => (s.id || s.type) === state.storeSel);
@@ -2460,9 +2499,33 @@ import {
   }
 
   function lockPageScroll() {
+    // iOS Safari can shift the layout or visual viewport, hiding the top HUD.
+    // Always snap back to (0, 0). Avoid transforms on the app shell — they
+    // would turn position:fixed HUD into a scrolled containing block.
     window.scrollTo(0, 0);
-    if (document.documentElement) document.documentElement.scrollTop = 0;
-    if (document.body) document.body.scrollTop = 0;
+    const html = document.documentElement;
+    const body = document.body;
+    if (html) { html.scrollTop = 0; html.scrollLeft = 0; }
+    if (body) { body.scrollTop = 0; body.scrollLeft = 0; }
+    const se = document.scrollingElement;
+    if (se && se !== html && se !== body) { se.scrollTop = 0; se.scrollLeft = 0; }
+  }
+
+  function syncVisualTop() {
+    lockPageScroll();
+    const vv = window.visualViewport;
+    const offset = vv ? Math.max(0, Math.round(vv.offsetTop || 0)) : 0;
+    const root = document.documentElement;
+    root.style.setProperty("--vv-top", offset + "px");
+    const bar = document.querySelector(".room-view .topbar");
+    if (bar) {
+      const h = Math.round(bar.getBoundingClientRect().height);
+      if (h > 0) {
+        const px = h + "px";
+        root.style.setProperty("--room-topbar-h", px);
+        document.querySelector(".room-view")?.style.setProperty("--room-topbar-h", px);
+      }
+    }
   }
 
   function isTouchChatLayout() {
@@ -2500,6 +2563,7 @@ import {
     root.style.setProperty("--layout-h", layoutH + "px");
     root.style.setProperty("--kb-reserve", "0px");
     measureChatFrame();
+    syncVisualTop();
     const chat = document.getElementById("chat-input");
     if (chat) {
       const next = "Say something...";
@@ -2509,7 +2573,7 @@ import {
   }
 
   function syncKeyboardInset() {
-    lockPageScroll();
+    syncVisualTop();
     const kb = keyboardHeight();
     const root = document.documentElement;
     const px = kb + "px";
@@ -2737,7 +2801,7 @@ import {
     }
     const spr = drawAvatarSprite(state.draft, { bodyDir: 1, headDir: 1, blink: "open" }, 0);
     const boxW = Math.max(1, box.clientWidth || 140);
-    const boxH = Math.max(1, box.clientHeight || 90);
+    const boxH = Math.max(1, box.clientHeight || 48);
     const raw = Math.min(boxW / spr.w, boxH / spr.h);
     const scale = raw >= 1 ? Math.floor(raw) : Math.max(0.5, raw);
     const dw = Math.max(1, Math.round(spr.w * scale));
@@ -3672,6 +3736,7 @@ import {
     ignorePhoneTaps(400);
     setTimeout(syncKeyboardInset, 50);
   });
+  window.addEventListener("scroll", lockPageScroll, { passive: true, capture: true });
   if (window.visualViewport) {
     window.visualViewport.addEventListener("resize", syncKeyboardInset);
     window.visualViewport.addEventListener("scroll", syncKeyboardInset);
@@ -3685,6 +3750,7 @@ import {
     syncKeyboardInset();
     return keyboardHeight();
   };
+  window.__syncVisualTop = syncVisualTop;
 
   function handleTileClick(tx, ty) {
     if (state.pendingPet) {

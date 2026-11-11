@@ -17,6 +17,8 @@
   --safe-left: max(var(--sal), 0px);
   --safe-right: max(var(--sar), 0px);
   --app-top: 0px;
+  --vv-top: 0px;
+  --room-topbar-h: calc(44px + var(--sat, env(safe-area-inset-top, 0px)));
   --bg: #fff3e8;
   --bg2: #ffe0c8;
   --ink: #3d2c29;
@@ -40,12 +42,19 @@
 html, body {
   margin: 0;
   width: 100%;
+  max-width: 100%;
   height: 100%;
+  height: 100svh;
   height: 100dvh;
+  max-height: 100dvh;
   overflow: hidden;
   overscroll-behavior: none;
   touch-action: manipulation;
   -webkit-text-size-adjust: 100%;
+}
+html {
+  position: fixed;
+  inset: 0;
 }
 body, .app {
   position: fixed;
@@ -53,9 +62,12 @@ body, .app {
   width: 100%;
   max-width: 100%;
   height: 100%;
+  height: 100svh;
   height: 100dvh;
+  max-height: 100dvh;
   overflow: hidden;
   overscroll-behavior: none;
+  transform: none;
 }
 body {
   font-family: "Nunito", "Avenir Next", "Segoe UI", sans-serif;
@@ -1073,19 +1085,18 @@ body.phone-open .dock .phone-dock-btn { visibility: visible; }
   pointer-events: auto;
 }
 .phone-overlay {
-  /* Fixed CSS-px handset, bottom-left overlay (not in-world).
-     256×384 is a 2×3 block of floor tiles at default phone zoom (tile 128×64). */
-  --phone-w: min(256px, calc(100vw - 24px));
-  --phone-h: min(384px, calc(var(--layout-h, var(--app-h, 100dvh)) - var(--dock-h) - 56px));
+  /* Original compact handset, bottom-left overlay (not in-world). */
+  --phone-w: min(170px, 40vw);
+  --phone-h: min(228px, calc(var(--layout-h, var(--app-h, 100dvh)) - var(--dock-h) - 12px));
 }
 .phone-device {
   pointer-events: auto;
   position: relative;
   z-index: 1;
-  width: var(--phone-w, min(256px, calc(100vw - 24px)));
-  height: var(--phone-h, min(384px, calc(var(--layout-h, var(--app-h, 100dvh)) - var(--dock-h) - 56px)));
-  max-width: var(--phone-w, min(256px, calc(100vw - 24px)));
-  max-height: var(--phone-h, min(384px, calc(var(--layout-h, var(--app-h, 100dvh)) - var(--dock-h) - 56px)));
+  width: var(--phone-w, min(170px, 40vw));
+  height: var(--phone-h, min(228px, calc(var(--layout-h, var(--app-h, 100dvh)) - var(--dock-h) - 12px)));
+  max-width: var(--phone-w, min(170px, 40vw));
+  max-height: var(--phone-h, min(228px, calc(var(--layout-h, var(--app-h, 100dvh)) - var(--dock-h) - 12px)));
   filter: drop-shadow(0 10px 16px rgba(12, 6, 28, .4));
   animation: phoneUp .28s cubic-bezier(.2, 1.15, .3, 1);
 }
@@ -1772,12 +1783,31 @@ input, textarea, select {
 .place-card span { color: var(--cyber-muted); font-size: 12px; }
 
 .room-view { background: #000 !important; }
+/* Pin Leave Cube + coins to the visual top, inside the iPhone safe area.
+   A transform is intentionally avoided so position:fixed stays viewport-relative. */
 .room-view .topbar {
+  position: fixed;
+  top: var(--vv-top, 0px);
+  left: 0;
+  right: 0;
+  width: 100%;
+  z-index: 80;
   background: transparent;
   border-bottom: 0;
   justify-content: flex-end;
   padding-top: calc(6px + var(--sat, env(safe-area-inset-top, 0px)));
   min-height: 0;
+  pointer-events: none;
+  transform: none;
+}
+/* In-flow stand-in so the stage (cart, plaque, camera) still starts below the HUD. */
+.room-view::before {
+  content: "";
+  display: block;
+  flex: 0 0 auto;
+  width: 100%;
+  height: max(var(--room-topbar-h, 0px), calc(44px + var(--sat, env(safe-area-inset-top, 0px))));
+  pointer-events: none;
 }
 .room-view .topbar-right { pointer-events: auto; }
 .room-view .coin-chip {
@@ -1826,11 +1856,13 @@ input, textarea, select {
   .mycube-badge { right: calc(76px + var(--safe-right, 0px)); }
 }
 .cam-toggle {
+  position: fixed;
   background: #0a0c12ee;
   color: var(--cyber-cyan);
   box-shadow: 0 0 0 1px var(--cyber-cyan), 0 0 10px rgba(0,240,255,.35);
-  top: 10px;
-  right: 10px;
+  top: calc(var(--vv-top, 0px) + max(var(--room-topbar-h, 0px), calc(44px + var(--sat, env(safe-area-inset-top, 0px)))) + 10px);
+  right: calc(10px + var(--safe-right, 0px));
+  z-index: 80;
 }
 .dock {
   background: linear-gradient(180deg, #1a1c24, #0c0e14);
@@ -2380,8 +2412,10 @@ input, select, textarea, .chat-input, [data-testid="chat-input"] {
 
 /* Room label at the TOP of the stage (topbar already clears the notch) */
 .room-plaque {
-  top: 8px;
+  position: fixed;
+  top: calc(var(--vv-top, 0px) + max(var(--room-topbar-h, 0px), calc(44px + var(--sat, env(safe-area-inset-top, 0px)))) + 8px);
   left: calc(56px + var(--safe-left, 0px));
+  z-index: 80;
   bottom: auto !important;
   right: auto;
   max-width: min(48vw, 260px);
@@ -2426,10 +2460,10 @@ input, select, textarea, .chat-input, [data-testid="chat-input"] {
 .phone-device {
   animation: none !important;
   transform: none !important;
-  width: var(--phone-w, min(256px, calc(100vw - 24px))) !important;
-  height: var(--phone-h, min(384px, calc(var(--layout-h, var(--app-h, 100dvh)) - var(--dock-h) - 56px))) !important;
-  max-width: var(--phone-w, min(256px, calc(100vw - 24px))) !important;
-  max-height: var(--phone-h, min(384px, calc(var(--layout-h, var(--app-h, 100dvh)) - var(--dock-h) - 56px))) !important;
+  width: var(--phone-w, min(170px, 40vw)) !important;
+  height: var(--phone-h, min(228px, calc(var(--layout-h, var(--app-h, 100dvh)) - var(--dock-h) - 12px))) !important;
+  max-width: var(--phone-w, min(170px, 40vw)) !important;
+  max-height: var(--phone-h, min(228px, calc(var(--layout-h, var(--app-h, 100dvh)) - var(--dock-h) - 12px))) !important;
   overscroll-behavior: none;
   touch-action: manipulation;
 }
@@ -2640,10 +2674,10 @@ body.phone-open .phone-dock-btn {
 }
 
 .cam-recenter {
-  position: absolute;
-  top: 54px;
-  right: 10px;
-  z-index: 28;
+  position: fixed;
+  top: calc(var(--vv-top, 0px) + max(var(--room-topbar-h, 0px), calc(44px + var(--sat, env(safe-area-inset-top, 0px)))) + 54px);
+  right: calc(10px + var(--safe-right, 0px));
+  z-index: 80;
   width: 34px;
   height: 34px;
   padding: 0;
@@ -2755,10 +2789,10 @@ body.phone-open .phone-dock-btn {
 #phone-overlay.is-character-edit .phone-device,
 #phone-overlay.is-character-edit.is-compact-edit .phone-device,
 #phone-overlay.app-open .phone-device {
-  width: var(--phone-w, min(256px, calc(100vw - 24px))) !important;
-  height: var(--phone-h, min(384px, calc(var(--layout-h, var(--app-h, 100dvh)) - var(--dock-h) - 56px))) !important;
-  max-width: var(--phone-w, min(256px, calc(100vw - 24px))) !important;
-  max-height: var(--phone-h, min(384px, calc(var(--layout-h, var(--app-h, 100dvh)) - var(--dock-h) - 56px))) !important;
+  width: var(--phone-w, min(170px, 40vw)) !important;
+  height: var(--phone-h, min(228px, calc(var(--layout-h, var(--app-h, 100dvh)) - var(--dock-h) - 12px))) !important;
+  max-width: var(--phone-w, min(170px, 40vw)) !important;
+  max-height: var(--phone-h, min(228px, calc(var(--layout-h, var(--app-h, 100dvh)) - var(--dock-h) - 12px))) !important;
   left: auto !important;
   top: auto !important;
   right: auto !important;
@@ -2849,16 +2883,16 @@ body.phone-open .phone-dock-btn {
 }
 
 
-/* Every in-game app uses the same moderately larger handset size. */
+/* Always keep the in-game handset at the original compact home-screen size. */
 #phone-overlay .phone-device,
 #phone-overlay.is-character-edit .phone-device,
 #phone-overlay.is-character-edit.is-compact-edit .phone-device,
 #phone-overlay.is-character-edit.is-short-edit .phone-device,
 #phone-overlay.app-open .phone-device {
-  width: var(--phone-w, min(256px, calc(100vw - 24px))) !important;
-  height: var(--phone-h, min(384px, calc(var(--layout-h, var(--app-h, 100dvh)) - var(--dock-h) - 56px))) !important;
-  max-width: var(--phone-w, min(256px, calc(100vw - 24px))) !important;
-  max-height: var(--phone-h, min(384px, calc(var(--layout-h, var(--app-h, 100dvh)) - var(--dock-h) - 56px))) !important;
+  width: var(--phone-w, min(170px, 40vw)) !important;
+  height: var(--phone-h, min(228px, calc(var(--layout-h, var(--app-h, 100dvh)) - var(--dock-h) - 12px))) !important;
+  max-width: var(--phone-w, min(170px, 40vw)) !important;
+  max-height: var(--phone-h, min(228px, calc(var(--layout-h, var(--app-h, 100dvh)) - var(--dock-h) - 12px))) !important;
   min-height: 0 !important;
   min-width: 0 !important;
   flex: 0 0 auto !important;
@@ -3187,10 +3221,10 @@ body[data-view="room"] .toast .toast-actions .btn { font-size: 11px; padding: 2p
 
 /* Shopping-cart button: 2000s circular HUD, top-left, matching camera buttons. */
 .shop-toggle {
-  position: absolute;
-  top: 8px;
+  position: fixed;
+  top: calc(var(--vv-top, 0px) + max(var(--room-topbar-h, 0px), calc(44px + var(--sat, env(safe-area-inset-top, 0px)))) + 8px);
   left: calc(8px + var(--safe-left, 0px));
-  z-index: 46;
+  z-index: 80;
   width: 40px;
   height: 40px;
   padding: 0;
@@ -3212,24 +3246,26 @@ body.shop-open .shop-toggle {
   box-shadow: 0 0 0 1px #c4a060, 0 1px 0 #3a2a18;
 }
 
-/* Shop as a full-height left side panel. Room stays put and stays
-   tappable to the right; the panel does not resize the cube. */
+/* Shop as a left side panel. Top stays at the top-left of the room
+   view; height is half the stage (bottom ends around mid-screen) so
+   more of the cube stays visible and tappable below. Same width; the
+   item list scrolls inside. The panel does not resize the room. */
 #store-panel.store-panel,
 .store-panel {
-  position: absolute !important;
-  top: 0 !important;
+  position: fixed !important;
+  top: var(--vv-top, 0px) !important;
   left: 0 !important;
   right: auto !important;
-  bottom: var(--dock-h, 76px) !important;
+  bottom: auto !important;
   transform: none !important;
   width: min(360px, 58vw) !important;
   max-width: 360px !important;
-  height: auto !important;
-  max-height: none !important;
+  height: calc((100% - var(--dock-h, 76px)) / 2) !important;
+  max-height: calc((100% - var(--dock-h, 76px)) / 2) !important;
   overflow: hidden !important;
   display: flex !important;
   flex-direction: column !important;
-  z-index: 44 !important;
+  z-index: 60 !important;
   background: #f4efe4ee !important;
   color: #1a1020 !important;
   box-shadow: 4px 0 0 #8a6a44, 8px 0 18px rgba(42, 24, 16, 0.28) !important;
@@ -3246,11 +3282,19 @@ body.shop-open .shop-toggle {
   from { transform: translateX(-100%); }
   to { transform: translateX(0); }
 }
+/* While the shop is open, hide the cart, Cube/Owner plaque, and
+   welcome/coin toasts so they cannot cover the header or tabs. */
+body.shop-open .shop-toggle,
+body.shop-open .room-plaque,
+body.shop-open #toasts {
+  visibility: hidden;
+  pointer-events: none;
+}
 .store-panel-head {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 10px 8px 12px;
+  padding: calc(8px + var(--sat, env(safe-area-inset-top, 0px))) 10px 6px 12px;
   flex: 0 0 auto;
 }
 .store-panel-head strong {
@@ -3283,59 +3327,59 @@ body.shop-open .shop-toggle {
 #store-panel .store-tabs {
   flex: 0 0 auto;
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 4px;
-  /* Indent tab row so the top-left cart toggle does not cover Furniture. */
-  padding: 0 10px 6px 56px;
+  padding: 0 10px 6px 10px;
+  overflow-x: auto;
 }
 #store-panel .store-tab {
+  flex: 1 1 0;
   font-size: 11px;
-  padding: 5px 8px;
+  padding: 5px 6px;
   min-height: 26px;
+  min-width: 0;
+  white-space: nowrap;
+  text-align: center;
 }
 #store-panel #inventory-row,
 #store-panel .inv-row {
+  display: none !important;
+}
+#store-panel .store-slot-tabs {
   flex: 0 0 auto;
-  margin: 0 10px 6px;
-  max-height: 72px;
-  overflow: auto;
+  padding: 0 10px 6px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
 }
 #store-panel .store-panel-body {
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 0 10px 8px;
-  overflow: hidden;
-}
-#store-panel .store-preview {
-  width: 100%;
-  min-height: 0;
-  flex: 0 0 auto;
-  max-height: 120px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  gap: 0;
+  padding: 0 8px 6px;
   overflow: hidden;
 }
 #store-panel .store-grid {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(124px, 1fr));
-  gap: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
   align-content: start;
 }
 #store-panel .store-item,
 #store-panel .shop-item {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-  min-height: 84px;
-  padding: 8px;
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  column-gap: 8px;
+  row-gap: 1px;
+  align-items: center;
+  flex: 0 0 auto;
+  min-height: 56px;
+  padding: 6px 8px;
   text-align: left;
   background: #fff8f0;
   color: #1a1020;
@@ -3343,34 +3387,96 @@ body.shop-open .shop-toggle {
   border-radius: 8px;
   font-size: 12px;
 }
+#store-panel .store-item .store-thumb,
+#store-panel .shop-item .store-thumb {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  width: 56px;
+  height: 56px;
+  background: #efe6d4;
+  border: 1px solid #d4c0a0;
+  border-radius: 6px;
+  image-rendering: pixelated;
+}
 #store-panel .store-item .meta,
 #store-panel .shop-item strong {
-  width: 100%;
+  grid-column: 2;
+  grid-row: 1;
+  width: auto;
   font-size: 12px;
   font-weight: 800;
+  line-height: 1.2;
 }
 #store-panel .store-item .price,
 #store-panel .shop-item .item-sub {
+  grid-column: 2;
+  grid-row: 2;
   font-size: 12px;
   font-weight: 800;
   color: #2a7a4a;
 }
 #store-panel .store-item .btn,
 #store-panel .shop-item .btn {
-  margin-top: auto;
+  grid-column: 3;
+  grid-row: 1 / span 2;
+  margin-top: 0;
   min-height: 28px;
+  min-width: 56px;
   font-size: 11px;
-  width: 100%;
+  width: auto;
 }
 #store-panel .store-panel-foot {
   flex: 0 0 auto;
   display: flex;
-  gap: 6px;
-  padding: 8px 10px 10px;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px 8px;
+  border-top: 1px solid #d4c0a0;
+  background: #efe6d4;
+}
+#store-panel .store-panel-foot .store-preview {
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+  min-height: 40px;
+  max-height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: #fff8f0;
+  border: 1px solid #d4c0a0;
+  border-radius: 6px;
+}
+#store-panel .store-panel-foot .store-preview canvas {
+  width: 40px;
+  height: 40px;
+  image-rendering: pixelated;
+}
+#store-panel .store-foot-meta {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+#store-panel .store-foot-meta strong {
+  font-size: 12px;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#store-panel .store-foot-meta .price {
+  font-size: 11px;
+  font-weight: 800;
+  color: #2a7a4a;
 }
 #store-panel .store-panel-foot .btn {
-  min-height: 34px;
-  font-size: 12px;
+  flex: 0 0 auto;
+  min-height: 30px;
+  font-size: 11px;
+  padding: 4px 8px;
 }
 
 @media (max-width: 520px) {
@@ -3378,7 +3484,6 @@ body.shop-open .shop-toggle {
   .store-panel {
     width: min(360px, 58vw) !important;
     max-width: 360px !important;
-    max-height: none !important;
   }
 }
 
