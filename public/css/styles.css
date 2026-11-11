@@ -565,7 +565,7 @@ input:focus { border-color: var(--coral); }
   transform: translate(-50%, -100%);
 }
 .bubble-layer { --iso-zoom: 1; }
-.bubble-layer .person-name { transform: translate(-50%, 0); }
+.bubble-layer .person-name { transform: translate(-50%, -100%); z-index: 8; }
 .bubble-layer .speech-stack .speech-bubble {
   position: relative;
   left: auto;
@@ -2113,7 +2113,7 @@ input, textarea, select {
 .speech-bubble.shout { box-shadow: 0 0 0 2px #c4182d, 0 0 10px rgba(196,24,45,.35); }
 
 body[data-view="room"] #toasts {
-  top: calc(var(--safe-top, 0px) + 118px);
+  top: calc(var(--safe-top, 0px) + 52px + 78px);
   right: auto;
   left: calc(12px + var(--safe-left, 0px));
   width: min(220px, calc(100% - 88px));

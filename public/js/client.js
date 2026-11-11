@@ -577,11 +577,12 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
         layer.appendChild(nameEl);
       }
       nameEl.textContent = displayOf(p);
-      const footY = pos.footY != null ? pos.footY : pos.y + 40;
       let nx = Math.min(Math.max(pos.x, 48), W - 48);
-      let ny = Math.min(Math.max(footY + 4, 28), H - 22);
+      // Names sit just above the head, on the overlay, so furniture never covers them.
+      let ny = Math.min(Math.max(pos.y - 4, 22), H - 22);
       nameEl.style.left = nx + "px";
       nameEl.style.top = ny + "px";
+      nameEl.style.zIndex = "8";
       seen.add("n:" + p.username);
 
       const active = (p.bubbles || []).filter((b) => now < b.until);
@@ -1403,7 +1404,7 @@ import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, 
     const stock = storeStock(state.storeKind).find((s) => (s.id || s.type) === state.storeSel);
     if (state.storeKind === "pets") {
       if (state.storePreview) { state.storePreview.dispose?.(); state.storePreview = null; }
-      el.innerHTML = `<canvas width="96" height="88" data-testid="pet-preview-canvas" style="image-rendering:pixelated;width:96px;height:88px"></canvas><div style="padding:6px;text-align:center;font-weight:700">${stock ? escapeHtml(stock.label) : ""}</div>`;
+      el.innerHTML = `<canvas width="96" height="90" data-testid="pet-preview-canvas" style="image-rendering:pixelated;width:96px;height:90px"></canvas><div style="padding:6px;text-align:center;font-weight:700">${stock ? escapeHtml(stock.label) : ""}</div>`;
       const c = el.querySelector("canvas");
       if (c && stock && typeof window.__paintPetThumb === "function") {
         c.width = 96; c.height = 88;
