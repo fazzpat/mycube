@@ -1,617 +1,31 @@
-/* Hand-authored Habbo-style pixel pets. Original art only. */
+/* Original MyCube chibi pets — sticker-outlined, muted, big-headed. */
 export const PET_W = 32;
 export const PET_H = 30;
 export const PET_GROUND_Y = 27;
 
 function hex(h) {
   const n = parseInt(String(h).replace("#", ""), 16);
-  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255, a: 255 };
+  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
 }
+function mix(a, b, t) {
+  return { r: Math.round(a.r + (b.r - a.r) * t), g: Math.round(a.g + (b.g - a.g) * t), b: Math.round(a.b + (b.b - a.b) * t) };
+}
+function tones(hexStr) {
+  const mid = hex(hexStr);
+  return { mid, hi: mix(mid, { r: 255, g: 244, b: 228 }, 0.28), sh: mix(mid, { r: 40, g: 24, b: 20 }, 0.28) };
+}
+
+const INK = { r: 42, g: 28, b: 24 };
+const STICKER = { r: 255, g: 250, b: 244 };
 
 const PALS = {
-  cat:     { mid: "#e09a3c", hi: "#f3c06a", sh: "#a05e22", belly: "#f6e2c4", ink: "#1a1020", nose: "#e8899a", eye: "#22180c", eyeHi: "#fff", accent: "#3a2414", pink: "#f5a9b8" },
-  dog:     { mid: "#c49254", hi: "#e0b878", sh: "#8a5e30", belly: "#f0e0c4", ink: "#1a1020", nose: "#2a1c16", eye: "#22180c", eyeHi: "#fff", accent: "#5a3a1c", pink: "#f5a9b8" },
-  bunny:   { mid: "#f0e6dc", hi: "#fffaf4", sh: "#c8b4a4", belly: "#fff8f0", ink: "#1a1020", nose: "#e8899a", eye: "#22180c", eyeHi: "#fff", accent: "#d8c4b4", pink: "#f5a9b8" },
-  fox:     { mid: "#d87828", hi: "#f0a050", sh: "#8a4010", belly: "#f4eadc", ink: "#1a1020", nose: "#2a1c16", eye: "#22180c", eyeHi: "#fff", accent: "#f4eadc", pink: "#f5a9b8" },
-  hamster: { mid: "#c48a48", hi: "#e0b070", sh: "#8a5a28", belly: "#f0d8b0", ink: "#1a1020", nose: "#e8899a", eye: "#22180c", eyeHi: "#fff", accent: "#f0d8b0", pink: "#f5a9b8" },
-  parrot:  { mid: "#d43a3a", hi: "#f06060", sh: "#8a2020", belly: "#f0c040", ink: "#1a1020", nose: "#f0c040", eye: "#22180c", eyeHi: "#fff", accent: "#2a8a4a", pink: "#f5a9b8", wing: "#2a8a4a" },
-  turtle:  { mid: "#4a8a3a", hi: "#7ab050", sh: "#2e5a24", belly: "#c4d47a", ink: "#1a1020", nose: "#2a1c16", eye: "#22180c", eyeHi: "#fff", accent: "#3d6a28", pink: "#f5a9b8" },
-};
-
-const KEYS = {
-  o: "ink", "#": "mid", h: "hi", s: "sh", b: "belly", n: "nose",
-  e: "eye", u: "eyeHi", t: "accent", p: "pink", w: "wing",
-};
-
-function palColor(pal, key) {
-  if (key === "ink") return pal.ink;
-  if (key === "wing") return pal.wing || pal.accent;
-  return pal[key] || pal.mid;
-}
-
-function L(y, rows, x = 0) {
-  return { x, y, rows: rows.map((r) => r.padEnd(PET_W, ".").slice(0, PET_W)) };
-}
-
-/* ===== PET MAPS: 4 unique views (s, se, e, n). Sit is a loaf/crouch. ===== */
-const PETS = {
-  cat: {
-    s: L(3, [
-      "...........o....o...........",
-      "..........oho..oho..........",
-      ".........ohhhoohhho.........",
-      "........oh#ee##ee#ho........",
-      "........o#ueu##ueu#o........",
-      "........oh########ho........",
-      "........o###nnnn###o........",
-      ".......ooh##nnnn##ho........",
-      ".......obbbbbbbbbbbbo.......",
-      ".......obhh######hhbo.......",
-      ".......os##########so.......",
-      ".......os#s######s#so.......",
-      "........o#o......o#o........",
-      "........oso......oso........",
-      ".........o........o.........",
-    ]),
-    se: L(3, [
-      "............o...o...........",
-      "...........oho.oho..........",
-      "..........ohhhohhho.........",
-      ".........oh#ee#ee#ho........",
-      ".........o#ueu#ueu#o........",
-      "........ooh#######ho........",
-      "........oh##nnnn##to........",
-      ".......oobbbbbbbb#to........",
-      ".......obhh#####hhto........",
-      ".......os#########so........",
-      ".......os#s#####s#so........",
-      "........o#o....o#o..........",
-      "........oso....oso..........",
-      ".........o......o...........",
-    ]),
-    e: L(5, [
-      ".............ooo............",
-      "............ohhho...........",
-      "...........oh#euho..........",
-      "...........o###n#to.........",
-      "..........oohbbb#to.........",
-      "..........obbbbbbto.........",
-      "..........ohh###hto.........",
-      "..........os#####so.........",
-      "...........o#o.o#o..........",
-      "...........oso.oso..........",
-      "............o...o...........",
-    ]),
-    n: L(3, [
-      "...........o....o...........",
-      "..........oho..oho..........",
-      ".........ohhhoohhho.........",
-      "........oh########ho........",
-      "........o##########o........",
-      ".......oo##########oo.......",
-      ".......obbbbbbbbbbbbo.......",
-      ".......oh##########ho.......",
-      ".......os##########so.......",
-      "........o#o......o#o........",
-      "........oso......oso........",
-      ".........o........o.........",
-    ]),
-    sitS: L(19, [
-      "...........o....o...........",
-      "..........oho..oho..........",
-      ".........oh#ee##ee#ho.......",
-      "........o#ueu##ueu#o........",
-      "........oh##nnnn##ho........",
-      ".......oobbbbbbbbbboo.......",
-      ".......obbbbbbbbbbbbo.......",
-      ".......osoooooooooso........",
-    ]),
-    sitE: L(20, [
-      ".............ooo............",
-      "............ohhho...........",
-      "...........oh#euho..........",
-      "...........o###n#to.........",
-      "..........oobbbbbto.........",
-      "..........obbbbbbto.........",
-      "..........osoooooso.........",
-    ]),
-    tailS: L(9, [
-      ".....................tto....",
-      "......................tto...",
-      ".......................to...",
-    ]),
-    tailE: L(8, [
-      "....tt......................",
-      "...tto......................",
-      "...to.......................",
-    ])
-  },
-  dog: {
-    s: L(2, [
-      "..........o......o..........",
-      ".........ohho..ohho.........",
-      ".........o##oooo##o.........",
-      "........oh#ee##ee#ho........",
-      "........o#ueu##ueu#o........",
-      "........oh########ho........",
-      "........o####nnnn##o........",
-      ".......oobbbbbbbbbboo.......",
-      ".......obhh######hhbo.......",
-      ".......os##oooooo##so.......",
-      ".......os#s######s#so.......",
-      "........o#o......o#o........",
-      "........oso......oso........",
-      ".........o........o.........",
-    ]),
-    se: L(2, [
-      "...........o....o...........",
-      "..........ohho.ohho.........",
-      "..........o##ooo##o.........",
-      ".........oh#ee#ee#ho........",
-      ".........o#ueu#ueu#o........",
-      "........ooh####nnn#o........",
-      ".......oobbbbbbbbbbo........",
-      ".......obhh######hto........",
-      ".......os##oooo#s#so........",
-      "........o#o....o#o..........",
-      "........oso....oso..........",
-      ".........o......o...........",
-    ]),
-    e: L(4, [
-      "...........o...o............",
-      "..........ohhohho...........",
-      "..........o#ee##o...........",
-      "..........o#ue#nno..........",
-      ".........oohbbb##o..........",
-      ".........obbbbbbto..........",
-      ".........ohh##ttso..........",
-      "..........o#o.o#o...........",
-      "..........oso.oso...........",
-      "...........o...o............",
-    ]),
-    n: L(2, [
-      "..........o......o..........",
-      ".........ohho..ohho.........",
-      ".........o##oooo##o.........",
-      "........oh########ho........",
-      "........o##########o........",
-      ".......oo##########oo.......",
-      ".......obbbbbbbbbbbbo.......",
-      ".......os##oooooo##so.......",
-      "........o#o......o#o........",
-      "........oso......oso........",
-      ".........o........o.........",
-    ]),
-    sitS: L(19, [
-      "..........o......o..........",
-      ".........ohho..ohho.........",
-      "........oh#ee##ee#ho........",
-      "........o#ueu##ueu#o........",
-      "........o####nnnn##o........",
-      ".......oobbbbbbbbbboo.......",
-      ".......obbbbbbbbbbbbo.......",
-      ".......osoooooooooso........",
-    ]),
-    sitE: L(20, [
-      "...........o...o............",
-      "..........ohhohho...........",
-      "..........o#ee##o...........",
-      "..........o#ue#nno..........",
-      ".........oobbbbbto..........",
-      ".........obbbbbbto..........",
-      ".........osoooooso..........",
-    ]),
-    tailS: L(8, [
-      "......................tt....",
-      ".......................tto..",
-    ]),
-    tailE: L(7, [
-      "...tt.......................",
-      "..tto.......................",
-    ])
-  },
-  bunny: {
-    s: L(1, [
-      "..........o......o..........",
-      ".........opo....opo.........",
-      ".........opo....opo.........",
-      ".........opo....opo.........",
-      ".........ohho..ohho.........",
-      ".........o##oooo##o.........",
-      "........oh#ee##ee#ho........",
-      "........o#ueu##ueu#o........",
-      "........o####nnnn##o........",
-      ".......oobbbbbbbbbboo.......",
-      ".......obhhhhhhhhhhbo.......",
-      ".......os##oooooo##so.......",
-      "........o#o......o#o........",
-      "........oso......oso........",
-      ".........o........o.........",
-    ]),
-    se: L(1, [
-      "...........o....o...........",
-      "..........opo..opo..........",
-      "..........opo..opo..........",
-      "..........ohho.ohho.........",
-      "..........o##ooo##o.........",
-      ".........oh#ee#ee#ho........",
-      ".........o#ueu#ueu#o........",
-      "........ooh####nnn#o........",
-      ".......oobbbbbbbbbbo........",
-      ".......obhhhhhhhhhto........",
-      ".......os##oooo#s#so........",
-      "........o#o....o#o..........",
-      "........oso....oso..........",
-      ".........o......o...........",
-    ]),
-    e: L(1, [
-      "............o..o............",
-      "...........opopo............",
-      "...........opopo............",
-      "...........ohoho............",
-      "...........o#ee#o...........",
-      "...........o#ue#no..........",
-      "..........oohbbb##o.........",
-      "..........obbbbbbto.........",
-      "..........os###ttso.........",
-      "...........o#o.o#o..........",
-      "...........oso.oso..........",
-      "............o...o...........",
-    ]),
-    n: L(1, [
-      "..........o......o..........",
-      ".........opo....opo.........",
-      ".........opo....opo.........",
-      ".........ohho..ohho.........",
-      ".........o##oooo##o.........",
-      "........oh########ho........",
-      "........o##########o........",
-      ".......oo##########oo.......",
-      ".......obbbbbbbbbbbbo.......",
-      ".......os##oooooo##so.......",
-      "........o#o......o#o........",
-      "........oso......oso........",
-      ".........o........o.........",
-    ]),
-    sitS: L(18, [
-      "..........o......o..........",
-      ".........opo....opo.........",
-      ".........ohho..ohho.........",
-      "........oh#ee##ee#ho........",
-      "........o#ueu##ueu#o........",
-      "........o####nnnn##o........",
-      ".......oobbbbbbbbbboo.......",
-      ".......obbbbbbbbbbbbo.......",
-      ".......osoooooooooso........",
-    ]),
-    sitE: L(19, [
-      "............o..o............",
-      "...........opopo............",
-      "...........ohoho............",
-      "...........o#ee#o...........",
-      "...........o#ue#no..........",
-      "..........oobbbbbto.........",
-      "..........obbbbbbto.........",
-      "..........osoooooso.........",
-    ]),
-    tailS: L(13, [
-      ".................tt.........",
-      "................tto.........",
-    ]),
-    tailE: L(12, [
-      "....tt......................",
-      "...tto......................",
-    ])
-  },
-  fox: {
-    s: L(2, [
-      "..........o......o..........",
-      ".........otto..otto.........",
-      ".........o##oooo##o.........",
-      "........oh#ee##ee#ho........",
-      "........o#ueu##ueu#o........",
-      "........oh########ho........",
-      "........o####nnnn##o........",
-      ".......oobbbbbbbbbboo.......",
-      ".......obhh######hhbo.......",
-      ".......os##oooooo##so.......",
-      "........o#o......o#o........",
-      "........oso......oso........",
-      ".........o........o.........",
-    ]),
-    se: L(2, [
-      "...........o....o...........",
-      "..........otto.otto.........",
-      "..........o##ooo##o.........",
-      ".........oh#ee#ee#ho........",
-      ".........o#ueu#ueu#o........",
-      "........ooh####nnn#o........",
-      ".......oobbbbbbbbbbo........",
-      ".......obhh######tto........",
-      ".......os##oooo#s#so........",
-      "........o#o....oto..........",
-      "........oso....oso..........",
-      ".........o......o...........",
-    ]),
-    e: L(4, [
-      "...........o...o............",
-      "..........ottooto...........",
-      "..........o#ee##o...........",
-      "..........o#ue#nno..........",
-      ".........oohbbb##o..........",
-      ".........obbbbbtto..........",
-      ".........ohh##ttto..........",
-      "..........o#o.oto...........",
-      "..........oso.oso...........",
-      "...........o...o............",
-    ]),
-    n: L(2, [
-      "..........o......o..........",
-      ".........otto..otto.........",
-      ".........o##oooo##o.........",
-      "........oh########ho........",
-      "........o##########o........",
-      ".......oo##########oo.......",
-      ".......obbbbbbbbbbbbo.......",
-      ".......os##oooooo##so.......",
-      "........o#o......o#o........",
-      "........oso......oso........",
-      ".........o........o.........",
-    ]),
-    sitS: L(19, [
-      "..........o......o..........",
-      ".........otto..otto.........",
-      "........oh#ee##ee#ho........",
-      "........o#ueu##ueu#o........",
-      "........o####nnnn##o........",
-      ".......oobbbbbbbbbboo.......",
-      ".......obbbbbbbbbbbbo.......",
-      ".......osoooooooooso........",
-    ]),
-    sitE: L(20, [
-      "...........o...o............",
-      "..........ottooto...........",
-      "..........o#ee##o...........",
-      "..........o#ue#nno..........",
-      ".........oobbbbbto..........",
-      ".........obbbbttto..........",
-      ".........osoooooso..........",
-    ]),
-    tailS: L(8, [
-      "......................ttt...",
-      ".......................tto..",
-      "........................to..",
-    ]),
-    tailE: L(7, [
-      "ttt.........................",
-      "tto.........................",
-      ".to.........................",
-    ])
-  },
-  hamster: {
-    s: L(6, [
-      "..........ooooooo...........",
-      ".........ohhhhhhho..........",
-      "........oh#ee#ee#ho.........",
-      "........o#ueu#ueu#o.........",
-      "........oh###nnn##o.........",
-      "........obbbbbbbbbo.........",
-      "........ohh#####hho.........",
-      "........os#######so.........",
-      ".........o#o...o#o..........",
-      ".........oso...oso..........",
-    ]),
-    se: L(6, [
-      "...........oooooo...........",
-      "..........ohhhhhho..........",
-      ".........oh#ee#e#ho.........",
-      ".........o#ueu#u#o..........",
-      ".........oh###nnn#o.........",
-      ".........obbbbbbbbo.........",
-      ".........ohh####hho.........",
-      ".........os######so.........",
-      "..........o#o..o#o..........",
-      "..........oso..oso..........",
-    ]),
-    e: L(7, [
-      "...........oooo.............",
-      "..........ohhhho............",
-      "..........o#eeuho...........",
-      "..........o###n#o...........",
-      "..........obbbbbbo..........",
-      "..........ohh##hho..........",
-      "..........os####so..........",
-      "...........o#o.o#o..........",
-      "...........oso.oso..........",
-    ]),
-    n: L(6, [
-      "..........ooooooo...........",
-      ".........ohhhhhhho..........",
-      "........oh########o.........",
-      "........o##########o........",
-      "........obbbbbbbbbo.........",
-      "........ohh#####hho.........",
-      "........os#######so.........",
-      ".........o#o...o#o..........",
-      ".........oso...oso..........",
-    ]),
-    sitS: L(20, [
-      "..........ooooooo...........",
-      ".........ohhhhhhho..........",
-      "........oh#ee#ee#ho.........",
-      "........o#ueu#ueu#o.........",
-      "........oh###nnn##o.........",
-      "........obbbbbbbbbo.........",
-      "........osoooooooso.........",
-    ]),
-    sitE: L(21, [
-      "...........oooo.............",
-      "..........ohhhho............",
-      "..........o#eeuho...........",
-      "..........o###n#o...........",
-      "..........obbbbbbo..........",
-      "..........osoooooso.........",
-    ]),
-    tailS: L(13, [
-      ".................o..........",
-    ]),
-    tailE: L(12, [
-      "....o.......................",
-    ])
-  },
-  parrot: {
-    s: L(2, [
-      "...........oooo.............",
-      "..........ohwwwo............",
-      ".........oh#ee#wwo..........",
-      ".........o#ueue#wo..........",
-      ".........onnnn###o..........",
-      "........oowh#####wo.........",
-      "........owwww##wwwo.........",
-      "........osw######so.........",
-      ".........o#o....o#o.........",
-      ".........oso....oso.........",
-      "..........o......o..........",
-    ]),
-    se: L(2, [
-      "............ooo.............",
-      "...........ohwwo............",
-      "..........oh#eewwo..........",
-      "..........o#ueu#wo..........",
-      "..........onnn###o..........",
-      ".........oowh##wwwo.........",
-      ".........owwww#wwwto........",
-      ".........osw#####so.........",
-      "..........o#o..o#o..........",
-      "..........oso..oso..........",
-      "...........o....o...........",
-    ]),
-    e: L(3, [
-      "............ooo.............",
-      "...........ohwwo............",
-      "...........o#euwo...........",
-      "...........onn#wo...........",
-      "..........oowh#wwo..........",
-      "..........owwwwwto..........",
-      "..........osw###so..........",
-      "...........o#o.o#o..........",
-      "...........oso.oso..........",
-      "............o...o...........",
-    ]),
-    n: L(2, [
-      "...........oooo.............",
-      "..........ohwwwo............",
-      ".........ohw##wwwo..........",
-      ".........ow#######o.........",
-      "........oowh#####wo.........",
-      "........owwwwwwwwwo.........",
-      "........osw######so.........",
-      ".........o#o....o#o.........",
-      ".........oso....oso.........",
-      "..........o......o..........",
-    ]),
-    sitS: L(20, [
-      "...........oooo.............",
-      "..........ohwwwo............",
-      ".........oh#ee#wwo..........",
-      ".........o#ueue#wo..........",
-      ".........onnnn###o..........",
-      "........oowwwwwwwwo.........",
-      "........osoooooooso.........",
-    ]),
-    sitE: L(21, [
-      "............ooo.............",
-      "...........ohwwo............",
-      "...........o#euwo...........",
-      "...........onn#wo...........",
-      "..........oowwwwwto.........",
-      "..........osoooooso.........",
-    ]),
-    tailS: L(11, [
-      "...................tt.......",
-      "..................tto.......",
-    ]),
-    tailE: L(10, [
-      "..tt........................",
-      ".tto........................",
-    ])
-  },
-  turtle: {
-    s: L(5, [
-      "...........oooo.............",
-      "..........oh#eeho...........",
-      "..........o#ueu#o...........",
-      ".........ooh#nn#oo..........",
-      "........ottttttttto.........",
-      "........othhs#sshtto........",
-      "........oths#ss#htto........",
-      "........ottttttttto.........",
-      "........os#oooo#so..........",
-      ".........o#o..o#o...........",
-      ".........oso..oso...........",
-    ]),
-    se: L(5, [
-      "............ooo.............",
-      "...........oh#eho...........",
-      "...........o#ue#o...........",
-      "..........ooh#n#oo..........",
-      ".........otttttttto.........",
-      ".........oths#shtto.........",
-      ".........oths#shtto.........",
-      ".........otttttttto.........",
-      ".........os#ooo#so..........",
-      "..........o#o.o#o...........",
-      "..........oso.oso...........",
-    ]),
-    e: L(6, [
-      "............ooo.............",
-      "...........oh#euo...........",
-      "...........o##n#o...........",
-      "..........ottttttto.........",
-      "..........othshtto..........",
-      "..........othsstto..........",
-      "..........ottttttto.........",
-      "..........os#oo#so..........",
-      "...........o#o.o#o..........",
-      "...........oso.oso..........",
-    ]),
-    n: L(5, [
-      "...........oooo.............",
-      "..........oh####o...........",
-      ".........ooh####oo..........",
-      "........ottttttttto.........",
-      "........othhs#sshtto........",
-      "........oths#ss#htto........",
-      "........ottttttttto.........",
-      "........os#oooo#so..........",
-      ".........o#o..o#o...........",
-      ".........oso..oso...........",
-    ]),
-    sitS: L(20, [
-      "...........oooo.............",
-      "..........oh#eeho...........",
-      "..........o#ueu#o...........",
-      ".........otttttttto.........",
-      ".........oths#shtto.........",
-      ".........otttttttto.........",
-      ".........osoooooso..........",
-    ]),
-    sitE: L(20, [
-      "............ooo.............",
-      "...........oh#euo...........",
-      "...........o##n#o...........",
-      "..........ottttttto.........",
-      "..........othshtto..........",
-      "..........ottttttto.........",
-      "..........osooooso..........",
-    ]),
-    tailS: L(14, [
-      ".................o..........",
-    ]),
-    tailE: L(13, [
-      "....o.......................",
-    ])
-  }
+  cat:     { fur: tones("#c8883a"), belly: tones("#ecd4b0"), accent: tones("#5a3a20"), nose: { r: 210, g: 120, b: 130 } },
+  dog:     { fur: tones("#b88958"), belly: tones("#efe0c4"), accent: tones("#5a3a1c"), nose: { r: 42, g: 28, b: 24 } },
+  bunny:   { fur: tones("#e8d8cc"), belly: tones("#fff6ee"), accent: tones("#d0b8aa"), nose: { r: 210, g: 120, b: 130 } },
+  fox:     { fur: tones("#c46a28"), belly: tones("#f0e4d4"), accent: tones("#f0e4d4"), nose: { r: 42, g: 28, b: 24 } },
+  hamster: { fur: tones("#c48a48"), belly: tones("#f0d8b0"), accent: tones("#f0d8b0"), nose: { r: 210, g: 120, b: 130 } },
+  parrot:  { fur: tones("#b8443a"), belly: tones("#d8b04a"), accent: tones("#3a7a40"), nose: { r: 216, g: 176, b: 74 } },
+  turtle:  { fur: tones("#5a7a3a"), belly: tones("#c8d080"), accent: tones("#4a6230"), nose: { r: 42, g: 28, b: 24 } },
 };
 
 function aliasKind(kind) {
@@ -619,12 +33,11 @@ function aliasKind(kind) {
   if (kind === "drone") return "parrot";
   if (kind === "neonfox") return "fox";
   if (kind === "jellyfish") return "turtle";
-  return PETS[kind] ? kind : "cat";
+  return PALS[kind] ? kind : "cat";
 }
 
 export function petViewOfDir(dir) {
   const d = ((dir % 8) + 8) % 8;
-  // 0=SE,1=S,2=SW,3=W,4=NW,5=N,6=NE,7=E
   if (d === 0) return { key: "se", flip: false };
   if (d === 1) return { key: "s", flip: false };
   if (d === 2) return { key: "se", flip: true };
@@ -638,115 +51,193 @@ export function petViewOfDir(dir) {
 function facingToDir(facing) {
   const x = facing?.x ?? facing?.dirX ?? 1;
   const z = facing?.z ?? facing?.y ?? facing?.dirY ?? 1;
-  const a = Math.atan2(z, x);
-  let dir = Math.round(a / (Math.PI / 4));
-  dir = ((dir % 8) + 8) % 8;
-  return dir;
+  let dir = Math.round(Math.atan2(z, x) / (Math.PI / 4));
+  return ((dir % 8) + 8) % 8;
 }
 
-function makeBuf() {
-  return new Array(PET_W * PET_H).fill(null);
+function makeBuf() { return new Array(PET_W * PET_H).fill(null); }
+function plot(buf, x, y, color, kind, depth = 0) {
+  x = x | 0; y = y | 0;
+  if (x < 0 || y < 0 || x >= PET_W || y >= PET_H || !color) return;
+  const i = y * PET_W + x;
+  if (buf[i] && (buf[i].depth || 0) > depth) return;
+  buf[i] = { r: color.r, g: color.g, b: color.b, a: 255, slot: kind, depth };
 }
-
-function plot(buf, x, y, rgba, slot) {
-  if (x < 0 || y < 0 || x >= PET_W || y >= PET_H) return;
-  buf[y * PET_W + x] = { ...rgba, slot };
+function shadeAt(pal, lx, ly) {
+  const L = -lx * 0.6 - ly * 0.78;
+  if (L > 0.32) return pal.hi;
+  if (L < -0.22) return pal.sh;
+  return pal.mid;
 }
-
-function blit(buf, layer, pal, flip, ox = 0, oy = 0, blink = false) {
-  if (!layer) return;
-  for (let j = 0; j < layer.rows.length; j++) {
-    const row = layer.rows[j];
-    for (let i = 0; i < row.length; i++) {
-      const ch = row[i];
-      if (ch === "." || ch === " ") continue;
-      let x = (layer.x || 0) + i + ox;
-      const y = (layer.y || 0) + j + oy;
-      if (flip) x = PET_W - 1 - x;
-      let key = KEYS[ch];
-      if (!key) continue;
-      if (blink && (key === "eye" || key === "eyeHi")) {
-        if (key === "eyeHi") continue;
-        key = "ink";
-      }
-      const col = palColor(pal, key);
-      if (!col) continue;
-      const rgba = typeof col === "string" ? hex(col) : col;
-      plot(buf, x, y, rgba, key);
+function ellipse(buf, cx, cy, rx, ry, pal, kind, depth = 0) {
+  const rxi = Math.ceil(rx) + 1, ryi = Math.ceil(ry) + 1;
+  for (let y = -ryi; y <= ryi; y++) {
+    for (let x = -rxi; x <= rxi; x++) {
+      const nx = x / rx, ny = y / ry;
+      if (nx * nx + ny * ny > 1) continue;
+      const col = pal.hi ? shadeAt(pal, nx, ny) : pal;
+      plot(buf, Math.round(cx + x), Math.round(cy + y), col, kind, depth);
     }
   }
 }
-
-function addOutline(buf) {
-  const next = buf.slice();
-  const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+function capsule(buf, x0, y0, x1, y1, r, pal, kind, depth) {
+  const dx = x1 - x0, dy = y1 - y0, n = Math.ceil(Math.hypot(dx, dy)) + 1;
+  for (let i = 0; i <= n; i++) {
+    const t = i / n;
+    ellipse(buf, x0 + dx * t, y0 + dy * t, r, r, pal, kind, depth);
+  }
+}
+function flipBuf(src, flip) {
+  if (!flip) return src;
+  const out = makeBuf();
   for (let y = 0; y < PET_H; y++) {
-    for (let x = 0; x < PET_W; x++) {
-      const i = y * PET_W + x;
-      if (buf[i]) continue;
-      let neighbor = null;
-      for (const [dx, dy] of dirs) {
-        const xx = x + dx, yy = y + dy;
-        if (xx < 0 || yy < 0 || xx >= PET_W || yy >= PET_H) continue;
-        const c = buf[yy * PET_W + xx];
-        if (c && c.slot !== "ink" && c.slot !== "shadow") { neighbor = c; break; }
-      }
-      if (!neighbor) continue;
-      next[i] = {
-        r: Math.max(0, Math.round((neighbor.r || 20) * 0.4 + 8)),
-        g: Math.max(0, Math.round((neighbor.g || 12) * 0.34 + 6)),
-        b: Math.max(0, Math.round((neighbor.b || 16) * 0.3 + 5)),
-        a: 255,
-        slot: "ink",
-      };
-    }
+    for (let x = 0; x < PET_W; x++) out[y * PET_W + (PET_W - 1 - x)] = src[y * PET_W + x];
   }
-  return next;
+  return out;
 }
-
+function shiftBuf(buf, dy) {
+  if (!dy) return buf;
+  const out = makeBuf();
+  for (let y = 0; y < PET_H; y++) {
+    const ny = y + dy;
+    if (ny < 0 || ny >= PET_H) continue;
+    for (let x = 0; x < PET_W; x++) out[ny * PET_W + x] = buf[y * PET_W + x];
+  }
+  return out;
+}
 function plantPet(buf) {
   let sole = -1;
   for (let y = PET_H - 1; y >= 0 && sole < 0; y--) {
     for (let x = 0; x < PET_W; x++) {
       const p = buf[y * PET_W + x];
-      if (p && p.slot !== "ink" && p.slot !== "shadow") { sole = y; break; }
+      if (p && p.slot !== "ink" && p.slot !== "sticker" && p.slot !== "shadow") { sole = y; break; }
     }
   }
   if (sole < 0 || sole === PET_GROUND_Y) return buf;
-  const dy = PET_GROUND_Y - sole;
-  const next = makeBuf();
+  return shiftBuf(buf, PET_GROUND_Y - sole);
+}
+function addInk(buf) {
+  const next = buf.slice();
+  const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
   for (let y = 0; y < PET_H; y++) {
-    const ny = y + dy;
-    if (ny < 0 || ny >= PET_H) continue;
-    for (let x = 0; x < PET_W; x++) next[ny * PET_W + x] = buf[y * PET_W + x];
+    for (let x = 0; x < PET_W; x++) {
+      if (buf[y * PET_W + x]) continue;
+      let n = null;
+      for (const [dx, dy] of dirs) {
+        const xx = x + dx, yy = y + dy;
+        if (xx < 0 || yy < 0 || xx >= PET_W || yy >= PET_H) continue;
+        const c = buf[yy * PET_W + xx];
+        if (c && c.slot !== "ink" && c.slot !== "sticker") { n = c; break; }
+      }
+      if (!n) continue;
+      const col = mix({ r: n.r, g: n.g, b: n.b }, INK, 0.72);
+      next[y * PET_W + x] = { ...col, a: 255, slot: "ink", depth: 80 };
+    }
   }
   return next;
+}
+function addSticker(buf) {
+  const next = buf.slice();
+  const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+  for (let y = 0; y < PET_H; y++) {
+    for (let x = 0; x < PET_W; x++) {
+      if (buf[y * PET_W + x]) continue;
+      let hit = false;
+      for (const [dx, dy] of dirs) {
+        const xx = x + dx, yy = y + dy;
+        if (xx < 0 || yy < 0 || xx >= PET_W || yy >= PET_H) continue;
+        if (buf[yy * PET_W + xx]) { hit = true; break; }
+      }
+      if (hit) next[y * PET_W + x] = { ...STICKER, a: 255, slot: "sticker", depth: 90 };
+    }
+  }
+  return next;
+}
+
+function drawPet(buf, kind, key, pal, sit, walkStep) {
+  const cx = key === "e" ? 17 : 16;
+  const headY = sit ? 13 : 11;
+  const bodyY = sit ? 21 : 20;
+  const ground = PET_GROUND_Y;
+  // Body first
+  const bw = sit ? 8.5 : 7.2, bh = sit ? 5.5 : 6.2;
+  ellipse(buf, cx, bodyY, key === "e" ? bw - 1.5 : bw, bh, pal.fur, "body", 10);
+  ellipse(buf, cx, bodyY + 1, key === "e" ? 4 : 5, 3.2, pal.belly, "belly", 11);
+  // Paws
+  const lift = walkStep ? 2 : 0;
+  if (key === "e") {
+    ellipse(buf, cx + 4, ground - (walkStep ? lift : 0), 2.6, 1.8, pal.fur, "paw", 8);
+    ellipse(buf, cx - 2, ground - (walkStep ? 0 : lift), 2.6, 1.8, pal.fur, "paw", 8);
+  } else {
+    ellipse(buf, cx - 5, ground - (walkStep ? lift : 0), 2.6, 1.8, pal.fur, "paw", 8);
+    ellipse(buf, cx + 5, ground - (walkStep ? 0 : lift), 2.6, 1.8, pal.fur, "paw", 8);
+    if (!sit) {
+      ellipse(buf, cx - 2, ground, 2.2, 1.5, pal.fur, "paw", 7);
+      ellipse(buf, cx + 2, ground, 2.2, 1.5, pal.fur, "paw", 7);
+    }
+  }
+  // Tail
+  if (kind !== "parrot" && kind !== "turtle") {
+    const tx = key === "e" ? cx - 8 : cx - 8;
+    const ty = bodyY;
+    ellipse(buf, tx, ty + (kind === "cat" || kind === "fox" ? -2 : 1), kind === "bunny" ? 2 : 3.2, kind === "cat" || kind === "fox" ? 4.5 : 2.6, kind === "fox" ? pal.accent : pal.fur, "tail", 6);
+  }
+  if (kind === "turtle") {
+    ellipse(buf, cx, bodyY, 8, 5.5, pal.accent, "shell", 12);
+    ellipse(buf, cx, bodyY, 4, 2.6, pal.belly, "shell-hi", 13);
+  }
+  // Head (big)
+  const hrx = key === "e" ? 7.4 : 8.4, hry = 7.6;
+  ellipse(buf, cx, headY, hrx, hry, pal.fur, "head", 20);
+  if (key !== "n") ellipse(buf, cx + (key === "e" ? 2 : 0), headY + 2.4, hrx * 0.62, hry * 0.5, pal.belly, "muzzle", 21);
+  // Ears
+  if (kind === "bunny") {
+    ellipse(buf, cx - (key === "e" ? 1 : 5), headY - 9, 2.4, 6.5, pal.fur, "ear", 18);
+    if (key !== "e") ellipse(buf, cx + 5, headY - 9, 2.4, 6.5, pal.fur, "ear", 18);
+    ellipse(buf, cx - (key === "e" ? 1 : 5), headY - 8, 1.1, 4, { r: 230, g: 160, b: 170 }, "ear-in", 19);
+  } else if (kind === "cat" || kind === "fox") {
+    // Pointed ears
+    ellipse(buf, cx - (key === "e" ? 1 : 5.5), headY - 7.2, 3.0, 3.6, pal.fur, "ear", 18);
+    if (key !== "e") ellipse(buf, cx + 5.5, headY - 7.2, 3.0, 3.6, pal.fur, "ear", 18);
+  } else if (kind === "dog" || kind === "hamster") {
+    ellipse(buf, cx - (key === "e" ? 1 : 6), headY - 4, 3.4, 3.0, pal.fur, "ear", 18);
+    if (key !== "e") ellipse(buf, cx + 6, headY - 4, 3.4, 3.0, pal.fur, "ear", 18);
+  } else if (kind === "parrot") {
+    ellipse(buf, cx, headY - 7, 3.2, 2.4, pal.fur, "crest", 18);
+  }
+  // Face
+  if (key !== "n") {
+    const eyeY = headY + 0.6;
+    if (key === "e") {
+      ellipse(buf, cx + 3.4, eyeY, 1.5, 1.9, INK, "eye", 30);
+    } else {
+      ellipse(buf, cx - 3.6, eyeY, 1.6, 2.0, INK, "eye", 30);
+      ellipse(buf, cx + 3.6, eyeY, 1.6, 2.0, INK, "eye", 30);
+    }
+    const nx = key === "e" ? cx + 5 : cx;
+    plot(buf, Math.round(nx), Math.round(headY + 3.6), pal.nose, "nose", 30);
+    plot(buf, Math.round(nx) - 1, Math.round(headY + 3.6), pal.nose, "nose", 30);
+    if (key !== "e") plot(buf, Math.round(nx) + 1, Math.round(headY + 3.6), pal.nose, "nose", 30);
+  }
 }
 
 function bufToCanvas(buf) {
   const c = typeof document !== "undefined" ? document.createElement("canvas") : null;
   if (!c) return { c: null, w: PET_W, h: PET_H };
-  c.width = PET_W;
-  c.height = PET_H;
+  c.width = PET_W; c.height = PET_H;
   const ctx = c.getContext("2d");
   const img = ctx.createImageData(PET_W, PET_H);
   for (let i = 0; i < buf.length; i++) {
-    const p = buf[i];
-    if (!p) continue;
+    const p = buf[i]; if (!p) continue;
     const o = i * 4;
-    img.data[o] = p.r;
-    img.data[o + 1] = p.g;
-    img.data[o + 2] = p.b;
-    img.data[o + 3] = p.a;
+    img.data[o] = p.r; img.data[o + 1] = p.g; img.data[o + 2] = p.b; img.data[o + 3] = 255;
   }
   ctx.putImageData(img, 0, 0);
-  // floor shadow just under the paws
   ctx.globalCompositeOperation = "destination-over";
-  ctx.fillStyle = "rgba(20, 12, 10, 0.32)";
+  ctx.fillStyle = "rgba(28, 16, 12, 0.30)";
   ctx.beginPath();
   ctx.ellipse(PET_W / 2, PET_GROUND_Y + 1.1, 8, 1.8, 0, 0, Math.PI * 2);
   ctx.fill();
-  ctx.globalCompositeOperation = "source-over";
   return { c, w: PET_W, h: PET_H };
 }
 
@@ -758,50 +249,15 @@ export function drawPetSprite(kind, flags = {}, frame = 0) {
   const sit = Boolean(flags.sit);
   const dir = flags.dir != null ? flags.dir : facingToDir(flags.facing || { x: 1, z: 1 });
   const view = petViewOfDir(dir);
-  const blink = !walking && !sit && (frame % 8 === 6);
-  const wag = !sit && (frame % 4 === 1 || frame % 4 === 2);
-  const walkStep = walking ? (frame % 2) : 0;
-  const key = [k, view.key, view.flip ? 1 : 0, sit ? 1 : 0, walking ? 1 : 0, walkStep, blink ? 1 : 0, wag ? 1 : 0].join(":");
+  const walkStep = walking && !sit ? (frame % 2) : 0;
+  const key = [k, view.key, view.flip ? 1 : 0, sit ? 1 : 0, walking ? 1 : 0, walkStep].join(":");
   if (cache.has(key)) return cache.get(key);
-
-  const set = PETS[k];
-  const pal = PALS[k];
   let buf = makeBuf();
-  let body = sit
-    ? (view.key === "e" || view.key === "se" ? (set.sitE || set.sitS) : (view.key === "n" ? set.n : set.sitS)) || set.s
-    : set[view.key] || set.s;
-
-  const bob = 0;
-  const legShift = walking && !sit ? (walkStep ? 1 : -1) : 0;
-
-  // body
-  blit(buf, body, pal, view.flip, 0, bob, blink);
-
-  // wag / sit tail
-  const tail = view.key === "e" ? set.tailE : set.tailS;
-  if (tail && !sit) {
-    const tox = wag ? (view.key === "e" ? -1 : 1) : 0;
-    blit(buf, tail, pal, view.flip, tox, bob, false);
-  }
-
-  // walk: nudge lower "leg" pixels by shifting a couple of bottom rows
-  if (walking && !sit && legShift) {
-    const next = buf.slice();
-    const y0 = PET_H - 7;
-    for (let y = y0; y < PET_H; y++) {
-      for (let x = 0; x < PET_W; x++) {
-        const src = buf[y * PET_W + x];
-        if (!src) continue;
-        const nx = x + ((x < PET_W / 2) ? -legShift : legShift);
-        next[y * PET_W + x] = null;
-        if (nx >= 0 && nx < PET_W) next[y * PET_W + nx] = src;
-      }
-    }
-    buf = next;
-  }
-
+  drawPet(buf, k, view.key, PALS[k], sit, walkStep);
+  if (view.flip) buf = flipBuf(buf, true);
   buf = plantPet(buf);
-  buf = addOutline(buf);
+  buf = addInk(buf);
+  buf = addSticker(buf);
   const spr = bufToCanvas(buf);
   cache.set(key, spr);
   return spr;

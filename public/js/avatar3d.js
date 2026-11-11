@@ -1,8 +1,10 @@
-/* Hand-authored MyCoke-inspired paper-doll pixel avatars (original art). Native 32x80, integer blit only. */
-export const AV_W = 32;
-export const AV_H = 80;
-export const AV_GROUND_Y = 77;
-const AV_SEAT_DROP = 20;
+/* Original MyCube chibi paper-doll avatars. Native 48x64, integer blit, sticker outline. */
+export const AV_W = 48;
+export const AV_H = 64;
+export const AV_GROUND_Y = 61;
+export const AV_HEAD_TOP = 2;
+const AV_SEAT_DROP = 11;
+const CX = 24;
 
 export function facingIndex8(facing, dirX, dirY) {
   let dx = 0, dy = 1;
@@ -30,35 +32,31 @@ function mix(a, b, t) {
     b: Math.round(a.b + (b.b - a.b) * t),
   };
 }
-function mul(c, t) {
-  return {
-    r: Math.max(0, Math.min(255, Math.round(c.r * t))),
-    g: Math.max(0, Math.min(255, Math.round(c.g * t))),
-    b: Math.max(0, Math.min(255, Math.round(c.b * t))),
-  };
-}
 function rgb(r, g, b) { return { r, g, b }; }
+function mute(hex) {
+  // Pull catalog colors toward a muted, warm, earthy ramp.
+  const c = hexToRgb(hex);
+  const dust = rgb(168, 140, 110);
+  return mix(c, dust, 0.28);
+}
 
-const INK = rgb(22, 16, 18);
-const EYE_W = rgb(250, 250, 252);
-const PUPIL = rgb(28, 20, 22);
-const MOUTH = rgb(160, 80, 80);
-const NOSE = rgb(180, 110, 90);
+const INK = rgb(42, 28, 24);
+const STICKER = rgb(255, 250, 244);
+const TEAR = rgb(150, 186, 210);
 
 function tones(hex, warm = false) {
-  const b = hexToRgb(hex);
-  // Clean 3-step ramp, top-left light: one highlight, one mid, one shadow. No muddy brown noise.
-  const hi = warm ? mix(b, rgb(255, 242, 226), 0.2) : mix(b, rgb(255, 255, 255), 0.16);
-  const sh = warm ? mix(b, rgb(110, 62, 48), 0.16) : mix(b, rgb(20, 16, 22), 0.2);
+  const b = typeof hex === "string" ? (warm ? hexToRgb(hex) : mute(hex)) : hex;
+  const hi = warm ? mix(b, rgb(255, 236, 214), 0.28) : mix(b, rgb(255, 248, 236), 0.22);
+  const sh = warm ? mix(b, rgb(96, 54, 42), 0.28) : mix(b, rgb(36, 24, 22), 0.28);
   return { mid: b, hi, sh };
 }
 
 function shoePal(id) {
-  if (id === "black") return tones("#2a2a2e");
-  if (id === "red") return tones("#c0392b");
-  if (id === "gum") return tones("#e8d0b0", true);
-  if (id === "skate") return tones("#2a2a2e");
-  return tones("#f4f0ea");
+  if (id === "black") return tones("#2c2624");
+  if (id === "red") return tones("#8e3e32");
+  if (id === "gum") return tones("#d8c4a4", true);
+  if (id === "skate") return tones("#3a342e");
+  return tones("#efe6d6", true);
 }
 
 function normalizeAvatar(raw = {}) {
@@ -83,6633 +81,666 @@ function normalizeAvatar(raw = {}) {
     shoes: a.shoes || "white",
     accessory: a.accessory || "none",
     headphoneColor: a.headphoneColor || "#2a2a2e",
+    outer: a.outer || "none",
   };
 }
 
-/* View keys: s front, se front 3/4, e side, n back. Other dirs are mirrors. */
-function viewOf(dir) {
-  const map = { 0: "se", 1: "s", 2: "se", 3: "e", 4: "n", 5: "n", 6: "n", 7: "e" };
-  const flip = { 0: false, 1: false, 2: true, 3: true, 4: true, 5: false, 6: false, 7: false };
-  // dir 4 is NW = flip of NE; use se-back. Map 4 and 6 to "n" is too lossy.
-  // Better: 4 = flip n-side (use "n" flipped), 6 = "n" unflipped is wrong (6 is NE back 3/4).
-  return { key: map[dir] || "se", flip: Boolean(flip[dir]) };
-}
-
-// Refined view map: NE (6) and N (5) share back; NW (4) is flipped NE/back.
 function viewOfDir(dir) {
   switch (dir) {
-    case 0: return { key: "se", flip: false }; // SE front 3/4
-    case 1: return { key: "s", flip: false };  // S front
-    case 2: return { key: "se", flip: true };  // SW
-    case 3: return { key: "e", flip: true };   // W
-    case 4: return { key: "ne", flip: true };  // NW back 3/4 flipped
-    case 5: return { key: "n", flip: false };  // N back
-    case 6: return { key: "ne", flip: false }; // NE back 3/4
-    case 7: return { key: "e", flip: false };  // E side
+    case 0: return { key: "se", flip: false };
+    case 1: return { key: "s", flip: false };
+    case 2: return { key: "se", flip: true };
+    case 3: return { key: "e", flip: true };
+    case 4: return { key: "ne", flip: true };
+    case 5: return { key: "n", flip: false };
+    case 6: return { key: "ne", flip: false };
+    case 7: return { key: "e", flip: false };
     default: return { key: "se", flip: false };
   }
 }
 
-/* ---------------- pixel maps ('.' transparent, see PAL) ----------------
-   # skin mid  s shade  h highlight
-   % shirt mid c shade  + highlight
-   = pants mid p shade  q highlight
-   @ hair mid  a shade  i highlight
-   $ shoe mid  w shade  y highlight  d sole
-   e eye white u pupil  b brow  n nose  m mouth
-   x accessory z shade  v highlight  g gold  t graphic
-   o outline (only onto empty)
-*/
-const PAL_KEYS = {
-  "#": "skin.mid", h: "skin.hi", s: "skin.sh",
-  "%": "shirt.mid", "+": "shirt.hi", c: "shirt.sh",
-  "=": "pants.mid", q: "pants.hi", p: "pants.sh",
-  "@": "hair.mid", i: "hair.hi", a: "hair.sh",
-  $: "shoe.mid", y: "shoe.hi", w: "shoe.sh", d: "sole.mid",
-  e: "eye", u: "pupil", b: "brow", n: "nose", m: "mouth",
-  x: "acc.mid", z: "acc.sh", v: "acc.hi", g: "gold", t: "graphic",
-  o: "ink",
-};
+function makeBuf() { return new Array(AV_W * AV_H).fill(null); }
 
-function L(y, rows, x = 0) {
-  return { x, y, rows };
-}
-
-/* ===== BODY CORE: head, neck, torso (no arms/legs) ===== */
-const CORE = {
-  s: L(3, [
-      "................................",
-      "............hhhhhhh.............",
-      "...........hhhhhhhh#............",
-      "..........hhhhhhhh###...........",
-      ".........hhhhhhhhh###s..........",
-      ".........hhhhhhhh###ss..........",
-      ".........hhhhhhh##ssss..........",
-      ".........hhhhhhhhhssss..........",
-      ".........hhhhhhhhh#sss..........",
-      "........hhhhhhhhh###sss.........",
-      ".........h#hhhhh##ssss..........",
-      ".........#hhhh#sssssss..........",
-      ".........#h###ssssssss..........",
-      "..........###ssssssss...........",
-      "............sssssss.............",
-      ".............h#sss..............",
-      ".............h#sss..............",
-      ".............h#sss..............",
-      "........hhhhhhhhhhhh###.........",
-      ".......hhhhhhhhhhhhh####........",
-      ".......hhhhhhhhhhhhh####........",
-      ".......hhhhhhhhhhh#####s........",
-      ".......hhhhhhhhhhh#####s........",
-      ".......hhhhhhhhhhh#####s........",
-      ".......hhhhhhhhhhh####ss........",
-      "........hhhhhhhssssssss.........",
-      "........hhhhhhhssssssss.........",
-      "........hhhhhhhssssssss.........",
-      ".........hhhhhhsssssss..........",
-      ".........hhhhhhsssssss..........",
-      ".........hhhhhhsssssss..........",
-      ".........hhhhhhsssssss..........",
-      ".........hhhhhhsssssss..........",
-      "........hhhhhhhssssssss.........",
-      "........hhhhhhhssssssss.........",
-      "........hhhhhhhssssssss.........",
-      "........#####ssssssssss.........",
-      "........#####ssssssssss.........",
-      "........#####ssssssssss.........",
-      "........#####ssssssssss.........",
-      "................................",
-      "................................"
-    ]),
-  se: L(3, [
-      "................................",
-      ".............hhhhhh.............",
-      "............hhhhhhh##...........",
-      "...........hhhhhhhh###..........",
-      "..........hhhhhhhh####..........",
-      "..........hhhhhhhh##sss.........",
-      "..........hhhhhhh##ssss.........",
-      "........hh#hhhhhhhhssss.........",
-      "........hhsshhhhhhh##ss.........",
-      "........h#sshhhhhh###ss.........",
-      "........#ss#hhhhh##ssss.........",
-      "..........##hhhhsssssss.........",
-      "..........#####ssssssss.........",
-      "...........###ssssssss..........",
-      ".............sssssss............",
-      ".............hhsss..............",
-      ".............hhsss..............",
-      ".............hhsss..............",
-      ".........hhhhhhhhhhh###.........",
-      "........hhhhhhhhhhhh####........",
-      ".......hhhhhhhhhhhhh#####.......",
-      ".......hhhhhhhhhhh#####ss.......",
-      "........hhhhhhhhhh#####s........",
-      "........hhhhhhhhhh#####s........",
-      "........hhhhhhhhhh#####s........",
-      "........hhhhhhh#ssssssss........",
-      ".........hhhhhh#sssssss.........",
-      ".........hhhhhh#sssssss.........",
-      ".........hhhhhh#sssssss.........",
-      "..........hhhhh#ssssss..........",
-      "..........hhhhh#ssssss..........",
-      ".........hhhhhh#sssssss.........",
-      ".........hhhhhh#sssssss.........",
-      ".........hhhhhh#sssssss.........",
-      ".........hhhhhh#sssssss.........",
-      ".........hhhhhh#sssssss.........",
-      ".........#####sssssssss.........",
-      "........h####sssssssssss........",
-      ".........####ssssssssss.........",
-      ".........#####sssssssss.........",
-      "................................",
-      "................................"
-    ]),
-  e: L(3, [
-      "................................",
-      "..............hhhhh.............",
-      ".............hhhhhh##...........",
-      "............hhhhhhh###..........",
-      "...........hhhhhhh####..........",
-      "...........hhhhhhh##sss.........",
-      "...........hhhhhh##ssss.........",
-      "...........hhhhhhhhss#s.........",
-      "...........hh#shhhhh#s#s........",
-      "...........hhsshhhh####s........",
-      "...........h#sshhh#sss#s........",
-      "...........##shh#ssss#s.........",
-      "...........#####ssssss..........",
-      "............###sssssss..........",
-      "..............ssssss............",
-      "..............h#ss..............",
-      "..............h#ss..............",
-      "..............h#ss..............",
-      "...........hhhhhhhhh##..........",
-      ".........hhhhhhhhhhh###.........",
-      ".........hhhhhhhhhhh###.........",
-      ".........hhhhhhhhh####s.........",
-      ".........hhhhhhhhh####s.........",
-      "..........hhhhhhhh####s.........",
-      "..........hhhhhhhh####s.........",
-      "..........hhhhhhsssssss.........",
-      "..........hhhhhhssssss..........",
-      "..........hhhhhhssssss..........",
-      "..........hhhhhhssssss..........",
-      "...........hhhhhssssss..........",
-      "...........hhhhhssssss..........",
-      "..........hhhhhhssssss..........",
-      "..........hhhhhhssssss..........",
-      "..........hhhhhhssssss..........",
-      "..........hhhhhhssssss..........",
-      "..........hhhhh#sssssss.........",
-      "..........####sssssssss.........",
-      ".........h####sssssssss.........",
-      ".........h####sssssssss.........",
-      "..........####sssssssss.........",
-      "................................",
-      "................................"
-    ]),
-  n: L(3, [
-      "................................",
-      "............hhhhhhh.............",
-      "...........hhhhhhhh#............",
-      "..........hhhhhhhh###...........",
-      ".........hhhhhhhhh###s..........",
-      ".........hhhhhhhh###ss..........",
-      ".........hhhhhhh##ssss..........",
-      ".........hhhhhhhssssss..........",
-      ".........hhhhhhsssssss..........",
-      ".........hhhh#ssssssss..........",
-      ".........h####ssssssss..........",
-      ".........####sssssssss..........",
-      "..........##sssssssss...........",
-      "...........#ssssssss............",
-      "............sssssss.............",
-      ".............h#sss..............",
-      ".............h#sss..............",
-      ".............h#sss..............",
-      "........hhhhhhhhhhhh###.........",
-      ".......hhhhhhhhhhhhh####........",
-      ".......hhhhhhhhhhhhh####........",
-      ".......hhhhhhhhhhh#####s........",
-      ".......hhhhhhhhhhh#####s........",
-      ".......hhhhhhhhhhh#####s........",
-      ".......hhhhhhhhhhh####ss........",
-      "........hhhhhhhssssssss.........",
-      "........hhhhhhhssssssss.........",
-      "........hhhhhhhssssssss.........",
-      ".........hhhhhhsssssss..........",
-      ".........hhhhhhsssssss..........",
-      ".........hhhhhhsssssss..........",
-      ".........hhhhhhsssssss..........",
-      ".........hhhhhhsssssss..........",
-      "........hhhhhhhssssssss.........",
-      "........hhhhhhhssssssss.........",
-      "........hhhhhhhssssssss.........",
-      "........#####ssssssssss.........",
-      "........#####ssssssssss.........",
-      "........#####ssssssssss.........",
-      "........#####ssssssssss.........",
-      "................................",
-      "................................"
-    ]),
-  ne: L(3, [
-      "................................",
-      ".............hhhhhh.............",
-      "............hhhhhhh##...........",
-      "...........hhhhhhhh###..........",
-      "..........hhhhhhhh####..........",
-      "..........hhhhhhhh##sss.........",
-      "..........hhhhhhh##ssss.........",
-      "..........hhhhhhhhsshh#.........",
-      "..........hhhhhhhhh#hhss........",
-      "..........hhhhhhhh##h#ss........",
-      "..........h#hhhhh#ss#ss.........",
-      "..........#hhhh#sssssss.........",
-      "...........h###sssssss..........",
-      "...........##ssssssss...........",
-      ".............sssssss............",
-      ".............hhsss..............",
-      ".............hhsss..............",
-      ".............hhsss..............",
-      ".........hhhhhhhhhhh###.........",
-      "........hhhhhhhhhhhh####........",
-      "........hhhhhhhhhhhh####........",
-      "........hhhhhhhhhh#####s........",
-      "........hhhhhhhhhh#####s........",
-      "........hhhhhhhhhh#####s........",
-      "........hhhhhhhhhh#####s........",
-      ".........hhhhhh#sssssss.........",
-      ".........hhhhhh#sssssss.........",
-      ".........hhhhhh#sssssss.........",
-      ".........hhhhhh#sssssss.........",
-      "..........hhhhh#ssssss..........",
-      "..........hhhhh#ssssss..........",
-      "..........hhhhh#ssssss..........",
-      ".........hhhhhh#sssssss.........",
-      ".........hhhhhh#sssssss.........",
-      ".........hhhhhh#sssssss.........",
-      ".........hhhhhh#sssssss.........",
-      ".........#####sssssssss.........",
-      ".........#####sssssssss.........",
-      ".........#####sssssssss.........",
-      ".........#####sssssssss.........",
-      "................................",
-      "................................"
-    ]),
-};
-
-/* Faces drawn after hair so eyes stay readable. Only front views. */
-const FACE = {
-  s: L(8, [
-      "................................",
-      "...........bb.....bb............",
-      "..........eee....eee............",
-      "..........eue....eue............",
-      "..........eue....eue............",
-      "...............nn...............",
-      "................n...............",
-      "...............m................",
-      "..............m.m..............."
-    ]),
-  se: L(8, [
-      "................................",
-      "............bb.....bb...........",
-      "...........eee....eee...........",
-      "...........eue....eue...........",
-      "...........eue....eue...........",
-      "................nn..............",
-      ".................n..............",
-      "................m...............",
-      "...............m.m.............."
-    ]),
-  e: L(8, [
-      "................................",
-      "...................bb...........",
-      ".............#....eee...........",
-      "............h#s...eue...........",
-      "............h#s...eue.n.........",
-      ".............#s........n........",
-      ".....................m..........",
-      "....................m..........."
-    ]),
-};
-
-/* Arms: [view][kind] where kind is idle|w0|w1|w2|w3|wave|phone|punch|hold|sit */
-function armPair(view, kind, xL, xR, y, rowsL, rowsR) {
-  return { view, kind, left: L(y, rowsL, xL), right: L(y, rowsR, xR) };
-}
-
-const ARMS = [];
-function addArms(view, kind, xL, xR, y, left, right) {
-  ARMS.push({ view, kind, left: L(y, left, xL), right: L(y, right, xR) });
-}
-
-addArms("s", "idle", 1, 21, 20, [
-    "......h...",
-    "......h...",
-    "....hhhh#.",
-    "....hhhh#.",
-    "...hhhhh#s",
-    "...hhhhh#s",
-    "...hhhh##.",
-    "...hhhh#s.",
-    "...hhhh#s.",
-    "...hhhh#s.",
-    "...hhhh#..",
-    "..hhhh##..",
-    "..hhhh#s..",
-    "..hhhh#s..",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    ".hhhh#s...",
-    ".hhhh#s...",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhss....",
-    "hhh#ss....",
-    "hhsss.....",
-    "hhss......",
-    ".ss......."
-  ], [
-    "...h.....",
-    "...h.....",
-    ".hhhh#...",
-    ".hhhh#...",
-    "hhhhh#s..",
-    "hhhhhh#..",
-    ".hhhhh#..",
-    ".hhhhh#..",
-    ".hhhhh#..",
-    ".#hhhh#..",
-    "..hhhhh..",
-    "..hhhhh#.",
-    "..hhhhh#.",
-    "..hhhhh#.",
-    "...hhhh#.",
-    "...hhhh#.",
-    "...hhhh#.",
-    "...hhhh#.",
-    "...hhhh#.",
-    "...hhhh#.",
-    "...hhhh#.",
-    "...hhhh#.",
-    "...hhhh#.",
-    "...hhhhh.",
-    "...hhhhh#",
-    "...hhhhh#",
-    "...hhhhh#",
-    "....hhhh#",
-    "....hhh#s",
-    "....hhhss",
-    "....hhhh.",
-    "....#shs.",
-    "......ss."
-  ]);
-addArms("s", "w0", 4, 21, 20, [
-    "...h...",
-    "...h...",
-    ".hhhh#.",
-    ".hhhh#.",
-    "hhhhh#s",
-    "hhhhh#s",
-    ".hhhh#.",
-    ".hhhh#.",
-    ".hhhh#.",
-    ".hhhh#.",
-    "hhhh#s.",
-    "hhhh#s.",
-    "hhhh#s.",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhss..",
-    "hhhss..",
-    "hh#s...",
-    "hhss...",
-    "hss...."
-  ], [
-    "...h.......",
-    "...h.......",
-    ".hhhh#.....",
-    ".hhhh#.....",
-    "hhhhhh#....",
-    "hhhhhh#....",
-    ".hhhhh#....",
-    ".#hhhhh#...",
-    ".#hhhhh#...",
-    "..hhhhh#...",
-    "..#hhhh#...",
-    "..#hhhhh...",
-    "...hhhhh#..",
-    "...hhhhh#..",
-    "...#hhhh#..",
-    "....hhhhh..",
-    "....hhhhh#.",
-    "....hhhhh#.",
-    "....hhhhh#.",
-    ".....hhhh#.",
-    ".....hhhh#.",
-    ".....hhhh#.",
-    ".....hhhhh.",
-    ".....hhhhh#",
-    ".....hhhhh#",
-    "......hhhh#",
-    "......hhhss",
-    "......hhhhs",
-    "......hhh#s",
-    "......hhshs",
-    ".......shss",
-    ".........s."
-  ]);
-addArms("s", "w1", 2, 21, 20, [
-    ".....h...",
-    ".....h...",
-    "...hhhh#.",
-    "...hhhh#.",
-    "..hhhhh#s",
-    "..hhhhh#s",
-    "..hhhh##.",
-    "..hhhh##.",
-    "..hhhh#s.",
-    "..hhhh#s.",
-    "..hhhh#s.",
-    "..hhhh#..",
-    ".hhhh##..",
-    ".hhhh#s..",
-    ".hhhh#s..",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhss...",
-    "hhh#ss...",
-    "hhsss....",
-    "hhss.....",
-    ".ss......"
-  ], [
-    "...h......",
-    "...h......",
-    ".hhhh#....",
-    ".hhhh#....",
-    "hhhhhh#...",
-    "hhhhhh#...",
-    ".hhhhh#...",
-    ".hhhhh#...",
-    ".#hhhhh...",
-    "..hhhhh#..",
-    "..hhhhh#..",
-    "..hhhhh#..",
-    "...hhhhh..",
-    "...hhhhh#.",
-    "...hhhhh#.",
-    "...#hhhh#.",
-    "....hhhh#.",
-    "....hhhh#.",
-    "....hhhh#.",
-    "....hhhh#.",
-    "....hhhh#.",
-    "....hhhh#.",
-    "....hhhh#.",
-    "....hhhhh.",
-    "....hhhhh#",
-    "....hhhhss",
-    "....hhhh#s",
-    ".....hhss.",
-    ".....#sh#.",
-    "......sss."
-  ]);
-addArms("s", "w2", 0, 21, 20, [
-    ".......h...",
-    ".......h...",
-    ".....hhhh#.",
-    ".....hhhh#.",
-    "....hhhhh#s",
-    "....hhhh##s",
-    "....hhhh#s.",
-    "....hhhh#s.",
-    "....hhhh#s.",
-    "...hhhh##..",
-    "...hhhh#s..",
-    "...hhhh#s..",
-    "..hhhh##s..",
-    "..hhhh#s...",
-    "..hhhh#s...",
-    "..hhhh#....",
-    "..hhhh#....",
-    ".hhhh##....",
-    ".hhhh#s....",
-    ".hhhh#s....",
-    ".hhhh#.....",
-    ".hhhh#.....",
-    ".hhhh#.....",
-    ".hhhh#.....",
-    "hhhh##.....",
-    "hhhh#s.....",
-    "hhhsss.....",
-    "hhhss......",
-    "hh#s.......",
-    "h#ss.......",
-    "hss........",
-    "s.........."
-  ], [
-    "...h...",
-    "...h...",
-    ".hhhh#.",
-    ".hhhh#.",
-    "hhhhh#s",
-    "hhhhh#s",
-    ".hhhh#.",
-    ".hhhhh#",
-    ".hhhhh#",
-    ".hhhhh#",
-    ".hhhhh#",
-    ".#hhhh#",
-    "..hhhh#",
-    "..hhhh#",
-    "..hhhh#",
-    "..hhhh#",
-    "..hhhh#",
-    "..hhhh#",
-    "..hhhh#",
-    "..hhhh#",
-    "..hhhh#",
-    "..hhhh#",
-    "..hhhh#",
-    "..hhhh#",
-    "..hhhh#",
-    "..hhhh#",
-    "..hhhh#",
-    "..hhhh#",
-    "..hhhss",
-    "..hhh#s",
-    "..hhhss",
-    "..h#hhs",
-    "...shs.",
-    ".....s."
-  ]);
-addArms("s", "w3", 1, 21, 20, [
-    "......h...",
-    "......h...",
-    "....hhhh#.",
-    "....hhhh#.",
-    "...hhhhh#s",
-    "...hhhh##s",
-    "...hhhh##.",
-    "...hhhh#s.",
-    "...hhhh#s.",
-    "...hhhh#s.",
-    "..hhhh##..",
-    "..hhhh#s..",
-    "..hhhh#s..",
-    "..hhhh#...",
-    "..hhhh#...",
-    ".hhhh##...",
-    ".hhhh#s...",
-    ".hhhh#s...",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhss....",
-    "hhh#ss....",
-    "hhsss.....",
-    "h#ss......",
-    "#ss......."
-  ], [
-    "...h....",
-    "...h....",
-    ".hhhh#..",
-    ".hhhh#..",
-    "hhhhh#s.",
-    "hhhhhh#.",
-    ".hhhhh#.",
-    ".hhhhh#.",
-    ".hhhhh#.",
-    ".#hhhh#.",
-    "..hhhhh.",
-    "..hhhhh.",
-    "..hhhhh#",
-    "..hhhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhhs",
-    "...hhh#s",
-    "....hhss",
-    "....#hhs",
-    ".....sss"
-  ]);
-addArms("s", "wave", 1, 21, 7, [
-    "..........",
-    "..........",
-    "..........",
-    "..........",
-    "..........",
-    "..........",
-    "..........",
-    "..........",
-    "..........",
-    "..........",
-    "..........",
-    "..........",
-    "..........",
-    "......h...",
-    "......h...",
-    "....hhhh#.",
-    "....hhhh#.",
-    "...hhhhh#s",
-    "...hhhhh#s",
-    "...hhhh##.",
-    "...hhhh#s.",
-    "...hhhh#s.",
-    "...hhhh#s.",
-    "...hhhh#..",
-    "..hhhh##..",
-    "..hhhh#s..",
-    "..hhhh#s..",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    ".hhhh##...",
-    ".hhhh#s...",
-    ".hhhh#s...",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhss....",
-    "hhh#ss....",
-    "hhsss.....",
-    ".hss......",
-    ".ss......."
-  ], [
-    "...hh...",
-    "..hh##..",
-    ".hhhss..",
-    "..#hhs..",
-    "...sss..",
-    "..hhsss.",
-    "..hhsss.",
-    "..#ssss.",
-    "..#ssss.",
-    "..#ssss.",
-    "..#ssss.",
-    "..#ssss.",
-    "..#ssss.",
-    ".h#ssss.",
-    ".h#ssss.",
-    "hh#sssss",
-    "hh#ssss.",
-    "#s#ssss.",
-    ".sssss..",
-    ".sssss.."
-  ]);
-addArms("s", "phone", 1, 17, 20, [
-    "......h...",
-    "......h...",
-    "....hhhh#.",
-    "....hhhh#.",
-    "...hhhhh#s",
-    "...hhhhh#s",
-    "...hhhh##.",
-    "...hhhh#s.",
-    "...hhhh#s.",
-    "...hhhh#s.",
-    "...hhhh#..",
-    "..hhhh##..",
-    "..hhhh#s..",
-    "..hhhh#s..",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    ".hhhh##...",
-    ".hhhh#s...",
-    ".hhhh#s...",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhss....",
-    ".hh#ss....",
-    "hhsss.....",
-    ".hss......",
-    ".ss......."
-  ], [
-    "......hhh..",
-    "......hhh..",
-    ".v#hvhhhh#s",
-    "hvxxzhhh##s",
-    "hvxxz#hh#ss",
-    "hvxxz#hh#ss",
-    "#vxxzss##s.",
-    ".vzzzss##s.",
-    "..sssssss..",
-    "...ssssss..",
-    "...ssssss.."
-  ]);
-addArms("s", "phone1", 1, 17, 20, [
-    "......h...",
-    "......h...",
-    "....hhhh#.",
-    "....hhhh#.",
-    "...hhhhh#s",
-    "...hhhhh#s",
-    "...hhhh##.",
-    "...hhhh#s.",
-    "...hhhh#s.",
-    "...hhhh#s.",
-    "...hhhh#..",
-    "..hhhh##..",
-    "..hhhh#s..",
-    "..hhhh#s..",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    ".hhhh##...",
-    ".hhhh#s...",
-    ".hhhh#s...",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhss....",
-    ".hh#ss....",
-    "hhsss.....",
-    ".hss......",
-    ".ss......."
-  ], [
-    "......hhh..",
-    "......hhh..",
-    ".vvvvhhhh#s",
-    "hvxxzhhh##s",
-    "hv#hz#hh#ss",
-    "hvxxz#hh#ss",
-    "#vxxzss##s.",
-    ".vzzzss##s.",
-    "..sssssss..",
-    "...ssssss..",
-    "...ssssss.."
-  ]);
-addArms("s", "phone2", 1, 17, 20, [
-    "......h...",
-    "......h...",
-    "....hhhh#.",
-    "....hhhh#.",
-    "...hhhhh#s",
-    "...hhhhh#s",
-    "...hhhh##.",
-    "...hhhh#s.",
-    "...hhhh#s.",
-    "...hhhh#s.",
-    "...hhhh#..",
-    "..hhhh##..",
-    "..hhhh#s..",
-    "..hhhh#s..",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    ".hhhh##...",
-    ".hhhh#s...",
-    ".hhhh#s...",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhss....",
-    ".hh#ss....",
-    "hhsss.....",
-    ".hss......",
-    ".ss......."
-  ], [
-    "......hhh..",
-    "......hhh..",
-    ".vvvvhhhh#s",
-    "hvxxzhhh##s",
-    "hvxxz#hh#ss",
-    "hvxxz#hh#ss",
-    "#v#hzss##s.",
-    ".vzzzss##s.",
-    "..sssssss..",
-    "...ssssss..",
-    "...ssssss.."
-  ]);
-addArms("s", "punch", 2, 21, 20, [
-    ".....h...",
-    ".....h...",
-    "...hhhh#.",
-    "...hhhh#.",
-    "..hhhhh#s",
-    "..hhhhh#s",
-    "..hhhh##.",
-    "..hhhh##.",
-    "..hhhh#s.",
-    "..hhhh#s.",
-    "..hhhh#s.",
-    "..hhhh#..",
-    ".hhhh##..",
-    ".hhhh#s..",
-    ".hhhh#s..",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhss...",
-    "hhh#ss...",
-    "hhsss....",
-    ".hss.....",
-    ".ss......"
-  ], [
-    "..hhh......",
-    "..hhhh.....",
-    "hhhhhh#....",
-    "hhhhhhh#...",
-    "hhhhhhhhhh#",
-    "hhhhhhhhhhh",
-    ".hhhhhhhhhh",
-    "..####hhhhh",
-    "...######hh",
-    ".....s##sh#",
-    "..........s"
-  ]);
-addArms("s", "hold", 1, 21, 20, [
-    "......h...",
-    "......h...",
-    "....hhhh#.",
-    "....hhhh#.",
-    "...hhhhh#s",
-    "...hhhhh#s",
-    "...hhhh##.",
-    "...hhhh#s.",
-    "...hhhh#s.",
-    "...hhhh#s.",
-    "...hhhh#..",
-    "..hhhh##..",
-    "..hhhh#s..",
-    "..hhhh#s..",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    ".hhhh##...",
-    ".hhhh#s...",
-    ".hhhh#s...",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhss....",
-    ".hh#ss....",
-    "hhsss.....",
-    ".hss......",
-    ".ss......."
-  ], [
-    "...h....",
-    "...h....",
-    ".hhhh#..",
-    ".hhhh#..",
-    "hhhhhhs.",
-    ".hhhhh..",
-    ".hhhhh#.",
-    ".hhhhh#.",
-    ".#hhhhh.",
-    "..hhhhh.",
-    "..hhhh##",
-    "..#hhhss",
-    "...hh##s",
-    "...hhss.",
-    "...#hhs.",
-    "....sss."
-  ]);
-addArms("s", "sit", 0, 21, 20, [
-    ".......h...",
-    ".......h...",
-    ".....hhhh#.",
-    ".....hhhh#.",
-    "....hhhhh#s",
-    "....hhhh##s",
-    "....hhhh##.",
-    "....hhhh#s.",
-    "....hhhh#s.",
-    "....hhhh#s.",
-    "...hhhh##..",
-    "...hhhh#s..",
-    "...hhhh#s..",
-    "...hhhh#...",
-    "..hhhh##...",
-    "..hhhh#s...",
-    "..hhhh#s...",
-    "..hhhh#....",
-    "..hhhh#....",
-    "..hhhh#....",
-    ".hhhh##....",
-    ".hhhh#s....",
-    ".hhhsss....",
-    ".hh##s.....",
-    "hhhss......",
-    ".h#ss......",
-    ".#ss......."
-  ], [
-    "...h......",
-    "...h......",
-    ".hhhh#....",
-    ".hhhh#....",
-    "hhhhhh#...",
-    "hhhhhh#...",
-    ".hhhhh#...",
-    ".hhhhh#...",
-    ".#hhhhh...",
-    "..hhhhh#..",
-    "..hhhhh#..",
-    "..hhhhh#..",
-    "..#hhhhh..",
-    "...hhhhh#.",
-    "...hhhhh#.",
-    "...#hhhh#.",
-    "....hhhh#.",
-    "....hhhh#.",
-    "....hhhhh.",
-    "....hhhhh#",
-    "....hhhhh#",
-    ".....hhhh#",
-    ".....hhhss",
-    ".....hhh#s",
-    ".....hhhss",
-    ".....##hhs",
-    "......s#s."
-  ]);
-addArms("se", "idle", 3, 21, 20, [
-    ".....h...",
-    ".....h...",
-    "...hhhh#.",
-    "...hhhh#.",
-    "..hhhhh#s",
-    "..hhhhh#s",
-    "...hhhh#.",
-    "..hhhh##.",
-    "..hhhh##.",
-    "..hhhh#s.",
-    "..hhhh#s.",
-    "..hhhh#s.",
-    "..hhhh#..",
-    "..hhhh#..",
-    "..hhhh#..",
-    "..hhhh#..",
-    "..hhhh#..",
-    ".hhhh#s..",
-    ".hhhh#s..",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhss...",
-    ".hh#ss...",
-    "hhsss....",
-    ".hss.....",
-    ".ss......"
-  ], [
-    "...h.....",
-    "...h.....",
-    ".hhhh#...",
-    ".hhhh#...",
-    "hhhhhh#..",
-    "hhhhhh#..",
-    ".hhhhh#..",
-    ".hhhhh#..",
-    ".#hhhhh..",
-    "..hhhhh#.",
-    "..hhhhh#.",
-    "..hhhhh#.",
-    "..#hhhhh.",
-    "...hhhhh#",
-    "...hhhhh#",
-    "...hhhhh#",
-    "....hhhh#",
-    "....hhhh#",
-    "....hhhh#",
-    "....hhhh#",
-    "....hhhh#",
-    "....hhhh#",
-    "....hhhh#",
-    "....hhhh#",
-    "....hhhh#",
-    "....hhhh#",
-    "....hhhh#",
-    "....hhhh#",
-    "....hhhhs",
-    "....hhh#s",
-    ".....h#hs",
-    ".....#shs",
-    ".......ss"
-  ]);
-addArms("se", "w0", 5, 21, 20, [
-    "...h...",
-    "...h...",
-    ".hhhh#.",
-    ".hhhh#.",
-    "hhhhh#s",
-    "hhhhh#s",
-    ".hhhh#.",
-    ".hhhh#.",
-    ".hhhh#.",
-    ".hhhh#.",
-    ".hhhh#.",
-    ".hhhh#.",
-    "hhhh##.",
-    "hhhh#s.",
-    "hhhh#s.",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhhh..",
-    "hhhhh#.",
-    "hhhhh#.",
-    ".hhhh#.",
-    ".hhhh#.",
-    ".hhhh#.",
-    ".hhhh#.",
-    ".hhhss.",
-    ".hh#ss.",
-    "hhhss..",
-    "hhss...",
-    "hsss...",
-    ".s....."
-  ], [
-    "...h.......",
-    "...h.......",
-    ".hhhh#.....",
-    ".hhhhh#....",
-    "hhhhhh#....",
-    "hhhhhh#....",
-    ".#hhhhh#...",
-    ".#hhhhh#...",
-    "..hhhhh#...",
-    "..#hhhhh...",
-    "..#hhhhh#..",
-    "...hhhhh#..",
-    "...#hhhhh..",
-    "....hhhhh#.",
-    "....#hhhh#.",
-    ".....hhhh#.",
-    ".....hhhh#.",
-    ".....hhhhh.",
-    ".....hhhhh#",
-    ".....hhhhh#",
-    "......hhhh#",
-    "......hhhh#",
-    "......hhhh#",
-    "......hhhhh",
-    "......hhhhh",
-    "......hhhhh",
-    ".......hhhs",
-    ".......hhhh",
-    ".......hhh#",
-    ".......hhsh",
-    "........shs",
-    "..........s"
-  ]);
-addArms("se", "w1", 4, 21, 20, [
-    "....h...",
-    "....h...",
-    "..hhhh#.",
-    "..hhhh#.",
-    ".hhhhh#s",
-    ".hhhhh#s",
-    "..hhhh#.",
-    "..hhhh#.",
-    ".hhhh##.",
-    ".hhhh#s.",
-    ".hhhh#s.",
-    ".hhhh#s.",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhss..",
-    "hhh#ss..",
-    "hhsss...",
-    "hhss....",
-    "#ss....."
-  ], [
-    "...h......",
-    "...h......",
-    ".hhhh#....",
-    ".hhhhh#...",
-    "hhhhhh#...",
-    "hhhhhh#...",
-    ".#hhhhh#..",
-    ".#hhhhh#..",
-    "..hhhhh#..",
-    "..#hhhh#..",
-    "..#hhhhh..",
-    "...hhhhh#.",
-    "...hhhhh#.",
-    "...#hhhh#.",
-    "....hhhh#.",
-    "....hhhhh.",
-    "....hhhhh#",
-    "....hhhhh#",
-    "....hhhhh#",
-    ".....hhhh#",
-    ".....hhhh#",
-    ".....hhhh#",
-    ".....hhhh#",
-    ".....hhhh#",
-    ".....hhhh#",
-    ".....hhhhs",
-    ".....hhhh#",
-    "......hhss",
-    "......#shs",
-    ".......sss"
-  ]);
-addArms("se", "w2", 2, 21, 20, [
-    "......h...",
-    "......h...",
-    "....hhhh#.",
-    "....hhhh#.",
-    "...hhhhh#s",
-    "...hhhh##s",
-    "...hhhh##.",
-    "...hhhh#s.",
-    "...hhhh#s.",
-    "...hhhh#s.",
-    "...hhhh#..",
-    "...hhhh#..",
-    "..hhhh#s..",
-    "..hhhh#s..",
-    "..hhhh#s..",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    ".hhhh##...",
-    ".hhhh#s...",
-    ".hhhh#s...",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhss....",
-    ".hh#ss....",
-    "hhhss.....",
-    "hhsss.....",
-    "hsss......",
-    ".s........"
-  ], [
-    "...h....",
-    "...h....",
-    ".hhhh#..",
-    ".hhhh#..",
-    "hhhhh#s.",
-    "hhhhhh#.",
-    ".hhhhh#.",
-    ".hhhhh#.",
-    ".#hhhh#.",
-    "..hhhh#.",
-    "..hhhh#.",
-    "..hhhhh.",
-    "..hhhhh#",
-    "..hhhhh#",
-    "..hhhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "..hhhh#s",
-    "..hhhh#s",
-    "..hhhh#.",
-    "..hhhh#.",
-    "..hhhh#.",
-    "..hhhss.",
-    "..hhhh#.",
-    "...hh#s.",
-    "...h#h#.",
-    "...#s#s.",
-    ".....s.."
-  ]);
-addArms("se", "w3", 3, 21, 20, [
-    ".....h...",
-    ".....h...",
-    "...hhhh#.",
-    "...hhhh#.",
-    "..hhhhh#s",
-    "..hhhhh#s",
-    "..hhhh##.",
-    "..hhhh##.",
-    "..hhhh#s.",
-    "..hhhh#s.",
-    "..hhhh#s.",
-    "..hhhh#..",
-    "..hhhh#..",
-    ".hhhh##..",
-    ".hhhh#s..",
-    ".hhhh#s..",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhss...",
-    "hhh#ss...",
-    "hhsss....",
-    "hhss.....",
-    ".ss......"
-  ], [
-    "...h.....",
-    "...h.....",
-    ".hhhh#...",
-    ".hhhh#...",
-    "hhhhhh#..",
-    "hhhhhh#..",
-    ".hhhhh#..",
-    ".hhhhh#..",
-    ".#hhhhh..",
-    "..hhhhh#.",
-    "..hhhhh#.",
-    "..hhhhh#.",
-    "..#hhhhh.",
-    "...hhhhh#",
-    "...hhhhh#",
-    "...hhhhh#",
-    "....hhhh#",
-    "....hhhh#",
-    "....hhhh#",
-    "....hhhh#",
-    "....hhhh#",
-    "....hhhh#",
-    "....hhhh#",
-    "....hhhh#",
-    "....hhhh#",
-    "....hhhh#",
-    "....hhhh#",
-    "....hhhhs",
-    "....hhh#s",
-    "....hhsss",
-    ".....#h#s",
-    "......#s."
-  ]);
-addArms("se", "wave", 3, 21, 7, [
-    ".........",
-    ".........",
-    ".........",
-    ".........",
-    ".........",
-    ".........",
-    ".........",
-    ".........",
-    ".........",
-    ".........",
-    ".........",
-    ".........",
-    ".........",
-    ".....h...",
-    ".....h...",
-    "...hhhh#.",
-    "...hhhh#.",
-    "..hhhhh#s",
-    "..hhhhh#s",
-    "...hhhh#.",
-    "..hhhh##.",
-    "..hhhh#s.",
-    "..hhhh#s.",
-    "..hhhh#s.",
-    "..hhhh#..",
-    "..hhhh#..",
-    "..hhhh#..",
-    "..hhhh#..",
-    "..hhhh#..",
-    "..hhhh#..",
-    ".hhhh##..",
-    ".hhhh#s..",
-    ".hhhh#s..",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhss...",
-    ".hh#ss...",
-    "hhsss....",
-    ".hss.....",
-    ".ss......"
-  ], [
-    "...hh...",
-    "..hhh#..",
-    "..hhss..",
-    "..#sh#..",
-    "...sss..",
-    "..hhsss.",
-    "..hhsss.",
-    "..#ssss.",
-    "..#ssss.",
-    "..#ssss.",
-    "..#ssss.",
-    "..#ssss.",
-    "..#ssss.",
-    "..#ssss.",
-    ".h#ssss.",
-    "hh#sssss",
-    "hh#sssss",
-    "###ssss.",
-    ".ssssss.",
-    ".sssss.."
-  ]);
-addArms("se", "phone", 4, 17, 20, [
-    "....h...",
-    "....h...",
-    "..hhhh#.",
-    "..hhhh#.",
-    ".hhhhh#s",
-    ".hhhhh#s",
-    "..hhhh#.",
-    ".hhhh##.",
-    ".hhhh#s.",
-    ".hhhh#s.",
-    ".hhhh#s.",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    "hhhh#s..",
-    "hhhh#s..",
-    "hhhh#...",
-    "hhhh#...",
-    "hhhh#...",
-    "hhhh#...",
-    "hhhh#...",
-    "hhhh#...",
-    "hhhh#...",
-    "hhhh#...",
-    "hhhss...",
-    "hh#ss...",
-    "hsss....",
-    "hsss....",
-    "ss......"
-  ], [
-    "......hhh..",
-    "......hhh..",
-    ".v#hvhhhh#s",
-    ".vxxzhhh##s",
-    "hvxxz#hh#ss",
-    ".vxxz##h#ss",
-    ".vxxzss##ss",
-    ".vzzzsss#s.",
-    "..sssssss..",
-    "...ssssss..",
-    "...#sssss.."
-  ]);
-addArms("se", "phone1", 4, 17, 20, [
-    "....h...",
-    "....h...",
-    "..hhhh#.",
-    "..hhhh#.",
-    ".hhhhh#s",
-    ".hhhhh#s",
-    "..hhhh#.",
-    ".hhhh##.",
-    ".hhhh#s.",
-    ".hhhh#s.",
-    ".hhhh#s.",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    "hhhh#s..",
-    "hhhh#s..",
-    "hhhh#...",
-    "hhhh#...",
-    "hhhh#...",
-    "hhhh#...",
-    "hhhh#...",
-    "hhhh#...",
-    "hhhh#...",
-    "hhhh#...",
-    "hhhss...",
-    "hh#ss...",
-    "hsss....",
-    "hsss....",
-    "ss......"
-  ], [
-    "......hhh..",
-    "......hhh..",
-    ".vvvvhhhh#s",
-    ".vxxzhhh##s",
-    "hv#hz#hh#ss",
-    ".vxxz##h#ss",
-    ".vxxzss##ss",
-    ".vzzzsss#s.",
-    "..sssssss..",
-    "...ssssss..",
-    "...#sssss.."
-  ]);
-addArms("se", "phone2", 4, 17, 20, [
-    "....h...",
-    "....h...",
-    "..hhhh#.",
-    "..hhhh#.",
-    ".hhhhh#s",
-    ".hhhhh#s",
-    "..hhhh#.",
-    ".hhhh##.",
-    ".hhhh#s.",
-    ".hhhh#s.",
-    ".hhhh#s.",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    "hhhh#s..",
-    "hhhh#s..",
-    "hhhh#...",
-    "hhhh#...",
-    "hhhh#...",
-    "hhhh#...",
-    "hhhh#...",
-    "hhhh#...",
-    "hhhh#...",
-    "hhhh#...",
-    "hhhss...",
-    "hh#ss...",
-    "hsss....",
-    "hsss....",
-    "ss......"
-  ], [
-    "......hhh..",
-    "......hhh..",
-    ".vvvvhhhh#s",
-    ".vxxzhhh##s",
-    "hvxxz#hh#ss",
-    ".vxxz##h#ss",
-    ".v#hzss##ss",
-    ".vzzzsss#s.",
-    "..sssssss..",
-    "...ssssss..",
-    "...#sssss.."
-  ]);
-addArms("se", "punch", 4, 21, 20, [
-    "....h...",
-    "....h...",
-    "..hhhh#.",
-    "..hhhh#.",
-    ".hhhhh#s",
-    ".hhhhh#s",
-    "..hhhh#.",
-    "..hhhh#.",
-    "..hhhh#.",
-    ".hhhh#s.",
-    ".hhhh#s.",
-    ".hhhh#s.",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhss..",
-    "hhh#ss..",
-    "hhsss...",
-    "hhss....",
-    ".ss....."
-  ], [
-    "..hhh......",
-    "..hhhh.....",
-    "hhhhhh#....",
-    "hhhhhhh#...",
-    "hhhhhhhhhh#",
-    "hhhhhhhhhhh",
-    ".hhhhhhhhhh",
-    "..#####hhhh",
-    "...#######h",
-    ".....ss##s#"
-  ]);
-addArms("se", "hold", 4, 21, 20, [
-    "....h...",
-    "....h...",
-    "..hhhh#.",
-    "..hhhh#.",
-    ".hhhhh#s",
-    ".hhhhh#s",
-    "..hhhh#.",
-    ".hhhh##.",
-    ".hhhh#s.",
-    ".hhhh#s.",
-    ".hhhh#s.",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    "hhhh#s..",
-    "hhhh#s..",
-    "hhhh#...",
-    "hhhh#...",
-    "hhhh#...",
-    "hhhh#...",
-    "hhhh#...",
-    "hhhh#...",
-    "hhhh#...",
-    "hhhh#...",
-    "hhhss...",
-    "hh#ss...",
-    "hsss....",
-    "hsss....",
-    "ss......"
-  ], [
-    "...h....",
-    "...h....",
-    ".hhhh#..",
-    ".hhhh#..",
-    "hhhhhh#.",
-    ".hhhhh#.",
-    ".#hhhh#.",
-    ".#hhhhh.",
-    "..hhhhh#",
-    "..hhhhh#",
-    "..#hhh##",
-    "...hhhss",
-    "...hhh#s",
-    "...hhss.",
-    "...#sh#.",
-    "....s#s."
-  ]);
-addArms("se", "sit", 3, 21, 20, [
-    ".....h...",
-    ".....h...",
-    "...hhhh#.",
-    "...hhhh#.",
-    "..hhhhh#s",
-    "..hhhhh#s",
-    "..hhhh##.",
-    "..hhhh##.",
-    "..hhhh#s.",
-    "..hhhh#s.",
-    "..hhhh#s.",
-    "..hhhh#..",
-    "..hhhh#..",
-    ".hhhh##..",
-    ".hhhh#s..",
-    ".hhhh#s..",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhss...",
-    "hhh#ss...",
-    "hhsss....",
-    "hhss.....",
-    "#ss......"
-  ], [
-    "...h.......",
-    "...h.......",
-    ".hhhh#.....",
-    ".hhhhh#....",
-    "hhhhhh#....",
-    "hhhhhh#....",
-    ".#hhhh#....",
-    ".#hhhhh#...",
-    "..hhhhh#...",
-    "..#hhhh#...",
-    "..#hhhhh...",
-    "...hhhhh#..",
-    "...hhhhh#..",
-    "...#hhhh#..",
-    "....hhhhh..",
-    "....hhhhh#.",
-    "....hhhhh#.",
-    ".....hhhh#.",
-    ".....hhhh#.",
-    ".....hhhhh.",
-    ".....hhhhh#",
-    ".....hhhh##",
-    ".....hhhhss",
-    "......hhh#s",
-    "......hhsss",
-    "......##h#.",
-    ".......s#s."
-  ]);
-addArms("e", "idle", 11, 17, 20, [
-    ".......",
-    "...h...",
-    ".hhhh#.",
-    ".hhhh#.",
-    "hhhhh#s",
-    "hhhhh#s",
-    ".hhhh#.",
-    "hhhh##.",
-    "hhhh#s.",
-    "hhhh#s.",
-    "hhhh#s.",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhss..",
-    "hhh#s..",
-    "hhss...",
-    "h#ss...",
-    "#ss...."
-  ], [
-    "...h....",
-    "...hh...",
-    ".hhhhh#.",
-    ".hhhhh#.",
-    "hhhhhh#s",
-    ".hhhhh#s",
-    ".#hhhh#.",
-    "..hhhh#.",
-    "..hhhhh.",
-    "..hhhhh#",
-    "..hhhhh#",
-    "..hhhhh#",
-    "..#hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhhs",
-    "...hhh#s",
-    "....h#hs",
-    "....#hhs",
-    "......s."
-  ]);
-addArms("e", "w0", 11, 17, 20, [
-    ".......",
-    "...h...",
-    ".hhhh#.",
-    ".hhhh#.",
-    "hhhhh#s",
-    "hhhhh#s",
-    "hhhhh#s",
-    ".hhhh#.",
-    ".hhhh#.",
-    ".hhhh#.",
-    ".hhhh#.",
-    ".hhhh#.",
-    ".hhhh#.",
-    ".hhhh#.",
-    ".hhhh#.",
-    ".hhhh#.",
-    ".hhhh#.",
-    ".hhhh#.",
-    ".hhhh#.",
-    ".hhhh#.",
-    ".hhhh#.",
-    ".hhhh#.",
-    ".hhhh#.",
-    ".hhhh#.",
-    ".hhhh#.",
-    ".hhhh#.",
-    ".hhhh#.",
-    ".hhhh#.",
-    ".hhhh#.",
-    ".hhhss.",
-    ".hh#ss.",
-    "hhsss..",
-    ".hss...",
-    ".ss...."
-  ], [
-    "...h......",
-    "...hh.....",
-    ".hhhhh#...",
-    ".hhhhh#...",
-    "hhhhhh#s..",
-    ".hhhhh#s..",
-    ".#hhhh#...",
-    "..hhhhh#..",
-    "..hhhhh#..",
-    "..hhhhh#..",
-    "..#hhhh#..",
-    "...hhhhh..",
-    "...hhhhh#.",
-    "...hhhhh#.",
-    "...hhhhh#.",
-    "....hhhh#.",
-    "....hhhh#.",
-    "....hhhh#.",
-    "....hhhh#.",
-    "....hhhh#.",
-    "....hhhhh.",
-    "....hhhhh#",
-    "....hhhhh#",
-    "....hhhhh#",
-    ".....hhhh#",
-    ".....hhhh#",
-    ".....hhhss",
-    ".....hhh#s",
-    ".....hhhs.",
-    ".....h#hh.",
-    "......shs.",
-    ".......ss."
-  ]);
-addArms("e", "w1", 11, 17, 20, [
-    ".......",
-    "...h...",
-    ".hhhh#.",
-    ".hhhh#.",
-    "hhhhh#s",
-    "hhhhh#s",
-    ".hhhh#.",
-    ".hhhh#.",
-    ".hhhh#.",
-    ".hhhh#.",
-    ".hhhh#.",
-    "hhhh#s.",
-    "hhhh#s.",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhss..",
-    "hhh#s..",
-    "hh#s...",
-    "hhss...",
-    "hsss..."
-  ], [
-    "...h.....",
-    "...hh....",
-    ".hhhhh#..",
-    ".hhhhh#..",
-    "hhhhhh#s.",
-    ".hhhhh#s.",
-    ".#hhhh#..",
-    "..hhhhh#.",
-    "..hhhhh#.",
-    "..hhhhh#.",
-    "..hhhhh#.",
-    "..#hhhh#.",
-    "...hhhhh.",
-    "...hhhhh#",
-    "...hhhhh#",
-    "...hhhhh#",
-    "....hhhh#",
-    "....hhhh#",
-    "....hhhh#",
-    "....hhhh#",
-    "....hhhh#",
-    "....hhhh#",
-    "....hhhh#",
-    "....hhhh#",
-    "....hhhh#",
-    "....hhhhs",
-    "....hhh#s",
-    "....hhsss",
-    "....##h#.",
-    "......#s."
-  ]);
-addArms("e", "w2", 10, 17, 20, [
-    "........",
-    "....h...",
-    "..hhhh#.",
-    "..hhhh#.",
-    ".hhhh##s",
-    ".hhhh##s",
-    ".hhhh#s.",
-    ".hhhh#s.",
-    ".hhhh#s.",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    "hhhh##..",
-    "hhhh#s..",
-    "hhhsss..",
-    "hhh#s...",
-    "hhss....",
-    "hhss....",
-    "#ss....."
-  ], [
-    "...h....",
-    "...hh...",
-    ".hhhhh#.",
-    ".hhhhh#.",
-    "hhhhhh#s",
-    ".hhhhh#s",
-    ".#hhhh#.",
-    "..hhhh#.",
-    "..hhhh#.",
-    "..hhhh#.",
-    "..hhhh#.",
-    "..hhhhh.",
-    "..hhhhh#",
-    "..hhhhh#",
-    "..hhhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "..hhhh#s",
-    "..hhhh#s",
-    "..hhhh#.",
-    "..hhhss.",
-    "..hhhhs.",
-    "...hh#s.",
-    "...hshs.",
-    "...#hss.",
-    ".....s.."
-  ]);
-addArms("e", "w3", 11, 17, 20, [
-    ".......",
-    "...h...",
-    ".hhhh#.",
-    ".hhhh#.",
-    "hhhhh#s",
-    "hhhhh#s",
-    "hhhh##.",
-    "hhhh#s.",
-    "hhhh#s.",
-    "hhhh#s.",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhss..",
-    "hhhss..",
-    "hhss...",
-    "h#ss...",
-    "hss...."
-  ], [
-    "...h....",
-    "...hh...",
-    ".hhhhh#.",
-    ".hhhhh#.",
-    "hhhhhh#s",
-    ".hhhhh#s",
-    ".#hhhh#.",
-    "..hhhh#.",
-    "..hhhhh.",
-    "..hhhhh#",
-    "..hhhhh#",
-    "..hhhhh#",
-    "..#hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhhs",
-    "...hhh#s",
-    "...hh#ss",
-    "....#hhs",
-    ".....#s."
-  ]);
-addArms("e", "wave", 11, 17, 7, [
-    ".......",
-    ".......",
-    ".......",
-    ".......",
-    ".......",
-    ".......",
-    ".......",
-    ".......",
-    ".......",
-    ".......",
-    ".......",
-    ".......",
-    ".......",
-    ".......",
-    "...h...",
-    ".hhhh#.",
-    ".hhhh#.",
-    "hhhhh#s",
-    "hhhhh#s",
-    "hhhh##.",
-    "hhhh##.",
-    "hhhh#s.",
-    "hhhh#s.",
-    "hhhh#s.",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhss..",
-    "hhh#s..",
-    "hhss...",
-    "h#ss...",
-    "#ss...."
-  ], [
-    "...hh...",
-    "..hhh#..",
-    "..hhss..",
-    "..#sh#..",
-    "...sss..",
-    "..hhsss.",
-    "..hhsss.",
-    "..#ssss.",
-    "..#ssss.",
-    "..#ssss.",
-    "..#ssss.",
-    "..#ssss.",
-    "..#ssss.",
-    "..#ssss.",
-    ".h#ssss.",
-    "hh#sssss",
-    "hh#sssss",
-    "###sssss",
-    ".ssssss.",
-    ".sssss.."
-  ]);
-addArms("e", "phone", 11, 14, 20, [
-    ".......",
-    "...h...",
-    ".hhhh#.",
-    ".hhhh#.",
-    "hhhhh#s",
-    "hhhhh#s",
-    ".hhhh#.",
-    "hhhh##.",
-    "hhhh#s.",
-    "hhhh#s.",
-    "hhhh#s.",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhss..",
-    "hhh#s..",
-    "hhss...",
-    "h#ss...",
-    "#ss...."
-  ], [
-    ".....hhh..",
-    ".....hhh..",
-    "v#hvhhhh#s",
-    "vxxzhhhh#s",
-    "vxxz#hhh#s",
-    "vxxz##h##s",
-    "vxxzss##ss",
-    "vzzzsss#s.",
-    ".ssssssss.",
-    "..ssssss..",
-    "...sssss.."
-  ]);
-addArms("e", "phone1", 11, 14, 20, [
-    ".......",
-    "...h...",
-    ".hhhh#.",
-    ".hhhh#.",
-    "hhhhh#s",
-    "hhhhh#s",
-    ".hhhh#.",
-    "hhhh##.",
-    "hhhh#s.",
-    "hhhh#s.",
-    "hhhh#s.",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhss..",
-    "hhh#s..",
-    "hhss...",
-    "h#ss...",
-    "#ss...."
-  ], [
-    ".....hhh..",
-    ".....hhh..",
-    "vvvvhhhh#s",
-    "vxxzhhhh#s",
-    "v#hz#hhh#s",
-    "vxxz##h##s",
-    "vxxzss##ss",
-    "vzzzsss#s.",
-    ".ssssssss.",
-    "..ssssss..",
-    "...sssss.."
-  ]);
-addArms("e", "phone2", 11, 14, 20, [
-    ".......",
-    "...h...",
-    ".hhhh#.",
-    ".hhhh#.",
-    "hhhhh#s",
-    "hhhhh#s",
-    ".hhhh#.",
-    "hhhh##.",
-    "hhhh#s.",
-    "hhhh#s.",
-    "hhhh#s.",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhss..",
-    "hhh#s..",
-    "hhss...",
-    "h#ss...",
-    "#ss...."
-  ], [
-    ".....hhh..",
-    ".....hhh..",
-    "vvvvhhhh#s",
-    "vxxzhhhh#s",
-    "vxxz#hhh#s",
-    "vxxz##h##s",
-    "v#hzss##ss",
-    "vzzzsss#s.",
-    ".ssssssss.",
-    "..ssssss..",
-    "...sssss.."
-  ]);
-addArms("e", "punch", 11, 17, 20, [
-    ".......",
-    "...h...",
-    ".hhhh#.",
-    ".hhhh#.",
-    "hhhhh#s",
-    "hhhhh#s",
-    ".hhhh#.",
-    ".hhhh#.",
-    ".hhhh#.",
-    ".hhhh#.",
-    ".hhhh#.",
-    ".hhhh#.",
-    "hhhh##.",
-    "hhhh#s.",
-    "hhhh#s.",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhss..",
-    "hhh#s..",
-    "hh#s...",
-    "hhss...",
-    "hsss...",
-    ".s....."
-  ], [
-    "..hhh........",
-    "...hhh.......",
-    "hhhhhh#......",
-    ".hhhhh#s.....",
-    "hhhhhhhhh#...",
-    ".hhhhhhhhhh..",
-    ".hhhhhhhhhh#.",
-    "..###hhhhhh#.",
-    "...####hhhsss",
-    ".....##s#sh#.",
-    "........#sss."
-  ]);
-addArms("e", "hold", 11, 17, 20, [
-    ".......",
-    "...h...",
-    ".hhhh#.",
-    ".hhhh#.",
-    "hhhhh#s",
-    "hhhhh#s",
-    ".hhhh#.",
-    "hhhh##.",
-    "hhhh#s.",
-    "hhhh#s.",
-    "hhhh#s.",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhss..",
-    "hhh#s..",
-    "hhss...",
-    "h#ss...",
-    "#ss...."
-  ], [
-    "...h....",
-    "...h....",
-    ".hhhhh#.",
-    ".hhhhh#.",
-    "hhhhhh#.",
-    ".hhhhh#.",
-    ".#hhhh#.",
-    "..hhhh#.",
-    "..hhhh#.",
-    "..hhhhh.",
-    "..hhhhh#",
-    "..hhhhss",
-    "..hhh#ss",
-    "..hhhss.",
-    "...#hhs.",
-    "....#s.."
-  ]);
-addArms("e", "sit", 10, 17, 20, [
-    "........",
-    "....h...",
-    "..hhhh#.",
-    "..hhhh#.",
-    ".hhhhh#s",
-    ".hhhh##s",
-    ".hhhh##.",
-    ".hhhh#s.",
-    ".hhhh#s.",
-    ".hhhh#s.",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhh#..",
-    ".hhhss..",
-    ".hhhss..",
-    "hhh#s...",
-    "hh#ss...",
-    ".hss....",
-    ".s......"
-  ], [
-    "...h.....",
-    "...hh....",
-    ".hhhhh#..",
-    ".hhhhh#..",
-    "hhhhhh#s.",
-    ".hhhhh#s.",
-    ".#hhhh#..",
-    "..hhhhh#.",
-    "..hhhhh#.",
-    "..hhhhh#.",
-    "..hhhhh#.",
-    "..#hhhh#.",
-    "...hhhhh.",
-    "...hhhhh#",
-    "...hhhhh#",
-    "...hhhhh#",
-    "....hhhh#",
-    "....hhhh#",
-    "....hhhh#",
-    "....hhhh#",
-    "....hhhh#",
-    "....hhhh#",
-    "....hhhss",
-    "....hhh##",
-    "....hhhss",
-    ".....#hhs",
-    ".....s#ss"
-  ]);
-addArms("n", "idle", 1, 21, 20, [
-    "......h...",
-    "......h...",
-    "....hhhh#.",
-    "....hhhh#.",
-    "...hhhhh#s",
-    "...hhhhh#s",
-    "...hhhh##.",
-    "...hhhh#s.",
-    "...hhhh#s.",
-    "...hhhh#s.",
-    "...hhhh#..",
-    "..hhhh##..",
-    "..hhhh#s..",
-    "..hhhh#s..",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    ".hhhh#s...",
-    ".hhhh#s...",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhss....",
-    "hhh#ss....",
-    "hhsss.....",
-    "hhss......",
-    ".ss......."
-  ], [
-    "...h.....",
-    "...h.....",
-    ".hhhh#...",
-    ".hhhh#...",
-    "hhhhh#s..",
-    "hhhhhh#..",
-    ".hhhhh#..",
-    ".hhhhh#..",
-    ".hhhhh#..",
-    ".#hhhh#..",
-    "..hhhhh..",
-    "..hhhhh#.",
-    "..hhhhh#.",
-    "..hhhhh#.",
-    "...hhhh#.",
-    "...hhhh#.",
-    "...hhhh#.",
-    "...hhhh#.",
-    "...hhhh#.",
-    "...hhhh#.",
-    "...hhhh#.",
-    "...hhhh#.",
-    "...hhhh#.",
-    "...hhhhh.",
-    "...hhhhh#",
-    "...hhhhh#",
-    "...hhhhh#",
-    "....hhhh#",
-    "....hhh#s",
-    "....hhhss",
-    "....hhhh.",
-    "....#shs.",
-    "......ss."
-  ]);
-addArms("n", "w0", 4, 21, 20, [
-    "...h...",
-    "...h...",
-    ".hhhh#.",
-    ".hhhh#.",
-    "hhhhh#s",
-    "hhhhh#s",
-    ".hhhh#.",
-    ".hhhh#.",
-    ".hhhh#.",
-    ".hhhh#.",
-    "hhhh#s.",
-    "hhhh#s.",
-    "hhhh#s.",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhss..",
-    "hhhss..",
-    "hh#s...",
-    "hhss...",
-    "hss...."
-  ], [
-    "...h.......",
-    "...h.......",
-    ".hhhh#.....",
-    ".hhhh#.....",
-    "hhhhhh#....",
-    "hhhhhh#....",
-    ".hhhhh#....",
-    ".#hhhhh#...",
-    ".#hhhhh#...",
-    "..hhhhh#...",
-    "..#hhhh#...",
-    "..#hhhhh...",
-    "...hhhhh#..",
-    "...hhhhh#..",
-    "...#hhhh#..",
-    "....hhhhh..",
-    "....hhhhh#.",
-    "....hhhhh#.",
-    "....hhhhh#.",
-    ".....hhhh#.",
-    ".....hhhh#.",
-    ".....hhhh#.",
-    ".....hhhhh.",
-    ".....hhhhh#",
-    ".....hhhhh#",
-    "......hhhh#",
-    "......hhhss",
-    "......hhhhs",
-    "......hhh#s",
-    "......hhshs",
-    ".......shss",
-    ".........s."
-  ]);
-addArms("n", "w1", 2, 21, 20, [
-    ".....h...",
-    ".....h...",
-    "...hhhh#.",
-    "...hhhh#.",
-    "..hhhhh#s",
-    "..hhhhh#s",
-    "..hhhh##.",
-    "..hhhh##.",
-    "..hhhh#s.",
-    "..hhhh#s.",
-    "..hhhh#s.",
-    "..hhhh#..",
-    ".hhhh##..",
-    ".hhhh#s..",
-    ".hhhh#s..",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhss...",
-    "hhh#ss...",
-    "hhsss....",
-    "hhss.....",
-    ".ss......"
-  ], [
-    "...h......",
-    "...h......",
-    ".hhhh#....",
-    ".hhhh#....",
-    "hhhhhh#...",
-    "hhhhhh#...",
-    ".hhhhh#...",
-    ".hhhhh#...",
-    ".#hhhhh...",
-    "..hhhhh#..",
-    "..hhhhh#..",
-    "..hhhhh#..",
-    "...hhhhh..",
-    "...hhhhh#.",
-    "...hhhhh#.",
-    "...#hhhh#.",
-    "....hhhh#.",
-    "....hhhh#.",
-    "....hhhh#.",
-    "....hhhh#.",
-    "....hhhh#.",
-    "....hhhh#.",
-    "....hhhh#.",
-    "....hhhhh.",
-    "....hhhhh#",
-    "....hhhhss",
-    "....hhhh#s",
-    ".....hhss.",
-    ".....#sh#.",
-    "......sss."
-  ]);
-addArms("n", "w2", 0, 21, 20, [
-    ".......h...",
-    ".......h...",
-    ".....hhhh#.",
-    ".....hhhh#.",
-    "....hhhhh#s",
-    "....hhhh##s",
-    "....hhhh#s.",
-    "....hhhh#s.",
-    "....hhhh#s.",
-    "...hhhh##..",
-    "...hhhh#s..",
-    "...hhhh#s..",
-    "..hhhh##s..",
-    "..hhhh#s...",
-    "..hhhh#s...",
-    "..hhhh#....",
-    "..hhhh#....",
-    ".hhhh##....",
-    ".hhhh#s....",
-    ".hhhh#s....",
-    ".hhhh#.....",
-    ".hhhh#.....",
-    ".hhhh#.....",
-    ".hhhh#.....",
-    "hhhh##.....",
-    "hhhh#s.....",
-    "hhhsss.....",
-    "hhhss......",
-    "hh#s.......",
-    "h#ss.......",
-    "hss........",
-    "s.........."
-  ], [
-    "...h...",
-    "...h...",
-    ".hhhh#.",
-    ".hhhh#.",
-    "hhhhh#s",
-    "hhhhh#s",
-    ".hhhh#.",
-    ".hhhhh#",
-    ".hhhhh#",
-    ".hhhhh#",
-    ".hhhhh#",
-    ".#hhhh#",
-    "..hhhh#",
-    "..hhhh#",
-    "..hhhh#",
-    "..hhhh#",
-    "..hhhh#",
-    "..hhhh#",
-    "..hhhh#",
-    "..hhhh#",
-    "..hhhh#",
-    "..hhhh#",
-    "..hhhh#",
-    "..hhhh#",
-    "..hhhh#",
-    "..hhhh#",
-    "..hhhh#",
-    "..hhhh#",
-    "..hhhss",
-    "..hhh#s",
-    "..hhhss",
-    "..h#hhs",
-    "...shs.",
-    ".....s."
-  ]);
-addArms("n", "w3", 1, 21, 20, [
-    "......h...",
-    "......h...",
-    "....hhhh#.",
-    "....hhhh#.",
-    "...hhhhh#s",
-    "...hhhh##s",
-    "...hhhh##.",
-    "...hhhh#s.",
-    "...hhhh#s.",
-    "...hhhh#s.",
-    "..hhhh##..",
-    "..hhhh#s..",
-    "..hhhh#s..",
-    "..hhhh#...",
-    "..hhhh#...",
-    ".hhhh##...",
-    ".hhhh#s...",
-    ".hhhh#s...",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhss....",
-    "hhh#ss....",
-    "hhsss.....",
-    "h#ss......",
-    "#ss......."
-  ], [
-    "...h....",
-    "...h....",
-    ".hhhh#..",
-    ".hhhh#..",
-    "hhhhh#s.",
-    "hhhhhh#.",
-    ".hhhhh#.",
-    ".hhhhh#.",
-    ".hhhhh#.",
-    ".#hhhh#.",
-    "..hhhhh.",
-    "..hhhhh.",
-    "..hhhhh#",
-    "..hhhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhhs",
-    "...hhh#s",
-    "....hhss",
-    "....#hhs",
-    ".....sss"
-  ]);
-addArms("n", "wave", 1, 21, 7, [
-    "..........",
-    "..........",
-    "..........",
-    "..........",
-    "..........",
-    "..........",
-    "..........",
-    "..........",
-    "..........",
-    "..........",
-    "..........",
-    "..........",
-    "..........",
-    "......h...",
-    "......h...",
-    "....hhhh#.",
-    "....hhhh#.",
-    "...hhhhh#s",
-    "...hhhhh#s",
-    "...hhhh##.",
-    "...hhhh#s.",
-    "...hhhh#s.",
-    "...hhhh#s.",
-    "...hhhh#..",
-    "..hhhh##..",
-    "..hhhh#s..",
-    "..hhhh#s..",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    ".hhhh##...",
-    ".hhhh#s...",
-    ".hhhh#s...",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhss....",
-    "hhh#ss....",
-    "hhsss.....",
-    ".hss......",
-    ".ss......."
-  ], [
-    "...hh...",
-    "..hh##..",
-    ".hhhss..",
-    "..#hhs..",
-    "...sss..",
-    "..hhsss.",
-    "..hhsss.",
-    "..#ssss.",
-    "..#ssss.",
-    "..#ssss.",
-    "..#ssss.",
-    "..#ssss.",
-    "..#ssss.",
-    ".h#ssss.",
-    ".h#ssss.",
-    "hh#sssss",
-    "hh#ssss.",
-    "#s#ssss.",
-    ".sssss..",
-    ".sssss.."
-  ]);
-addArms("n", "phone", 1, 17, 20, [
-    "......h...",
-    "......h...",
-    "....hhhh#.",
-    "....hhhh#.",
-    "...hhhhh#s",
-    "...hhhhh#s",
-    "...hhhh##.",
-    "...hhhh#s.",
-    "...hhhh#s.",
-    "...hhhh#s.",
-    "...hhhh#..",
-    "..hhhh##..",
-    "..hhhh#s..",
-    "..hhhh#s..",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    ".hhhh##...",
-    ".hhhh#s...",
-    ".hhhh#s...",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhss....",
-    ".hh#ss....",
-    "hhsss.....",
-    ".hss......",
-    ".ss......."
-  ], [
-    "......hhh..",
-    "......hhh..",
-    ".v#hvhhhh#s",
-    "hvxxzhhh##s",
-    "hvxxz#hh#ss",
-    "hvxxz#hh#ss",
-    "#vxxzss##s.",
-    ".vzzzss##s.",
-    "..sssssss..",
-    "...ssssss..",
-    "...ssssss.."
-  ]);
-addArms("n", "phone1", 1, 17, 20, [
-    "......h...",
-    "......h...",
-    "....hhhh#.",
-    "....hhhh#.",
-    "...hhhhh#s",
-    "...hhhhh#s",
-    "...hhhh##.",
-    "...hhhh#s.",
-    "...hhhh#s.",
-    "...hhhh#s.",
-    "...hhhh#..",
-    "..hhhh##..",
-    "..hhhh#s..",
-    "..hhhh#s..",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    ".hhhh##...",
-    ".hhhh#s...",
-    ".hhhh#s...",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhss....",
-    ".hh#ss....",
-    "hhsss.....",
-    ".hss......",
-    ".ss......."
-  ], [
-    "......hhh..",
-    "......hhh..",
-    ".vvvvhhhh#s",
-    "hvxxzhhh##s",
-    "hv#hz#hh#ss",
-    "hvxxz#hh#ss",
-    "#vxxzss##s.",
-    ".vzzzss##s.",
-    "..sssssss..",
-    "...ssssss..",
-    "...ssssss.."
-  ]);
-addArms("n", "phone2", 1, 17, 20, [
-    "......h...",
-    "......h...",
-    "....hhhh#.",
-    "....hhhh#.",
-    "...hhhhh#s",
-    "...hhhhh#s",
-    "...hhhh##.",
-    "...hhhh#s.",
-    "...hhhh#s.",
-    "...hhhh#s.",
-    "...hhhh#..",
-    "..hhhh##..",
-    "..hhhh#s..",
-    "..hhhh#s..",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    ".hhhh##...",
-    ".hhhh#s...",
-    ".hhhh#s...",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhss....",
-    ".hh#ss....",
-    "hhsss.....",
-    ".hss......",
-    ".ss......."
-  ], [
-    "......hhh..",
-    "......hhh..",
-    ".vvvvhhhh#s",
-    "hvxxzhhh##s",
-    "hvxxz#hh#ss",
-    "hvxxz#hh#ss",
-    "#v#hzss##s.",
-    ".vzzzss##s.",
-    "..sssssss..",
-    "...ssssss..",
-    "...ssssss.."
-  ]);
-addArms("n", "punch", 2, 21, 20, [
-    ".....h...",
-    ".....h...",
-    "...hhhh#.",
-    "...hhhh#.",
-    "..hhhhh#s",
-    "..hhhhh#s",
-    "..hhhh##.",
-    "..hhhh##.",
-    "..hhhh#s.",
-    "..hhhh#s.",
-    "..hhhh#s.",
-    "..hhhh#..",
-    ".hhhh##..",
-    ".hhhh#s..",
-    ".hhhh#s..",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhss...",
-    "hhh#ss...",
-    "hhsss....",
-    ".hss.....",
-    ".ss......"
-  ], [
-    "..hhh......",
-    "..hhhh.....",
-    "hhhhhh#....",
-    "hhhhhhh#...",
-    "hhhhhhhhhh#",
-    "hhhhhhhhhhh",
-    ".hhhhhhhhhh",
-    "..####hhhhh",
-    "...######hh",
-    ".....s##sh#",
-    "..........s"
-  ]);
-addArms("n", "hold", 1, 21, 20, [
-    "......h...",
-    "......h...",
-    "....hhhh#.",
-    "....hhhh#.",
-    "...hhhhh#s",
-    "...hhhhh#s",
-    "...hhhh##.",
-    "...hhhh#s.",
-    "...hhhh#s.",
-    "...hhhh#s.",
-    "...hhhh#..",
-    "..hhhh##..",
-    "..hhhh#s..",
-    "..hhhh#s..",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    ".hhhh##...",
-    ".hhhh#s...",
-    ".hhhh#s...",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhss....",
-    ".hh#ss....",
-    "hhsss.....",
-    ".hss......",
-    ".ss......."
-  ], [
-    "...h....",
-    "...h....",
-    ".hhhh#..",
-    ".hhhh#..",
-    "hhhhhhs.",
-    ".hhhhh..",
-    ".hhhhh#.",
-    ".hhhhh#.",
-    ".#hhhhh.",
-    "..hhhhh.",
-    "..hhhh##",
-    "..#hhhss",
-    "...hh##s",
-    "...hhss.",
-    "...#hhs.",
-    "....sss."
-  ]);
-addArms("n", "sit", 0, 21, 20, [
-    ".......h...",
-    ".......h...",
-    ".....hhhh#.",
-    ".....hhhh#.",
-    "....hhhhh#s",
-    "....hhhh##s",
-    "....hhhh##.",
-    "....hhhh#s.",
-    "....hhhh#s.",
-    "....hhhh#s.",
-    "...hhhh##..",
-    "...hhhh#s..",
-    "...hhhh#s..",
-    "...hhhh#...",
-    "..hhhh##...",
-    "..hhhh#s...",
-    "..hhhh#s...",
-    "..hhhh#....",
-    "..hhhh#....",
-    "..hhhh#....",
-    ".hhhh##....",
-    ".hhhh#s....",
-    ".hhhsss....",
-    ".hh##s.....",
-    "hhhss......",
-    ".h#ss......",
-    ".#ss......."
-  ], [
-    "...h......",
-    "...h......",
-    ".hhhh#....",
-    ".hhhh#....",
-    "hhhhhh#...",
-    "hhhhhh#...",
-    ".hhhhh#...",
-    ".hhhhh#...",
-    ".#hhhhh...",
-    "..hhhhh#..",
-    "..hhhhh#..",
-    "..hhhhh#..",
-    "..#hhhhh..",
-    "...hhhhh#.",
-    "...hhhhh#.",
-    "...#hhhh#.",
-    "....hhhh#.",
-    "....hhhh#.",
-    "....hhhhh.",
-    "....hhhhh#",
-    "....hhhhh#",
-    ".....hhhh#",
-    ".....hhhss",
-    ".....hhh#s",
-    ".....hhhss",
-    ".....##hhs",
-    "......s#s."
-  ]);
-addArms("ne", "idle", 2, 21, 20, [
-    "......h...",
-    "......h...",
-    "....hhhh#.",
-    "....hhhh#.",
-    "...hhhhh#s",
-    "...hhhh##s",
-    "...hhhh##.",
-    "...hhhh#s.",
-    "...hhhh#s.",
-    "...hhhh#s.",
-    "...hhhh#..",
-    "..hhhh##..",
-    "..hhhh#s..",
-    "..hhhh#s..",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    ".hhhh#s...",
-    ".hhhh#s...",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhss....",
-    "hhh#ss....",
-    "hhsss.....",
-    "hhss......",
-    ".s........"
-  ], [
-    "...h....",
-    "...h....",
-    ".hhhh#..",
-    ".hhhh#..",
-    "hhhhh#s.",
-    "hhhhh#s.",
-    ".hhhhh#.",
-    ".hhhhh#.",
-    ".hhhhh#.",
-    ".#hhhh#.",
-    "..hhhh#.",
-    "..hhhh#.",
-    "..hhhhh.",
-    "..hhhhh#",
-    "..hhhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhhs",
-    "...hhh#s",
-    "...hhshs",
-    "....#hhs",
-    "......s."
-  ]);
-addArms("ne", "w0", 5, 21, 20, [
-    "...h...",
-    "...h...",
-    ".hhhh#.",
-    ".hhhh#.",
-    "hhhhh#s",
-    "hhhhh#s",
-    ".hhhh#.",
-    ".hhhh#.",
-    "hhhh##.",
-    "hhhh#s.",
-    "hhhh#s.",
-    "hhhh#s.",
-    "hhhh#s.",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhh#..",
-    "hhhss..",
-    "hhhss..",
-    "hh#s...",
-    "h#ss...",
-    "hss....",
-    "s......"
-  ], [
-    "...h......",
-    "...h......",
-    ".hhhh#....",
-    ".hhhh#....",
-    "hhhhhh#...",
-    "hhhhhh#...",
-    ".hhhhh#...",
-    ".hhhhh#...",
-    ".#hhhh#...",
-    "..hhhhh...",
-    "..hhhhh#..",
-    "..hhhhh#..",
-    "..#hhhh#..",
-    "...hhhhh..",
-    "...hhhhh#.",
-    "...hhhhh#.",
-    "....hhhh#.",
-    "....hhhh#.",
-    "....hhhh#.",
-    "....hhhh#.",
-    "....hhhhh.",
-    "....hhhhh#",
-    "....hhhhh#",
-    "....hhhhh#",
-    ".....hhhh#",
-    ".....hhhh#",
-    ".....hhhss",
-    ".....hhhhs",
-    ".....hhh#s",
-    ".....hhshs",
-    "......shss",
-    "........s."
-  ]);
-addArms("ne", "w1", 3, 21, 20, [
-    ".....h...",
-    ".....h...",
-    "...hhhh#.",
-    "...hhhh#.",
-    "..hhhhh#s",
-    "..hhhh##s",
-    "..hhhh##.",
-    "..hhhh#s.",
-    "..hhhh#s.",
-    "..hhhh#s.",
-    "..hhhh#..",
-    "..hhhh#..",
-    ".hhhh##..",
-    ".hhhh#s..",
-    ".hhhh#s..",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hh#ss...",
-    "hhh#ss...",
-    "hhsss....",
-    "hhss.....",
-    ".ss......"
-  ], [
-    "...h.....",
-    "...h.....",
-    ".hhhh#...",
-    ".hhhh#...",
-    "hhhhh#s..",
-    "hhhhhh#..",
-    ".hhhhh#..",
-    ".hhhhh#..",
-    ".#hhhh#..",
-    "..hhhhh..",
-    "..hhhhh#.",
-    "..hhhhh#.",
-    "..hhhhh#.",
-    "...hhhh#.",
-    "...hhhh#.",
-    "...hhhh#.",
-    "...hhhh#.",
-    "...hhhhh.",
-    "...hhhhh#",
-    "...hhhhh#",
-    "...hhhhh#",
-    "....hhhh#",
-    "....hhhh#",
-    "....hhhh#",
-    "....hhhh#",
-    "....hhhss",
-    "....hhh#s",
-    "....hhsss",
-    "....##h#.",
-    "......#s."
-  ]);
-addArms("ne", "w2", 0, 21, 20, [
-    "........h...",
-    "........h...",
-    "......hhhh#.",
-    "......hhhh#.",
-    ".....hhhh##s",
-    ".....hhhh##s",
-    ".....hhhh#s.",
-    ".....hhhh#s.",
-    "....hhhh##s.",
-    "....hhhh#s..",
-    "....hhhh#s..",
-    "....hhhh#s..",
-    "...hhhh##...",
-    "...hhhh#s...",
-    "...hhhh#s...",
-    "...hhhh#....",
-    "...hhhh#....",
-    "..hhhh##....",
-    "..hhhh#s....",
-    "..hhhh#s....",
-    "..hhhh#.....",
-    "..hhhh#.....",
-    "..hhhh#.....",
-    ".hhhh##.....",
-    ".hhhh#s.....",
-    ".hhhh#s.....",
-    ".hhhss......",
-    ".hhhss......",
-    "hhh#s.......",
-    "hhsss.......",
-    ".hss........",
-    ".s.........."
-  ], [
-    "...h...",
-    "...h...",
-    ".hhhh#.",
-    ".hhhh#.",
-    "hhhhh#s",
-    "hhhhh#s",
-    ".hhhh#.",
-    ".hhhh#.",
-    ".hhhhh#",
-    ".hhhhh#",
-    ".hhhhh#",
-    ".#hhhh#",
-    ".#hhhh#",
-    "..hhhh#",
-    "..hhhh#",
-    "..hhhh#",
-    "..hhhh#",
-    "..hhhh#",
-    "..hhhh#",
-    "..hhhh#",
-    "..hhhh#",
-    "..hhhh#",
-    "..hhhh#",
-    "..hhhh#",
-    "..hhhh#",
-    "..hhhh#",
-    "..hhhh#",
-    "..hhhh#",
-    "..hhhss",
-    "..hhh#s",
-    "..hhhs.",
-    "..h#hh.",
-    "...shs."
-  ]);
-addArms("ne", "w3", 2, 21, 20, [
-    "......h...",
-    "......h...",
-    "....hhhh#.",
-    "....hhhh#.",
-    "...hhhh##s",
-    "...hhhh##s",
-    "...hhhh#s.",
-    "...hhhh#s.",
-    "...hhhh#s.",
-    "...hhhh#..",
-    "..hhhh#s..",
-    "..hhhh#s..",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    ".hhhh#s...",
-    ".hhhh#s...",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhss....",
-    "hhh#ss....",
-    "hhsss.....",
-    "h#ss......",
-    "#ss......."
-  ], [
-    "...h....",
-    "...h....",
-    ".hhhh#..",
-    ".hhhh#..",
-    "hhhhh#s.",
-    "hhhhh#s.",
-    ".hhhhh#.",
-    ".hhhhh#.",
-    ".hhhhh#.",
-    ".#hhhh#.",
-    "..hhhh#.",
-    "..hhhh#.",
-    "..hhhhh.",
-    "..hhhhh#",
-    "..hhhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhh#",
-    "...hhhhs",
-    "...hhh#s",
-    "...hhsss",
-    "...##h#.",
-    ".....#s."
-  ]);
-addArms("ne", "wave", 2, 21, 7, [
-    "..........",
-    "..........",
-    "..........",
-    "..........",
-    "..........",
-    "..........",
-    "..........",
-    "..........",
-    "..........",
-    "..........",
-    "..........",
-    "..........",
-    "..........",
-    "......h...",
-    "......h...",
-    "....hhhh#.",
-    "....hhhh#.",
-    "...hhhhh#s",
-    "...hhhh##s",
-    "...hhhh#s.",
-    "...hhhh#s.",
-    "...hhhh#s.",
-    "...hhhh#..",
-    "...hhhh#..",
-    "..hhhh#s..",
-    "..hhhh#s..",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    ".hhhh##...",
-    ".hhhh#s...",
-    ".hhhh#s...",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhss....",
-    "hhh#ss....",
-    "hhsss.....",
-    "hhss......",
-    ".s........"
-  ], [
-    "..hhh..",
-    "..hh#s.",
-    ".hhhss.",
-    "..#hhs.",
-    "..s#s#.",
-    "..hhsss",
-    "..hhsss",
-    "..#ssss",
-    "..#ssss",
-    "..#ssss",
-    "..#ssss",
-    "..#ssss",
-    "..#ssss",
-    ".h#ssss",
-    ".h#ssss",
-    "hh#ssss",
-    "h##ssss",
-    "#s#ssss",
-    ".sssss.",
-    ".sssss."
-  ]);
-addArms("ne", "phone", 2, 17, 20, [
-    "......h...",
-    "......h...",
-    "....hhhh#.",
-    "....hhhh#.",
-    "...hhhhh#s",
-    "...hhhh##s",
-    "...hhhh##.",
-    "...hhhh#s.",
-    "...hhhh#s.",
-    "...hhhh#s.",
-    "...hhhh#..",
-    "..hhhh#s..",
-    "..hhhh#s..",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    ".hhhh##...",
-    ".hhhh#s...",
-    ".hhhh#s...",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhss....",
-    "hhh#ss....",
-    "hhsss.....",
-    ".hss......",
-    ".ss......."
-  ], [
-    "......hhh..",
-    "......hhh..",
-    ".v#hvhhhh#s",
-    "hvxxzhhh##s",
-    "hvxxz#hh#ss",
-    "hvxxz#hh#ss",
-    "#vxxzss##s.",
-    ".vzzzss##s.",
-    "..sssssss..",
-    "...ssssss..",
-    "...ssssss.."
-  ]);
-addArms("ne", "phone1", 2, 17, 20, [
-    "......h...",
-    "......h...",
-    "....hhhh#.",
-    "....hhhh#.",
-    "...hhhhh#s",
-    "...hhhh##s",
-    "...hhhh##.",
-    "...hhhh#s.",
-    "...hhhh#s.",
-    "...hhhh#s.",
-    "...hhhh#..",
-    "..hhhh#s..",
-    "..hhhh#s..",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    ".hhhh##...",
-    ".hhhh#s...",
-    ".hhhh#s...",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhss....",
-    "hhh#ss....",
-    "hhsss.....",
-    ".hss......",
-    ".ss......."
-  ], [
-    "......hhh..",
-    "......hhh..",
-    ".vvvvhhhh#s",
-    "hvxxzhhh##s",
-    "hv#hz#hh#ss",
-    "hvxxz#hh#ss",
-    "#vxxzss##s.",
-    ".vzzzss##s.",
-    "..sssssss..",
-    "...ssssss..",
-    "...ssssss.."
-  ]);
-addArms("ne", "phone2", 2, 17, 20, [
-    "......h...",
-    "......h...",
-    "....hhhh#.",
-    "....hhhh#.",
-    "...hhhhh#s",
-    "...hhhh##s",
-    "...hhhh##.",
-    "...hhhh#s.",
-    "...hhhh#s.",
-    "...hhhh#s.",
-    "...hhhh#..",
-    "..hhhh#s..",
-    "..hhhh#s..",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    ".hhhh##...",
-    ".hhhh#s...",
-    ".hhhh#s...",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhss....",
-    "hhh#ss....",
-    "hhsss.....",
-    ".hss......",
-    ".ss......."
-  ], [
-    "......hhh..",
-    "......hhh..",
-    ".vvvvhhhh#s",
-    "hvxxzhhh##s",
-    "hvxxz#hh#ss",
-    "hvxxz#hh#ss",
-    "#v#hzss##s.",
-    ".vzzzss##s.",
-    "..sssssss..",
-    "...ssssss..",
-    "...ssssss.."
-  ]);
-addArms("ne", "punch", 3, 21, 20, [
-    ".....h...",
-    ".....h...",
-    "...hhhh#.",
-    "...hhhh#.",
-    "..hhhhh#s",
-    "..hhhhh#s",
-    "..hhhh##.",
-    "..hhhh#s.",
-    "..hhhh#s.",
-    "..hhhh#s.",
-    "..hhhh#..",
-    "..hhhh#..",
-    ".hhhh##..",
-    ".hhhh#s..",
-    ".hhhh#s..",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhh#...",
-    ".hhhss...",
-    "hhh#ss...",
-    "hhsss....",
-    "hhss.....",
-    ".ss......"
-  ], [
-    "..hhh......",
-    "..hhhh.....",
-    "hhhhhh#....",
-    "hhhhhh#s...",
-    "hhhhhhhhh#.",
-    "hhhhhhhhhhh",
-    ".hhhhhhhhhh",
-    "..###hhhhhh",
-    "..######hhh",
-    ".....##s##h",
-    ".........s#"
-  ]);
-addArms("ne", "hold", 2, 21, 20, [
-    "......h...",
-    "......h...",
-    "....hhhh#.",
-    "....hhhh#.",
-    "...hhhhh#s",
-    "...hhhh##s",
-    "...hhhh##.",
-    "...hhhh#s.",
-    "...hhhh#s.",
-    "...hhhh#s.",
-    "...hhhh#..",
-    "..hhhh#s..",
-    "..hhhh#s..",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    "..hhhh#...",
-    ".hhhh##...",
-    ".hhhh#s...",
-    ".hhhh#s...",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhh#....",
-    ".hhhss....",
-    "hhh#ss....",
-    "hhsss.....",
-    ".hss......",
-    ".ss......."
-  ], [
-    "...h...",
-    "...h...",
-    ".hhhh#.",
-    ".hhhh#.",
-    "hhhhh#s",
-    ".hhhhh.",
-    ".hhhhh#",
-    ".hhhhh#",
-    ".hhhhh#",
-    "..hhhh#",
-    "..hhh##",
-    "..hhhss",
-    "..hhh#s",
-    "..hhsss",
-    "..##h#.",
-    "...s#s."
-  ]);
-addArms("ne", "sit", 1, 21, 20, [
-    ".......h...",
-    ".......h...",
-    ".....hhhh#.",
-    ".....hhhh#.",
-    "....hhhh##s",
-    "....hhhh##s",
-    "....hhhh#s.",
-    "....hhhh#s.",
-    "....hhhh#s.",
-    "....hhhh#..",
-    "...hhhh#s..",
-    "...hhhh#s..",
-    "...hhhh#s..",
-    "...hhhh#...",
-    "..hhhh#s...",
-    "..hhhh#s...",
-    "..hhhh#....",
-    "..hhhh#....",
-    "..hhhh#....",
-    "..hhhh#....",
-    ".hhhh#s....",
-    ".hhhh#s....",
-    ".hhhss.....",
-    ".hh##s.....",
-    "hhhss......",
-    ".h#ss......",
-    ".sss......."
-  ], [
-    "...h.....",
-    "...h.....",
-    ".hhhh#...",
-    ".hhhh#...",
-    "hhhhh#s..",
-    "hhhhhh#..",
-    ".hhhhh#..",
-    ".hhhhh#..",
-    ".#hhhh#..",
-    "..hhhhh..",
-    "..hhhhh#.",
-    "..hhhhh#.",
-    "..hhhhh#.",
-    "...hhhh#.",
-    "...hhhh#.",
-    "...hhhhh.",
-    "...hhhhh#",
-    "...hhhhh#",
-    "....hhhh#",
-    "....hhhh#",
-    "....hhhh#",
-    "....hhhh#",
-    "....hhhss",
-    "....hhh##",
-    "....hhhss",
-    ".....#hhs",
-    "......#ss"
-  ]);
-
-function getArms(view, kind) {
-  return ARMS.find((a) => a.view === view && a.kind === kind)
-    || ARMS.find((a) => a.view === view && a.kind === "idle")
-    || ARMS.find((a) => a.view === "n" && a.kind === kind)
-    || ARMS.find((a) => a.view === "s" && a.kind === "idle");
-}
-
-/* ===== LEGS ===== */
-const LEGS = [];
-function addLegs(view, kind, y, rows) {
-  LEGS.push({ view, kind, layer: L(y, rows) });
-}
-
-addLegs("s", "idle", 42, [
-    "........qqqqqq=qpqqqqqqq........",
-    "........qqqqqq=qpqqqqqqq=.......",
-    "........qqqqqq=..qqqqqqq=.......",
-    "........qqqqqq=..qqqqqqq=.......",
-    "........qqqqqq=..qqqqqqq=.......",
-    ".......qqqqqq==..=qqqqqq=.......",
-    ".......qqqqqq=p...qqqqqq=.......",
-    ".......qqqqq==p...qqqqq==.......",
-    ".......qqqqq=pp...qqqqq=p.......",
-    ".......qqqqq=pp...qqqqq=p.......",
-    ".......qqqqq=p....qqqqq=p.......",
-    ".......qqqqq=p....qqqqq=p.......",
-    ".......qqqqq=p....qqqqq=p.......",
-    ".......qqqqq=p....qqqqq=p.......",
-    ".......qqqqq=p....qqqqq=p.......",
-    ".......qqqqq=p....qqqqq=p.......",
-    ".......qqqqq=p....qqqqq=p.......",
-    ".......qqqqq=p....qqqqq=p.......",
-    ".......qqqqq=p....qqqqq=p.......",
-    ".......qqqqq=p....qqqqq=p.......",
-    ".......qqqqq=p....qqqqq=p.......",
-    ".......qqqqq=p....qqqqq=p.......",
-    ".......qqqqq=p....qqqqq=p.......",
-    ".......qqqqq=p....qqqqq=p.......",
-    ".......qqqqq=p....qqqqq=p.......",
-    "........qqqq=......qqqq=........",
-    "........qqqq=......qqqq=........",
-    "........qqqq=......qqqq=........",
-    "........qqqpp......qqqpp........",
-    "........yyy$w......yyy$w........",
-    ".......yyyy$ww....yyyy$ww.......",
-    ".......$y$$$ww....$y$$$ww.......",
-    ".......$$$$$ww....$$$$$ww.......",
-    ".......$$$$$ww....$$$$$ww.......",
-    ".......ddddddd....ddddddd.......",
-    ".......ddddddd....ddddddd......."
-  ]);
-addLegs("s", "w0", 42, [
-    "........qqqqqq=qpqqqqqqq........",
-    "........qqqqqq=qpqqqqqqq=.......",
-    "........qqqqqq=..qqqqqqq=.......",
-    "........qqqqqq=..qqqqqqq=.......",
-    "........qqqqqq=..qqqqqqq=.......",
-    "........qqqqq==..=qqqqq==.......",
-    ".......qqqqqq=p...qqqqq=p.......",
-    ".......qqqqq==p...qqqqq=p.......",
-    ".......qqqqq=pp...qqqqq=p.......",
-    ".......qqqqq=pp...qqqqq=p.......",
-    ".......qqqqq=p....qqqqq=p.......",
-    ".......qqqqq=p....qqqqq=p.......",
-    ".......qqqqq=p....qqqqq=p.......",
-    ".......qqqqq=p....qqqqq=p.......",
-    ".......qqqqq=p....qqqqq=p.......",
-    ".......qqqqq=p....qqqqq=p.......",
-    ".......qqqqq=p....qqqqq=p.......",
-    ".......qqqqq=p....qqqqq=p.......",
-    ".......qqqqq=p....qqqqq=p.......",
-    ".......qqqqq=p....qqqqq=p.......",
-    ".......qqqqq=p....qqqqq=p.......",
-    ".......qqqqq=p....qqqqq=p.......",
-    ".......qqqqq=p.....qqqq=........",
-    ".......qqqqq=p.....qqqq=........",
-    ".......qqqqqq=.....qqqq=........",
-    "........qqqqq=.....qqqpp........",
-    "........qqqqq=.....yyy$w........",
-    "........qqqqq=....yyyy$ww.......",
-    "........=qqqpp....$y$$$ww.......",
-    ".........yyy$w....$$$$$ww.......",
-    "........yyyy$ww...$$$$$ww.......",
-    "........$y$$$ww...ddddddd.......",
-    "........$$$$$ww...ddddddd.......",
-    "........$$$$$ww.................",
-    "........ddddddd.................",
-    "........ddddddd................."
-  ]);
-addLegs("s", "w1", 42, [
-    "........qqqqqq=qpqqqqqq=........",
-    "........qqqqqq=qpqqqqqq=........",
-    "........qqqqqq=..qqqqqq=........",
-    "........qqqqqq=..qqqqqq=........",
-    "........qqqqqq=..qqqqqq=........",
-    "........qqqqqq=..qqqqq==........",
-    "........qqqqqq=..qqqqq=p........",
-    "........qqqq===..qqqqq=p........",
-    ".......qqqqq=pp..qqqqq=p........",
-    ".......qqqqq=pp..qqqqq=p........",
-    ".......qqqqq=pp..qqqqq=p........",
-    ".......qqqqq=pp..qqqqq=p........",
-    ".......qqqqq=p...qqqqq=p........",
-    ".......qqqqq=p...qqqqq=p........",
-    ".......qqqqq=p...qqqqq=p........",
-    ".......qqqqq=p...qqqqq=p........",
-    ".......qqqqq=p...qqqqq=p........",
-    ".......qqqqq=p...qqqqq=p........",
-    ".......qqqqq=p...qqqqq=p........",
-    ".......qqqqq=p...qqqqq=p........",
-    ".......qqqqq=p...qqqqq=p........",
-    ".......qqqqqq=....qqqq=.........",
-    ".......qqqqqq=....qqqq=.........",
-    "........qqqqq=p...qqqpp.........",
-    "........qqqqq=p...yyy$w.........",
-    ".........qqqq=...yyyy$ww........",
-    ".........qqqq=...$y$$$ww........",
-    ".........qqqq=...$$$$$ww........",
-    ".........qqqpp...$$$$$ww........",
-    ".........yyy$w...ddddddd........",
-    "........yyyy$ww..ddddddd........",
-    "........$y$$$ww.................",
-    "........$$$$$ww.................",
-    "........$$$$$ww.................",
-    "........ddddddd.................",
-    "........ddddddd................."
-  ]);
-addLegs("s", "w2", 42, [
-    "........qqqqqq=qpqqqqqq=........",
-    "........qqqqqq=qpqqqqqq=........",
-    "........qqqqqq=..qqqqqq=........",
-    "........qqqqqq=..qqqqqq=........",
-    "........qqqqqq=..qqqqqq=........",
-    "........qqqqq==..qqqqqq=........",
-    "........qqqq==p..qqqqqq=........",
-    ".......qqqqq=pp..qqqqq==........",
-    ".......qqqqq=pp..qqqqq=p........",
-    ".......qqqqq=pp..qqqqq=p........",
-    ".......qqqqq=p...qqqqq=p........",
-    ".......qqqqq=p...qqqqq=p........",
-    ".......qqqqq=p...qqqqq=p........",
-    ".......qqqqq=p...qqqqq=p........",
-    ".......qqqqq=p...qqqqq=p........",
-    ".......qqqqq=p...qqqqq=p........",
-    ".......qqqqq=p...qqqqq=p........",
-    ".......qqqqq=p...qqqqq=p........",
-    ".......qqqqqq=...qqqqq=p........",
-    ".......qqqqqq=...qqqqq=p........",
-    ".......qqqqqq=p..qqqqq=p........",
-    "........qqqqq=p..qqqqq=p........",
-    "........=qqqq=...qqqqq=p........",
-    ".........qqqq=...qqqqq=p........",
-    ".........qqqq=...qqqqq=p........",
-    ".........qqqpp....qqqq=.........",
-    ".........yyy$w....qqqq=.........",
-    "........yyyy$ww...qqqq=.........",
-    "........$y$$$ww...qqqpp.........",
-    "........$$$$$ww...yyy$w.........",
-    "........$$$$$ww..yyyy$ww........",
-    "........ddddddd..$y$$$ww........",
-    "........ddddddd..$$$$$ww........",
-    ".................$$$$$ww........",
-    ".................ddddddd........",
-    ".................ddddddd........"
-  ]);
-addLegs("s", "w3", 42, [
-    "........qqqqqq=qpqqqqqq=........",
-    "........qqqqqq=qpqqqqqq=........",
-    "........qqqqqq=..qqqqqq=........",
-    "........qqqqqq=..qqqqqq=........",
-    "........qqqqqq=..qqqqqq=........",
-    "........qqqq===..qqqqqq=........",
-    ".......qqqqq=pp..qqqqqq=........",
-    ".......qqqqq=pp..qqqqq==........",
-    ".......qqqqq=pp..qqqqq=p........",
-    ".......qqqqq=pp..qqqqq=p........",
-    ".......qqqqq=p...qqqqq=p........",
-    ".......qqqqq=p...qqqqq=p........",
-    ".......qqqqq=p...qqqqq=p........",
-    ".......qqqqq=p...qqqqq=p........",
-    ".......qqqqq=p...qqqqq=p........",
-    ".......qqqqq=p...qqqqq=p........",
-    ".......qqqqq=p...qqqqq=p........",
-    ".......qqqqqq=...qqqqq=p........",
-    ".......qqqqqq=p..qqqqq=p........",
-    "........qqqqq=p..qqqqq=p........",
-    "........qqqqq=p..qqqqq=p........",
-    ".........qqqq=...qqqqq=p........",
-    ".........qqqq=...qqqqq=p........",
-    ".........qqqpp...qqqqq=p........",
-    ".........yyy$w...qqqqq=p........",
-    "........yyyy$ww...qqqq=.........",
-    "........$y$$$ww...qqqq=.........",
-    "........$$$$$ww...qqqq=.........",
-    "........$$$$$ww...qqqpp.........",
-    "........ddddddd...yyy$w.........",
-    "........ddddddd..yyyy$ww........",
-    ".................$y$$$ww........",
-    ".................$$$$$ww........",
-    ".................$$$$$ww........",
-    ".................ddddddd........",
-    ".................ddddddd........"
-  ]);
-addLegs("s", "sit", 42, [
-    "..........qqqqqqpppppp..........",
-    ".........qqqqqqqppppppp.........",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    ".........qqqqq....qqqqq.........",
-    "........qqqqqq=..qqqqqq=........",
-    "........qqqqqq=.qqqqqq==........",
-    "........qqqqq==.qqqqqq==........",
-    "........qqqqq=p.qqqqqq=p........",
-    "........qqqqq=pqqqq=q==p........",
-    "........qqqqq=qqqqq===pp........",
-    "........qqqqqqqqqqq=ppp.........",
-    "........qqqqqqqqqqq=pp..........",
-    "........qqqqq=qqqqq=p...........",
-    "........==qqq==qqqppp...........",
-    ".........==yyy$yyy$w............",
-    "..........yyyyyyyy$ww...........",
-    "..........$y$$$y$$$ww...........",
-    "..........$$$$$$$$$ww...........",
-    "..........$$$$$$$$$ww...........",
-    "..........ddddddddddd...........",
-    "..........ddddddddddd..........."
-  ]);
-addLegs("se", "idle", 42, [
-    "........qqqqqq=qppqqqqqq=.......",
-    "........qqqqqq=qppqqqqqq=.......",
-    ".......qqqqqq=p...qqqqqq=.......",
-    ".......qqqqqq=p...qqqqqq=.......",
-    ".......qqqqqq=p...qqqqqq=.......",
-    ".......qqqqqq=p...qqqqqq=.......",
-    ".......qqqqqq=....qqqqqq=.......",
-    ".......qqqqq==....qqqqqq=.......",
-    ".......qqqqq=p....qqqqqq=p......",
-    ".......qqqqq=p....qqqqqq=p......",
-    ".......qqqqq=p....qqqqqq=p......",
-    ".......qqqqq=p....=qqqqq=p......",
-    ".......qqqqq=p.....qqqqq=p......",
-    ".......qqqqq=p.....qqqqq=p......",
-    ".......qqqqq=p.....qqqqq=p......",
-    ".......qqqqq=p.....qqqqq=p......",
-    ".......qqqqq=p.....qqqqq=p......",
-    ".......qqqqq=p.....qqqqq=p......",
-    ".......qqqqq=p.....qqqqq=p......",
-    ".......qqqqq=p.....qqqqq=p......",
-    ".......qqqqq=p.....qqqqq=p......",
-    ".......qqqqq=p.....qqqqq=p......",
-    ".......qqqqq=p.....qqqqq=p......",
-    ".......qqqqq=p.....qqqqq=p......",
-    ".......qqqqq=p.....qqqqq=p......",
-    "........qqqqq=......qqqq=.......",
-    "........qqqqq=......qqqq=.......",
-    "........qqqqq=......qqqq=.......",
-    "........=qqqpp......qqqpp.......",
-    ".........yyy$w......yyy$w.......",
-    "........yyyy$ww....yyyy$ww......",
-    "........$y$$$ww....$y$$$ww......",
-    "........$$$$$ww....$$$$$ww......",
-    "........$$$$$ww....$$$$$ww......",
-    "........ddddddd....ddddddd......",
-    "........ddddddd....ddddddd......"
-  ]);
-addLegs("se", "w0", 42, [
-    "........qqqqqq=qppqqqqqq=.......",
-    "........qqqqqq=qppqqqqqq=.......",
-    "........qqqqqq=...qqqqqq=.......",
-    "........qqqqqq=..qqqqqq==.......",
-    "........qqqqqq=..qqqqqq=p.......",
-    "........qqqqqqq..qqqqqq=p.......",
-    "........qqqqqqq=.qqqqq==p.......",
-    "........qqqqqq==.qqqqq=pp.......",
-    "........qqqqqq=p.qqqqq=p........",
-    "........qqqqqq=p.qqqqq=p........",
-    "........=qqqqq=p.qqqq==p........",
-    ".........qqqqq=pqqqqq=pp........",
-    ".........qqqqq=pqqqqq=pp........",
-    ".........qqqqqqpqqqqq=pp........",
-    ".........qqqqqq=qqqqq=p.........",
-    ".........qqqqqq=qqqqq=p.........",
-    ".........qqqqqq=qqqqq=p.........",
-    "..........qqqqq=qqqqq=p.........",
-    "..........qqqqq=qqqqq=p.........",
-    "..........qqqqq=qqqqq=p.........",
-    "..........qqqqq=qqqqq=p.........",
-    "..........qqqqq=qqqqq=p.........",
-    "..........qqqqq=pqqqq=..........",
-    "..........qqqqq=pqqqq=..........",
-    "..........qqqqq=pqqqq=..........",
-    "...........qqqq=.qqqpp..........",
-    "...........qqqq=.yyy$w..........",
-    "...........qqqq=yyyy$ww.........",
-    "...........qqqpp$y$$$ww.........",
-    "...........yyy$w$$$$$ww.........",
-    "..........yyyy$w$$$$$ww.........",
-    "..........$y$$$wddddddd.........",
-    "..........$$$$$wddddddd.........",
-    "..........$$$$$ww...............",
-    "..........ddddddd...............",
-    "..........ddddddd..............."
-  ]);
-addLegs("se", "w1", 42, [
-    "........qqqqqq=qppqqqqqq=.......",
-    "........qqqqqq=qppqqqqqq=.......",
-    "........qqqqqq=...qqqqqq=.......",
-    "........qqqqqq=...qqqqqq=.......",
-    "........qqqqqq=...qqqqqq=.......",
-    "........qqqqqq=...qqqqq==.......",
-    "........qqqqqq=...qqqq==p.......",
-    "........qqqqq==..qqqqq=pp.......",
-    "........qqqqq=p..qqqqq=pp.......",
-    "........qqqqq=p..qqqqq=pp.......",
-    "........qqqqq=p..qqqqq=p........",
-    "........qqqqqqp..qqqqq=p........",
-    "........qqqqqq=..qqqqq=p........",
-    "........qqqqqq=p.qqqqq=p........",
-    "........qqqqqq=p.qqqqq=p........",
-    "........qqqqqq=p.qqqqq=p........",
-    ".........qqqqq=p.qqqqq=p........",
-    ".........qqqqq=p.qqqqq=p........",
-    ".........qqqqq=p.qqqqq=p........",
-    ".........qqqqq=p.qqqqq=p........",
-    ".........qqqqq=p.qqqqq=p........",
-    ".........qqqqq=p..qqqqq=........",
-    ".........qqqqq=p..qqqqq=........",
-    ".........qqqqq=p..qqqqpp........",
-    ".........qqqqq=p..qyyy$w........",
-    "..........qqqq=...yyyy$ww.......",
-    "..........qqqq=...$y$$$ww.......",
-    "..........qqqq=...$$$$$ww.......",
-    "..........qqqpp...$$$$$ww.......",
-    "..........yyy$w...ddddddd.......",
-    ".........yyyy$ww..ddddddd.......",
-    ".........$y$$$ww................",
-    ".........$$$$$ww................",
-    ".........$$$$$ww................",
-    ".........ddddddd................",
-    ".........ddddddd................"
-  ]);
-addLegs("se", "w2", 42, [
-    ".......qqqqqq==qppqqqqqq=.......",
-    ".......qqqqqq=pqppqqqqqq=.......",
-    ".......qqqqqq=p...qqqqqqq.......",
-    ".......qqqqqq=p...qqqqqqq=......",
-    ".......qqqqqq=p...qqqqqqq=......",
-    ".......qqqqqq=....qqqqqqq=......",
-    ".......qqqqq==....qqqqqqq=......",
-    ".......qqqq==p....=qqqqq==......",
-    "......qqqqq=pp.....qqqqq=p......",
-    "......qqqqq=pp.....qqqqq=p......",
-    "......qqqqq=pp.....qqqqqqp......",
-    "......qqqqq=p......qqqqqq=......",
-    "......qqqqq=p......qqqqqq=p.....",
-    "......qqqqq=p......qqqqqq=p.....",
-    "......qqqqq=p.......qqqqq=p.....",
-    "......qqqqq=p.......qqqqq=p.....",
-    "......qqqqq=p.......qqqqq=p.....",
-    "......qqqqq=p.......qqqqq=p.....",
-    "......qqqq==p.......qqqqq=p.....",
-    "......qqqq==p.......qqqqq=p.....",
-    ".....qqqqq=pp.......qqqqq=p.....",
-    ".....qqqqq=p........qqqqqq=.....",
-    "......qqqq=p........qqqqqq=.....",
-    "......qqqq=.........qqqqqq=p....",
-    "......qqqq=..........qqqqq=p....",
-    "......qqqpp..........=qqqq=.....",
-    "......yyy$w...........qqqq=.....",
-    ".....yyyy$ww..........qqqq=.....",
-    ".....$y$$$ww..........qqqpp.....",
-    ".....$$$$$ww..........yyy$w.....",
-    ".....$$$$$ww.........yyyy$ww....",
-    ".....ddddddd.........$y$$$ww....",
-    ".....ddddddd.........$$$$$ww....",
-    ".....................$$$$$ww....",
-    ".....................ddddddd....",
-    ".....................ddddddd...."
-  ]);
-addLegs("se", "w3", 42, [
-    "........qqqqqq=qppqqqqqq=.......",
-    ".......qqqqqq=pqppqqqqqq=.......",
-    ".......qqqqqq=p...qqqqqq=.......",
-    ".......qqqqqq=p...qqqqqq=.......",
-    ".......qqqqqq=p...qqqqqq=.......",
-    ".......qqqqq==....qqqqqqq.......",
-    ".......qqqqq=p....qqqqqqq=......",
-    ".......qqqqq=p....qqqqqq==......",
-    ".......qqqqq=p....qqqqqq=p......",
-    ".......qqqqq=p....qqqqqq=p......",
-    ".......qqqqq=p....=qqqqq=p......",
-    ".......qqqqq=p.....qqqqq=p......",
-    ".......qqqqq=p.....qqqqq=p......",
-    ".......qqqqq=p.....qqqqq=p......",
-    ".......qqqqq=p.....qqqqq=p......",
-    ".......qqqqq=p.....qqqqq=p......",
-    ".......qqqqq=p.....qqqqq=p......",
-    ".......qqqqq=p.....qqqqq=p......",
-    ".......qqqqq=p.....qqqqq=p......",
-    ".......qqqqq=p.....qqqqq=p......",
-    ".......qqqqq=p.....qqqqq=p......",
-    "........qqqq=......qqqqq=p......",
-    "........qqqq=......qqqqq=p......",
-    "........qqqpp......qqqqq=p......",
-    "........yyy$w......qqqqq=p......",
-    ".......yyyy$ww......qqqq=.......",
-    ".......$y$$$ww......qqqq=.......",
-    ".......$$$$$ww......qqqq=.......",
-    ".......$$$$$ww......qqqpp.......",
-    ".......ddddddd......yyy$w.......",
-    ".......ddddddd.....yyyy$ww......",
-    "...................$y$$$ww......",
-    "...................$$$$$ww......",
-    "...................$$$$$ww......",
-    "...................ddddddd......",
-    "...................ddddddd......"
-  ]);
-addLegs("se", "sit", 42, [
-    "..........qqqqqqpppppp..........",
-    ".........qqqqqqqppppppp.........",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    ".........qqqqq.....qqqqq........",
-    "........qqqqqq=...qqqqqq=.......",
-    "........qqqqqq=..qqqqqq==.......",
-    "........qqqqq==..qqqqqq=p.......",
-    "........qqqqq=p.qqqqqq==p.......",
-    "........qqqqq=pqqqq=q==pp.......",
-    "........qqqqq=qqqqq===pp........",
-    "........qqqqqqqqqqq=pppp........",
-    "........qqqqqqqqqqq=ppp.........",
-    "........qqqqq=qqqqq=p...........",
-    "........==qqq==qqqppp...........",
-    ".........==yyy$yyy$w............",
-    "..........yyyyyyyy$ww...........",
-    "..........$y$$$y$$$ww...........",
-    "..........$$$$$$$$$ww...........",
-    "..........$$$$$$$$$ww...........",
-    "..........ddddddddddd...........",
-    "..........ddddddddddd..........."
-  ]);
-addLegs("e", "idle", 42, [
-    "............qqqqqqqqqq=.........",
-    "............qqqqqqqqqq=.........",
-    "............qqqqqqqqqq=.........",
-    "............qqqqqqqqqq=.........",
-    "............qqqqqqqqqq=.........",
-    "............qqqqqqqqqq=.........",
-    "............qqqqqqqqqq=.........",
-    "............qqqqqqqqq==.........",
-    "............qqqqqqqqq=p.........",
-    "............qqqqqqqqq=p.........",
-    "............qqqqqqqqq=p.........",
-    "............qqqqqqqqq=p.........",
-    "............qqqqqqqqqqp.........",
-    "...........qqqqqqqqqqq=.........",
-    "...........qqqqqqqqqqq=p........",
-    "...........qqqqqqqqqqq=p........",
-    "...........qqqqqqqqqqq=p........",
-    "...........qqqqqqqqqqq=p........",
-    "...........qqqqqqqqqqq=p........",
-    "...........qqqqqqqqqqq=p........",
-    "...........qqqqqqqqqqq=p........",
-    "............qqqqqqqqqq=p........",
-    "............qqqqqqqqqq=p........",
-    "............qqqqqqqqqq=p........",
-    "............qqqqqqqqqq=p........",
-    ".............qqqq=qqqq=.........",
-    ".............qqqq=qqqq=.........",
-    ".............qqqq=qqqq=.........",
-    ".............qqqppqqqpp.........",
-    ".............qyyy$qyyy$$........",
-    ".............yyyy$yyyy$$$w......",
-    ".............yyyy$yyyy$$$ww.....",
-    ".............$$$$$$$$$$$$ww.....",
-    ".............$$$$$$$$$$$$ww.....",
-    "............ddddddddddddddd.....",
-    "............ddddddddddddddd....."
-  ]);
-addLegs("e", "w0", 42, [
-    "............qqqqqqqqq=p.........",
-    "............qqqqqqqqq=p.........",
-    "............qqqqqqqqq=p.........",
-    "............qqqqqqqqq=p.........",
-    "............qqqqqqqqq=..........",
-    "............qqqqqqqq==..........",
-    "............=qqqqqqq=p..........",
-    ".............qqqqqq=pp..........",
-    ".............qqqqqq=pp..........",
-    ".............qqqqqq=pp..........",
-    ".............qqqqqq=p...........",
-    ".............qqqqq==p...........",
-    ".............qqqqq=pp...........",
-    ".............qqqqq=pp...........",
-    ".............qqqqq=p=...........",
-    ".............qqqqq=p=p..........",
-    ".............qqqqq=p=p..........",
-    ".............qqqqq=p=p..........",
-    ".............qqqqq=p=p..........",
-    ".............qqqq==p=p..........",
-    ".............qqqq==p=p..........",
-    "............qqqqq=ppq=..........",
-    ".............qqqq=pqq=..........",
-    ".............qqqq=pqq=p.........",
-    ".............qqqq=qqq=p.........",
-    ".............qqqppqqq=..........",
-    ".............qyyy$$qq=..........",
-    ".............yyyy$$$w=..........",
-    ".............yyyy$$$ww..........",
-    ".............$$$$$$$ww$.........",
-    ".............$$$$$$$ww$$w.......",
-    "............dddddddddd$$ww......",
-    "............dddddddddd$$ww......",
-    ".................$$$$$$$ww......",
-    "................dddddddddd......",
-    "................dddddddddd......"
-  ]);
-addLegs("e", "w1", 42, [
-    "............qqqqqqqqq=p.........",
-    "............qqqqqqqqq=p.........",
-    "............qqqqqqqqq=p.........",
-    "............qqqqqqqqq=p.........",
-    "............qqqqqqqqq=..........",
-    "............qqqqqqqq==..........",
-    "............qqqqqqqq=p..........",
-    "............qqqqqqqq=p..........",
-    "............qqqqqqqq=p..........",
-    "............=qqqqqqq=p..........",
-    ".............qqqqqqq=p..........",
-    ".............qqqqqqq=p..........",
-    ".............qqqqqqq=p..........",
-    ".............qqqqqqq=p..........",
-    ".............qqqqqqq=p..........",
-    ".............qqqqqqq=p..........",
-    ".............qqqqqqq=p..........",
-    ".............qqqqqqq=p..........",
-    ".............qqqqqqq=p..........",
-    ".............qqqqqqq=p..........",
-    ".............qqqqqqq=p..........",
-    ".............qqqqqqq=...........",
-    ".............qqqqqqq=...........",
-    ".............qqqqqqpp...........",
-    ".............qqqqyyy$$..........",
-    "..............qqyyyy$$$w........",
-    "..............qqyyyy$$$ww.......",
-    "..............qq$$$$$$$ww.......",
-    "..............qq$$$$$$$ww.......",
-    "..............qdddddddddd.......",
-    "..............ydddddddddd.......",
-    "..............yyyy$$$ww.........",
-    "..............$$$$$$$ww.........",
-    "..............$$$$$$$ww.........",
-    ".............dddddddddd.........",
-    ".............dddddddddd........."
-  ]);
-addLegs("e", "w2", 42, [
-    "............qqqqqqqqqq=.........",
-    "............qqqqqqqqqq=.........",
-    "...........qqqqqqqqqqq=.........",
-    "...........qqqqqqqqqqq=.........",
-    "...........qqqqqqqqqqqq.........",
-    "...........qqqqqqqqqqqq=........",
-    "...........qqqqqqqqqqqq=........",
-    "...........qqqqqqqqqqq==........",
-    "...........qqqq=qqqqqq=p........",
-    "..........qqqqq==qqqqq=p........",
-    "..........qqqqq=pqqqqqqp........",
-    "..........qqqqq=pqqqqqq=........",
-    "..........qqqqq=pqqqqqq=p.......",
-    "..........qqqqq=pqqqqqq=p.......",
-    "..........qqqq==p.qqqqq=p.......",
-    ".........qqqqq=pp.qqqqq=p.......",
-    ".........qqqqq=pp.qqqqqqp.......",
-    ".........qqqqq=pp.qqqqqq=.......",
-    ".........qqqqq=p..qqqqqq=p......",
-    ".........qqqqq=p..qqqqqq=p......",
-    ".........qqqqq=p..qqqqqq=p......",
-    ".........qqqqq=p...qqqqq=p......",
-    "..........qqqq=....qqqqq=p......",
-    "..........qqqq=....qqqqq=p......",
-    "..........qqqq=....qqqqq=p......",
-    "..........qqqpp.....qqqqq=......",
-    "..........=yyy$$....qqqqq=......",
-    "..........yyyy$$$w..qqqqq=......",
-    "..........yyyy$$$ww.qqqqpp......",
-    "..........$$$$$$$ww.=qyyy$$.....",
-    "..........$$$$$$$ww..yyyy$$$w...",
-    ".........dddddddddd..yyyy$$$ww..",
-    ".........dddddddddd..$$$$$$$ww..",
-    ".....................$$$$$$$ww..",
-    "....................dddddddddd..",
-    "....................dddddddddd.."
-  ]);
-addLegs("e", "w3", 42, [
-    "............qqqqqqqqqq=.........",
-    "............qqqqqqqqqq=.........",
-    "............qqqqqqqqqq=.........",
-    "............qqqqqqqqqq=.........",
-    "............qqqqqqqqqq=.........",
-    "............qqqqqqqqqq=.........",
-    "............qqqqqqqqqq=.........",
-    "...........qqqqqqqqqq==.........",
-    "...........qqqqqqqqqq=p.........",
-    "...........qqqqqqqqqq=p.........",
-    "...........qqqqqqqqqqqp.........",
-    "...........qqqqqqqqqqq=.........",
-    "...........qqqqqqqqqqq=p........",
-    "...........qqqqqqqqqqq=p........",
-    "...........qqqqqqqqqqq=p........",
-    "...........qqqqq=qqqqq=p........",
-    "...........qqqqq=qqqqq=p........",
-    "...........qqqqq=qqqqq=p........",
-    "...........qqqqq=qqqqq=p........",
-    "...........qqqqq=qqqqq=p........",
-    "...........qqqqq=qqqqq=p........",
-    "............qqqq=qqqqq=p........",
-    "............qqqq=qqqqq=p........",
-    "............qqqppqqqqq=p........",
-    "............qyyy$qqqqq=p........",
-    "............yyyy$$qqqq=.........",
-    "............yyyy$$qqqq=.........",
-    "............$$$$$$qqqq=.........",
-    "............$$$$$$qqqpp.........",
-    "...........dddddddqyyy$$........",
-    "...........dddddddyyyy$$$w......",
-    "..................yyyy$$$ww.....",
-    "..................$$$$$$$ww.....",
-    "..................$$$$$$$ww.....",
-    ".................dddddddddd.....",
-    ".................dddddddddd....."
-  ]);
-addLegs("e", "sit", 42, [
-    "..............qqqppp............",
-    ".............qqqqpppp...........",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    ".............qqqqqqqq...........",
-    "............qqqqqqqqq==.........",
-    "...........qqqqqqqqqq=p.........",
-    "...........qqqqqqqqqq=p.........",
-    "..........qqqqqqqqqqqpp.........",
-    ".........qqqq=qqqqq=ppp.........",
-    "........qqqqq=qqqqq==p..........",
-    "........qqqqqqqqqqq=pp..........",
-    "........qqqqqqqqqqq=p...........",
-    "........qqqqq=qqqqq=p...........",
-    "........==qqq==qqqppp...........",
-    ".........===yyyqyyy$$...........",
-    "..........=yyyyyyyy$$$w.........",
-    "...........yyyyyyyy$$$ww........",
-    "...........$$$$$$$$$$$ww........",
-    "...........$$$$$$$$$$$ww........",
-    "..........dddddddddddddd........",
-    "..........dddddddddddddd........"
-  ]);
-addLegs("n", "idle", 42, [
-    "........qqqqqq=qpqqqqqqq........",
-    "........qqqqqq=qpqqqqqqq=.......",
-    "........qqqqqq=..qqqqqqq=.......",
-    "........qqqqqq=..qqqqqqq=.......",
-    "........qqqqqq=..qqqqqqq=.......",
-    ".......qqqqqq==..=qqqqqq=.......",
-    ".......qqqqqq=p...qqqqqq=.......",
-    ".......qqqqq==p...qqqqq==.......",
-    ".......qqqqq=pp...qqqqq=p.......",
-    ".......qqqqq=pp...qqqqq=p.......",
-    ".......qqqqq=p....qqqqq=p.......",
-    ".......qqqqq=p....qqqqq=p.......",
-    ".......qqqqq=p....qqqqq=p.......",
-    ".......qqqqq=p....qqqqq=p.......",
-    ".......qqqqq=p....qqqqq=p.......",
-    ".......qqqqq=p....qqqqq=p.......",
-    ".......qqqqq=p....qqqqq=p.......",
-    ".......qqqqq=p....qqqqq=p.......",
-    ".......qqqqq=p....qqqqq=p.......",
-    ".......qqqqq=p....qqqqq=p.......",
-    ".......qqqqq=p....qqqqq=p.......",
-    ".......qqqqq=p....qqqqq=p.......",
-    ".......qqqqq=p....qqqqq=p.......",
-    ".......qqqqq=p....qqqqq=p.......",
-    ".......qqqqq=p....qqqqq=p.......",
-    "........qqqq=......qqqq=........",
-    "........qqqq=......qqqq=........",
-    "........qqqq=......qqqq=........",
-    "........qqqpp......qqqpp........",
-    "........yyy$w......yyy$w........",
-    ".......yyyy$ww....yyyy$ww.......",
-    ".......$y$$$ww....$y$$$ww.......",
-    ".......$$$$$ww....$$$$$ww.......",
-    ".......$$$$$ww....$$$$$ww.......",
-    ".......ddddddd....ddddddd.......",
-    ".......ddddddd....ddddddd......."
-  ]);
-addLegs("n", "w0", 42, [
-    "........qqqqqq=qpqqqqqqq........",
-    "........qqqqqq=qpqqqqqqq=.......",
-    "........qqqqqq=..qqqqqqq=.......",
-    "........qqqqqq=..qqqqqqq=.......",
-    "........qqqqqq=..qqqqqqq=.......",
-    "........qqqqq==..=qqqqq==.......",
-    ".......qqqqqq=p...qqqqq=p.......",
-    ".......qqqqq==p...qqqqq=p.......",
-    ".......qqqqq=pp...qqqqq=p.......",
-    ".......qqqqq=pp...qqqqq=p.......",
-    ".......qqqqq=p....qqqqq=p.......",
-    ".......qqqqq=p....qqqqq=p.......",
-    ".......qqqqq=p....qqqqq=p.......",
-    ".......qqqqq=p....qqqqq=p.......",
-    ".......qqqqq=p....qqqqq=p.......",
-    ".......qqqqq=p....qqqqq=p.......",
-    ".......qqqqq=p....qqqqq=p.......",
-    ".......qqqqq=p....qqqqq=p.......",
-    ".......qqqqq=p....qqqqq=p.......",
-    ".......qqqqq=p....qqqqq=p.......",
-    ".......qqqqq=p....qqqqq=p.......",
-    ".......qqqqq=p....qqqqq=p.......",
-    ".......qqqqq=p.....qqqq=........",
-    ".......qqqqq=p.....qqqq=........",
-    ".......qqqqqq=.....qqqq=........",
-    "........qqqqq=.....qqqpp........",
-    "........qqqqq=.....yyy$w........",
-    "........qqqqq=....yyyy$ww.......",
-    "........=qqqpp....$y$$$ww.......",
-    ".........yyy$w....$$$$$ww.......",
-    "........yyyy$ww...$$$$$ww.......",
-    "........$y$$$ww...ddddddd.......",
-    "........$$$$$ww...ddddddd.......",
-    "........$$$$$ww.................",
-    "........ddddddd.................",
-    "........ddddddd................."
-  ]);
-addLegs("n", "w1", 42, [
-    "........qqqqqq=qpqqqqqq=........",
-    "........qqqqqq=qpqqqqqq=........",
-    "........qqqqqq=..qqqqqq=........",
-    "........qqqqqq=..qqqqqq=........",
-    "........qqqqqq=..qqqqqq=........",
-    "........qqqqqq=..qqqqq==........",
-    "........qqqqqq=..qqqqq=p........",
-    "........qqqq===..qqqqq=p........",
-    ".......qqqqq=pp..qqqqq=p........",
-    ".......qqqqq=pp..qqqqq=p........",
-    ".......qqqqq=pp..qqqqq=p........",
-    ".......qqqqq=pp..qqqqq=p........",
-    ".......qqqqq=p...qqqqq=p........",
-    ".......qqqqq=p...qqqqq=p........",
-    ".......qqqqq=p...qqqqq=p........",
-    ".......qqqqq=p...qqqqq=p........",
-    ".......qqqqq=p...qqqqq=p........",
-    ".......qqqqq=p...qqqqq=p........",
-    ".......qqqqq=p...qqqqq=p........",
-    ".......qqqqq=p...qqqqq=p........",
-    ".......qqqqq=p...qqqqq=p........",
-    ".......qqqqqq=....qqqq=.........",
-    ".......qqqqqq=....qqqq=.........",
-    "........qqqqq=p...qqqpp.........",
-    "........qqqqq=p...yyy$w.........",
-    ".........qqqq=...yyyy$ww........",
-    ".........qqqq=...$y$$$ww........",
-    ".........qqqq=...$$$$$ww........",
-    ".........qqqpp...$$$$$ww........",
-    ".........yyy$w...ddddddd........",
-    "........yyyy$ww..ddddddd........",
-    "........$y$$$ww.................",
-    "........$$$$$ww.................",
-    "........$$$$$ww.................",
-    "........ddddddd.................",
-    "........ddddddd................."
-  ]);
-addLegs("n", "w2", 42, [
-    "........qqqqqq=qpqqqqqq=........",
-    "........qqqqqq=qpqqqqqq=........",
-    "........qqqqqq=..qqqqqq=........",
-    "........qqqqqq=..qqqqqq=........",
-    "........qqqqqq=..qqqqqq=........",
-    "........qqqqq==..qqqqqq=........",
-    "........qqqq==p..qqqqqq=........",
-    ".......qqqqq=pp..qqqqq==........",
-    ".......qqqqq=pp..qqqqq=p........",
-    ".......qqqqq=pp..qqqqq=p........",
-    ".......qqqqq=p...qqqqq=p........",
-    ".......qqqqq=p...qqqqq=p........",
-    ".......qqqqq=p...qqqqq=p........",
-    ".......qqqqq=p...qqqqq=p........",
-    ".......qqqqq=p...qqqqq=p........",
-    ".......qqqqq=p...qqqqq=p........",
-    ".......qqqqq=p...qqqqq=p........",
-    ".......qqqqq=p...qqqqq=p........",
-    ".......qqqqqq=...qqqqq=p........",
-    ".......qqqqqq=...qqqqq=p........",
-    ".......qqqqqq=p..qqqqq=p........",
-    "........qqqqq=p..qqqqq=p........",
-    "........=qqqq=...qqqqq=p........",
-    ".........qqqq=...qqqqq=p........",
-    ".........qqqq=...qqqqq=p........",
-    ".........qqqpp....qqqq=.........",
-    ".........yyy$w....qqqq=.........",
-    "........yyyy$ww...qqqq=.........",
-    "........$y$$$ww...qqqpp.........",
-    "........$$$$$ww...yyy$w.........",
-    "........$$$$$ww..yyyy$ww........",
-    "........ddddddd..$y$$$ww........",
-    "........ddddddd..$$$$$ww........",
-    ".................$$$$$ww........",
-    ".................ddddddd........",
-    ".................ddddddd........"
-  ]);
-addLegs("n", "w3", 42, [
-    "........qqqqqq=qpqqqqqq=........",
-    "........qqqqqq=qpqqqqqq=........",
-    "........qqqqqq=..qqqqqq=........",
-    "........qqqqqq=..qqqqqq=........",
-    "........qqqqqq=..qqqqqq=........",
-    "........qqqq===..qqqqqq=........",
-    ".......qqqqq=pp..qqqqqq=........",
-    ".......qqqqq=pp..qqqqq==........",
-    ".......qqqqq=pp..qqqqq=p........",
-    ".......qqqqq=pp..qqqqq=p........",
-    ".......qqqqq=p...qqqqq=p........",
-    ".......qqqqq=p...qqqqq=p........",
-    ".......qqqqq=p...qqqqq=p........",
-    ".......qqqqq=p...qqqqq=p........",
-    ".......qqqqq=p...qqqqq=p........",
-    ".......qqqqq=p...qqqqq=p........",
-    ".......qqqqq=p...qqqqq=p........",
-    ".......qqqqqq=...qqqqq=p........",
-    ".......qqqqqq=p..qqqqq=p........",
-    "........qqqqq=p..qqqqq=p........",
-    "........qqqqq=p..qqqqq=p........",
-    ".........qqqq=...qqqqq=p........",
-    ".........qqqq=...qqqqq=p........",
-    ".........qqqpp...qqqqq=p........",
-    ".........yyy$w...qqqqq=p........",
-    "........yyyy$ww...qqqq=.........",
-    "........$y$$$ww...qqqq=.........",
-    "........$$$$$ww...qqqq=.........",
-    "........$$$$$ww...qqqpp.........",
-    "........ddddddd...yyy$w.........",
-    "........ddddddd..yyyy$ww........",
-    ".................$y$$$ww........",
-    ".................$$$$$ww........",
-    ".................$$$$$ww........",
-    ".................ddddddd........",
-    ".................ddddddd........"
-  ]);
-addLegs("n", "sit", 42, [
-    "..........qqqqqqpppppp..........",
-    ".........qqqqqqqppppppp.........",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    ".........qqqqq....qqqqq.........",
-    "........qqqqqq=..qqqqqq=........",
-    "........qqqqqq=.qqqqqq==........",
-    "........qqqqq==.qqqqqq==........",
-    "........qqqqq=p.qqqqqq=p........",
-    "........qqqqq=pqqqq=q==p........",
-    "........qqqqq=qqqqq===pp........",
-    "........qqqqqqqqqqq=ppp.........",
-    "........qqqqqqqqqqq=pp..........",
-    "........qqqqq=qqqqq=p...........",
-    "........==qqq==qqqppp...........",
-    ".........==yyy$yyy$w............",
-    "..........yyyyyyyy$ww...........",
-    "..........$y$$$y$$$ww...........",
-    "..........$$$$$$$$$ww...........",
-    "..........$$$$$$$$$ww...........",
-    "..........ddddddddddd...........",
-    "..........ddddddddddd..........."
-  ]);
-addLegs("ne", "idle", 42, [
-    "........qqqqqq=qppqqqqqq=.......",
-    "........qqqqqq=qppqqqqqq=.......",
-    ".......qqqqqq=p...qqqqqq=.......",
-    ".......qqqqqq=p...qqqqqq=.......",
-    ".......qqqqqq=p...qqqqqq=.......",
-    ".......qqqqqq=p...qqqqqq=.......",
-    ".......qqqqqq=....qqqqqq=.......",
-    ".......qqqqq==....qqqqqq=.......",
-    ".......qqqqq=p....qqqqqq=p......",
-    ".......qqqqq=p....qqqqqq=p......",
-    ".......qqqqq=p....qqqqqq=p......",
-    ".......qqqqq=p....=qqqqq=p......",
-    ".......qqqqq=p.....qqqqq=p......",
-    ".......qqqqq=p.....qqqqq=p......",
-    ".......qqqqq=p.....qqqqq=p......",
-    ".......qqqqq=p.....qqqqq=p......",
-    ".......qqqqq=p.....qqqqq=p......",
-    ".......qqqqq=p.....qqqqq=p......",
-    ".......qqqqq=p.....qqqqq=p......",
-    ".......qqqqq=p.....qqqqq=p......",
-    ".......qqqqq=p.....qqqqq=p......",
-    ".......qqqqq=p.....qqqqq=p......",
-    ".......qqqqq=p.....qqqqq=p......",
-    ".......qqqqq=p.....qqqqq=p......",
-    ".......qqqqq=p.....qqqqq=p......",
-    "........qqqqq=......qqqq=.......",
-    "........qqqqq=......qqqq=.......",
-    "........qqqqq=......qqqq=.......",
-    "........=qqqpp......qqqpp.......",
-    ".........yyy$w......yyy$w.......",
-    "........yyyy$ww....yyyy$ww......",
-    "........$y$$$ww....$y$$$ww......",
-    "........$$$$$ww....$$$$$ww......",
-    "........$$$$$ww....$$$$$ww......",
-    "........ddddddd....ddddddd......",
-    "........ddddddd....ddddddd......"
-  ]);
-addLegs("ne", "w0", 42, [
-    "........qqqqqq=qppqqqqqq=.......",
-    "........qqqqqq=qppqqqqqq=.......",
-    "........qqqqqq=...qqqqqq=.......",
-    "........qqqqqq=..qqqqqq==.......",
-    "........qqqqqq=..qqqqqq=p.......",
-    "........qqqqqqq..qqqqqq=p.......",
-    "........qqqqqqq=.qqqqq==p.......",
-    "........qqqqqq==.qqqqq=pp.......",
-    "........qqqqqq=p.qqqqq=p........",
-    "........qqqqqq=p.qqqqq=p........",
-    "........=qqqqq=p.qqqq==p........",
-    ".........qqqqq=pqqqqq=pp........",
-    ".........qqqqq=pqqqqq=pp........",
-    ".........qqqqqqpqqqqq=pp........",
-    ".........qqqqqq=qqqqq=p.........",
-    ".........qqqqqq=qqqqq=p.........",
-    ".........qqqqqq=qqqqq=p.........",
-    "..........qqqqq=qqqqq=p.........",
-    "..........qqqqq=qqqqq=p.........",
-    "..........qqqqq=qqqqq=p.........",
-    "..........qqqqq=qqqqq=p.........",
-    "..........qqqqq=qqqqq=p.........",
-    "..........qqqqq=pqqqq=..........",
-    "..........qqqqq=pqqqq=..........",
-    "..........qqqqq=pqqqq=..........",
-    "...........qqqq=.qqqpp..........",
-    "...........qqqq=.yyy$w..........",
-    "...........qqqq=yyyy$ww.........",
-    "...........qqqpp$y$$$ww.........",
-    "...........yyy$w$$$$$ww.........",
-    "..........yyyy$w$$$$$ww.........",
-    "..........$y$$$wddddddd.........",
-    "..........$$$$$wddddddd.........",
-    "..........$$$$$ww...............",
-    "..........ddddddd...............",
-    "..........ddddddd..............."
-  ]);
-addLegs("ne", "w1", 42, [
-    "........qqqqqq=qppqqqqqq=.......",
-    "........qqqqqq=qppqqqqqq=.......",
-    "........qqqqqq=...qqqqqq=.......",
-    "........qqqqqq=...qqqqqq=.......",
-    "........qqqqqq=...qqqqqq=.......",
-    "........qqqqqq=...qqqqq==.......",
-    "........qqqqqq=...qqqq==p.......",
-    "........qqqqq==..qqqqq=pp.......",
-    "........qqqqq=p..qqqqq=pp.......",
-    "........qqqqq=p..qqqqq=pp.......",
-    "........qqqqq=p..qqqqq=p........",
-    "........qqqqqqp..qqqqq=p........",
-    "........qqqqqq=..qqqqq=p........",
-    "........qqqqqq=p.qqqqq=p........",
-    "........qqqqqq=p.qqqqq=p........",
-    "........qqqqqq=p.qqqqq=p........",
-    ".........qqqqq=p.qqqqq=p........",
-    ".........qqqqq=p.qqqqq=p........",
-    ".........qqqqq=p.qqqqq=p........",
-    ".........qqqqq=p.qqqqq=p........",
-    ".........qqqqq=p.qqqqq=p........",
-    ".........qqqqq=p..qqqqq=........",
-    ".........qqqqq=p..qqqqq=........",
-    ".........qqqqq=p..qqqqpp........",
-    ".........qqqqq=p..qyyy$w........",
-    "..........qqqq=...yyyy$ww.......",
-    "..........qqqq=...$y$$$ww.......",
-    "..........qqqq=...$$$$$ww.......",
-    "..........qqqpp...$$$$$ww.......",
-    "..........yyy$w...ddddddd.......",
-    ".........yyyy$ww..ddddddd.......",
-    ".........$y$$$ww................",
-    ".........$$$$$ww................",
-    ".........$$$$$ww................",
-    ".........ddddddd................",
-    ".........ddddddd................"
-  ]);
-addLegs("ne", "w2", 42, [
-    ".......qqqqqq==qppqqqqqq=.......",
-    ".......qqqqqq=pqppqqqqqq=.......",
-    ".......qqqqqq=p...qqqqqqq.......",
-    ".......qqqqqq=p...qqqqqqq=......",
-    ".......qqqqqq=p...qqqqqqq=......",
-    ".......qqqqqq=....qqqqqqq=......",
-    ".......qqqqq==....qqqqqqq=......",
-    ".......qqqq==p....=qqqqq==......",
-    "......qqqqq=pp.....qqqqq=p......",
-    "......qqqqq=pp.....qqqqq=p......",
-    "......qqqqq=pp.....qqqqqqp......",
-    "......qqqqq=p......qqqqqq=......",
-    "......qqqqq=p......qqqqqq=p.....",
-    "......qqqqq=p......qqqqqq=p.....",
-    "......qqqqq=p.......qqqqq=p.....",
-    "......qqqqq=p.......qqqqq=p.....",
-    "......qqqqq=p.......qqqqq=p.....",
-    "......qqqqq=p.......qqqqq=p.....",
-    "......qqqq==p.......qqqqq=p.....",
-    "......qqqq==p.......qqqqq=p.....",
-    ".....qqqqq=pp.......qqqqq=p.....",
-    ".....qqqqq=p........qqqqqq=.....",
-    "......qqqq=p........qqqqqq=.....",
-    "......qqqq=.........qqqqqq=p....",
-    "......qqqq=..........qqqqq=p....",
-    "......qqqpp..........=qqqq=.....",
-    "......yyy$w...........qqqq=.....",
-    ".....yyyy$ww..........qqqq=.....",
-    ".....$y$$$ww..........qqqpp.....",
-    ".....$$$$$ww..........yyy$w.....",
-    ".....$$$$$ww.........yyyy$ww....",
-    ".....ddddddd.........$y$$$ww....",
-    ".....ddddddd.........$$$$$ww....",
-    ".....................$$$$$ww....",
-    ".....................ddddddd....",
-    ".....................ddddddd...."
-  ]);
-addLegs("ne", "w3", 42, [
-    "........qqqqqq=qppqqqqqq=.......",
-    ".......qqqqqq=pqppqqqqqq=.......",
-    ".......qqqqqq=p...qqqqqq=.......",
-    ".......qqqqqq=p...qqqqqq=.......",
-    ".......qqqqqq=p...qqqqqq=.......",
-    ".......qqqqq==....qqqqqqq.......",
-    ".......qqqqq=p....qqqqqqq=......",
-    ".......qqqqq=p....qqqqqq==......",
-    ".......qqqqq=p....qqqqqq=p......",
-    ".......qqqqq=p....qqqqqq=p......",
-    ".......qqqqq=p....=qqqqq=p......",
-    ".......qqqqq=p.....qqqqq=p......",
-    ".......qqqqq=p.....qqqqq=p......",
-    ".......qqqqq=p.....qqqqq=p......",
-    ".......qqqqq=p.....qqqqq=p......",
-    ".......qqqqq=p.....qqqqq=p......",
-    ".......qqqqq=p.....qqqqq=p......",
-    ".......qqqqq=p.....qqqqq=p......",
-    ".......qqqqq=p.....qqqqq=p......",
-    ".......qqqqq=p.....qqqqq=p......",
-    ".......qqqqq=p.....qqqqq=p......",
-    "........qqqq=......qqqqq=p......",
-    "........qqqq=......qqqqq=p......",
-    "........qqqpp......qqqqq=p......",
-    "........yyy$w......qqqqq=p......",
-    ".......yyyy$ww......qqqq=.......",
-    ".......$y$$$ww......qqqq=.......",
-    ".......$$$$$ww......qqqq=.......",
-    ".......$$$$$ww......qqqpp.......",
-    ".......ddddddd......yyy$w.......",
-    ".......ddddddd.....yyyy$ww......",
-    "...................$y$$$ww......",
-    "...................$$$$$ww......",
-    "...................$$$$$ww......",
-    "...................ddddddd......",
-    "...................ddddddd......"
-  ]);
-addLegs("ne", "sit", 42, [
-    "..........qqqqqqpppppp..........",
-    ".........qqqqqqqppppppp.........",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    ".........qqqqq.....qqqqq........",
-    "........qqqqqq=...qqqqqq=.......",
-    "........qqqqqq=..qqqqqq==.......",
-    "........qqqqq==..qqqqqq=p.......",
-    "........qqqqq=p.qqqqqq==p.......",
-    "........qqqqq=pqqqq=q==pp.......",
-    "........qqqqq=qqqqq===pp........",
-    "........qqqqqqqqqqq=pppp........",
-    "........qqqqqqqqqqq=ppp.........",
-    "........qqqqq=qqqqq=p...........",
-    "........==qqq==qqqppp...........",
-    ".........==yyy$yyy$w............",
-    "..........yyyyyyyy$ww...........",
-    "..........$y$$$y$$$ww...........",
-    "..........$$$$$$$$$ww...........",
-    "..........$$$$$$$$$ww...........",
-    "..........ddddddddddd...........",
-    "..........ddddddddddd..........."
-  ]);
-
-function getLegs(view, kind) {
-  return (LEGS.find((a) => a.view === view && a.kind === kind)
-    || LEGS.find((a) => a.view === view && a.kind === "idle")).layer;
-}
-
-/* ===== TOPS (torso only; sleeves are painted from arm skin) ===== */
-const TOPS = {
-  tshirt: {
-    s: L(21, [
-        "........++++++...++++++.........",
-        ".......+++++++++++++++++........",
-        ".......+++++++++++++++++........",
-        ".......+++++++++++++++++........",
-        ".......+++++++++++++++++........",
-        ".......+++++++++++++++++........",
-        ".......+++++++++++++++++........",
-        "........+++++++++++++++.........",
-        "........+++++++++++++++.........",
-        "........+++++++++++++++.........",
-        ".........+++++++++++++..........",
-        ".........+++++++++++++..........",
-        ".........+++++++++++++..........",
-        ".........+++++++++++++..........",
-        ".........+++++++++++++..........",
-        "........+++++++++++++++.........",
-        "........+++++++++++++++.........",
-        "........+++++++++++++++.........",
-        "........+++++++++++++++.........",
-        "........+++++++++++++++.........",
-        "........+++++++++++++++.........",
-        "........+++++++++++++++........."
-      ]),
-    se: L(21, [
-        ".........+++++....+++++.........",
-        "........++++++++++++++++........",
-        ".......+++++++++++++++++%.......",
-        ".......+++++++++++++++++%.......",
-        "........++++++++++++++++........",
-        "........++++++++++++++++........",
-        "........++++++++++++++++........",
-        "........++++++++++++++++........",
-        ".........++++++++++++++.........",
-        ".........++++++++++++++.........",
-        ".........++++++++++++++.........",
-        "..........++++++++++++..........",
-        "..........++++++++++++..........",
-        ".........++++++++++++++.........",
-        ".........++++++++++++++.........",
-        ".........++++++++++++++.........",
-        ".........++++++++++++++.........",
-        ".........++++++++++++++.........",
-        ".........++++++++++++++.........",
-        "........++++++++++++++++........",
-        ".........++++++++++++++.........",
-        ".........++++++++++++++........."
-      ]),
-    e: L(21, [
-        "...........+++++++++++..........",
-        ".........++++++++++++++.........",
-        ".........++++++++++++++.........",
-        ".........++++++++++++++.........",
-        ".........++++++++++++++.........",
-        "..........+++++++++++++.........",
-        "..........+++++++++++++.........",
-        "..........+++++++++++++.........",
-        "..........++++++++++++..........",
-        "..........++++++++++++..........",
-        "..........++++++++++++..........",
-        "...........+++++++++++..........",
-        "...........+++++++++++..........",
-        "..........++++++++++++..........",
-        "..........++++++++++++..........",
-        "..........++++++++++++..........",
-        "..........++++++++++++..........",
-        "..........+++++++++++++.........",
-        "..........+++++++++++++.........",
-        ".........++++++++++++++.........",
-        ".........++++++++++++++.........",
-        "..........+++++++++++++........."
-      ]),
-    n: L(21, [
-        "........+++++++++++++++.........",
-        ".......+++++++++++++++++........",
-        ".......+++++++++++++++++........",
-        ".......+++++++++++++++++........",
-        ".......+++++++++++++++++........",
-        ".......+++++++++++++++++........",
-        ".......+++++++++++++++++........",
-        "........+++++++++++++++.........",
-        "........+++++++++++++++.........",
-        "........+++++++++++++++.........",
-        ".........+++++++++++++..........",
-        ".........+++++++++++++..........",
-        ".........+++++++++++++..........",
-        ".........+++++++++++++..........",
-        ".........+++++++++++++..........",
-        "........+++++++++++++++.........",
-        "........+++++++++++++++.........",
-        "........+++++++++++++++.........",
-        "........+++++++++++++++.........",
-        "........+++++++++++++++.........",
-        "........+++++++++++++++.........",
-        "........+++++++++++++++........."
-      ]),
-    ne: L(21, [
-        ".........++++++++++++++.........",
-        "........++++++++++++++++........",
-        "........++++++++++++++++........",
-        "........++++++++++++++++........",
-        "........++++++++++++++++........",
-        "........++++++++++++++++........",
-        "........++++++++++++++++........",
-        ".........++++++++++++++.........",
-        ".........++++++++++++++.........",
-        ".........++++++++++++++.........",
-        ".........++++++++++++++.........",
-        "..........++++++++++++..........",
-        "..........++++++++++++..........",
-        "..........++++++++++++..........",
-        ".........++++++++++++++.........",
-        ".........++++++++++++++.........",
-        ".........++++++++++++++.........",
-        ".........++++++++++++++.........",
-        ".........++++++++++++++.........",
-        ".........++++++++++++++.........",
-        ".........++++++++++++++.........",
-        ".........++++++++++++++........."
-      ]),
-  },
-};
-const HOODIE_EXTRA = {
-  s: L(16, [
-      "................................",
-      "................................",
-      "................................",
-      "................................",
-      "................................",
-      "................................",
-      "................................",
-      "................................",
-      "................................",
-      "................................",
-      "................................",
-      "................................",
-      "................................",
-      "................................",
-      "................................",
-      "................................",
-      "................................",
-      ".............+++%%%.............",
-      "............++++%%%%............",
-      "............%%%%%%%%............",
-      "...........%%%%%%%%%%...........",
-      "............%%%%%%%%............",
-      "............%%%%%%%%............",
-      ".............cccccc.............",
-      "..............cccc.............."
-    ]),
-  se: L(16, [
-      "................................",
-      "................................",
-      "................................",
-      "................................",
-      "................................",
-      "................................",
-      "................................",
-      "................................",
-      "................................",
-      "................................",
-      "................................",
-      "................................",
-      "................................",
-      "................................",
-      "................................",
-      "................................",
-      "................................",
-      ".............+++%%%.............",
-      "............++++%%%%............",
-      "............%%%%%%%%............",
-      "...........%%%%%%%%%%...........",
-      "............%%%%%%%%............",
-      "............%%%%%%%%............",
-      ".............cccccc.............",
-      "..............cccc.............."
-    ]),
-  e: L(16, [
-      "................................",
-      "................................",
-      "................................",
-      "................................",
-      "................................",
-      "................................",
-      "................................",
-      "................................",
-      "................................",
-      "................................",
-      "................................",
-      "................................",
-      "................................",
-      "................................",
-      "................................",
-      "................................",
-      "................................",
-      "..................%c............",
-      "..................%c............",
-      "..................%c............",
-      "..................%c............",
-      "..................%c............",
-      "..................%c............",
-      "..................%c............",
-      "..................%c............"
-    ]),
-  n: L(16, [
-      "................................",
-      "........+++++++++++ccccc........",
-      "........+++++++++++ccccc........",
-      "........+++++++++++ccccc........",
-      "........+++++++++++ccccc........",
-      "........+++++++++++ccccc........"
-    ]),
-  ne: L(16, [
-      "................................",
-      "................................",
-      "................................",
-      "................................",
-      "................................",
-      "................................",
-      "................................",
-      "................................",
-      "................................",
-      "................................",
-      "................................",
-      "................................",
-      "................................",
-      "................................",
-      "................................",
-      "................................",
-      "................................",
-      ".............+++%%%.............",
-      "............++++%%%%............",
-      "............%%%%%%%%............",
-      "...........%%%%%%%%%%...........",
-      "............%%%%%%%%............",
-      "............%%%%%%%%............",
-      ".............cccccc.............",
-      "..............cccc.............."
-    ]),
-};
-
-const JACKET_EXTRA = {
-  s: L(21, [
-      "...........cccccccccc...........",
-      "...........%%%%%%%%%%...........",
-      "...............vz...............",
-      "...............vz...............",
-      "...............vz...............",
-      "...............vz...............",
-      "...............vz...............",
-      "...............vz...............",
-      "...............vz...............",
-      "...............vz...............",
-      "...............vz...............",
-      "...............vz...............",
-      "...............vz...............",
-      "...............vz...............",
-      "...............vz...............",
-      "...............vz...............",
-      "...............vz...............",
-      "...............vz...............",
-      "...............vz...............",
-      "...............vz...............",
-      "...............vz...............",
-      "...............vz..............."
-    ]),
-  se: L(21, [
-      "...........cccccccccc...........",
-      "...........%%%%%%%%%%...........",
-      "................vz..............",
-      "................vz..............",
-      "................vz..............",
-      "................vz..............",
-      "................vz..............",
-      "................vz..............",
-      "................vz..............",
-      "................vz..............",
-      "................vz..............",
-      "................vz..............",
-      "................vz..............",
-      "................vz..............",
-      "................vz..............",
-      "................vz..............",
-      "................vz..............",
-      "................vz..............",
-      "................vz..............",
-      "................vz..............",
-      "................vz..............",
-      "................vz.............."
-    ]),
-  e: L(21, [
-      "....................c%..........",
-      "....................c%..........",
-      "....................c%.........."
-    ]),
-  n: L(21, [
-      "..........cccccccccccc..........",
-      "..........cccccccccccc..........",
-      "..........cccccccccccc.........."
-    ]),
-  ne: L(21, [
-      "..........cccccccccccc..........",
-      "..........cccccccccccc..........",
-      "..........cccccccccccc.........."
-    ]),
-};
-
-const BAND_GRAPHIC = {
-  s: L(30, [
-      "...............tt...............",
-      "..............tttt..............",
-      "...............tt..............."
-    ]),
-  se: L(30, [
-      "................tt..............",
-      "...............tttt.............",
-      "................tt.............."
-    ]),
-  e: L(30, [
-      "................tt..............",
-      "...............tttt.............",
-      "................tt.............."
-    ]),
-};
-
-/* ===== HAIR (6+ silhouettes, highlight streaks) ===== */
-const HAIR = {
-  short: {
-    s: L(0, [
-        "................................",
-        "................................",
-        ".............iiiii..............",
-        "...........iiiiiiiii............",
-        "..........iiiiiiiii@@...........",
-        ".........iiiiiiiii@@@@..........",
-        ".........iiiiiiiii@@@@..........",
-        "........iiiiiiiii@@@aaa.........",
-        "........iiiiiiii@@aaaaa.........",
-        "........ii...........aa.........",
-        "........ii...........aa.........",
-        "........ii...........aa.........",
-        "........ii...........aa.........",
-        ".........@...........a..........",
-        ".........@...........a.........."
-      ]),
-    se: L(0, [
-        "................................",
-        "................................",
-        "..............iiii..............",
-        "............iiiiiiii@...........",
-        "...........iiiiiiiii@@..........",
-        "..........iiiiiiiii@@@@.........",
-        "..........iiiiiiii@@@@@.........",
-        ".........iiiiiiiii@@@aaa........",
-        ".........iiiiiiii@@aaaaa........",
-        ".........i............aa........",
-        ".........i............aa........",
-        ".........i............aa........",
-        ".........i............aa........",
-        "......................a.........",
-        "..........@..........aa.........",
-        ".....................a.........."
-      ]),
-    e: L(0, [
-        "................................",
-        "................................",
-        "...............iii..............",
-        ".............iiiiiii@...........",
-        "............iiiiiiii@@..........",
-        "...........iiiiiiii@@@@.........",
-        "...........iiiiiii@@@@a.........",
-        "..........iiiiiiii@@@aaa........",
-        "..........iiiiiii@@aaaaa........",
-        "..........iiiiiii...............",
-        "..........iiiiiia...............",
-        "..........iiii@@a...............",
-        "..........ii@@@aa...............",
-        "...........@@@aaa...............",
-        "...........@@@aaa...............",
-        "............@aaaa...............",
-        ".............aaaa...............",
-        "...............aa..............."
-      ]),
-    n: L(0, [
-        "................................",
-        "................................",
-        ".............iiiii..............",
-        "...........iiiiiiiii............",
-        "..........iiiiiiiii@@...........",
-        ".........iiiiiiiii@@@@..........",
-        ".........iiiiiiiii@@@@..........",
-        "........iiiiiiiii@@@@aa.........",
-        "........iiiiiiiii@@aaaa.........",
-        "........iiiiiiii@aaaaaa.........",
-        "........iiiiiiiaaaaaaaa.........",
-        "........iiiii@@aaaaaaaa.........",
-        "........iii@@@aaaaaaaaa.........",
-        "........i@@@@aaaaaaaaaa.........",
-        ".........@@@@aaaaaaaaa..........",
-        ".........@@@aaaaaaaaaa..........",
-        "..........@aaaaaaaaaa...........",
-        "...........aaaaaaaaa............",
-        "...............a................"
-      ]),
-    ne: L(0, [
-        "................................",
-        "................................",
-        "..............iiii..............",
-        "............iiiiiiii@...........",
-        "...........iiiiiiiii@@..........",
-        "..........iiiiiiiii@@@@.........",
-        "..........iiiiiiii@@@@@.........",
-        ".........iiiiiiiii@@@aaa........",
-        ".........iiiiiiii@@aaaaa........",
-        ".........iiiiiii@aaaaaaa........",
-        ".........iiiiii@aaaaaaaa........",
-        ".........iiii@@aaaaaaaaa........",
-        ".........ii@@@aaaaaaaaaa........",
-        "..........@@@@aaaaaaaaa.........",
-        "..........@@@aaaaaaaaaa.........",
-        "...........@aaaaaaaaaa..........",
-        "............aaaaaaaaa...........",
-        "..............aaaa.............."
-      ]),
-  },
-  spiky: {
-    s: L(0, [
-        "........iiaaia@@iiaaiaa.........",
-        ".........iaa@a@ai@iiiaaii.......",
-        "..........aa@a@aaaiiiiiaa.......",
-        "..........@aa@aaaiiiiiiaa.......",
-        "..........i@i@aiiiiia@aa........",
-        ".........iii@@iiiiaaaaa.........",
-        ".........iii@aaaaaaaa@..........",
-        "........iiiiiaaaaaaaaaa.........",
-        "........iiiiiiiii@@aaaa.........",
-        "........ii...........aa.........",
-        "........ii...........aa.........",
-        "........ii...........aa.........",
-        "........i.............a........."
-      ]),
-    se: L(0, [
-        ".........i@a.aa@aiaa.iaa........",
-        "..........a@a@a@a@aiiaaii.......",
-        "..........iaa@a@iaiiiiiiaa......",
-        "..........@aa@aaiiiiiiiaa.......",
-        "...........@a@iiiiiia@aa........",
-        "...........i@iiiiiaaaaa.........",
-        "..........iii@aaaaaaa@@.........",
-        "..........iiiiaaaaaa@aaa........",
-        ".........iiiiiiii@@aaaaa........",
-        ".........i............aa........",
-        ".........i............aa........",
-        ".........i............aa........",
-        ".........i.............a........"
-      ]),
-    e: L(0, [
-        "...........ii.ia@aaiaa..........",
-        "..........i@aa@a@aiiaa..........",
-        "...........aaa@aaaiaaa..........",
-        "............aa@aaiaaa...........",
-        "............@a@iiiaaa...........",
-        "...........ii@iiiaaaa@..........",
-        "...........iii@aaaaa@@@.........",
-        "..........iiiiiaaaa@@aa.........",
-        "..........iiiiiii@@aaaaa........",
-        "..........iiiiiii...............",
-        "..........iiiiiia...............",
-        "..........iiii@@a...............",
-        "..........ii@@@aa...............",
-        "...........@@@aaa...............",
-        "...........@@@aaa...............",
-        "............@aaaa...............",
-        ".............aaaa...............",
-        "...............aa..............."
-      ]),
-    n: L(0, [
-        "........iiaaia@@iiaaiaa.........",
-        ".........iaa@a@ai@iiiaaii.......",
-        "..........aa@a@aaaiiiiiaa.......",
-        "..........@aa@aaaiiiiiiaa.......",
-        "..........i@i@aiiiiia@aa........",
-        ".........iii@@iiiiaaaaa.........",
-        ".........iii@aaaaaaaa@..........",
-        "........iiiiiaaaaaaaaaa.........",
-        "........iiiiiiiii@@aaaa.........",
-        "........iiiiiiii@aaaaaa.........",
-        "........iiiiiiiaaaaaaaa.........",
-        "........iiiii@@aaaaaaaa.........",
-        "........iii@@@aaaaaaaaa.........",
-        ".........@@@@aaaaaaaaa..........",
-        ".........@@@aaaaaaaaaa..........",
-        "..........@@aaaaaaaaa...........",
-        "...........aaaaaaaaa............",
-        ".............aaaaa.............."
-      ]),
-    ne: L(0, [
-        ".........i@a.aa@aiaa.iaa........",
-        "..........a@a@a@a@aiiaaii.......",
-        "..........iaa@a@iaiiiiiiaa......",
-        "..........@aa@aaiiiiiiiaa.......",
-        "...........@a@iiiiiia@aa........",
-        "...........i@iiiiiaaaaa.........",
-        "..........iii@aaaaaaa@@.........",
-        "..........iiiiaaaaaa@aaa........",
-        ".........iiiiiiii@@aaaaa........",
-        ".........iiiiiii@aaaaaaa........",
-        ".........iiiiii@aaaaaaaa........",
-        ".........iiii@@aaaaaaaaa........",
-        ".........iii@@@aaaaaaaaa........",
-        "..........@@@@aaaaaaaaa.........",
-        "..........@@@aaaaaaaaaa.........",
-        "...........@@aaaaaaaaa..........",
-        "............aaaaaaaaa...........",
-        "..............aaaa.............."
-      ]),
-  },
-  bangs: {
-    s: L(0, [
-        "................................",
-        "................................",
-        "............iiiiiii.............",
-        "..........iiiiiiiii@@...........",
-        ".........iiiiiiiiii@@@..........",
-        ".........iiiiiiiii@@@@..........",
-        "........iiiiiiiiii@@@@a.........",
-        "........iiiiiiiii@@@aaa.........",
-        "........iiiiiii@@@@aaaa.........",
-        "........ii...........aa.........",
-        "........ii...........aa.........",
-        "........ii...........aa.........",
-        "........ii...........aa.........",
-        "........@@...........aa.........",
-        ".......a@@...........a@a........",
-        ".......a@@...........a@a........",
-        ".......a@.............@a........",
-        ".......a@.............@a........",
-        ".......a@.............@a........",
-        ".......a@.............@a........",
-        ".......a@.............@a........",
-        ".......a@.............@a........",
-        ".......a@.............@a........",
-        ".......a@.............@a........"
-      ]),
-    se: L(0, [
-        "................................",
-        "................................",
-        ".............iiiiiii............",
-        "...........iiiiiiiii@...........",
-        "...........iiiiiiii@@@..........",
-        "..........iiiiiiiii@@@@.........",
-        ".........iiiiiiiii@@@@aa........",
-        ".........iiiiiiiii@@@aaa........",
-        ".........iiiiii@@@@@aaaa........",
-        ".........i............aa........",
-        ".........i............aa........",
-        ".........i............aa........",
-        ".........i............aa........",
-        ".........i............aa........",
-        "........a@@..........aa@a.......",
-        "........a@...........a.@a.......",
-        "........a@.............@a.......",
-        "........a@.............@a.......",
-        "........a@.............@a.......",
-        "........a@.............@a.......",
-        "........a@.............@a.......",
-        "........a@.............@a.......",
-        "........a@.............@a.......",
-        "........a@.............@a......."
-      ]),
-    e: L(0, [
-        "................................",
-        "................................",
-        "..............iiiii.............",
-        "............iiiiiiii@...........",
-        "...........iiiiiiiii@@..........",
-        "...........iiiiiiii@@@@.........",
-        "..........iiiiiiii@@@@aa........",
-        "..........iiiiiiii@@@aaa........",
-        "..........iiiiii@@@@aaaa........",
-        "..........iiiiii@...............",
-        "..........iiiiii@...............",
-        "..........iiiiii@...............",
-        "..........iiiiii@...............",
-        "..........iiiiii@...............",
-        "...........@@@aaa...............",
-        "...........@@aaaa...............",
-        "............@aaaa...............",
-        "..............aaa..............."
-      ]),
-    n: L(0, [
-        "................................",
-        "................................",
-        "............iiiiiii.............",
-        "..........iiiiiiiii@@...........",
-        ".........iiiiiiiiii@@@..........",
-        ".........iiiiiiiii@@@@..........",
-        "........iiiiiiiiii@@@@a.........",
-        "........iiiiiiiii@@@aaa.........",
-        "........iiiiiiii@@aaaaa.........",
-        "........iiiiiiiiaaaaaaa.........",
-        "........iiiiii@aaaaaaaa.........",
-        "........iiii@@aaaaaaaaa.........",
-        "........ii@@@@aaaaaaaaa.........",
-        "........@@@@@aaaaaaaaaa.........",
-        ".........@@@aaaaaaaaaa..........",
-        ".........@@@aaaaaaaaaa..........",
-        "..........@aaaaaaaaaa...........",
-        "............aaaaaaa............."
-      ]),
-    ne: L(0, [
-        "................................",
-        "................................",
-        ".............iiiiiii............",
-        "...........iiiiiiiii@...........",
-        "...........iiiiiiii@@@..........",
-        "..........iiiiiiiii@@@@.........",
-        ".........iiiiiiiii@@@@aa........",
-        ".........iiiiiiiii@@@aaa........",
-        ".........iiiiii@@@@@aaaa........",
-        ".........iiiiii@@@@@aaaa........",
-        ".........iiiiii@@@@@aaaa........",
-        ".........iiiiii@@@@@aaaa........",
-        ".........iiiiii@@@@@aaaa........",
-        ".........i@iiii@@@@@aaaa........",
-        "........a@@@@aaaaaaaaaa.........",
-        "........a@.@@aaaaaaaaa..........",
-        "........a@.@aaaaaaaaa...........",
-        "........a@...aaaaaaa............",
-        "........a@......................",
-        "........a@......................",
-        "........a@......................",
-        "........a@......................",
-        "........a@......................",
-        "........a@......................"
-      ]),
-  },
-  curly: {
-    s: L(0, [
-        "...........iiiiiiiii............",
-        ".........iiiiiiiii@ii@..........",
-        "........iiiiiiiii@@ai@@.........",
-        ".......iiiiiiiiiiaiiii@@........",
-        ".......iiiiiiii@aaiiii@a........",
-        "......iiiiiiaa@aaiiii@aaa.......",
-        "......iiiiiiaa@aaiiiaaaaa.......",
-        "......iiiiii@aaii@@@aaaaa.......",
-        "......iiiii@@aii@aaiiii@a.......",
-        "......iiii...........i@@a.......",
-        "......iii@...........iaaa.......",
-        "......ii@a...........aaaa.......",
-        "......iiia...........aaaa.......",
-        "......i@@@...........aaaa.......",
-        ".......@@@...........aaa........",
-        "........@@...........aa.........",
-        "........@@...........aa........."
-      ]),
-    se: L(0, [
-        "............iiiiiiiii...........",
-        "...........iiiiiiii@i@..........",
-        "..........iiiiiiii@@ii@@........",
-        ".........iiiiiiii@aiiii@........",
-        "........iiiii@ii@aiiii@@a.......",
-        "........iiii@a@@aaiiiiaaaa......",
-        ".......iiiiiiaaaaaii@aaaaa......",
-        ".......iiiii@@aii@@@aaaaaa......",
-        ".......iiiii@aiii@aiiii@aa......",
-        ".......iii............i@@aa.....",
-        ".......ii@............@aaa......",
-        ".......i@@............aaaa......",
-        "........ia............aaaa......",
-        "........@@............aaaa......",
-        "........@@@...........aaa.......",
-        ".........@@...........aa........",
-        "..........@...........a........."
-      ]),
-    e: L(0, [
-        ".............iiiiiii............",
-        "...........iiiiiiii@i@..........",
-        "..........iiiiiiii@@i@@.........",
-        "..........iiiiiii@iiii@@........",
-        ".........iiiiiii@iiii@@@@.......",
-        ".........iiiii@@aiii@aaaa.......",
-        "........iiiiiiaaaii@aaaaaa......",
-        "........iiiiii@@a@@aaaaaaa......",
-        "........iiiiii@ai@iiii@aaa......",
-        "........iiiiiaaaa...............",
-        "........iii@aaaai...............",
-        "........ii@@aaaa@...............",
-        "........iiiaaaa@a...............",
-        ".........@@iii@aa...............",
-        ".........@@@@@aaa...............",
-        "..........@@@aaaa...............",
-        "...........@aaaaa...............",
-        "............aaaaa...............",
-        ".............aaaaa.............."
-      ]),
-    n: L(0, [
-        "...........iiiiiiiii............",
-        ".........iiiiiiiii@ii@..........",
-        "........iiiiiiiii@@ai@@.........",
-        ".......iiiiiiiiiiaiiii@@........",
-        ".......iiiiiiii@aaiiii@a........",
-        "......iiiiiiaa@aaiiii@aaa.......",
-        "......iiiiiiaa@aaiiiaaaaa.......",
-        "......iiiiii@aaii@@@aaaaa.......",
-        "......iiiii@@aii@aaiiii@a.......",
-        "......iiiiiaaaiaaaiiii@@a.......",
-        "......iii@aaaai@iiiiiiaaa.......",
-        "......ii@aaaai@@iii@@aaaa.......",
-        "......iiiaaaiiaaai@@aaaaa.......",
-        "......i@@@ii@aaaaiaaaaaaa.......",
-        ".......@@@@@aaaa@aaaaaaa........",
-        "........@@@aaaaaaaaaaaa.........",
-        "........@@aaaaaaaaaaaaa.........",
-        "..........aaaaaaaaaaa...........",
-        "...........aaaaaaaaa............"
-      ]),
-    ne: L(0, [
-        "............iiiiiiiii...........",
-        "...........iiiiiiii@i@..........",
-        "..........iiiiiiii@@ii@@........",
-        ".........iiiiiiii@aiiii@........",
-        "........iiiii@ii@aiiii@@a.......",
-        "........iiii@a@@aaiiiiaaaa......",
-        ".......iiiiiiaaaaaii@aaaaa......",
-        ".......iiiii@@aii@@@aaaaaa......",
-        ".......iiiii@aiii@aiiii@aa......",
-        ".......iiiiaaaiiaaaiiii@@aa.....",
-        ".......ii@aaaai@aiiiii@aaa......",
-        ".......i@@aaaai@@ii@@aaaaa......",
-        "........iaaaai@aaii@aaaaaa......",
-        "........@@iiiaaaaiaaaaaaaa......",
-        "........@@@@@aaaaaaaaaaaa.......",
-        ".........@@@aaaa@aaaaaaa........",
-        "..........@aaaaaaaaaaaa.........",
-        "...........aaaaaaaaaaa..........",
-        "............aaaaaaaa............"
-      ]),
-  },
-  bun: {
-    s: L(0, [
-        ".............iiii@..............",
-        "............iiiii@a.............",
-        "............iii@@@a.............",
-        "............ii@@@aa.............",
-        "..........ii@@a@aaa@@...........",
-        ".........iiiiaaaaai@@@..........",
-        ".........iiiiiiiii@@@@..........",
-        "........iiiiiiiii@@@@aa.........",
-        "........iiiiiiiii@@aaaa.........",
-        "........ii...........aa.........",
-        "........ii...........aa.........",
-        "........ii...........aa.........",
-        "........ii...........aa.........",
-        ".........@...........a..........",
-        ".........@...........a.........."
-      ]),
-    se: L(0, [
-        ".............iiiii@.............",
-        ".............iiii@a.............",
-        "............iiii@@aa............",
-        "............iii@@@aa............",
-        "...........ii@@@@aai@...........",
-        "...........iiiaaaai@@@..........",
-        "..........iiiiiiiii@@@@.........",
-        "..........iiiiiiii@@@aaa........",
-        ".........iiiiiiii@@aaaaa........",
-        ".........i............aa........",
-        ".........i............aa........",
-        ".........i............aa........",
-        ".........i............aa........",
-        "......................a.........",
-        "..........@...........a........."
-      ]),
-    e: L(0, [
-        "...........iiii@................",
-        "..........iiiii@a...............",
-        "..........iii@@@a...............",
-        "..........iii@@@aiii............",
-        "..........@@@@aaaiii@...........",
-        "...........aaaaaiii@@@..........",
-        "...........iiiiiiii@@@@.........",
-        "..........iiiiiiii@@@aa.........",
-        "..........iiiiiii@@aaaaa........",
-        "..........iiiiiii...............",
-        "..........iiiiiia...............",
-        "..........iiii@@a...............",
-        "..........ii@@@aa...............",
-        "...........@@@aaa...............",
-        "...........@@@aaa...............",
-        "............@aaaa...............",
-        ".............aaaa...............",
-        "................a..............."
-      ]),
-    n: L(0, [
-        ".............iiii@..............",
-        "............iiiii@a.............",
-        "............iii@@@a.............",
-        "............ii@@@aa.............",
-        "..........ii@@a@aaa@@...........",
-        ".........iiiiaaaaai@@@..........",
-        ".........iiiiiiiii@@@@..........",
-        "........iiiiiiiii@@@@aa.........",
-        "........iiiiiiiii@@aaaa.........",
-        "........iiiiiiii@aaaaaa.........",
-        "........iiiiiiiaaaaaaaa.........",
-        "........iiiii@@aaaaaaaa.........",
-        "........ii@@@@aaaaaaaaa.........",
-        ".........@@@@aaaaaaaaa..........",
-        ".........@@@aaaaaaaaaa..........",
-        "..........@@aaaaaaaaa...........",
-        "...........aaaaaaaaa............",
-        ".............aaaaa.............."
-      ]),
-    ne: L(0, [
-        ".............iiiii@.............",
-        ".............iiii@a.............",
-        "............iiii@@aa............",
-        "............iii@@@aa............",
-        "...........ii@@@@aai@...........",
-        "...........iiiaaaai@@@..........",
-        "..........iiiiiiiii@@@@.........",
-        "..........iiiiiiii@@@aaa........",
-        ".........iiiiiiii@@aaaaa........",
-        ".........iiiiiii@aaaaaaa........",
-        ".........iiiiii@aaaaaaaa........",
-        ".........iiii@@aaaaaaaaa........",
-        ".........ii@@@aaaaaaaaaa........",
-        "..........@@@@aaaaaaaaa.........",
-        "..........@@@aaaaaaaaaa.........",
-        "...........@aaaaaaaaaa..........",
-        "............aaaaaaaa............",
-        "..............aaaa.............."
-      ]),
-  },
-  long: {
-    s: L(0, [
-        "................................",
-        "................................",
-        "............iiiiiii.............",
-        "..........iiiiiiiiii@...........",
-        ".........iiiiiiiiii@@@..........",
-        ".........iiiiiiiii@@@@..........",
-        "........iiiiiiiiii@@@@a.........",
-        "........iiiiiiiii@@@aaa.........",
-        "........iiiiiiii@@aaaaa.........",
-        ".......iii...........aaa........",
-        ".......iii...........aaa........",
-        "........ii...........aa.........",
-        ".......a@i...........a@a........",
-        ".......a@i...........a@a........",
-        ".......a@i...........a@a........",
-        ".......a@i...........a@a........",
-        ".......a@i............@a........",
-        ".......a@i............@a........",
-        ".......a@@............@a........",
-        ".......a@@............@a........",
-        ".......a@@............@a........",
-        ".......a@@............@a........",
-        ".......a@@............@a........",
-        ".......a@@............@a........",
-        ".......a@@............@a........",
-        ".......a@@............@a........",
-        ".......a@@............@a........",
-        ".......a@@............@a........",
-        ".......a@@............@a........",
-        ".......a@@............@a........"
-      ]),
-    se: L(0, [
-        "................................",
-        "................................",
-        ".............iiiiii.............",
-        "............iiiiiiii@...........",
-        "...........iiiiiiiii@@..........",
-        "..........iiiiiiiii@@@@.........",
-        ".........iiiiiiiii@@@@@a........",
-        ".........iiiiiiiii@@@aaa........",
-        ".........iiiiiiii@@aaaaa........",
-        ".........i............aaa.......",
-        ".........i............aaa.......",
-        ".........i............aa........",
-        "........a@............a@a.......",
-        "........a@............a@a.......",
-        "........a@i..........aa@a.......",
-        "........a@i..........a.@a.......",
-        "........a@i............@a.......",
-        "........a@i............@a.......",
-        "........a@@............@a.......",
-        "........a@@............@a.......",
-        "........a@@............@a.......",
-        "........a@@............@a.......",
-        "........a@@............@a.......",
-        "........a@@............@a.......",
-        "........a@@............@a.......",
-        "........a@@............@a.......",
-        "........a@@............@a.......",
-        "........a@@............@a.......",
-        "........a@@............@a.......",
-        "........a@@............@a......."
-      ]),
-    e: L(0, [
-        "................................",
-        "................................",
-        "..............iiiii.............",
-        "............iiiiiiii@...........",
-        "...........iiiiiiiii@@..........",
-        "...........iiiiiiii@@@@.........",
-        "..........iiiiiiiii@@@@a........",
-        "..........iiiiiiii@@@aaa........",
-        "..........iiiiiii@@aaaaa........",
-        "..........iiiiiii...............",
-        "..........iiiiiia...............",
-        "..........iiii@@a...............",
-        "..........ii@@@aa...............",
-        "..........@@@@aaa...............",
-        ".........aaaa@@@@...............",
-        ".........aaaa@@@@...............",
-        ".........aaaa@@@@...............",
-        ".........aaaa@@@@...............",
-        ".........aaaa@@@@...............",
-        ".........aaaa@@@@...............",
-        ".........aaaa@@@@...............",
-        ".........aaaa@@@@...............",
-        ".........aaaa@@@@...............",
-        ".........aaaa@@@@...............",
-        ".........aaaa@@@@...............",
-        ".........aaaa@@@@...............",
-        ".........aaaa@@@@...............",
-        ".........aaaa@@@@...............",
-        ".........aaaa@@@@...............",
-        ".........aaaa@@@@...............",
-        ".........aaaa@@@@...............",
-        ".........aaaa@@@@..............."
-      ]),
-    n: L(0, [
-        "................................",
-        "................................",
-        "............iiiiiii.............",
-        "..........iiiiiiiiii@...........",
-        ".........iiiiiiiiii@@@..........",
-        ".........iiiiiiiii@@@@..........",
-        "........iiiiiiiiii@@@@a.........",
-        "........iiiiiiiii@@@aaa.........",
-        "........iiiiiiii@@aaaaa.........",
-        ".......iiiiiiiiiaaaaaaaa........",
-        ".......iiiiiii@aaaaaaaaa........",
-        "........iiii@@aaaaaaaaa.........",
-        "........ii@@@@aaaaaaaaa.........",
-        "........@@@@@aaaaaaaaaa.........",
-        ".........@@@aaaaaaaaaa..........",
-        ".........@@aaaaaaaaaaa..........",
-        ".......iiiiiii@@@@@aaaaa........",
-        ".......iiiiiii@@@@@aaaaa........",
-        ".......iiiiiii@@@@@aaaaa........",
-        ".......iiiiiii@@@@@aaaaa........",
-        ".......iiiiiii@@@@@aaaaa........",
-        "........iiiiii@@@@@aaaa.........",
-        "........iiiiii@@@@@aaaa.........",
-        "........iiiiii@@@@@aaaa.........",
-        "........iiiiii@@@@@aaaa.........",
-        "........iiiiii@@@@@aaaa.........",
-        "........iiiiii@@@@@aaaa.........",
-        "........iiiiii@@@@@aaaa.........",
-        "........iiiiii@@@@@aaaa.........",
-        ".........iiiii@@@@@aaa..........",
-        ".........iiiii@@@@@aaa..........",
-        ".........iiiii@@@@@aaa..........",
-        ".........iiiii@@@@@aaa..........",
-        ".........iiiii@@@@@aaa.........."
-      ]),
-    ne: L(0, [
-        "................................",
-        "................................",
-        ".............iiiiii.............",
-        "............iiiiiiii@...........",
-        "...........iiiiiiiii@@..........",
-        "..........iiiiiiiii@@@@.........",
-        ".........iiiiiiiii@@@@@a........",
-        ".........iiiiiiiii@@@aaa........",
-        ".........iiiiiiii@@aaaaa........",
-        ".........iiiiiii@aaaaaaaa.......",
-        ".........iiiiii@aaaaaaaaa.......",
-        ".........iiii@@aaaaaaaaa........",
-        ".........ii@@@aaaaaaaaaa........",
-        ".........@@@@@aaaaaaaaaa........",
-        "..........@@@aaaaaaaaaa.........",
-        "...........@aaaaaaaaaa..........",
-        "........iiiiii@@@@@@aaaaa.......",
-        "........iiiiii@@@@@@aaaa........",
-        "........iiiiii@@@@@@aaaa........",
-        "........iiiiii@@@@@@aaaa........",
-        "........iiiiii@@@@@@aaaa........",
-        "........iiiiii@@@@@@aaaa........",
-        "........iiiiii@@@@@@aaaa........",
-        "........iiiiii@@@@@@aaaa........",
-        "........iiiiii@@@@@@aaaa........",
-        ".........iiiii@@@@@@aaa.........",
-        ".........iiiii@@@@@@aaa.........",
-        ".........iiiii@@@@@@aaa.........",
-        ".........iiiii@@@@@@aaa.........",
-        ".........iiiii@@@@@@aaa.........",
-        ".........iiiii@@@@@@aaa.........",
-        ".........iiiii@@@@@@aaa.........",
-        ".........iiiii@@@@@@aaa.........",
-        "..........iiii@@@@@@aa.........."
-      ]),
-  },
-  undercut: {
-    s: L(0, [
-        "................................",
-        "................................",
-        ".............iiiii..............",
-        "...........iiiiiiii@............",
-        "..........iiiiiiiii@@...........",
-        ".........iiiiiiiii@@@@..........",
-        ".........iiiiiiiii@@@a..........",
-        "........iiiiiiiii@@aaaa.........",
-        "........iiiiiiii@@aaaaa.........",
-        "........ii...........aa.........",
-        "........ii...........aa.........",
-        "........ii...........aa.........",
-        ".........@...........a..........",
-        ".........@...........a.........."
-      ]),
-    se: L(0, [
-        "................................",
-        "................................",
-        "..............iiii..............",
-        "............iiiiiiii@...........",
-        "...........iiiiiiii@@@..........",
-        "..........iiiiiiiii@@@@.........",
-        "..........iiiiiiii@@@@a.........",
-        "..........iiiiiii@@@aaaa........",
-        ".........iiiiiiii@aaaaaa........",
-        ".........i............aa........",
-        ".........i............aa........",
-        "......................aa........",
-        "......................a.........",
-        "......................a........."
-      ]),
-    e: L(0, [
-        "................................",
-        "................................",
-        "...............iii..............",
-        ".............iiiiiii@...........",
-        "............iiiiiiii@@..........",
-        "...........iiiiiiii@@@@.........",
-        "...........iiiiiii@@@@a.........",
-        "..........iiiiiiii@@aaa.........",
-        "........iiiiiiiii@aaaaaa........",
-        "........iiiiiiiii...............",
-        "........@@@@@@@@@...............",
-        "........@@@@@@@@@...............",
-        "........@@@@@@@@@...............",
-        "........@@@@@@@@@...............",
-        "............@aaaa...............",
-        ".............aaaa...............",
-        "..............aaa..............."
-      ]),
-    n: L(0, [
-        "................................",
-        "................................",
-        ".............iiiii..............",
-        "...........iiiiiiii@............",
-        "..........iiiiiiiii@@...........",
-        ".........iiiiiiiii@@@@..........",
-        ".........iiiiiiiii@@@a..........",
-        "........iiiiiiiii@@aaaa.........",
-        "........iiiiiiii@@aaaaa.........",
-        "........iiiiiiiiaaaaaaa.........",
-        "........iiiiii@aaaaaaaa.........",
-        "........iii@@@aaaaaaaaa.........",
-        ".........@@@@aaaaaaaaa..........",
-        ".........@@@@aaaaaaaaa..........",
-        "..........@@aaaaaaaaa...........",
-        "...........aaaaaaaaa............",
-        ".............aaaaa.............."
-      ]),
-    ne: L(0, [
-        "................................",
-        "................................",
-        "..............iiii..............",
-        "............iiiiiiii@...........",
-        "...........iiiiiiii@@@..........",
-        "..........iiiiiiiii@@@@.........",
-        "..........iiiiiiii@@@@a.........",
-        "..........iiiiiii@@@aaaa........",
-        ".........iiiiiiii@aaaaaa........",
-        ".........iiiiiiiaaaaaaaa........",
-        ".........iiiii@aaaaaaaaa........",
-        "..........ii@@@aaaaaaaaa........",
-        "..........@@@@aaaaaaaaa.........",
-        "..........@@@aaaaaaaaaa.........",
-        "...........@@aaaaaaaaa..........",
-        "............aaaaaaaaa...........",
-        "..............aaaaa............."
-      ]),
-  },
-};
-
-/* Hats / accessories on the head */
-const HATS = {
-  cap: {
-    s: L(0, [
-        "................................",
-        "................................",
-        "..........vvvvvvvvvvv...........",
-        "........vvvvvvvvvvvvvvx.........",
-        ".......vvvvvvvvvvvvvxxxx........",
-        ".......vvvvvvvvvvxxzzzzz........",
-        ".......vvvvxxxzzzzzzzzzz........",
-        ".......xxxxzzzzzzzzzzzzz........",
-        "........zzzzzzzxxxxxxxx.........",
-        "..........zzzzzzzzzzzzz........."
-      ]),
-    se: L(0, [
-        "................................",
-        "................................",
-        "..........vvvvvvvvvvvv..........",
-        ".........vvvvvvvvvvvvvv.........",
-        "........vvvvvvvvvvvvxxxx........",
-        ".......vvvvvvvvvvxxxzzzzz.......",
-        ".......vvvvxxxzzzzzzzzzzz.......",
-        "........xxxzzzzzzzzzzzzz........",
-        ".........zzzzzzzxxxxxxxx........",
-        "..........zzzzzzzzzzzzzz........"
-      ]),
-    e: L(0, [
-        "................................",
-        "................................",
-        "...........vvvvvvvvvvv..........",
-        ".........vvvvvvvvvvvvvvx........",
-        "........vvvvvvvvvvvvxxxxx.......",
-        "........vvvvvvvvvvxxzzzzz.......",
-        "........vvvvxxxzzzzzzzzzz.......",
-        "........xxxxzzzzzzzzzzzzz.......",
-        ".........zzzzzzzxxxxxxxx........",
-        "...........zzzzzzzzzzzzz........"
-      ]),
-    n: L(0, [
-        "................................",
-        "................................",
-        "..........vvvvvvvvvvv...........",
-        "........vvvvvvvvvvvvvvx.........",
-        ".......vvvvvvvvvvvvvxxxx........",
-        ".......vvvvvvvvvvxxzzzzz........",
-        ".......vvvvxxxzzzzzzzzzz........",
-        ".......xxxxzzzzzzzzzzzzz........",
-        "........zzzzzzzzzzzzzzz.........",
-        "..........zzzzzzzzzzz..........."
-      ]),
-    ne: L(0, [
-        "................................",
-        "................................",
-        "..........vvvvvvvvvvvv..........",
-        ".........vvvvvvvvvvvvvv.........",
-        "........vvvvvvvvvvvvxxxx........",
-        ".......vvvvvvvvvvxxxzzzzz.......",
-        ".......vvvvxxxzzzzzzzzzzz.......",
-        "........xxxzzzzzzzzzzzzz........",
-        ".........xxxxxxxxzzzzzz.........",
-        ".........zzzzzzzzzzzzz.........."
-      ]),
-  },
-  trucker: {
-    s: L(0, [
-        "................................",
-        "................................",
-        "..........vvvvvvvvvvv...........",
-        "........vvvvvvvvvvvvvvx.........",
-        ".......vvvvvvvvvvvvvxxxx........",
-        ".......vvvvvvvvvvxxzzzzz........",
-        ".......vvvvxxxzzzzzzzzzz........",
-        ".......xxzzzzzzzzzzzzzzz........",
-        "........zzzzzzzxxxxxxxx.........",
-        "..........zzzzzzzzzzzzz........."
-      ]),
-    se: L(0, [
-        "................................",
-        "................................",
-        "..........vvvvvvvvvvvv..........",
-        ".........vvvvvvvvvvvvvv.........",
-        "........vvvvvvvvvvvvxxxx........",
-        ".......vvvvvvvvvvxxxzzzzz.......",
-        ".......vvvvxxxzzzzzzzzzzz.......",
-        "........xxzzzzzzzzzzzzzz........",
-        ".........zzzzzzzxxxxxxxx........",
-        "..........zzzzzzzzzzzzzz........"
-      ]),
-    e: L(0, [
-        "................................",
-        "................................",
-        "...........vvvvvvvvvvv..........",
-        ".........vvvvvvvvvvvvvvx........",
-        "........vvvvvvvvvvvvxxxxx.......",
-        "........vvvvvvvvvvxxzzzzz.......",
-        "........vvvvxxxzzzzzzzzzz.......",
-        "........xxzzzzzzzzzzzzzzz.......",
-        ".........zzzzzzzxxxxxxxx........",
-        "...........zzzzzzzzzzzzz........"
-      ]),
-    n: L(0, [
-        "................................",
-        "................................",
-        "..........vvvvvvvvvvv...........",
-        "........vvvvvvvvvvvvvvx.........",
-        ".......vvvvvvvvvvvvvxxxx........",
-        ".......vvvvvvvvvvxxzzzzz........",
-        ".......vvvvxxxzzzzzzzzzz........",
-        ".......xxzzzzzzzzzzzzzzz........",
-        "........zzzzzzzzzzzzzzz.........",
-        "..........zzzzzzzzzzz..........."
-      ]),
-    ne: L(0, [
-        "................................",
-        "................................",
-        "..........vvvvvvvvvvvv..........",
-        ".........vvvvvvvvvvvvvv.........",
-        "........vvvvvvvvvvvvxxxx........",
-        ".......vvvvvvvvvvxxxzzzzz.......",
-        ".......vvvvxxxzzzzzzzzzzz.......",
-        "........xxzzzzzzzzzzzzzz........",
-        ".........zzzzzzzxxxxxxxx........",
-        "..........zzzzzzzzzzzzzz........"
-      ]),
-  },
-  beanie: {
-    s: L(0, [
-        "................................",
-        "..........vvvvvvvvvvv...........",
-        ".........vvvvvvvvvvvvv..........",
-        ".......vvvvvvvvvvvvvxxxx........",
-        ".......vvvvvvvvvvvxxxxxx........",
-        ".......vvvvvvvvvxxzzzzzz........",
-        ".......vvvvvxxzzzzzzzzzz........",
-        ".......xxxxxzzzzzzzzzzzz........",
-        ".......xxxzzzzzzzzzzzzzz........",
-        ".........zzzzzzzzzzzzz..........",
-        "..........zzzzzzzzzzz..........."
-      ]),
-    se: L(0, [
-        "................................",
-        "...........vvvvvvvvvv...........",
-        ".........vvvvvvvvvvvvvv.........",
-        "........vvvvvvvvvvvvvxxx........",
-        ".......vvvvvvvvvvvvxxxxxz.......",
-        ".......vvvvvvvvvvxxzzzzzz.......",
-        ".......vvvvvvxxzzzzzzzzzz.......",
-        ".......xxxxxxzzzzzzzzzzzz.......",
-        "........xxxzzzzzzzzzzzzz........",
-        ".........zzzzzzzzzzzzzz.........",
-        "...........zzzzzzzzzz..........."
-      ]),
-    e: L(0, [
-        "................................",
-        "...........vvvvvvvvvv...........",
-        ".........vvvvvvvvvvvvvv.........",
-        "........vvvvvvvvvvvvvxxx........",
-        "........vvvvvvvvvvvxxxxxz.......",
-        "........vvvvvvvvvxxzzzzzz.......",
-        "........vvvvvxxzzzzzzzzzz.......",
-        "........xxxxxzzzzzzzzzzzz.......",
-        "........xxxzzzzzzzzzzzzz........",
-        ".........zzzzzzzzzzzzzz.........",
-        "...........zzzzzzzzzz..........."
-      ]),
-    n: L(0, [
-        "................................",
-        "..........vvvvvvvvvvv...........",
-        ".........vvvvvvvvvvvvv..........",
-        ".......vvvvvvvvvvvvvxxxx........",
-        ".......vvvvvvvvvvvxxxxxx........",
-        ".......vvvvvvvvvxxzzzzzz........",
-        ".......vvvvvxxzzzzzzzzzz........",
-        ".......xxxxxzzzzzzzzzzzz........",
-        ".......xxxzzzzzzzzzzzzzz........",
-        ".........zzzzzzzzzzzzz..........",
-        "..........zzzzzzzzzzz..........."
-      ]),
-    ne: L(0, [
-        "................................",
-        "...........vvvvvvvvvv...........",
-        ".........vvvvvvvvvvvvvv.........",
-        "........vvvvvvvvvvvvvxxx........",
-        ".......vvvvvvvvvvvvxxxxxz.......",
-        ".......vvvvvvvvvvxxzzzzzz.......",
-        ".......vvvvvvxxzzzzzzzzzz.......",
-        ".......xxxxxxzzzzzzzzzzzz.......",
-        "........xxxzzzzzzzzzzzzz........",
-        ".........zzzzzzzzzzzzzz.........",
-        "...........zzzzzzzzzz..........."
-      ]),
-  },
-};
-
-const HEADPHONES = {
-  s: L(6, [
-      "................................",
-      "................................",
-      "........xz............zx........",
-      "........xz............zx........",
-      "........xz............zx........",
-      "........xz............zx........",
-      "........xz............zx........",
-      "........xz............zx........"
-    ]),
-  se: L(6, [
-      "................................",
-      "................................",
-      "........xz............zx........",
-      "........xz............zx........",
-      "........xz............zx........",
-      "........xz............zx........",
-      "........xz............zx........",
-      "........xz............zx........"
-    ]),
-  e: L(6, [
-      "................................",
-      "..........x.....................",
-      ".........zx.....................",
-      ".........zx.....................",
-      ".........zx.....................",
-      ".........zx.....................",
-      ".........zx.....................",
-      ".........zx....................."
-    ]),
-  n: L(6, [
-      "................................",
-      ".........xxxxxxxxxxxxxx.........",
-      ".......zx..............xz.......",
-      ".......zx..............xz.......",
-      ".......zx..............xz.......",
-      ".......zx..............xz.......",
-      ".......zx..............xz.......",
-      ".......zx..............xz......."
-    ]),
-  ne: L(6, [
-      "................................",
-      "................................",
-      "........xz............zx........",
-      "........xz............zx........",
-      "........xz............zx........",
-      "........xz............zx........",
-      "........xz............zx........",
-      "........xz............zx........"
-    ]),
-};
-
-const GLASSES = {
-  s: L(10, [
-      "..........xxxx...xxxx...........",
-      "..........xvvxz..xvvx...........",
-      "..........xxxx...xxxx..........."
-    ]),
-  se: L(10, [
-      "...........xxxx...xxxx..........",
-      "...........xvvxz..xvvx..........",
-      "...........xxxx...xxxx.........."
-    ]),
-  e: L(10, [
-      "..................xxxx..........",
-      "..................xvvx..........",
-      "..................xxxx.........."
-    ]),
-};
-
-const CHAIN = {
-  s: L(22, [
-      ".............gggggg.............",
-      "................g..............."
-    ]),
-  se: L(22, [
-      ".............gggggg.............",
-      "................g..............."
-    ]),
-  e: L(22, [
-      "..................g.............",
-      "...................g............"
-    ]),
-  ne: L(22, [
-      ".............gggggg.............",
-      "................g..............."
-    ]),
-};
-
-function padRow(row) {
-  if (row.length === AV_W) return row;
-  if (row.length < AV_W) return row + ".".repeat(AV_W - row.length);
-  return row.slice(0, AV_W);
-}
-
-function makeBuf() {
-  const pix = new Array(AV_W * AV_H);
-  for (let i = 0; i < pix.length; i++) pix[i] = null;
-  return pix;
-}
-
-function plot(buf, x, y, color, kind, overwrite = true) {
-  if (x < 0 || y < 0 || x >= AV_W || y >= AV_H) return;
+function plot(buf, x, y, color, kind, depth = 0) {
+  x = x | 0; y = y | 0;
+  if (x < 0 || y < 0 || x >= AV_W || y >= AV_H || !color) return;
   const i = y * AV_W + x;
-  if (!overwrite && buf[i]) return;
-  if (kind === "ink" && buf[i] && buf[i].kind !== "ink") return;
-  buf[i] = { color, kind };
+  const cur = buf[i];
+  if (cur && (cur.depth || 0) > depth) return;
+  buf[i] = { color, kind, depth };
 }
 
-function blitLayer(buf, layer, pal, flip, ox = 0, oy = 0) {
-  if (!layer) return;
-  const rows = layer.rows;
-  for (let j = 0; j < rows.length; j++) {
-    const row = rows[j];
-    for (let i = 0; i < row.length; i++) {
-      const ch = row[i];
-      if (ch === "." || ch === " " || ch === "|") continue;
-      let x = (layer.x || 0) + i + ox;
-      const y = (layer.y || 0) + j + oy;
-      if (flip) x = AV_W - 1 - x;
-      const key = PAL_KEYS[ch];
-      if (!key) continue;
-      if (key === "ink") {
-        plot(buf, x, y, pal.ink, "ink", false);
-        continue;
-      }
-      const col = lookup(pal, key);
-      if (!col) continue;
-      plot(buf, x, y, col, key, true);
+function shadeAt(pal, lx, ly) {
+  const L = -lx * 0.62 - ly * 0.78;
+  if (L > 0.32) return pal.hi;
+  if (L < -0.22) return pal.sh;
+  return pal.mid;
+}
+
+function ellipse(buf, cx, cy, rx, ry, pal, kind, depth = 0, opts = {}) {
+  const rxi = Math.ceil(rx) + 1, ryi = Math.ceil(ry) + 1;
+  const cut = opts.cut || 1;
+  for (let y = -ryi; y <= ryi; y++) {
+    for (let x = -rxi; x <= rxi; x++) {
+      const nx = x / rx, ny = y / ry;
+      const d = nx * nx + ny * ny;
+      if (d > cut) continue;
+      const col = pal.hi ? shadeAt(pal, nx, ny) : pal;
+      plot(buf, Math.round(cx + x), Math.round(cy + y), col, kind, depth);
     }
   }
 }
 
-function lookup(pal, key) {
-  const parts = key.split(".");
-  let v = pal;
-  for (const p of parts) v = v ? v[p] : null;
-  return v || null;
+function circle(buf, cx, cy, r, pal, kind, depth) {
+  ellipse(buf, cx, cy, r, r, pal, kind, depth);
 }
 
-function sleeveFromArm(armLayer, length) {
-  // Recolor skin pixels in the upper portion of an arm into shirt tones.
-  if (!armLayer) return null;
-  const rows = armLayer.rows.map((r) => r.split(""));
-  const h = rows.length;
-  const cut = length === "long" ? Math.max(0, h - 6) : Math.min(8, h);
-  for (let j = 0; j < cut; j++) {
-    for (let i = 0; i < rows[j].length; i++) {
-      const ch = rows[j][i];
-      if (ch === "#" || ch === "h" || ch === "s") {
-        rows[j][i] = ch === "h" ? "+" : ch === "s" ? "c" : "%";
+function rect(buf, x0, y0, x1, y1, pal, kind, depth, round = 0) {
+  const minx = Math.min(x0, x1), maxx = Math.max(x0, x1);
+  const miny = Math.min(y0, y1), maxy = Math.max(y0, y1);
+  const cx = (minx + maxx) / 2, cy = (miny + maxy) / 2;
+  const hw = (maxx - minx) / 2 || 1, hh = (maxy - miny) / 2 || 1;
+  for (let y = miny; y <= maxy; y++) {
+    for (let x = minx; x <= maxx; x++) {
+      if (round > 0) {
+        const dx = Math.max(0, Math.abs(x - cx) - (hw - round));
+        const dy = Math.max(0, Math.abs(y - cy) - (hh - round));
+        if (dx * dx + dy * dy > round * round) continue;
       }
-      // leave @ (hair on back arms) as-is
+      const col = pal.hi ? shadeAt(pal, (x - cx) / hw, (y - cy) / hh) : pal;
+      plot(buf, x, y, col, kind, depth);
     }
   }
-  return { x: armLayer.x, y: armLayer.y, rows: rows.map((r) => r.join("")) };
 }
 
-function shortsLegs(layer) {
-  if (!layer) return layer;
-  // Below mid-shin, convert pants pixels to skin.
-  const rows = layer.rows.map((r) => r.split(""));
-  const start = Math.floor(rows.length * 0.55);
-  for (let j = start; j < rows.length; j++) {
-    // stop before shoes
-    const row = rows[j].join("");
-    if (row.includes("$") || row.includes("y") || row.includes("d")) break;
-    for (let i = 0; i < rows[j].length; i++) {
-      const ch = rows[j][i];
-      if (ch === "=" || ch === "p" || ch === "q") {
-        rows[j][i] = ch === "q" ? "h" : ch === "p" ? "s" : "#";
-      }
+function capsule(buf, x0, y0, x1, y1, r, pal, kind, depth) {
+  const dx = x1 - x0, dy = y1 - y0;
+  const len = Math.hypot(dx, dy) || 1;
+  const n = Math.ceil(len) + 1;
+  for (let i = 0; i <= n; i++) {
+    const t = i / n;
+    ellipse(buf, x0 + dx * t, y0 + dy * t, r, r, pal, kind, depth);
+  }
+}
+
+function teardrop(buf, cx, cy, rx, ry, ang, pal, kind, depth) {
+  // Rounded clump pointing along ang (radians, 0 = right, -PI/2 = up).
+  const ca = Math.cos(ang), sa = Math.sin(ang);
+  const rxi = Math.ceil(Math.abs(rx) + Math.abs(ry)) + 2;
+  for (let y = -rxi; y <= rxi; y++) {
+    for (let x = -rxi; x <= rxi; x++) {
+      const lx = x * ca + y * sa;
+      const ly = -x * sa + y * ca;
+      const nx = lx / rx, ny = ly / ry;
+      // pointed tip in +lx
+      const tip = nx > 0 ? nx * nx * 1.15 + ny * ny : nx * nx * 0.75 + ny * ny;
+      if (tip > 1) continue;
+      const col = pal.hi ? shadeAt(pal, nx, ny) : pal;
+      plot(buf, Math.round(cx + x), Math.round(cy + y), col, kind, depth);
     }
   }
-  return { x: layer.x, y: layer.y, rows: rows.map((r) => r.join("")) };
 }
 
-function cargoPockets(view) {
-  if (view === "e") {
-    return L(58, [
-      "............oxxxo.............",
-      "............ozzzo.............",
-    ]);
-  }
-  return L(58, [
-    ".........oxxx....xxxo.........",
-    ".........ozzz....zzzo.........",
-  ]);
-}
-
-function skateStripe(layer) {
-  if (!layer) return layer;
-  const rows = layer.rows.map((r) => r);
-  // add a highlight stripe on shoe mid rows
-  const out = rows.map((row) => row.split(""));
-  for (let j = 0; j < out.length; j++) {
-    const s = out[j].join("");
-    if (s.includes("$") || s.includes("y")) {
-      for (let i = 0; i < out[j].length; i++) {
-        if (out[j][i] === "$") { out[j][i] = "y"; break; }
-      }
+function flipBuf(src, flip) {
+  if (!flip) return src;
+  const out = makeBuf();
+  for (let y = 0; y < AV_H; y++) {
+    for (let x = 0; x < AV_W; x++) {
+      out[y * AV_W + (AV_W - 1 - x)] = src[y * AV_W + x];
     }
   }
-  return { x: layer.x, y: layer.y, rows: out.map((r) => r.join("")) };
+  return out;
 }
 
-function addOutline(buf) {
+function shiftBuf(buf, dy) {
+  if (!dy) return buf;
+  const out = makeBuf();
+  for (let y = 0; y < AV_H; y++) {
+    const ny = y + dy;
+    if (ny < 0 || ny >= AV_H) continue;
+    for (let x = 0; x < AV_W; x++) out[ny * AV_W + x] = buf[y * AV_W + x];
+  }
+  return out;
+}
+
+function lowestKindY(buf, pred) {
+  for (let y = AV_H - 1; y >= 0; y--) {
+    for (let x = 0; x < AV_W; x++) {
+      const p = buf[y * AV_W + x];
+      if (p && pred(p)) return y;
+    }
+  }
+  return -1;
+}
+
+function plantOnGround(buf) {
+  const sole = lowestKindY(buf, (p) => {
+    const k = p.kind || "";
+    return k.startsWith("shoe") || k.startsWith("sole") || k.startsWith("boot");
+  });
+  const body = lowestKindY(buf, (p) => p.kind !== "ink" && p.kind !== "sticker" && p.kind !== "shadow");
+  const y = sole >= 0 ? sole : body;
+  if (y < 0 || y === AV_GROUND_Y) return buf;
+  return shiftBuf(buf, AV_GROUND_Y - y);
+}
+
+function addInkOutline(buf) {
   const next = buf.slice();
   const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
   for (let y = 0; y < AV_H; y++) {
     for (let x = 0; x < AV_W; x++) {
       const i = y * AV_W + x;
       if (buf[i]) continue;
-      let neighbor = null;
+      let n = null;
       for (const [dx, dy] of dirs) {
-        const nx = x + dx, ny = y + dy;
-        if (nx < 0 || ny < 0 || nx >= AV_W || ny >= AV_H) continue;
-        const c = buf[ny * AV_W + nx];
-        if (c && c.kind !== "ink" && c.kind !== "shadow") { neighbor = c; break; }
+        const xx = x + dx, yy = y + dy;
+        if (xx < 0 || yy < 0 || xx >= AV_W || yy >= AV_H) continue;
+        const c = buf[yy * AV_W + xx];
+        if (c && c.kind !== "ink" && c.kind !== "sticker" && c.kind !== "shadow") { n = c; break; }
       }
-      if (!neighbor) continue;
-      const col = neighbor.color || INK;
-      next[i] = {
-        color: {
-          r: Math.max(0, Math.round(col.r * 0.4 + 10)),
-          g: Math.max(0, Math.round(col.g * 0.34 + 7)),
-          b: Math.max(0, Math.round(col.b * 0.3 + 6)),
-        },
-        kind: "ink",
-      };
+      if (!n) continue;
+      const col = mix(n.color || INK, INK, 0.72);
+      next[i] = { color: col, kind: "ink", depth: 80 };
     }
   }
   return next;
 }
 
-function lowestSolidY(buf) {
-  let shoeY = -1;
-  let bodyY = -1;
-  for (let y = AV_H - 1; y >= 0; y--) {
-    for (let x = 0; x < AV_W; x++) {
-      const p = buf[y * AV_W + x];
-      if (!p || p.kind === "ink" || p.kind === "shadow") continue;
-      const k = String(p.kind || "");
-      if (k.startsWith("sole") || k.startsWith("shoe")) {
-        if (shoeY < 0) shoeY = y;
-      } else if (x >= 8 && x <= 23 && y >= 50) {
-        if (bodyY < 0) bodyY = y;
-      }
-    }
-  }
-  if (shoeY >= 0) return shoeY;
-  if (bodyY >= 0) return bodyY;
-  for (let y = AV_H - 1; y >= 0; y--) {
-    for (let x = 8; x <= 23; x++) {
-      const p = buf[y * AV_W + x];
-      if (p && p.kind !== "ink" && p.kind !== "shadow") return y;
-    }
-  }
-  return -1;
-}
-
-function shiftBuf(buf, dy) {
-  if (!dy) return buf;
-  const next = makeBuf();
+function addStickerOutline(buf) {
+  const next = buf.slice();
+  const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
   for (let y = 0; y < AV_H; y++) {
-    const ny = y + dy;
-    if (ny < 0 || ny >= AV_H) continue;
-    for (let x = 0; x < AV_W; x++) next[ny * AV_W + x] = buf[y * AV_W + x];
+    for (let x = 0; x < AV_W; x++) {
+      const i = y * AV_W + x;
+      if (buf[i]) continue;
+      let hit = false;
+      for (const [dx, dy] of dirs) {
+        const xx = x + dx, yy = y + dy;
+        if (xx < 0 || yy < 0 || xx >= AV_W || yy >= AV_H) continue;
+        const c = buf[yy * AV_W + xx];
+        if (c && c.kind !== "shadow") { hit = true; break; }
+      }
+      if (hit) next[i] = { color: STICKER, kind: "sticker", depth: 90 };
+    }
   }
   return next;
-}
-
-function plantOnGround(buf) {
-  const sole = lowestSolidY(buf);
-  if (sole < 0) return buf;
-  return shiftBuf(buf, AV_GROUND_Y - sole);
-}
-
-function armKindFromFlags(flags, frame) {
-  if (flags.sitting) return "sit";
-  if (flags.actionEmote === "wave" || flags.actionEmote === "dance") return "wave";
-  if (flags.boxing) return "punch";
-  if (flags.usingPhone) {
-    const f = frame % 3;
-    return f === 1 ? "phone1" : f === 2 ? "phone2" : "phone";
-  }
-  const held = flags.heldItem?.kind || flags.heldItem || flags.heldProp;
-  if (held) return "hold";
-  if (flags.gym) return "hold";
-  if (flags.walking) {
-    const f = frame % 8;
-    if (f === 0 || f === 1) return "w0";
-    if (f === 2 || f === 3) return "w1";
-    if (f === 4 || f === 5) return "w2";
-    return "w3";
-  }
-  return "idle";
-}
-
-function legKindFromFlags(flags, frame) {
-  if (flags.sitting) return "sit";
-  if (flags.walking) {
-    const f = frame % 8;
-    if (f === 0 || f === 7) return "w0";
-    if (f === 1 || f === 2) return "w1";
-    if (f === 3 || f === 4) return "w2";
-    return "w3";
-  }
-  return "idle";
 }
 
 function buildPalette(av) {
   const skin = tones(av.skin, true);
   const shirt = tones(av.shirt);
   const pants = tones(av.bottomColor);
-  const hair = tones(av.hairColor);
+  const hair = tones(av.hairColor, true);
   const shoe = shoePal(av.shoes);
-  const accBase = av.accessory === "headphones" ? av.headphoneColor : (av.shirt || "#2a2a2e");
-  const acc = tones(av.accessory === "beanie" || av.accessory === "cap" || av.accessory === "trucker" ? (av.headphoneColor || av.shirt || "#2a2a2e") : accBase);
-  const graphic = mix(shirt.mid, rgb(255, 255, 255), 0.55);
-  const sole = av.shoes === "gum" || av.shoes === "white" ? tones("#c4a070") : tones("#1a1a1c");
-  const gold = tones("#f4c15d");
-  return {
-    ink: INK,
-    skin, shirt, pants, hair, shoe, acc,
-    sole: sole.mid ? sole : { mid: sole },
-    gold: gold.mid,
-    graphic,
-    eye: EYE_W,
-    pupil: PUPIL,
-    brow: mix(hexToRgb(av.hairColor || "#2b1d16"), INK, 0.4),
-    nose: mix(skin.sh, NOSE, 0.4),
-    mouth: MOUTH,
-  };
+  const acc = tones(av.headphoneColor || av.shirt || "#2a2a2e");
+  const sole = (av.shoes === "gum" || av.shoes === "white") ? tones("#b08958", true) : tones("#1e1a18");
+  return { skin, shirt, pants, hair, shoe, acc, sole, gold: tones("#c9a25a", true) };
 }
 
-const cache = new Map();
+/* ---------- geometry per view ---------- */
+function headGeom(key) {
+  // Head is ~45% of figure height (about 28px of 61).
+  if (key === "e") return { cx: 25, cy: 15.5, rx: 11.2, ry: 13.4 };
+  if (key === "se") return { cx: 21.4, cy: 15.2, rx: 12.2, ry: 13.6 };
+  if (key === "ne") return { cx: 23.5, cy: 15.2, rx: 12.6, ry: 13.6 };
+  return { cx: 24, cy: 15.2, rx: 13.2, ry: 13.8 };
+}
+
+function drawHead(buf, key, pal, upper, emote) {
+  const g = headGeom(key);
+  const cy = g.cy + upper;
+  // Slightly squared jaw: ellipse plus a flatter lower third.
+  ellipse(buf, g.cx, cy, g.rx, g.ry, pal.skin, "skin-head", 40);
+  ellipse(buf, g.cx, cy + g.ry * 0.28, g.rx * 0.92, g.ry * 0.78, pal.skin, "skin-jaw", 40);
+  // Cheeks
+  if (key !== "n") {
+    const off = key === "e" ? 3 : 7.5;
+    ellipse(buf, g.cx - (key === "e" ? 1 : off), cy + 5.2, 3.2, 2.6, { hi: pal.skin.hi, mid: mix(pal.skin.mid, rgb(230, 150, 130), 0.18), sh: pal.skin.sh }, "skin-cheek", 41);
+    if (key !== "e") ellipse(buf, g.cx + off, cy + 5.2, 3.2, 2.6, { hi: pal.skin.hi, mid: mix(pal.skin.mid, rgb(230, 150, 130), 0.18), sh: pal.skin.sh }, "skin-cheek", 41);
+  }
+  // Ears (small, round) — skip when a hat will cover, still draw; hats go on later.
+  if (key === "s") {
+    ellipse(buf, g.cx - g.rx + 1, cy + 1, 2.6, 3.1, pal.skin, "ear", 35);
+    ellipse(buf, g.cx + g.rx - 1, cy + 1, 2.6, 3.1, pal.skin, "ear", 35);
+  } else if (key === "se") {
+    ellipse(buf, g.cx - g.rx + 1.4, cy + 1, 2.5, 3.0, pal.skin, "ear", 35);
+    ellipse(buf, g.cx + g.rx - 0.6, cy + 0.6, 2.4, 2.8, pal.skin, "ear", 34);
+  } else if (key === "e") {
+    ellipse(buf, g.cx - 2, cy + 0.5, 2.5, 3.0, pal.skin, "ear", 34);
+  } else if (key === "n") {
+    ellipse(buf, g.cx - g.rx + 1, cy + 1, 2.6, 3.1, pal.skin, "ear", 35);
+    ellipse(buf, g.cx + g.rx - 1, cy + 1, 2.6, 3.1, pal.skin, "ear", 35);
+  } else if (key === "ne") {
+    ellipse(buf, g.cx - g.rx + 0.6, cy + 0.6, 2.4, 2.8, pal.skin, "ear", 34);
+    ellipse(buf, g.cx + g.rx - 1.4, cy + 1, 2.5, 3.0, pal.skin, "ear", 35);
+  }
+}
+
+function clearFaceWindow(buf, key, pal, upper) {
+  if (key === "n" || key === "ne") return;
+  const g = headGeom(key);
+  const cy = g.cy + upper;
+  // Repaint the lower face so hair never hides the eyes.
+  ellipse(buf, g.cx + (key === "e" ? 2 : 0), cy + 4.2, g.rx * (key === "e" ? 0.72 : 0.78), g.ry * 0.62, pal.skin, "skin-face", 48);
+  if (key !== "e") {
+    ellipse(buf, g.cx - 6.5, cy + 5.4, 3.1, 2.5, { hi: pal.skin.hi, mid: mix(pal.skin.mid, rgb(230, 150, 130), 0.16), sh: pal.skin.sh }, "skin-cheek", 49);
+    ellipse(buf, g.cx + 6.5, cy + 5.4, 3.1, 2.5, { hi: pal.skin.hi, mid: mix(pal.skin.mid, rgb(230, 150, 130), 0.16), sh: pal.skin.sh }, "skin-cheek", 49);
+  }
+}
+
+function drawFace(buf, key, pal, upper, emote) {
+  if (key === "n" || key === "ne") return;
+  const g = headGeom(key);
+  const cy = g.cy + upper;
+  const eyeY = cy + 5.2;
+  const eyeRx = 2.05, eyeRy = 2.55;
+  let leftX, rightX;
+  if (key === "e") { leftX = g.cx + 3.6; rightX = null; }
+  else if (key === "se") { leftX = g.cx - 3.2; rightX = g.cx + 7.0; }
+  else { leftX = g.cx - 6.0; rightX = g.cx + 6.0; }
+  const closed = emote === "laugh" || emote === "dance";
+  const crying = emote === "cry";
+  function eye(ex) {
+    if (closed) {
+      plot(buf, Math.round(ex - 1), Math.round(eyeY), INK, "eye", 54);
+      plot(buf, Math.round(ex), Math.round(eyeY + 1), INK, "eye", 54);
+      plot(buf, Math.round(ex + 1), Math.round(eyeY), INK, "eye", 54);
+    } else {
+      ellipse(buf, ex, eyeY, eyeRx, eyeRy, INK, "eye", 54);
+    }
+  }
+  eye(leftX);
+  if (rightX != null) eye(rightX);
+  if (crying) {
+    rect(buf, leftX - 0.5, eyeY + 3, leftX + 0.5, eyeY + 7, TEAR, "tear", 55);
+    if (rightX != null) rect(buf, rightX - 0.5, eyeY + 3, rightX + 0.5, eyeY + 7, TEAR, "tear", 55);
+  }
+  if (emote === "laugh") {
+    ellipse(buf, key === "e" ? g.cx + 4 : g.cx, cy + 9.0, 1.6, 1.2, rgb(90, 40, 40), "mouth", 54);
+  } else if (emote === "cry") {
+    ellipse(buf, key === "e" ? g.cx + 4 : g.cx, cy + 9.2, 1.2, 0.8, rgb(120, 70, 70), "mouth", 54);
+  }
+}
+
+function hairClumps(style, key) {
+  // Relative to head center. Each clump: {dx,dy,rx,ry,ang}
+  const up = -Math.PI / 2;
+  const styles = {
+    short: [
+      { dx: 0, dy: -9.5, rx: 7, ry: 5.5, ang: up },
+      { dx: -7.5, dy: -6.5, rx: 5, ry: 5, ang: up - 0.7 },
+      { dx: 7.5, dy: -6.5, rx: 5, ry: 5, ang: up + 0.7 },
+      { dx: -11, dy: -0.5, rx: 4.2, ry: 4.6, ang: Math.PI },
+      { dx: 11, dy: -0.5, rx: 4.2, ry: 4.6, ang: 0 },
+    ],
+    spiky: [
+      { dx: 0, dy: -12, rx: 4.2, ry: 7.8, ang: up },
+      { dx: -5.5, dy: -11, rx: 3.8, ry: 7.2, ang: up - 0.4 },
+      { dx: 5.5, dy: -11, rx: 3.8, ry: 7.2, ang: up + 0.4 },
+      { dx: -10, dy: -7.5, rx: 3.6, ry: 6.2, ang: up - 0.9 },
+      { dx: 10, dy: -7.5, rx: 3.6, ry: 6.2, ang: up + 0.9 },
+      { dx: -11, dy: -1, rx: 4, ry: 4.6, ang: Math.PI },
+      { dx: 11, dy: -1, rx: 4, ry: 4.6, ang: 0 },
+    ],
+    bangs: [
+      { dx: 0, dy: -9.5, rx: 7.5, ry: 5.5, ang: up },
+      { dx: -6.5, dy: -8, rx: 5, ry: 5, ang: up - 0.45 },
+      { dx: 6.5, dy: -8, rx: 5, ry: 5, ang: up + 0.45 },
+      { dx: -3.2, dy: -3.2, rx: 3.6, ry: 3.4, ang: up - 0.15 },
+      { dx: 3.6, dy: -3.6, rx: 3.4, ry: 3.2, ang: up + 0.25 },
+      { dx: -11, dy: 0, rx: 4.2, ry: 5.5, ang: Math.PI },
+      { dx: 11, dy: 0, rx: 4.2, ry: 5.5, ang: 0 },
+      { dx: -10, dy: 10, rx: 3.6, ry: 6.5, ang: Math.PI * 0.62 },
+      { dx: 10, dy: 10, rx: 3.6, ry: 6.5, ang: Math.PI * 0.38 },
+    ],
+    curly: [
+      { dx: 0, dy: -11, rx: 5.2, ry: 5.2, ang: up },
+      { dx: -7, dy: -9, rx: 5, ry: 5, ang: up },
+      { dx: 7, dy: -9, rx: 5, ry: 5, ang: up },
+      { dx: -11, dy: -3.5, rx: 4.6, ry: 4.6, ang: Math.PI },
+      { dx: 11, dy: -3.5, rx: 4.6, ry: 4.6, ang: 0 },
+      { dx: -10, dy: 3, rx: 4.2, ry: 4.2, ang: Math.PI },
+      { dx: 10, dy: 3, rx: 4.2, ry: 4.2, ang: 0 },
+    ],
+    bun: [
+      { dx: 0, dy: -8.5, rx: 7, ry: 5.2, ang: up },
+      { dx: -7.5, dy: -5, rx: 4.6, ry: 4.4, ang: up - 0.7 },
+      { dx: 7.5, dy: -5, rx: 4.6, ry: 4.4, ang: up + 0.7 },
+      { dx: -10.5, dy: 0, rx: 4, ry: 4.4, ang: Math.PI },
+      { dx: 10.5, dy: 0, rx: 4, ry: 4.4, ang: 0 },
+    ],
+    long: [
+      { dx: 0, dy: -9.5, rx: 7.5, ry: 5.5, ang: up },
+      { dx: -7.5, dy: -6.5, rx: 5, ry: 5, ang: up - 0.65 },
+      { dx: 7.5, dy: -6.5, rx: 5, ry: 5, ang: up + 0.65 },
+      { dx: -11, dy: -1, rx: 4.4, ry: 5, ang: Math.PI },
+      { dx: 11, dy: -1, rx: 4.4, ry: 5, ang: 0 },
+    ],
+    undercut: [
+      { dx: 0, dy: -11, rx: 6.2, ry: 6.8, ang: up },
+      { dx: -5, dy: -10, rx: 4.6, ry: 6, ang: up - 0.35 },
+      { dx: 5, dy: -10, rx: 4.6, ry: 6, ang: up + 0.35 },
+      { dx: -8, dy: -5, rx: 3.4, ry: 4.4, ang: up - 0.85 },
+      { dx: 8, dy: -5, rx: 3.4, ry: 4.4, ang: up + 0.85 },
+    ],
+  };
+  let clumps = styles[style] || styles.short;
+  if (key === "e") {
+    clumps = clumps.map((c) => ({ ...c, dx: c.dx * 0.55 + 2, dy: c.dy }));
+  } else if (key === "se" || key === "ne") {
+    clumps = clumps.map((c) => ({ ...c, dx: c.dx * 0.92 - 1, dy: c.dy }));
+  }
+  if (key === "n" || key === "ne") {
+    // Fuller back of the head; drop fringe clumps near the face.
+    clumps = clumps.filter((c) => c.dy < 8 || Math.abs(c.dx) > 6);
+    clumps = clumps.concat([
+      { dx: 0, dy: 2, rx: 10, ry: 8, ang: Math.PI / 2 },
+    ]);
+  }
+  return clumps;
+}
+
+function drawHair(buf, av, key, pal, upper, hatOn) {
+  const g = headGeom(key);
+  const cy = g.cy + upper;
+  const style = hatOn && av.hair !== "long" ? "short" : av.hair;
+  for (const c of hairClumps(style, key)) {
+    teardrop(buf, g.cx + c.dx, cy + c.dy, c.rx, c.ry, c.ang, pal.hair, "hair", 45);
+  }
+  // Skull cap fill so scalp never shows.
+  ellipse(buf, g.cx, cy - 3.5, g.rx * 0.92, g.ry * 0.72, pal.hair, "hair-cap", 44);
+  if (av.hair === "bun") {
+    circle(buf, g.cx - 11, cy + 2, 3.8, pal.hair, "hair-bun", 46);
+    circle(buf, g.cx + 11, cy + 2, 3.8, pal.hair, "hair-bun", 46);
+  }
+  if (av.hair === "long") {
+    const lx = key === "e" ? 0 : 11.2;
+    if (key === "e") {
+      capsule(buf, g.cx - 6, cy + 4, g.cx - 5, cy + 22, 3.6, pal.hair, "hair-lock", 43);
+    } else {
+      capsule(buf, g.cx - lx, cy + 3, g.cx - lx - 0.5, cy + 22, 3.7, pal.hair, "hair-lock", 43);
+      capsule(buf, g.cx + lx, cy + 3, g.cx + lx + 0.5, cy + 22, 3.7, pal.hair, "hair-lock", 43);
+    }
+  }
+}
+
+function drawHat(buf, av, key, pal, upper) {
+  const g = headGeom(key);
+  const cy = g.cy + upper - 8.5;
+  const acc = pal.acc;
+  if (av.accessory === "beanie") {
+    ellipse(buf, g.cx, cy + 2, g.rx * 0.88, 5.2, acc, "hat", 55);
+    ellipse(buf, g.cx, cy + 0.2, g.rx * 0.62, 3.2, acc, "hat", 56);
+    circle(buf, g.cx, cy - 4, 2.0, acc, "hat-pom", 57);
+  } else if (av.accessory === "cap" || av.accessory === "trucker") {
+    ellipse(buf, g.cx, cy + 2.2, g.rx * 0.88, 4.4, acc, "hat", 55);
+    if (key !== "n") {
+      const bx = key === "e" ? g.cx + 7 : g.cx;
+      ellipse(buf, bx, cy + 5.4, key === "e" ? 6.5 : 7.5, 1.6, acc, "hat-brim", 56);
+    }
+  }
+}
+
+function ring(buf, cx, cy, rx, ry, color, kind, depth) {
+  const rxi = Math.ceil(rx) + 1, ryi = Math.ceil(ry) + 1;
+  for (let y = -ryi; y <= ryi; y++) {
+    for (let x = -rxi; x <= rxi; x++) {
+      const d = (x / rx) * (x / rx) + (y / ry) * (y / ry);
+      if (d > 1.08 || d < 0.62) continue;
+      plot(buf, Math.round(cx + x), Math.round(cy + y), color, kind, depth);
+    }
+  }
+}
+
+function drawGlasses(buf, key, upper) {
+  if (key === "n" || key === "ne") return;
+  const g = headGeom(key);
+  const cy = g.cy + upper + 5.2;
+  const frame = rgb(48, 36, 32);
+  if (key === "e") {
+    ring(buf, g.cx + 3.6, cy, 3.4, 2.8, frame, "glasses", 56);
+    return;
+  }
+  const wide = 6.0;
+  ring(buf, g.cx - wide, cy, 3.6, 2.9, frame, "glasses", 56);
+  ring(buf, g.cx + wide, cy, 3.6, 2.9, frame, "glasses", 56);
+  rect(buf, g.cx - 2, cy, g.cx + 2, cy, frame, "glasses", 56);
+}
+
+function drawHeadphones(buf, av, key, pal, upper) {
+  const g = headGeom(key);
+  const cy = g.cy + upper;
+  const acc = pal.acc;
+  ellipse(buf, g.cx, cy - 9, 8, 3.2, acc, "hp-band", 58);
+  if (key !== "e") {
+    circle(buf, g.cx - g.rx + 1, cy + 1, 3.4, acc, "hp-cup", 58);
+    circle(buf, g.cx + g.rx - 1, cy + 1, 3.4, acc, "hp-cup", 58);
+  } else {
+    circle(buf, g.cx - 2, cy + 0.5, 3.4, acc, "hp-cup", 58);
+  }
+}
+
+/* Body / clothes / limbs */
+function torsoBox(key, sit) {
+  // Short stubby torso under the big head.
+  const y0 = 29 + (sit ? 0 : 0);
+  if (key === "e") return { cx: 25, y0, hw: 6.2, h: 13 };
+  if (key === "se") return { cx: 22.4, y0, hw: 7.2, h: 13 };
+  if (key === "ne") return { cx: 23.8, y0, hw: 7.4, h: 13 };
+  return { cx: 24, y0, hw: 8.0, h: 13 };
+}
+
+function drawTorso(buf, av, key, pal, upper, sit) {
+  const t = torsoBox(key, sit);
+  const y0 = t.y0 + upper;
+  // Neck
+  rect(buf, t.cx - 2.2, y0 - 2, t.cx + 2.2, y0 + 2, pal.skin, "neck", 20, 1);
+  // Skin torso (in case sleeves/neckline show)
+  ellipse(buf, t.cx, y0 + t.h * 0.42, t.hw, t.h * 0.62, pal.skin, "skin-body", 18);
+  // Shirt / hoodie / jacket
+  const topPal = pal.shirt;
+  ellipse(buf, t.cx, y0 + t.h * 0.45, t.hw + 0.6, t.h * 0.66, topPal, "top", 22);
+  if (av.top === "hoodie") {
+    // Hood ring and pouch
+    ellipse(buf, t.cx, y0 + 1.5, t.hw * 0.95, 3.5, topPal, "hood", 24);
+    ellipse(buf, t.cx, y0 + t.h * 0.7, t.hw * 0.7, 3.2, { hi: topPal.sh, mid: topPal.sh, sh: mix(topPal.sh, INK, 0.2) }, "pouch", 24);
+  }
+  if (av.top === "jacket") {
+    // Open placket down the center
+    if (key !== "n") {
+      rect(buf, t.cx - 1, y0 + 1, t.cx + 1, y0 + t.h - 1, pal.skin, "placket", 25);
+      rect(buf, t.cx - 1.8, y0 + 1, t.cx - 0.6, y0 + t.h - 1, topPal.sh, "lapel", 26);
+      rect(buf, t.cx + 0.6, y0 + 1, t.cx + 1.8, y0 + t.h - 1, topPal.sh, "lapel", 26);
+    }
+    ellipse(buf, t.cx, y0 + 1, t.hw + 0.4, 2.8, topPal, "collar", 26);
+  }
+  if (av.top === "bandtee") {
+    const gx = key === "e" ? t.cx + 2 : t.cx;
+    ellipse(buf, gx, y0 + 6, 3.2, 3.2, pal.gold, "graphic", 26);
+  }
+  if (av.accessory === "chain" && key !== "n") {
+    ellipse(buf, t.cx, y0 + 3, 3.5, 2.2, pal.gold, "chain", 27);
+  }
+  if (av.accessory === "belt") {
+    rect(buf, t.cx - t.hw, y0 + t.h - 2, t.cx + t.hw, y0 + t.h, pal.gold, "belt", 27);
+  }
+}
+
+function drawLegs(buf, av, key, pal, pose) {
+  const sit = pose.sit;
+  const t = torsoBox(key, sit);
+  const hipY = t.y0 + t.h - 1;
+  const ground = AV_GROUND_Y;
+  const shorts = av.bottom === "shorts";
+  const pants = pal.pants;
+  if (sit) {
+    // Tucked stubby legs, feet still near the ground.
+    if (key === "e") {
+      capsule(buf, t.cx, hipY, t.cx + 10, hipY + 4, 3.2, pants, "pants", 12);
+      ellipse(buf, t.cx + 13, ground - 2, 5, 3.2, pal.shoe, "shoe", 14);
+      ellipse(buf, t.cx + 13, ground, 5, 1.6, pal.sole, "sole", 13);
+    } else {
+      capsule(buf, t.cx - 5, hipY, t.cx - 8, hipY + 6, 3.4, pants, "pants", 12);
+      capsule(buf, t.cx + 5, hipY, t.cx + 8, hipY + 6, 3.4, pants, "pants", 12);
+      ellipse(buf, t.cx - 9, ground - 2, 5, 3.2, pal.shoe, "shoe", 14);
+      ellipse(buf, t.cx + 9, ground - 2, 5, 3.2, pal.shoe, "shoe", 14);
+      ellipse(buf, t.cx - 9, ground, 5, 1.6, pal.sole, "sole", 13);
+      ellipse(buf, t.cx + 9, ground, 5, 1.6, pal.sole, "sole", 13);
+    }
+    return;
+  }
+  const L = pose.left, R = pose.right;
+  function leg(side, foot) {
+    const hipX = t.cx + side * (key === "e" ? 1.5 : 4.2);
+    const footX = hipX + foot.dx;
+    const footY = ground - foot.lift;
+    const midY = (hipY + footY) / 2 + 1;
+    const pantR = 3.3;
+    const pantEnd = shorts ? hipY + 6 : footY - 5;
+    if (shorts) capsule(buf, hipX, pantEnd, footX, footY - 5, 2.5, pal.skin, "leg", 9);
+    capsule(buf, hipX, hipY, hipX + foot.dx * 0.35, pantEnd, pantR, pants, "pants", 10);
+    if (av.bottom === "cargo" && !shorts) {
+      ellipse(buf, hipX + side * 2.2, hipY + 6, 2.4, 2.2, pants, "cargo", 11);
+    }
+    if (av.bottom === "joggers") {
+      ellipse(buf, footX, footY - 5.5, 3.2, 2, pants, "cuff", 11);
+    }
+    // Chunky boot / sneaker
+    ellipse(buf, footX, footY - 2.2, 5.2, 3.4, pal.shoe, "shoe", 14);
+    ellipse(buf, footX + (key === "e" ? 1.5 : 0), footY - 0.2, 5.4, 1.8, pal.sole, "sole", 13);
+    if (av.shoes === "skate") {
+      rect(buf, footX - 2, footY - 3, footX + 2, footY - 2, pal.gold, "shoe-stripe", 15);
+    }
+  }
+  // Far leg first
+  if (key === "e") {
+    leg(0, R);
+    // Near-side single visible leg mostly; still draw both slightly offset
+    leg(0.2, L);
+  } else {
+    leg(-1, L);
+    leg(1, R);
+  }
+}
+
+function drawArms(buf, av, key, pal, upper, pose) {
+  const t = torsoBox(key, pose.sit);
+  const y0 = t.y0 + upper;
+  const long = av.top === "hoodie" || av.top === "jacket";
+  const sleevePal = pal.shirt;
+  const skin = pal.skin;
+  function arm(side, kind, near) {
+    const sx = t.cx + side * (key === "e" ? 3 : t.hw - 0.5);
+    const sy = y0 + 3;
+    let ex = sx + side * 5, ey = sy + (long ? 13 : 11);
+    let hand = { x: ex, y: ey };
+    if (kind === "wave" || kind === "cheer") {
+      ex = sx + side * 2;
+      ey = y0 - 8;
+      hand = { x: ex + side, y: ey - 2 };
+    } else if (kind === "dance") {
+      ex = sx + side * 3;
+      ey = y0 - 6 + (side > 0 ? -2 : 1);
+      hand = { x: ex, y: ey - 1 };
+    } else if (kind === "phone" || kind.startsWith("phone")) {
+      ex = t.cx + (key === "e" ? 6 : 5);
+      ey = y0 + 2;
+      hand = { x: ex + 1, y: ey + 2 };
+    } else if (kind === "hold" || kind === "punch") {
+      ex = t.cx + side * 6;
+      ey = y0 + 8;
+      hand = { x: ex, y: ey };
+    } else if (kind === "sit") {
+      ex = sx + side * 4;
+      ey = y0 + 10;
+      hand = { x: ex, y: ey };
+    } else if (kind === "clap") {
+      ex = t.cx + side * 2;
+      ey = y0 + 6;
+      hand = { x: t.cx + side * 1.5, y: ey };
+    } else if (kind === "shrug") {
+      ex = sx + side * 7;
+      ey = y0 + 1;
+      hand = { x: ex, y: ey };
+    } else if (typeof pose.armSwing === "number") {
+      ex = sx + side * (4 + pose.armSwing * side);
+      ey = sy + 11 - Math.abs(pose.armSwing);
+      hand = { x: ex, y: ey + 1 };
+    }
+    const depth = near ? 30 : 8;
+    // Sleeve
+    const midX = (sx + hand.x) / 2, midY = (sy + hand.y) / 2;
+    capsule(buf, sx, sy, long ? hand.x : midX, long ? (hand.y + midY) / 2 : midY, 3.6, sleevePal, "sleeve", depth);
+    if (!long) capsule(buf, midX, midY, hand.x, hand.y, 3.0, skin, "arm", depth + 1);
+    // Mitten hand
+    circle(buf, hand.x, hand.y, 3.5, skin, "hand", depth + 2);
+    if (av.accessory === "wristband" && near) {
+      circle(buf, (hand.x + sx) / 2, (hand.y + sy) / 2 + 2, 2.2, pal.gold, "wrist", depth + 3);
+    }
+    return hand;
+  }
+
+  const aKind = pose.armKind || "idle";
+  const oneHanded = aKind === "wave" || aKind.startsWith("phone") || aKind === "hold" || aKind === "punch";
+  if (key === "e") {
+    const hand = arm(1, aKind, true);
+    return { near: hand };
+  }
+  const farKind = oneHanded ? "idle" : (aKind === "dance" || aKind === "cheer" || aKind === "clap" || aKind === "shrug" ? aKind : "idle");
+  arm(-1, farKind, false);
+  const near = arm(1, aKind, true);
+  return { near };
+}
+
+function drawProp(buf, flags, hand, key, pose) {
+  if (!hand) return;
+  const held = flags.heldItem?.kind || flags.heldProp || (typeof flags.heldItem === "string" ? flags.heldItem : "");
+  if (pose.armKind && String(pose.armKind).startsWith("phone") || flags.usingPhone) {
+    const pal = tones("#3a3430");
+    rect(buf, hand.x - 1, hand.y - 6, hand.x + 3, hand.y + 1, pal, "phone", 60, 1);
+    const screen = rgb(160, 196, 170);
+    rect(buf, hand.x - 0, hand.y - 5, hand.x + 2, hand.y - 1, screen, "phone-screen", 61);
+    return;
+  }
+  if (!held) return;
+  if (held === "soda" || held === "coffee" || held === "drink" || held === "mug") {
+    const cup = held === "coffee" || held === "mug" ? tones("#6a4030", true) : tones("#8a2e2a");
+    rect(buf, hand.x - 1, hand.y - 5, hand.x + 2, hand.y + 1, cup, "cup", 60, 1);
+  }
+}
+
+function walkPose(frame, walking, sit) {
+  if (sit) return { sit: true, left: { dx: 0, lift: 0 }, right: { dx: 0, lift: 0 }, armKind: "sit", armSwing: 0 };
+  if (!walking) return { sit: false, left: { dx: 0, lift: 0 }, right: { dx: 0, lift: 0 }, armSwing: 0 };
+  const f = ((frame % 8) + 8) % 8;
+  // Bouncy chibi walk; at least one sole stays at lift 0.
+  const table = [
+    { left: { dx: 3, lift: 0 }, right: { dx: -2, lift: 0 }, bob: 0, armSwing: 2 },
+    { left: { dx: 4, lift: 0 }, right: { dx: -2, lift: 3 }, bob: -2, armSwing: 3 },
+    { left: { dx: 3, lift: 0 }, right: { dx: -1, lift: 1 }, bob: -1, armSwing: 2 },
+    { left: { dx: 1, lift: 0 }, right: { dx: 1, lift: 0 }, bob: 0, armSwing: 0 },
+    { left: { dx: -2, lift: 0 }, right: { dx: 3, lift: 0 }, bob: 0, armSwing: -2 },
+    { left: { dx: -2, lift: 3 }, right: { dx: 4, lift: 0 }, bob: -2, armSwing: -3 },
+    { left: { dx: -1, lift: 1 }, right: { dx: 3, lift: 0 }, bob: -1, armSwing: -2 },
+    { left: { dx: 1, lift: 0 }, right: { dx: 1, lift: 0 }, bob: 0, armSwing: 0 },
+  ];
+  return { sit: false, ...table[f] };
+}
+
+function armKindFromFlags(flags, frame) {
+  if (flags.sitting) return "sit";
+  if (flags.actionEmote === "wave") return "wave";
+  if (flags.actionEmote === "dance" || flags.actionEmote === "cheer") return "dance";
+  if (flags.actionEmote === "clap") return "clap";
+  if (flags.actionEmote === "shrug") return "shrug";
+  if (flags.boxing) return "punch";
+  if (flags.usingPhone) return (frame % 3 === 1) ? "phone1" : "phone";
+  const held = flags.heldItem?.kind || flags.heldItem || flags.heldProp;
+  if (held) return "hold";
+  if (flags.gym) return "hold";
+  if (flags.walking) return "walk";
+  return "idle";
+}
 
 function composeAvatar(av, flags, frame) {
   const dir = (flags.walking && (flags.dirX || flags.dirY))
@@ -6717,83 +748,49 @@ function composeAvatar(av, flags, frame) {
     : facingIndex8(flags.facing, flags.dirX, flags.dirY);
   const { key, flip } = viewOfDir(dir);
   const pal = buildPalette(av);
-  const walkBob = [0, 0, -1, 0, 0, 0, -1, 0];
   const sit = Boolean(flags.sitting);
-  const bob = (flags.walking && !sit) ? walkBob[frame % 8] : 0;
-  const upper = sit ? AV_SEAT_DROP : bob;
-  const aKind = armKindFromFlags(flags, frame);
-  const lKind = legKindFromFlags(flags, frame);
-  const arms = getArms(key, aKind);
-  const idleArms = getArms(key, "idle");
-  const legs = getLegs(key, lKind);
-  const sleeveLen = (av.top === "hoodie" || av.top === "jacket") ? "long" : "short";
-  const oneHanded = aKind === "wave" || aKind === "phone" || aKind === "hold";
+  const walk = Boolean(flags.walking) && !sit;
+  const pose = walkPose(frame, walk, sit);
+  pose.armKind = armKindFromFlags(flags, frame);
+  // Idle breathing: upper body only, feet stay planted.
+  const breathe = (!walk && !sit) ? ((frame % 16) < 8 ? 0 : -1) : 0;
+  const bob = walk ? (pose.bob || 0) : 0;
+  const upper = sit ? AV_SEAT_DROP : (bob + breathe);
+  const emote = flags.actionEmote || "";
 
-  const buf = makeBuf();
-  // far arm first (left on unflipped front). Keep the far arm idle for one-handed actions.
-  const far = oneHanded ? (flip ? idleArms.right : idleArms.left) : (flip ? arms.right : arms.left);
-  const near = oneHanded ? (flip ? arms.left : arms.right) : (flip ? arms.left : arms.right);
-  const armPull = (layer) => {
-    if (!layer || key === "e") return 0;
-    const pull = key === "se" || key === "ne" ? 1 : 2;
-    let minX = AV_W, maxX = 0;
-    for (const row of layer.rows || []) {
-      for (let i = 0; i < row.length; i++) {
-        if (row[i] !== "." && row[i] !== " ") {
-          const x = (layer.x || 0) + i;
-          if (x < minX) minX = x;
-          if (x > maxX) maxX = x;
-        }
-      }
-    }
-    const mid = (minX + maxX) / 2;
-    return mid < AV_W / 2 ? pull : -pull;
-  };
-  blitLayer(buf, sleeveFromArm(far, sleeveLen), pal, flip, armPull(far), upper);
-
-  let legLayer = av.bottom === "shorts" ? shortsLegs(legs) : legs;
-  if (av.shoes === "skate") legLayer = skateStripe(legLayer);
-  blitLayer(buf, legLayer, pal, flip, 0, 0);
-
-  blitLayer(buf, CORE[key], pal, flip, 0, upper);
-
-  const topBase = TOPS.tshirt[key];
-  blitLayer(buf, topBase, pal, flip, 0, upper);
-  if (av.top === "hoodie") blitLayer(buf, HOODIE_EXTRA[key], pal, flip, 0, upper);
-  if (av.top === "jacket") blitLayer(buf, JACKET_EXTRA[key], pal, flip, 0, upper);
-  if (av.top === "bandtee") blitLayer(buf, BAND_GRAPHIC[key], pal, flip, 0, upper);
-  if (av.bottom === "cargo") blitLayer(buf, cargoPockets(key), pal, flip, 0, sit ? AV_SEAT_DROP : 0);
-  if (av.accessory === "belt") {
-    blitLayer(buf, L(43 + upper, ["..........oggggggg..........", "..........oooooooo.........."]), pal, flip);
-  }
-
-  blitLayer(buf, sleeveFromArm(near, sleeveLen), pal, flip, armPull(near), upper);
-
-  if (av.accessory === "wristband") {
-    const handY = (near.y || 19) + Math.max(0, (near.rows.length || 8) - 5) + upper;
-    blitLayer(buf, L(handY, ["xzzx"], (near.x || 17) + 0), pal, flip);
-  }
-  if (av.accessory === "chain") blitLayer(buf, CHAIN[key], pal, flip, 0, upper);
-
-  const hair = (HAIR[av.hair] || HAIR.short)[key];
+  let buf = makeBuf();
   const hatOn = av.accessory === "cap" || av.accessory === "beanie" || av.accessory === "trucker";
-  if (!hatOn) blitLayer(buf, hair, pal, flip, 0, upper);
-  else {
-    // still a little hair at the sides
-    blitLayer(buf, hair, pal, flip, 0, upper);
-    blitLayer(buf, HATS[av.accessory][key], pal, flip, 0, upper);
+
+  // Far hair (long back strands) before body for back views? Draw body first, hair later covers head.
+  drawLegs(buf, av, key, pal, pose);
+  drawTorso(buf, av, key, pal, upper, sit);
+  const hands = drawArms(buf, av, key, pal, upper, pose);
+  if (key === "n" || key === "ne") {
+    drawHair(buf, av, key, pal, upper, hatOn);
+    drawHead(buf, key, pal, upper, emote);
+    // Hair cap over the back of the head
+    drawHair(buf, av, key, pal, upper, hatOn);
+  } else {
+    drawHead(buf, key, pal, upper, emote);
+    drawHair(buf, av, key, pal, upper, hatOn);
+    clearFaceWindow(buf, key, pal, upper);
+    drawFace(buf, key, pal, upper, emote);
   }
+  if (av.glasses) drawGlasses(buf, key, upper);
+  if (hatOn) drawHat(buf, av, key, pal, upper);
+  if (av.accessory === "headphones") drawHeadphones(buf, av, key, pal, upper);
+  if (emote === "heart") {
+    const g = headGeom(key);
+    ellipse(buf, g.cx + 8, g.cy + upper - 8, 2, 2, rgb(180, 70, 70), "heart", 70);
+    ellipse(buf, g.cx + 11, g.cy + upper - 8, 2, 2, rgb(180, 70, 70), "heart", 70);
+  }
+  drawProp(buf, flags, hands && hands.near, key, pose);
 
-  if (key !== "n" && key !== "ne") blitLayer(buf, FACE[key], pal, flip, 0, upper);
-  if (av.glasses) blitLayer(buf, GLASSES[key], pal, flip, 0, upper);
-  if (av.accessory === "headphones") blitLayer(buf, HEADPHONES[key], pal, flip, 0, upper);
-
-  const planted = plantOnGround(buf);
-  const outlined = addOutline(planted);
-
-  // floor shadow
-  const spr = { c: null, w: AV_W, h: AV_H, data: outlined };
-  return spr;
+  if (flip) buf = flipBuf(buf, true);
+  buf = plantOnGround(buf);
+  buf = addInkOutline(buf);
+  buf = addStickerOutline(buf);
+  return buf;
 }
 
 function bufToCanvas(buf) {
@@ -6805,22 +802,23 @@ function bufToCanvas(buf) {
   const img = ctx.createImageData(AV_W, AV_H);
   for (let i = 0; i < buf.length; i++) {
     const p = buf[i];
-    const o = i * 4;
     if (!p) continue;
+    const o = i * 4;
     img.data[o] = p.color.r;
     img.data[o + 1] = p.color.g;
     img.data[o + 2] = p.color.b;
     img.data[o + 3] = 255;
   }
   ctx.putImageData(img, 0, 0);
-  // elliptical shadow just under the soles, touching them
   ctx.globalCompositeOperation = "destination-over";
-  ctx.fillStyle = "rgba(20, 12, 10, 0.34)";
+  ctx.fillStyle = "rgba(28, 16, 12, 0.32)";
   ctx.beginPath();
-  ctx.ellipse(AV_W / 2, AV_GROUND_Y + 1.2, 10, 2.4, 0, 0, Math.PI * 2);
+  ctx.ellipse(AV_W / 2, AV_GROUND_Y + 1.3, 11, 2.3, 0, 0, Math.PI * 2);
   ctx.fill();
   return { c, w: AV_W, h: AV_H };
 }
+
+const cache = new Map();
 
 export function drawAvatarSprite(avatar = {}, flags = {}, frame = 0) {
   const av = normalizeAvatar(avatar);
@@ -6829,33 +827,33 @@ export function drawAvatarSprite(avatar = {}, flags = {}, frame = 0) {
     ? facingIndex8(null, flags.dirX, flags.dirY)
     : facingIndex8(flags.facing, flags.dirX, flags.dirY);
   const held = flags.heldItem?.kind || flags.heldProp || (typeof flags.heldItem === "string" ? flags.heldItem : "");
-  const key = "pd:" + JSON.stringify(av) + ":" + dir + ":" + Boolean(flags.sitting) + ":" + walk + ":" + (walk ? (frame % 8) : (flags.usingPhone ? (frame % 3) : 0)) + ":" + Boolean(flags.usingPhone) + ":" + Boolean(flags.boxing) + ":" + (flags.actionEmote || "") + ":" + held + ":" + Boolean(flags.gym);
+  const phase = walk ? (frame % 8) : (flags.usingPhone ? (frame % 3) : (frame % 16));
+  const key = "chibi:" + JSON.stringify(av) + ":" + dir + ":" + Boolean(flags.sitting) + ":" + walk + ":" + phase + ":" + Boolean(flags.usingPhone) + ":" + Boolean(flags.boxing) + ":" + (flags.actionEmote || "") + ":" + held + ":" + Boolean(flags.gym);
   const hit = cache.get(key);
   if (hit) return hit;
-  const composed = composeAvatar(av, flags, frame);
-  const spr = bufToCanvas(composed.data);
+  const spr = bufToCanvas(composeAvatar(av, flags, frame));
   cache.set(key, spr);
   return spr;
 }
 
 export const AVATAR_SHEET_LOOKS = [
-  { label: "spiky blond", skin: "#f0c9a8", hair: "spiky", hairColor: "#f3e5c2", shirt: "#ef476f", top: "tshirt", bottom: "jeans", bottomColor: "#3d4f7c", shoes: "white", accessory: "none" },
-  { label: "emo fringe", skin: "#e6b589", hair: "bangs", hairColor: "#222222", shirt: "#2a2a2e", top: "jacket", bottom: "jeans", bottomColor: "#1a1a22", shoes: "black", accessory: "headphones", headphoneColor: "#2a2a2e" },
-  { label: "afro", skin: "#8d5524", hair: "curly", hairColor: "#2b1d16", shirt: "#7bc47f", top: "hoodie", bottom: "joggers", bottomColor: "#2a2a2e", shoes: "red", accessory: "chain" },
-  { label: "purple buns", skin: "#c8894e", hair: "bun", hairColor: "#7b4f9c", shirt: "#ff8fab", top: "hoodie", bottom: "jeans", bottomColor: "#3d4f7c", shoes: "gum", accessory: "none" },
-  { label: "wild grey", skin: "#d8a56a", hair: "spiky", hairColor: "#9aa0b0", shirt: "#6c7bff", top: "jacket", bottom: "cargo", bottomColor: "#3d4f7c", shoes: "white", accessory: "none", glasses: true },
-  { label: "long dark", skin: "#e6b589", hair: "long", hairColor: "#2b1d16", shirt: "#5c4d7d", top: "jacket", bottom: "jeans", bottomColor: "#2a2a2e", shoes: "black", glasses: true },
-  { label: "band tee", skin: "#e6b589", hair: "spiky", hairColor: "#2b1d16", shirt: "#1a1a22", top: "bandtee", bottom: "shorts", bottomColor: "#c4a35a", shoes: "skate", accessory: "trucker" },
-  { label: "undercut", skin: "#c8894e", hair: "undercut", hairColor: "#2b1d16", shirt: "#2a2a2e", top: "hoodie", bottom: "cargo", bottomColor: "#6b7280", shoes: "skate", accessory: "wristband" },
+  { label: "spiky blond", skin: "#f0c9a8", hair: "spiky", hairColor: "#e6d3a4", shirt: "#c45c4a", top: "tshirt", bottom: "jeans", bottomColor: "#3d4f7c", shoes: "white", accessory: "none" },
+  { label: "emo fringe", skin: "#e6b589", hair: "bangs", hairColor: "#2a2422", shirt: "#3a3634", top: "jacket", bottom: "jeans", bottomColor: "#2a2624", shoes: "black", accessory: "headphones", headphoneColor: "#3a3634" },
+  { label: "afro", skin: "#8d5524", hair: "curly", hairColor: "#2b1d16", shirt: "#6a8a5a", top: "hoodie", bottom: "joggers", bottomColor: "#3a3634", shoes: "red", accessory: "chain" },
+  { label: "purple buns", skin: "#c8894e", hair: "bun", hairColor: "#6a4a70", shirt: "#c47a8a", top: "hoodie", bottom: "jeans", bottomColor: "#3d4f7c", shoes: "gum", accessory: "none" },
+  { label: "wild grey", skin: "#d8a56a", hair: "spiky", hairColor: "#8a8490", shirt: "#5a6a9a", top: "jacket", bottom: "cargo", bottomColor: "#4a4a42", shoes: "white", accessory: "none", glasses: true },
+  { label: "long dark", skin: "#e6b589", hair: "long", hairColor: "#2b1d16", shirt: "#5c4d7d", top: "jacket", bottom: "jeans", bottomColor: "#2a2624", shoes: "black", glasses: true },
+  { label: "band tee", skin: "#e6b589", hair: "spiky", hairColor: "#2b1d16", shirt: "#3a3634", top: "bandtee", bottom: "shorts", bottomColor: "#b89a5a", shoes: "skate", accessory: "trucker", headphoneColor: "#6a4030" },
+  { label: "undercut", skin: "#c8894e", hair: "undercut", hairColor: "#2b1d16", shirt: "#4a5a4a", top: "hoodie", bottom: "cargo", bottomColor: "#6b7280", shoes: "skate", accessory: "wristband" },
 ];
 
 export function paintAvatarSheet(canvas, looks, scale = 4) {
   looks = looks && looks.length ? looks : AVATAR_SHEET_LOOKS;
   const dirs = [
-    { d: 0, label: "SE" },
-    { d: 1, label: "S" },
-    { d: 7, label: "E" },
-    { d: 5, label: "N" },
+    { d: 1, label: "Front" },
+    { d: 0, label: "3/4" },
+    { d: 7, label: "Side" },
+    { d: 5, label: "Back" },
   ];
   const pad = 16, cap = 18, gap = 14;
   const cw = AV_W * scale, ch = AV_H * scale;
@@ -6878,14 +876,14 @@ export function paintAvatarSheet(canvas, looks, scale = 4) {
       ctx.drawImage(spr.c, 0, 0, spr.w, spr.h, x, y, cw, ch);
       if (r === 0) {
         ctx.fillStyle = "#2a1c16";
-        ctx.fillText(dir.label, x + cw / 2 - 8, y - 4);
+        ctx.fillText(dir.label, x + cw / 2 - 14, y - 4);
       }
     });
   });
 }
 
 export function paintStoreThumb(canvas, kind, item, base) {
-  const w = canvas.width = 28, h = canvas.height = 28;
+  const w = canvas.width = canvas.width || 48, h = canvas.height = canvas.height || 48;
   const ctx = canvas.getContext("2d");
   ctx.imageSmoothingEnabled = false;
   ctx.fillStyle = "#efe6d4";
@@ -6899,8 +897,9 @@ export function paintStoreThumb(canvas, kind, item, base) {
   }
   const av = { ...(base || {}), ...(item || {}) };
   const spr = drawAvatarSprite(av, { facing: { x: 1, z: 1 } }, 0);
-  const dw = 12, dh = 26;
-  ctx.drawImage(spr.c, 0, 0, spr.w, spr.h, Math.floor((w - dw) / 2), 2, dw, dh);
+  const scale = Math.max(1, Math.floor(Math.min((w - 4) / spr.w, (h - 4) / spr.h)));
+  const dw = spr.w * scale, dh = spr.h * scale;
+  ctx.drawImage(spr.c, 0, 0, spr.w, spr.h, Math.floor((w - dw) / 2), Math.floor((h - dh) / 2) + 1, dw, dh);
   return true;
 }
 
@@ -6910,4 +909,4 @@ if (typeof window !== "undefined") {
   window.__drawAvatarSprite = drawAvatarSprite;
 }
 
-export default { drawAvatarSprite, paintAvatarSheet, paintStoreThumb, facingIndex8, AV_W, AV_H, AVATAR_SHEET_LOOKS };
+export default { drawAvatarSprite, paintAvatarSheet, paintStoreThumb, facingIndex8, AV_W, AV_H, AV_GROUND_Y, AV_HEAD_TOP, AVATAR_SHEET_LOOKS };

@@ -1,4 +1,4 @@
-import { drawAvatarSprite, paintAvatarSheet, paintStoreThumb, AVATAR_SHEET_LOOKS, AV_W, AV_H, AV_GROUND_Y, facingIndex8 } from "./avatar3d.js";
+import { drawAvatarSprite, paintAvatarSheet, paintStoreThumb, AVATAR_SHEET_LOOKS, AV_W, AV_H, AV_GROUND_Y, AV_HEAD_TOP, facingIndex8 } from "./avatar3d.js";
 import { drawPetSprite as drawPetPixel, paintPetSheet, paintPetThumb, PET_W, PET_H, PET_GROUND_Y } from "./petSprites.js";
 import { programAt } from "./cubechannel.js";
 import {
@@ -1093,7 +1093,7 @@ export function createRoom3D(container) {
       if (!st && !p) return null;
       const x = (st?.x ?? p.x) + 0.5, y = (st?.y ?? p.y) + 0.5;
       const foot = tileToScreen(x, y);
-      const c = clientFromWorld(foot.sx, foot.sy - AV_GROUND_Y + 8);
+      const c = clientFromWorld(foot.sx, foot.sy - AV_GROUND_Y + (AV_HEAD_TOP || 2));
       const f = clientFromWorld(foot.sx, foot.sy);
       const rect = container.getBoundingClientRect();
       return { x: c.x - rect.left, y: c.y - rect.top, footY: f.y - rect.top, visible: c.visible };
