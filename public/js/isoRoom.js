@@ -962,8 +962,11 @@ export function createRoom3D(container, opts = {}) {
         const head = tileToScreen(pose.head.x, pose.head.y);
         const footPt = tileToScreen(pose.foot.x, pose.foot.y);
         const angle = Math.atan2(footPt.sy - head.sy, footPt.sx - head.sx) - Math.PI / 2;
-        personItem.lie = { angle, headSx: head.sx, headSy: head.sy - 6, zeds: bedZeds(p.lyingAt || st.lyingAt, Date.now()) };
-        personItem.depth = (bed ? (bed.x + bed.y + 1.0) : depth) + 0.12;
+        const bedM = bed ? furnSpriteMetrics(bed.type, normalizeFurnRot(bed.rot)) : null;
+        const bedDepth = bed ? (bed.x + bed.y + (bedM.tw + bedM.th) / 2 + 0.2) : depth;
+        personItem.lie = { angle, headSx: head.sx, headSy: head.sy - 8, zeds: bedZeds(p.lyingAt || st.lyingAt, Date.now()) };
+        // Draw above the mattress so the sleeper isn't hidden under the bed sprite.
+        personItem.depth = bedDepth + 0.16;
         personItem.sx = head.sx - AV_W / 2;
         personItem.sy = head.sy - 20;
       }
@@ -1357,14 +1360,17 @@ export function createRoom3D(container, opts = {}) {
         ctx.save();
         ctx.translate(headSx, headSy);
         ctx.rotate(angle);
+        // Scale the standing sprite down so the body fits on a 2-tile mattress.
+        const lieScale = 0.72;
+        ctx.scale(lieScale, lieScale);
         // Head of the sprite sits on the pillow; body runs toward the foot.
-        ctx.drawImage(it.spr.c, -AV_W / 2, -14);
+        ctx.drawImage(it.spr.c, -AV_W / 2, -AV_HEAD_TOP - 1);
         // Blanket over the lower body (from mid-torso down)
         ctx.fillStyle = "rgba(126, 160, 196, 0.92)";
-        ctx.strokeStyle = "#2a1c14";
+        ctx.strokeStyle = "rgba(42, 28, 20, 0.35)";
         ctx.lineWidth = 1;
         ctx.beginPath();
-        const bx = -11, by = 22, bw = 22, bh = 28;
+        const bx = -10, by = 36, bw = 20, bh = 26;
         ctx.moveTo(bx + 3, by);
         ctx.lineTo(bx + bw - 3, by);
         ctx.lineTo(bx + bw, by + 4);
@@ -1840,6 +1846,16 @@ export function createRoom3D(container, opts = {}) {
       const st = personState.get(name);
       const p = people.find((x) => x.username === name);
       if (!st && !p) return null;
+      const lying = Boolean(st?.lying || p?.lying);
+      if (lying) {
+        const bed = furniture.find((f) => f.id === (p?.stationId || st?.stationId) && f.type === "bed");
+        const pose = liePose(bed || { x: st?.x ?? p.x, y: st?.y ?? p.y, rot: 0 });
+        const head = tileToScreen(pose.head.x, pose.head.y);
+        const c = clientFromWorld(head.sx, head.sy - 18);
+        const f = clientFromWorld(head.sx, head.sy + 8);
+        const rect = container.getBoundingClientRect();
+        return { x: c.x - rect.left, y: c.y - rect.top, footY: f.y - rect.top, visible: c.visible };
+      }
       const x = (st?.x ?? p.x) + 0.5, y = (st?.y ?? p.y) + 0.5;
       const foot = tileToScreen(x, y);
       // Sit the name tag just above the visible hair/head, not the empty canvas pad.

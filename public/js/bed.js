@@ -32,9 +32,14 @@ export function liePose(furn) {
   else if (r === 1) { hx = x; hy = y; fx = x + 1; fy = y; facing = { x: 1, z: 0 }; }
   else if (r === 2) { hx = x; hy = y + 1; fx = x; fy = y; facing = { x: 0, z: -1 }; }
   else { hx = x + 1; hy = y; fx = x; fy = y; facing = { x: -1, z: 0 }; }
-  const head = { x: hx + 0.5, y: hy + 0.5 };
+  // Pillow sits on the back third of the headboard tile, not the tile center.
+  const along = 0.20;
+  const head = {
+    x: hx + 0.5 + facing.x * (along - 0.5),
+    y: hy + 0.5 + facing.z * (along - 0.5),
+  };
   const foot = { x: fx + 0.5, y: fy + 0.5 };
-  const t = 0.28;
+  const t = 0.22;
   return {
     x: head.x + (foot.x - head.x) * t,
     y: head.y + (foot.y - head.y) * t,
