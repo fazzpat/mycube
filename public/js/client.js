@@ -1,6 +1,8 @@
 import { createRoom3D, createAvatarPreview } from "./isoRoom.js";
 import { CLOTHING_STOCK, PET_STOCK, PUBLIC_PLACES, clothingSlot, CLOTHING_SLOTS, HAIR_STYLES as CAT_HAIR_STYLES, HAIR_LABELS, TOP_LABELS, BOTTOM_LABELS, ACC_LABELS, BASE_TOPS, BASE_BOTTOMS, BASE_ACCESSORIES, TOPS as CAT_TOPS, BOTTOMS as CAT_BOTTOMS, ACCESSORIES as CAT_ACCESSORIES } from "./storeCatalog.js";
 import { ART_PIECES, paintArtThumb, registerArtCatalog, installPaintings } from "./artPieces.js";
+import { installWallLayout, switchFloorTile } from "./wallLayout.js";
+import { installChessLayout } from "./chessTable.js";
 import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, snapshot as cubicsSnap, drawCubics, jokeAt } from "./cubics.js";
 import { initChessUI } from "./chess-ui.js";
 
@@ -14,6 +16,8 @@ import { initChessUI } from "./chess-ui.js";
   window.__joinResults = [];
 
   installPaintings(window.HouseIso);
+  installWallLayout(window.HouseIso);
+  installChessLayout(window.HouseIso);
   registerArtCatalog(HouseIso);
   const CATALOG = Object.entries(HouseIso.CATALOG).map(([type, item]) => ({ type, ...item }));
 
@@ -489,9 +493,42 @@ import { initChessUI } from "./chess-ui.js";
       return isUseableFurn(type);
     });
     state.room3d.onFurnitureClick(handleFurnitureClick);
-    state.room3d.onSwitchClick(() => {
+    const toggleLights = () => {
       const on = !(state.room?.lightsOn !== false);
       socket.emit("setLights", { on });
+    };
+    state.room3d.onSwitchClick(toggleLights);
+    state.room3d.onSwitchTap?.(() => {
+      const me = state.people.get(state.me?.username);
+      const n = state.room?.size || 6;
+      const dest = switchFloorTile(n);
+      if (!me || Math.hypot(dest.x - me.x, dest.y - me.y) < 0.85) {
+        toggleLights();
+        return;
+      }
+      const blocked = blockedNow();
+      let goal = dest;
+      if (blocked.has(dest.x + "," + dest.y) || !inBoundsTile(dest.x, dest.y, n)) {
+        const cands = [];
+        for (const [dx, dy] of [[0, 1], [0, 0], [-1, 0], [1, 0], [0, -1]]) {
+          const x = dest.x + dx, y = dest.y + dy;
+          if (!inBoundsTile(x, y, n) || blocked.has(x + "," + y)) continue;
+          cands.push({ x, y, d: Math.hypot(x - me.x, y - me.y) });
+        }
+        cands.sort((a, b) => a.d - b.d);
+        if (!cands.length) { toggleLights(); return; }
+        goal = cands[0];
+      }
+      if (Math.hypot(goal.x - me.x, goal.y - me.y) < 0.85) {
+        toggleLights();
+        return;
+      }
+      const path = HouseIso.pathfind({ x: me.x, y: me.y }, { x: goal.x, y: goal.y }, blocked, n);
+      if (!path) { toggleLights(); return; }
+      state.pendingArrive = { x: goal.x, y: goal.y, fn: toggleLights };
+      state.room3d?.setMoveTarget?.(goal.x, goal.y);
+      setPersonDest(me, goal.x, goal.y, false);
+      socket.emit("move", { x: goal.x, y: goal.y });
     });
     state.room3d.onWallHover((wall, slot) => updateWallHighlight(wall, slot));
     state.room3d.onWallClick((wall, slot) => handleWallClick(wall, slot));

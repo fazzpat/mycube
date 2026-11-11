@@ -1406,6 +1406,22 @@ try {
   await alice.evaluate(() => window.HouseRoom3D.simulateSwitchClick());
   await alice.waitForFunction((prev) => window.HouseRoom3D.lightsOn() !== prev, lightsWereOn);
   check("Anyone can flip the wall switch and everyone sees the lights change", await bob.evaluate((prev) => window.HouseRoom3D.lightsOn() !== prev, lightsWereOn));
+  const allLights = await alice.evaluate(() => {
+    const draw = window.__drawFurnitureSprite;
+    if (typeof draw !== "function") return { ok: false, reason: "no sprite" };
+    const onSpr = draw("lamp", { lights: true, rot: 0 });
+    const offSpr = draw("lamp", { lights: false, rot: 0 });
+    if (!onSpr?.c || !offSpr?.c) return { ok: false, reason: "no canvas" };
+    const da = onSpr.c.getContext("2d").getImageData(0, 0, onSpr.w, onSpr.h).data;
+    const db = offSpr.c.getContext("2d").getImageData(0, 0, offSpr.w, offSpr.h).data;
+    let diff = 0;
+    for (let i = 0; i < da.length; i++) if (da[i] !== db[i]) diff++;
+    const state = window.HouseRoom3D.lightState?.() || { room: window.HouseRoom3D.lightsOn(), lamps: window.HouseRoom3D.lightsOn() };
+    const bobState = state;
+    return { ok: diff > 20, diff, state };
+  });
+  const bobLights = await bob.evaluate(() => window.HouseRoom3D.lightState?.() || { room: window.HouseRoom3D.lightsOn(), lamps: window.HouseRoom3D.lightsOn() });
+  check("The wall switch turns off room lighting and lamp furniture together, in sync", Boolean(allLights.ok && allLights.state && allLights.state.room === false && allLights.state.lamps === false && bobLights.room === false && bobLights.lamps === false), JSON.stringify({ allLights, bobLights }));
   await alice.waitForTimeout(300);
   await alice.screenshot({ path: `${SHOT}/14-lights-off.png` });
   // turn lights back on so later shots stay readable
@@ -1580,16 +1596,22 @@ try {
   await alice.waitForFunction(() => window.HouseRoom3D.getWallArt().some((a) => a.type === "art_neon" && a.wall === "left" && a.slot === 0));
   await alice.evaluate(() => { window.__startPlace("art_mona"); window.__clickWall("back", 0); });
   await alice.waitForFunction(() => window.HouseRoom3D.getWallArt().some((a) => a.type === "art_mona"));
-  await alice.evaluate(() => { window.__startPlace("art_starry"); window.__clickWall("back", 1); });
+  await alice.evaluate(() => { window.__startPlace("art_starry"); window.__clickWall("back", 3); });
   await alice.evaluate(() => { window.__startPlace("art_poster"); window.__clickWall("left", 1); });
-  await alice.evaluate(() => { window.__startPlace("art_hang"); window.__clickWall("back", 2); });
+  await alice.evaluate(() => { window.__startPlace("art_hang"); window.__clickWall("left", 2); });
   await alice.waitForFunction(() => window.HouseRoom3D.getWallArt().length >= 4);
   const blocked = await alice.evaluate(() => {
+    const door = window.HouseRoom3D.doorSlot?.() ?? 5;
+    const sw = window.HouseRoom3D.switchSlot?.() ?? 4;
     window.__startPlace("art_pop");
-    window.__clickWall("left", 3); // reserved for door/switch
-    return window.HouseRoom3D.getWallArt().some((a) => a.wall === "left" && a.slot === 3);
+    window.__clickWall("back", door);
+    const onDoor = window.HouseRoom3D.getWallArt().some((a) => a.wall === "back" && a.slot === door);
+    window.__startPlace("art_pop");
+    window.__clickWall("back", sw);
+    const onSwitch = window.HouseRoom3D.getWallArt().some((a) => a.wall === "back" && a.slot === sw);
+    return { onDoor, onSwitch, door, sw };
   });
-  check("Wall art can be placed on a wall grid and avoids the door, window, and switch", !blocked && await bob.evaluate(() => window.HouseRoom3D.getWallArt().some((a) => a.type === "art_neon")));
+  check("Wall art can be placed on a wall grid and avoids the door, window, and switch", !blocked.onDoor && !blocked.onSwitch && await bob.evaluate(() => window.HouseRoom3D.getWallArt().some((a) => a.type === "art_neon")), JSON.stringify(blocked));
   await alice.evaluate(() => window.__exitEdit());
   await alice.evaluate(() => window.HouseRoom3D.simulateSwitchClick());
   await alice.waitForFunction(() => window.HouseRoom3D.lightsOn() === false);

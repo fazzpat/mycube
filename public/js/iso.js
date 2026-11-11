@@ -19,13 +19,13 @@
     kitchenette: { name: "Kitchenette", price: 32, w: 2, h: 1, blocks: true },
     chair: { name: "Chair", price: 12, w: 1, h: 1, blocks: true },
     bookshelf: { name: "Bookshelf", price: 28, w: 2, h: 1, blocks: true },
-    chesstable: { name: "Chess table", price: 45, w: 2, h: 2, blocks: true },
+    chesstable: { name: "Chess table", price: 45, w: 1, h: 1, blocks: true },
     punchbag: { name: "Punching bag", price: 30, w: 1, h: 1, blocks: true },
     benchpress: { name: "Bench press", price: 35, w: 2, h: 1, blocks: true },
     treadmill: { name: "Treadmill", price: 35, w: 1, h: 2, blocks: true },
     cubics: { name: "Arcade cabinet", price: 40, w: 1, h: 1, blocks: true },
     clothescab: { name: "Clothes cabinet", price: 30, w: 1, h: 1, blocks: true },
-    coffeemachine: { name: "Coffee machine", price: 25, w: 1, h: 1, blocks: true },
+    coffeemachine: { name: "Coffee maker", price: 25, w: 1, h: 1, blocks: true },
     art_mona: { name: "Mona Cuba", price: 22, w: 1, h: 1, blocks: false, surface: "wall" },
     art_starry: { name: "Starry Cube Night", price: 28, w: 1, h: 1, blocks: false, surface: "wall" },
     art_pop: { name: "Pop-art cubes", price: 18, w: 1, h: 1, blocks: false, surface: "wall" },
@@ -148,16 +148,13 @@
     const n = size || GRID;
     const back = new Set();
     const left = new Set();
-    const winX = n * 0.18;
-    const doorZ = n * 0.22;
-    const swZ = doorZ - 0.7;
+    const winX = -n * 0.18;
     for (let s = 0; s < n; s++) {
       const cx = s + 0.5 - n / 2;
-      const cz = s + 0.5 - n / 2;
       if (Math.abs(cx - winX) < 1.05) back.add(s);
-      if (Math.abs(cz - doorZ) < 0.55) left.add(s);
-      if (Math.abs(cz - swZ) < 0.38) left.add(s);
     }
+    back.add(n - 1); // door at the far-right end of the back wall
+    back.add(Math.max(0, n - 2)); // light switch beside the door
     return { back, left };
   }
 
@@ -355,13 +352,13 @@
       kitchenette: `<svg class="furn-svg" width="90" height="56" viewBox="0 0 90 56"><rect x="6" y="20" width="78" height="28" fill="#d8c6a8" stroke="${ink}" stroke-width="2"/><rect x="6" y="16" width="78" height="8" fill="#8a8f96" stroke="${ink}" stroke-width="2"/></svg>`,
       chair: `<svg class="furn-svg" width="56" height="70" viewBox="0 0 56 70"><rect x="10" y="28" width="36" height="10" fill="#c4a06a" stroke="${ink}" stroke-width="2"/><rect x="10" y="8" width="36" height="20" fill="#b08958" stroke="${ink}" stroke-width="2"/><rect x="12" y="38" width="6" height="22" fill="#6b4a2b"/><rect x="38" y="38" width="6" height="22" fill="#6b4a2b"/></svg>`,
       bookshelf: `<svg class="furn-svg" width="90" height="76" viewBox="0 0 90 76"><rect x="8" y="6" width="74" height="64" fill="#8b5a2b" stroke="${ink}" stroke-width="2"/><rect x="14" y="16" width="10" height="18" fill="#6c5cff"/><rect x="28" y="16" width="10" height="18" fill="#e05656"/><rect x="42" y="16" width="10" height="18" fill="#3a8f5a"/></svg>`,
-      chesstable: `<svg class="furn-svg" width="90" height="70" viewBox="0 0 90 70"><rect x="10" y="22" width="70" height="36" rx="4" fill="#8b5a2b" stroke="${ink}" stroke-width="2"/><rect x="22" y="10" width="46" height="46" fill="#f3eadc" stroke="${ink}" stroke-width="2"/><path d="M22 10h11.5v11.5H22zM45 10h11.5v11.5H45zM33.5 21.5H45V33H33.5zM56.5 21.5H68V33H56.5zM22 33h11.5v11.5H22zM45 33h11.5v11.5H45z" fill="#3d2c29"/></svg>`,
+      chesstable: `<svg class="furn-svg" width="64" height="64" viewBox="0 0 64 64"><rect x="14" y="28" width="36" height="22" rx="3" fill="#8b5a2b" stroke="${ink}" stroke-width="2"/><rect x="18" y="16" width="28" height="28" fill="#f3eadc" stroke="${ink}" stroke-width="2"/><path d="M18 16h7v7H18zM32 16h7v7H32zM25 23h7v7h-7zM39 23h7v7h-7zM18 30h7v7H18zM32 30h7v7H32z" fill="#3d2c29"/><rect x="6" y="36" width="12" height="10" rx="2" fill="#6b4a2c" stroke="${ink}" stroke-width="1.5"/><rect x="46" y="36" width="12" height="10" rx="2" fill="#6b4a2c" stroke="${ink}" stroke-width="1.5"/></svg>`,
       punchbag: `<svg class="furn-svg" width="56" height="80" viewBox="0 0 56 80"><line x1="28" y1="4" x2="28" y2="16" stroke="${ink}" stroke-width="3"/><rect x="14" y="16" width="28" height="52" rx="12" fill="#c44536" stroke="${ink}" stroke-width="2"/><rect x="16" y="28" width="24" height="8" fill="#eee3d6"/></svg>`,
       benchpress: `<svg class="furn-svg" width="90" height="56" viewBox="0 0 90 56"><rect x="16" y="28" width="58" height="10" rx="2" fill="#d8c6a8" stroke="${ink}" stroke-width="2"/><rect x="12" y="14" width="8" height="28" fill="#6b6f78"/><rect x="70" y="14" width="8" height="28" fill="#6b6f78"/><rect x="8" y="12" width="74" height="6" rx="2" fill="#2a2a2e"/></svg>`,
       treadmill: `<svg class="furn-svg" width="70" height="70" viewBox="0 0 70 70"><rect x="16" y="36" width="40" height="18" rx="3" fill="#3d342c" stroke="${ink}" stroke-width="2"/><rect x="20" y="8" width="8" height="32" fill="#6b6f78"/><rect x="18" y="6" width="28" height="8" fill="#2a2a2e"/></svg>`,
       cubics: `<svg class="furn-svg" width="56" height="80" viewBox="0 0 56 80"><rect x="10" y="6" width="36" height="68" rx="4" fill="#2a1c4a" stroke="${ink}" stroke-width="2"/><rect x="14" y="12" width="28" height="22" fill="#111"/><rect x="18" y="16" width="8" height="8" fill="#ef476f"/><rect x="28" y="16" width="8" height="8" fill="#f4c15d"/></svg>`,
       clothescab: `<svg class="furn-svg" width="56" height="80" viewBox="0 0 56 80"><rect x="8" y="6" width="40" height="68" rx="3" fill="#8b5a2b" stroke="${ink}" stroke-width="2"/><line x1="12" y1="16" x2="44" y2="16" stroke="${ink}" stroke-width="2"/><rect x="16" y="18" width="10" height="22" fill="#7c5cff"/><rect x="30" y="18" width="10" height="22" fill="#ff7a59"/></svg>`,
-      coffeemachine: `<svg class="furn-svg" width="56" height="70" viewBox="0 0 56 70"><rect x="10" y="14" width="36" height="42" rx="4" fill="#d8d2ca" stroke="${ink}" stroke-width="2"/><rect x="16" y="8" width="24" height="10" rx="3" fill="#2a2a2e"/><rect x="22" y="36" width="14" height="14" fill="#fff8f0" stroke="${ink}" stroke-width="1.5"/></svg>`,
+      coffeemachine: `<svg class="furn-svg" width="56" height="74" viewBox="0 0 56 74"><rect x="6" y="40" width="44" height="10" rx="2" fill="#6b4a2c" stroke="${ink}" stroke-width="2"/><rect x="10" y="46" width="5" height="16" fill="#3a2818"/><rect x="41" y="46" width="5" height="16" fill="#3a2818"/><rect x="10" y="14" width="22" height="28" rx="2" fill="#d8d0c4" stroke="${ink}" stroke-width="2"/><rect x="14" y="20" width="14" height="12" fill="#3a2218"/><rect x="30" y="36" width="14" height="12" rx="2" fill="#8eb8c8" stroke="${ink}" stroke-width="1.5"/><rect x="32" y="40" width="10" height="6" fill="#3a1c10"/><path d="M34 12c0-4 3-6 3-10M40 12c0-3 2-5 2-8" fill="none" stroke="#d8d4cc" stroke-width="1.6" stroke-linecap="round"/></svg>`,
       art_mona: `<svg class="furn-svg" width="56" height="64" viewBox="0 0 56 64"><rect x="8" y="6" width="40" height="52" fill="#c4a06a" stroke="${ink}" stroke-width="2"/><rect x="14" y="18" width="28" height="28" fill="#7ea07a"/><rect x="22" y="24" width="12" height="14" fill="#f1c27d"/></svg>`,
       art_starry: `<svg class="furn-svg" width="56" height="64" viewBox="0 0 56 64"><rect x="8" y="6" width="40" height="52" fill="#1a2744" stroke="${ink}" stroke-width="2"/><path d="M12 30c8-10 16 4 24-8" stroke="#f4c15d" fill="none" stroke-width="3"/><rect x="30" y="36" width="8" height="8" fill="#9be7ff"/></svg>`,
       art_pop: `<svg class="furn-svg" width="56" height="64" viewBox="0 0 56 64"><rect x="8" y="6" width="18" height="24" fill="#ef476f" stroke="${ink}" stroke-width="1.5"/><rect x="28" y="6" width="18" height="24" fill="#f4c15d" stroke="${ink}" stroke-width="1.5"/><rect x="8" y="32" width="18" height="24" fill="#4d7cff" stroke="${ink}" stroke-width="1.5"/><rect x="28" y="32" width="18" height="24" fill="#3ecf8e" stroke="${ink}" stroke-width="1.5"/></svg>`,

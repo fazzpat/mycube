@@ -1,5 +1,8 @@
 /* Isometric furniture sprites — edges stay parallel to the floor-tile grid.
    Rotation is only the 4 axis directions: 0 = +Y (SW), 1 = +X (SE), 2 = -Y (NE), 3 = -X (NW). */
+import { drawCoffeeMaker } from "./coffeeMaker.js";
+import { drawChessTableSmall, drawChessStool, CHESS_STOOL_TYPE } from "./chessTable.js";
+
 const TW = 64;
 const TH = 32;
 const I = 0.125;
@@ -8,7 +11,7 @@ const TILES = {
   rug: [2, 2], plant: [1, 1], podplant: [1, 1], lamp: [1, 1], table: [2, 1],
   coffeetable: [2, 1], couch: [2, 1], capsulecouch: [2, 1], bed: [2, 3],
   tv: [2, 1], holotv: [2, 1], fridge: [1, 1], kitchenette: [2, 1], chair: [1, 1],
-  hoverchair: [1, 1], bookshelf: [2, 1], chesstable: [2, 2], punchbag: [1, 1],
+  hoverchair: [1, 1], bookshelf: [2, 1], chesstable: [1, 1], chessstool: [1, 1], punchbag: [1, 1],
   heavybag: [1, 1], benchpress: [2, 1], treadmill: [1, 2], cubics: [1, 1],
   clothescab: [1, 1], coffeemachine: [1, 1], djdeck: [2, 1], sodavending: [1, 1],
   neonsign: [1, 1], pinball: [1, 1], rack: [1, 1], mannequin: [1, 1],
@@ -18,8 +21,8 @@ const TILES = {
 const BODY_H = {
   rug: 4, plant: 36, podplant: 38, lamp: 48, table: 18, coffeetable: 14, counter: 20,
   couch: 26, capsulecouch: 26, chair: 24, hoverchair: 32, bed: 18, tv: 26, holotv: 26,
-  fridge: 44, kitchenette: 24, bookshelf: 42, chesstable: 16, punchbag: 46, heavybag: 46,
-  benchpress: 22, treadmill: 30, cubics: 44, pinball: 40, clothescab: 42, coffeemachine: 26,
+  fridge: 44, kitchenette: 24, bookshelf: 42, chesstable: 14, chessstool: 14, punchbag: 46, heavybag: 46,
+  benchpress: 22, treadmill: 30, cubics: 44, pinball: 40, clothescab: 42, coffeemachine: 48,
   djdeck: 18, sodavending: 46, neonsign: 46, rack: 36, mannequin: 42, petpen: 22, cage: 24,
 };
 
@@ -265,6 +268,11 @@ function sprite(key, w, h, draw) {
 function insetBox(tw, th) {
   return { x: I, y: I, w: tw - 2 * I, h: th - 2 * I };
 }
+
+const ISO_DRAW = {
+  TW, TH, I, box, pal, shade, shadow, diamond, fillPts, pt, insetBox,
+  frontRect, backRect, visibleFront, faceCorners, faceRect, normalizeFurnRot,
+};
 
 function drawSeat(ctx, tw, th, rot, lights, kind) {
   const studio = kind === "capsulecouch";
@@ -750,7 +758,7 @@ function drawPen(ctx, tw, th, lights, cage) {
   }
 }
 
-function paintPiece(ctx, type, rot, lights, on, open) {
+function paintPiece(ctx, type, rot, lights, on, open, opts = {}) {
   const { tw, th } = furnSpriteMetrics(type, rot);
   const r = normalizeFurnRot(rot);
   switch (type) {
@@ -771,13 +779,14 @@ function paintPiece(ctx, type, rot, lights, on, open) {
     case "tv":
     case "holotv": drawTV(ctx, tw, th, r, lights, on, type === "holotv"); break;
     case "fridge": drawFridge(ctx, tw, th, r, lights, open); break;
-    case "chesstable": drawChessTable(ctx, tw, th, r, lights); break;
+    case "chesstable": drawChessTableSmall(ctx, tw, th, r, lights, ISO_DRAW); break;
+    case "chessstool": drawChessStool(ctx, tw, th, r, lights, ISO_DRAW); break;
     case "cubics":
     case "pinball": drawArcade(ctx, tw, th, r, lights, type); break;
     case "sodavending": drawVending(ctx, tw, th, r, lights); break;
     case "bookshelf":
     case "clothescab": drawBookshelf(ctx, tw, th, r, lights, type === "clothescab"); break;
-    case "coffeemachine": drawCoffee(ctx, tw, th, r, lights); break;
+    case "coffeemachine": drawCoffeeMaker(ctx, tw, th, r, lights, opts, ISO_DRAW); break;
     case "punchbag":
     case "heavybag":
     case "benchpress":
@@ -802,14 +811,20 @@ export function drawFurnitureSprite(type, opts = {}) {
   const rot = normalizeFurnRot(opts.rot);
   const on = Boolean(opts.on);
   const open = Boolean(opts.open);
-  const key = "iso-furn:" + type + ":" + rot + ":" + lights + ":" + on + ":" + open + ":" + (opts.sku || "");
+  const brewing = Boolean(opts.brewing);
+  const steamFrame = type === "coffeemachine" ? (opts.steamFrame ?? 0) : 0;
+  const key = "iso-furn:" + type + ":" + rot + ":" + lights + ":" + on + ":" + open + ":" + (opts.sku || "") + (type === "coffeemachine" ? (":brew" + brewing + ":st" + steamFrame) : "");
   const m = furnSpriteMetrics(type, rot);
   return sprite(key, m.w, m.h, (ctx) => {
     ctx.save();
     ctx.translate(m.ox, m.oy);
-    paintPiece(ctx, type, rot, lights, on, open);
+    paintPiece(ctx, type, rot, lights, on, open, { brewing, steamFrame, sku: opts.sku });
     ctx.restore();
   });
+}
+
+export function drawChessStoolSprite(opts = {}) {
+  return drawFurnitureSprite(CHESS_STOOL_TYPE, opts);
 }
 
 export function paintFurnitureSheet(canvas, scale = 2) {

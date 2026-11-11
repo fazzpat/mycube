@@ -3,8 +3,11 @@ import { drawPetSprite as drawPetPixel, paintPetSheet, paintPetThumb, PET_W, PET
 import { programAt } from "./cubechannel.js";
 import {
   normalizeFurnRot, snapFacingToAxis, furnTileDims, furnSpriteMetrics, furnBlitPos,
-  drawFurnitureSprite, paintFurnitureSheet, hitFurnitureAt, FURN_SHEET_TYPES,
+  drawFurnitureSprite, drawChessStoolSprite, paintFurnitureSheet, hitFurnitureAt, FURN_SHEET_TYPES,
 } from "./furnIso.js";
+import { doorSlot as layoutDoorSlot, switchSlot as layoutSwitchSlot, windowSlots as layoutWindowSlots } from "./wallLayout.js";
+import { chessSeatPose, chessBoardMetrics } from "./chessTable.js";
+import { steamFrameAt } from "./coffeeMaker.js";
 import { isPainting, drawPaintingOnWall, preloadPaintings, ART_TILE_SPAN, ART_WORLD_UP, ART_HANG_UP, ART_SIZE } from "./artPieces.js";
 preloadPaintings();
 /* 2D isometric pixel room renderer — 2000s house style, HouseRoom3D API. */
@@ -465,7 +468,7 @@ export function createRoom3D(container) {
   const pointers = new Map();
   let pinchStart = 0, pinchZoom0 = 1;
   let onTileClick = null, onTileHover = null, onFurnitureClick = null;
-  let onSwitchClick = null, onWallClick = null, onWallHover = null;
+  let onSwitchClick = null, onSwitchTap = null, onWallClick = null, onWallHover = null;
   const personState = new Map();
 
   function nowServer() {
@@ -595,11 +598,33 @@ export function createRoom3D(container) {
     ctx.drawImage(spr.c, Math.round(x), Math.round(y));
     if (alpha !== 1) ctx.globalAlpha = 1;
   }
-  function doorSlot() { return Math.round(gridSize * 0.22 - 0.5 + gridSize / 2); }
-  function switchSlot() { return Math.round(gridSize * 0.22 - 0.7 - 0.5 + gridSize / 2); }
+  function doorSlot() { return layoutDoorSlot(gridSize); }
+  function switchSlot() { return layoutSwitchSlot(gridSize); }
+  function lightSwitchQuad() {
+    const s = switchSlot();
+    const t0 = s + 0.58, t1 = s + 0.96;
+    const u0 = 36, u1 = 58;
+    return [
+      wallPt("back", t0, u1),
+      wallPt("back", t1, u1),
+      wallPt("back", t1, u0),
+      wallPt("back", t0, u0),
+    ];
+  }
   function lightSwitchPos() {
-    const p = wallPt("left", switchSlot() + 0.38, 42);
-    return { sx: p.sx - 4, sy: p.sy - 5, w: 8, h: 11 };
+    const q = lightSwitchQuad();
+    const xs = q.map((p) => p.sx), ys = q.map((p) => p.sy);
+    const minX = Math.min(...xs), maxX = Math.max(...xs);
+    const minY = Math.min(...ys), maxY = Math.max(...ys);
+    return { sx: minX - 1, sy: minY - 1, w: maxX - minX + 2, h: maxY - minY + 2, quad: q };
+  }
+  function pointInPoly(pt, poly) {
+    let n = 0;
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[i], b = poly[(i + 1) % poly.length];
+      if (((a.sy > pt.sy) !== (b.sy > pt.sy)) && (pt.sx < (b.sx - a.sx) * (pt.sy - a.sy) / ((b.sy - a.sy) || 1e-6) + a.sx)) n++;
+    }
+    return n % 2 === 1;
   }
   function wallSlotWorld(wall, slot, type) {
     const s = Math.max(0, Math.min(gridSize - 1, slot | 0));
@@ -623,8 +648,18 @@ export function createRoom3D(container) {
         on: type === "tv" || type === "holotv" ? Boolean(tv.on) : Boolean(uses[f.id]?.on),
         open: type === "fridge" ? Boolean(uses[f.id]?.open) : false,
         sku: f.sku,
+        brewing: type === "coffeemachine" && uses[f.id]?.phase === "brew",
+        steamFrame: type === "coffeemachine" ? steamFrameAt(now) : 0,
       });
       list.push({ kind: "furn", id: f.id, type, depth: f.x + f.y + (m.tw + m.th) / 2 + 0.2, sx: pos.sx, sy: pos.sy, w: pos.w, h: pos.h, spr, raw: f });
+      if (type === "chesstable") {
+        for (const seat of [0, 1]) {
+          const pose = chessSeatPose(f, seat);
+          const stool = drawChessStoolSprite({ lights: lightsOn, rot: 0 });
+          const spos = furnBlitPos(pose.x, pose.y, "chessstool", 0, tileToScreen);
+          list.push({ kind: "stool", id: f.id + "-stool-" + seat, type: "chessstool", depth: pose.x + pose.y + 0.15, sx: spos.sx, sy: spos.sy, w: spos.w, h: spos.h, spr: stool, raw: f });
+        }
+      }
     }
     for (const npc of npcs) {
       const foot = footOf(npc.x, npc.y);
@@ -685,6 +720,14 @@ export function createRoom3D(container) {
       const pos = furnBlitPos(ghost.tx, ghost.ty, ghost.type, rot, tileToScreen);
       const spr = drawFurnitureSprite(ghost.type, { lights: lightsOn, rot });
       list.push({ kind: "ghost", depth: ghost.tx + ghost.ty + (m.tw + m.th) / 2 + 0.9, sx: pos.sx, sy: pos.sy, w: pos.w, h: pos.h, spr, alpha: 0.55 });
+      if (ghost.type === "chesstable") {
+        for (const seat of [0, 1]) {
+          const pose = chessSeatPose({ x: ghost.tx, y: ghost.ty, rot }, seat);
+          const stool = drawChessStoolSprite({ lights: lightsOn, rot: 0 });
+          const spos = furnBlitPos(pose.x, pose.y, "chessstool", 0, tileToScreen);
+          list.push({ kind: "ghost", depth: pose.x + pose.y + 0.85, sx: spos.sx, sy: spos.sy, w: spos.w, h: spos.h, spr: stool, alpha: 0.55 });
+        }
+      }
     }
     list.sort((a, b) => a.depth - b.depth);
     return list;
@@ -718,8 +761,8 @@ export function createRoom3D(container) {
     const cyber = Boolean(pal.cyber);
     const WT = 0.22;
     const doorS = doorSlot();
-    const doorT0 = doorS + 0.12, doorT1 = doorS + 0.88;
-    const doorH = Math.round(WALL_H * 0.72);
+    const doorT0 = doorS + 0.08, doorT1 = doorS + 0.92;
+    const doorH = Math.round(WALL_H * 0.78);
 
     function outer(wall, t, up) {
       if (wall === "back") {
@@ -733,18 +776,7 @@ export function createRoom3D(container) {
     function wallPlane(wall) {
       const mid = wall === "back" ? shade(base, 8) : shade(base, -10);
       const inner = (t, up) => wallPt(wall, t, up);
-      if (wall === "left") {
-        fillPoly(ctx, [inner(0, 0), inner(doorT0, 0), inner(doorT0, WALL_H), inner(0, WALL_H)], mid, grout);
-        fillPoly(ctx, [inner(doorT0, doorH), inner(doorT1, doorH), inner(doorT1, WALL_H), inner(doorT0, WALL_H)], mid, grout);
-        fillPoly(ctx, [inner(doorT1, 0), inner(n, 0), inner(n, WALL_H), inner(doorT1, WALL_H)], mid, grout);
-        fillPoly(ctx, [inner(doorT0, 0), inner(doorT1, 0), inner(doorT1, doorH), inner(doorT0, doorH)], lightsOn ? "#1a1410" : "#0c0a08", cap);
-        // door frame
-        fillPoly(ctx, [inner(doorT0 - 0.06, 0), inner(doorT0, 0), inner(doorT0, doorH), inner(doorT0 - 0.06, doorH)], shade(cap, 20), "#111");
-        fillPoly(ctx, [inner(doorT1, 0), inner(doorT1 + 0.06, 0), inner(doorT1 + 0.06, doorH), inner(doorT1, doorH)], shade(cap, 20), "#111");
-        fillPoly(ctx, [inner(doorT0 - 0.06, doorH), inner(doorT1 + 0.06, doorH), inner(doorT1 + 0.06, doorH + 4), inner(doorT0 - 0.06, doorH + 4)], shade(cap, 10), "#111");
-      } else {
-        fillPoly(ctx, [inner(0, 0), inner(n, 0), inner(n, WALL_H), inner(0, WALL_H)], mid, grout);
-      }
+      fillPoly(ctx, [inner(0, 0), inner(n, 0), inner(n, WALL_H), inner(0, WALL_H)], mid, grout);
       // Square wall tiles with visible grout: paint grout field, then tile faces.
       const rows = 3;
       const skirtH = 7, capH = 6;
@@ -757,13 +789,13 @@ export function createRoom3D(container) {
           const u0 = skirtH + r * rowH + 0.8;
           const u1 = skirtH + (r + 1) * rowH - 0.8;
           const t0 = i + 0.06, t1 = i + 1 - 0.06;
-          if (wall === "left" && t0 < doorT1 && t1 > doorT0 && u0 < doorH) continue;
+          if (wall === "back" && t0 < doorT1 && t1 > doorT0 && u0 < doorH) continue;
           const fill = (i + r) % 2 ? tileA : tileB;
           fillPoly(ctx, [inner(t0, u0), inner(t1, u0), inner(t1, u1), inner(t0, u1)], fill, grout);
         }
       }
       // skirting board
-      if (wall === "left") {
+      if (wall === "back") {
         fillPoly(ctx, [inner(0, 0), inner(doorT0, 0), inner(doorT0, 7), inner(0, 7)], skirt, cap);
         fillPoly(ctx, [inner(doorT1, 0), inner(n, 0), inner(n, 7), inner(doorT1, 7)], skirt, cap);
       } else {
@@ -779,10 +811,55 @@ export function createRoom3D(container) {
         ctx.strokeStyle = pal.trim;
         ctx.lineWidth = 1;
         let a = inner(0, 8), b = inner(n, 8);
-        if (wall === "left") { a = inner(0, 8); b = inner(doorT0, 8); ctx.beginPath(); ctx.moveTo(a.sx, a.sy); ctx.lineTo(b.sx, b.sy); ctx.stroke(); a = inner(doorT1, 8); b = inner(n, 8); }
+        if (wall === "back") { a = inner(0, 8); b = inner(doorT0, 8); ctx.beginPath(); ctx.moveTo(a.sx, a.sy); ctx.lineTo(b.sx, b.sy); ctx.stroke(); a = inner(doorT1, 8); b = inner(n, 8); }
         ctx.beginPath(); ctx.moveTo(a.sx, a.sy); ctx.lineTo(b.sx, b.sy); ctx.stroke();
         a = inner(0, WALL_H - 6); b = inner(n, WALL_H - 6);
         ctx.beginPath(); ctx.moveTo(a.sx, a.sy); ctx.lineTo(b.sx, b.sy); ctx.stroke();
+      }
+    }
+
+    function drawEntryDoor() {
+      const inner = (t, up) => wallPt("back", t, up);
+      const frameC = lightsOn ? "#3a2418" : "#221610";
+      const wood = lightsOn ? "#6b3e22" : "#3a2416";
+      const woodLite = lightsOn ? "#8a5630" : "#4a3020";
+      const woodDark = lightsOn ? "#4a2a16" : "#2a1810";
+      const knob = lightsOn ? "#d4b46a" : "#7a6438";
+      const fw = 0.055;
+      fillPoly(ctx, [inner(doorT0 - fw, 0), inner(doorT1 + fw, 0), inner(doorT1 + fw, doorH + 4), inner(doorT0 - fw, doorH + 4)], frameC, "#111");
+      fillPoly(ctx, [inner(doorT0, 0), inner(doorT1, 0), inner(doorT1, doorH), inner(doorT0, doorH)], wood, "#1a100c");
+      // recessed panels
+      const p0 = doorT0 + 0.12, p1 = doorT1 - 0.12;
+      fillPoly(ctx, [inner(p0, doorH * 0.52), inner(p1, doorH * 0.52), inner(p1, doorH * 0.88), inner(p0, doorH * 0.88)], woodDark, "#1a100c");
+      fillPoly(ctx, [inner(p0 + 0.04, doorH * 0.56), inner(p1 - 0.04, doorH * 0.56), inner(p1 - 0.04, doorH * 0.84), inner(p0 + 0.04, doorH * 0.84)], woodLite, null);
+      fillPoly(ctx, [inner(p0, doorH * 0.10), inner(p1, doorH * 0.10), inner(p1, doorH * 0.42), inner(p0, doorH * 0.42)], woodDark, "#1a100c");
+      fillPoly(ctx, [inner(p0 + 0.04, doorH * 0.14), inner(p1 - 0.04, doorH * 0.14), inner(p1 - 0.04, doorH * 0.38), inner(p0 + 0.04, doorH * 0.38)], woodLite, null);
+      // knob on the switch side (left of the far-right door)
+      const kt0 = doorT0 + 0.08, kt1 = doorT0 + 0.16;
+      const kh0 = doorH * 0.44, kh1 = doorH * 0.52;
+      fillPoly(ctx, [inner(kt0, kh0), inner(kt1, kh0), inner(kt1, kh1), inner(kt0, kh1)], knob, "#2a2010");
+      const kmid = wallPt("back", (kt0 + kt1) / 2, (kh0 + kh1) / 2);
+      ctx.fillStyle = lightsOn ? "#efe0b0" : "#8a7038";
+      ctx.beginPath();
+      ctx.arc(kmid.sx, kmid.sy, 1.6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    function drawLightSwitch() {
+      const q = lightSwitchQuad();
+      const plate = lightsOn ? "#d8d0c4" : "#8a8478";
+      const edge = "#2a2c30";
+      fillPoly(ctx, q, plate, edge);
+      // rocker inset, following the wall skew
+      const lerp = (a, b, t) => ({ sx: a.sx + (b.sx - a.sx) * t, sy: a.sy + (b.sy - a.sy) * t });
+      const [tl, tr, br, bl] = q;
+      const p = (u, v) => lerp(lerp(bl, br, u), lerp(tl, tr, u), v);
+      const inset = [p(0.22, 0.18), p(0.78, 0.18), p(0.78, 0.82), p(0.22, 0.82)];
+      fillPoly(ctx, inset, lightsOn ? "#b8b0a4" : "#5a5850", edge);
+      if (lightsOn) {
+        fillPoly(ctx, [p(0.28, 0.48), p(0.72, 0.48), p(0.72, 0.78), p(0.28, 0.78)], "#f0e8d0", edge);
+      } else {
+        fillPoly(ctx, [p(0.28, 0.22), p(0.72, 0.22), p(0.72, 0.52), p(0.28, 0.52)], "#3a3834", edge);
       }
     }
 
@@ -792,12 +869,10 @@ export function createRoom3D(container) {
     ctx.strokeStyle = "#1a1c20";
     ctx.beginPath(); ctx.moveTo(c0.sx, c0.sy); ctx.lineTo(c1.sx, c1.sy); ctx.stroke();
 
-    // window on reserved back slots
-    const winSlots = [];
-    for (let s = 0; s < n; s++) {
-      const cx = s + 0.5 - n / 2;
-      if (Math.abs(cx - n * 0.18) < 1.05) winSlots.push(s);
-    }
+    drawEntryDoor();
+
+    // window on reserved back slots (kept left of the door and switch)
+    const winSlots = layoutWindowSlots(n);
     if (winSlots.length) {
       const t0 = winSlots[0] + 0.18, t1 = winSlots[winSlots.length - 1] + 0.82;
       const v0 = 28, v1 = 70;
@@ -814,11 +889,7 @@ export function createRoom3D(container) {
       fillPoly(ctx, [wallPt("back", t0 - 0.06, v0 - 2), wallPt("back", t1 + 0.06, v0 - 2), wallPt("back", t1 + 0.06, v0 + 2), wallPt("back", t0 - 0.06, v0 + 2)], shade(cap, 18), "#111");
     }
 
-    const sw = lightSwitchPos();
-    px(ctx, sw.sx, sw.sy, sw.w, sw.h, lightsOn ? "#d8d0c4" : "#8a8478");
-    ctx.strokeStyle = "#2a2c30";
-    ctx.strokeRect(sw.sx + 0.5, sw.sy + 0.5, sw.w - 1, sw.h - 1);
-    px(ctx, sw.sx + 2, sw.sy + 2, 4, 6, lightsOn ? "#f0e8d0" : "#555");
+    drawLightSwitch();
 
     for (const art of wallArt) {
       const wall = (art.wall === "z" || art.wall === "left") ? "left" : "back";
@@ -939,7 +1010,7 @@ export function createRoom3D(container) {
     const wpt = worldFromClient(cx, cy, now);
     const floor = pickFloorTile(wpt.sx, wpt.sy);
     const sw = lightSwitchPos();
-    if (wpt.sx >= sw.sx && wpt.sx <= sw.sx + sw.w && wpt.sy >= sw.sy && wpt.sy <= sw.sy + sw.h) {
+    if (pointInPoly(wpt, sw.quad) || (wpt.sx >= sw.sx && wpt.sx <= sw.sx + sw.w && wpt.sy >= sw.sy && wpt.sy <= sw.sy + sw.h)) {
       return { kind: "switch", floor };
     }
     for (const art of wallArt) {
@@ -951,7 +1022,7 @@ export function createRoom3D(container) {
     const list = collectDrawList(now);
     for (let i = list.length - 1; i >= 0; i--) {
       const it = list[i];
-      if (it.kind === "ghost" || it.kind === "person" || it.kind === "pet") continue;
+      if (it.kind === "ghost" || it.kind === "person" || it.kind === "pet" || it.kind === "stool") continue;
       if (wpt.sx >= it.sx && wpt.sx <= it.sx + it.w && wpt.sy >= it.sy && wpt.sy <= it.sy + it.h) {
         if (it.kind === "furn" && it.raw && !hitFurnitureAt(it.raw, wpt.sx, wpt.sy, screenToTile)) continue;
         if (it.kind === "furn" || it.kind === "npc") {
@@ -977,7 +1048,7 @@ export function createRoom3D(container) {
   function handleTap(ev) {
     const hit = hitAt(ev.clientX, ev.clientY);
     if (!hit) return;
-    if (hit.kind === "switch") { onSwitchClick?.(); return; }
+    if (hit.kind === "switch") { (onSwitchTap || onSwitchClick)?.(); return; }
     if (hit.kind === "wall") { onWallClick?.(hit.wall, hit.slot); return; }
     if (hit.kind === "furn" || hit.kind === "npc") { onFurnitureClick?.(hit.id, hit.type, hit.raw || {}); return; }
     if (hit.kind === "tile") onTileClick?.(hit.x, hit.y);
@@ -1050,7 +1121,8 @@ export function createRoom3D(container) {
   function findFurnMesh(id) {
     const f = furniture.find((x) => x.id === id);
     if (!f) return null;
-    return { userData: { ...f, type: f.type, boardSquare: 0.125, tableSize: 1.7 } };
+    const metrics = f.type === "chesstable" ? chessBoardMetrics() : { square: 0.125, table: 1.7 };
+    return { userData: { ...f, type: f.type, boardSquare: metrics.square, tableSize: metrics.table } };
   }
 
   function interpolatePeople(list) {
@@ -1201,6 +1273,10 @@ export function createRoom3D(container) {
     },
     onFurnitureClick(fn) { onFurnitureClick = fn; },
     onSwitchClick(fn) { onSwitchClick = fn; },
+    onSwitchTap(fn) { onSwitchTap = fn; },
+    lightState() { return { room: lightsOn, lamps: lightsOn }; },
+    doorSlot() { return doorSlot(); },
+    switchSlot() { return switchSlot(); },
     onWallClick(fn) { onWallClick = fn; },
     onWallHover(fn) { onWallHover = fn; },
     simulateWallClick(wall, slot) { onWallClick?.(wall, slot); },
@@ -1219,7 +1295,7 @@ export function createRoom3D(container) {
     chessBoardInfo(id) {
       const m = findFurnMesh(id);
       if (!m || m.userData.type !== "chesstable") return null;
-      return { square: 0.125, board: 1, table: 1.7 };
+      return chessBoardMetrics();
     },
     setZoom(z) {
       userZoom = snapZoom(z);

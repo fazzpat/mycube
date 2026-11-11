@@ -160,8 +160,8 @@ try {
   await alice.evaluate(() => window.__enterEdit());
   const placements = [
     ["art_ocean", "back", 0],
-    ["art_peaks", "back", 1],
-    ["art_nightwood", "back", 2],
+    ["art_peaks", "back", 3],
+    ["art_nightwood", "left", 3],
     ["art_farm", "left", 0],
     ["art_skyline", "left", 1],
     ["art_gridsun", "left", 2],

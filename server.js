@@ -24,6 +24,8 @@ import {
   petById,
 } from "./public/js/storeCatalog.js";
 import { ART_PIECES, artCatalogEntry, PAINTING_CATALOG } from "./public/js/artPieces.js";
+import { reservedWallSlots as layoutReservedWallSlots } from "./public/js/wallLayout.js";
+import { chessSeatTiles, chessSeatPose, migrateChessTable } from "./public/js/chessTable.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT) || 3000;
@@ -58,13 +60,13 @@ const FURNITURE_CATALOG = {
   kitchenette: { name: "Kitchenette", price: 32, w: 2, h: 1, blocks: true },
   chair: { name: "Chair", price: 12, w: 1, h: 1, blocks: true },
   bookshelf: { name: "Bookshelf", price: 28, w: 2, h: 1, blocks: true },
-  chesstable: { name: "Chess table", price: 45, w: 2, h: 2, blocks: true },
+  chesstable: { name: "Chess table", price: 45, w: 1, h: 1, blocks: true },
   punchbag: { name: "Punching bag", price: 30, w: 1, h: 1, blocks: true },
   benchpress: { name: "Bench press", price: 35, w: 2, h: 1, blocks: true },
   treadmill: { name: "Treadmill", price: 35, w: 1, h: 2, blocks: true },
   cubics: { name: "Arcade cabinet", price: 40, w: 1, h: 1, blocks: true },
   clothescab: { name: "Clothes cabinet", price: 30, w: 1, h: 1, blocks: true },
-  coffeemachine: { name: "Coffee machine", price: 25, w: 1, h: 1, blocks: true },
+  coffeemachine: { name: "Coffee maker", price: 25, w: 1, h: 1, blocks: true },
   art_mona: { name: "Mona Cuba", price: 22, w: 1, h: 1, blocks: false, surface: "wall" },
   art_starry: { name: "Starry Cube Night", price: 28, w: 1, h: 1, blocks: false, surface: "wall" },
   art_pop: { name: "Pop-art cubes", price: 18, w: 1, h: 1, blocks: false, surface: "wall" },
@@ -196,11 +198,19 @@ function blockedSet(room) {
   return set;
 }
 
+function occupancyTiles(f) {
+  const tiles = tilesFor(f.type, f.x, f.y, f.rot);
+  if (f.type === "chesstable") {
+    for (const t of chessSeatTiles(f.x, f.y, f.rot)) tiles.push(t);
+  }
+  return tiles;
+}
+
 function occupiedSet(room, ignoreId) {
   const set = new Set();
   for (const f of room.furniture) {
     if (ignoreId && f.id === ignoreId) continue;
-    for (const t of tilesFor(f.type, f.x, f.y, f.rot)) set.add(`${t.x},${t.y}`);
+    for (const t of occupancyTiles(f)) set.add(`${t.x},${t.y}`);
   }
   return set;
 }
@@ -208,7 +218,7 @@ function occupiedSet(room, ignoreId) {
 function canPlaceOn(room, type, x, y, rot, ignoreId) {
   const item = FURNITURE_CATALOG[type];
   if (!item || item.surface === "wall") return false;
-  const tiles = tilesFor(type, x, y, rot);
+  const tiles = occupancyTiles({ type, x, y, rot });
   if (!tiles.length || tiles.some((t) => !inBounds(t.x, t.y, roomSize(room)))) return false;
   const used = occupiedSet(room, ignoreId);
   return tiles.every((t) => !used.has(`${t.x},${t.y}`));
@@ -536,20 +546,7 @@ function isWallArt(type) {
 }
 
 function reservedWallSlots(size) {
-  const n = size || START_SIZE;
-  const back = new Set();
-  const left = new Set();
-  const winX = n * 0.18;
-  const doorZ = n * 0.22;
-  const swZ = doorZ - 0.7;
-  for (let s = 0; s < n; s++) {
-    const cx = s + 0.5 - n / 2;
-    const cz = s + 0.5 - n / 2;
-    if (Math.abs(cx - winX) < 1.05) back.add(s);
-    if (Math.abs(cz - doorZ) < 0.55) left.add(s);
-    if (Math.abs(cz - swZ) < 0.38) left.add(s);
-  }
-  return { back, left };
+  return layoutReservedWallSlots(size || START_SIZE);
 }
 
 function canPlaceWallOn(room, type, wall, slot, ignoreId) {
@@ -679,6 +676,24 @@ function furnitureInUse(room, id) {
   return null;
 }
 
+function migrateRoomChessTables(room) {
+  if (!Array.isArray(room.furniture)) return;
+  const n = roomSize(room);
+  for (const f of room.furniture) {
+    if (f.type !== "chesstable") continue;
+    if (canPlaceOn(room, "chesstable", f.x, f.y, f.rot, f.id)) continue;
+    const moved = migrateChessTable(f, n, (x, y) => {
+      if (!inBounds(x, y, n)) return false;
+      return !occupiedSet(room, f.id).has(`${x},${y}`);
+    });
+    if (moved) {
+      f.x = moved.x;
+      f.y = moved.y;
+      f.rot = moved.rot;
+    }
+  }
+}
+
 function ensureRoomExtras(room) {
   if (!room.tvs) room.tvs = {};
   if (!room.chess) room.chess = {};
@@ -689,8 +704,35 @@ function ensureRoomExtras(room) {
   if (room.lightsOn === undefined) room.lightsOn = true;
   if (Array.isArray(room.furniture)) {
     for (const f of room.furniture) f.rot = normalizeRot(f.rot);
+    migrateRoomChessTables(room);
+    migrateWallArtOffReserved(room);
   }
   return room;
+}
+
+function migrateWallArtOffReserved(room) {
+  const list = room.wallArt || [];
+  if (!list.length) return;
+  const n = roomSize(room);
+  const reserved = reservedWallSlots(n);
+  for (const art of list) {
+    const wall = art.wall === "z" ? "left" : art.wall;
+    if (!(reserved[wall]?.has(art.slot))) continue;
+    let found = null;
+    for (const w of [wall, "left", "back"]) {
+      for (let s = 0; s < n; s++) {
+        if (reserved[w]?.has(s)) continue;
+        if (list.some((a) => a !== art && a.wall === w && a.slot === s)) continue;
+        found = { wall: w, slot: s };
+        break;
+      }
+      if (found) break;
+    }
+    if (found) {
+      art.wall = found.wall;
+      art.slot = found.slot;
+    }
+  }
 }
 
 function publicChess(game) {
@@ -865,6 +907,7 @@ function requireOwner(socket, user) {
 
 
 function seatWorld(furn, seatNum) {
+  if (furn.type === "chesstable") return chessSeatPose(furn, seatNum);
   const { w, h } = dimsOf(furn.type, furn.rot);
   const rot = normalizeRot(furn.rot);
   // seat 0 at the "front" of the table, seat 1 at the back, in tile coords
@@ -872,7 +915,6 @@ function seatWorld(furn, seatNum) {
   const cy = furn.y + (h - 1) / 2;
   let sx = cx;
   let sy = cy;
-  const off = 0.85;
   if (rot === 0) sy = seatNum === 0 ? furn.y + h - 0.15 : furn.y + 0.15;
   else if (rot === 2) sy = seatNum === 0 ? furn.y + 0.15 : furn.y + h - 0.15;
   else if (rot === 1) sx = seatNum === 0 ? furn.x + 0.15 : furn.x + w - 0.15;
