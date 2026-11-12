@@ -168,6 +168,7 @@ export const PET_STOCK = [
   { id: "bp-hamster", item: "hamster", label: "Hamster", price: 20 },
   { id: "bp-parrot", item: "parrot", label: "Parrot", price: 32 },
   { id: "bp-turtle", item: "turtle", label: "Turtle", price: 28 },
+  { id: "ow-flame-ball", item: "flame", label: "Flame Ball", price: 28 },
 ];
 
 export const PUBLIC_PLACES = []

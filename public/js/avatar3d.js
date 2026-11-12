@@ -2826,7 +2826,7 @@ function composeAvatar(av, flagsIn, frame) {
   let body = makeBuf();
   drawTorso(body, av, bk, pal, upper, sit, pose.squash || 0);
   drawCuffs(body, av, bk, pal, upper, sit);
-  outfitDraw?.drawBody?.(body, av, bk, upper, sit);
+  outfitDraw?.drawBody?.(body, av, bk, upper, sit, { ...flags, frame, walking: Boolean(flags.walking) && !sit });
   if (bodyView.flip) body = flipBuf(body, true);
   body = addInkOutline(body);
 
@@ -2847,7 +2847,7 @@ function composeAvatar(av, flagsIn, frame) {
   // Outfit hats (wizard) are drawn by the outfits.js hook, not drawHat.
   // Crown is drawn after hair peeks so the gold points stay visible.
   if (hatOn && hatOf(av) !== "wizard" && hatOf(av) !== "crown") drawHat(head, av, hk, pal, headUpper);
-  outfitDraw?.drawHat?.(head, av, hk, headUpper);
+  outfitDraw?.drawHat?.(head, av, hk, headUpper, { ...flags, frame, walking: Boolean(flags.walking) && !sit });
   if (hatOn) drawHairPeeks(head, av, hk, pal, headUpper, bob, frame, walk);
   if (hatOn && hatOf(av) === "crown") drawHat(head, av, hk, pal, headUpper);
   if (av.accessory === "headphones") drawHeadphones(head, av, hk, pal, headUpper);
@@ -2897,7 +2897,9 @@ function composeAvatar(av, flagsIn, frame) {
   function footSpr(fp) {
     const shoeSide = sit ? fp.side : (bodyView.flip ? -fp.side : fp.side);
     return stickerSprite((buf) => {
-      if (outfitDraw?.hasBoots?.(av) && outfitDraw.drawBoot) outfitDraw.drawBoot(buf, fp.x, fp.y, bk, shoeSide, sit);
+      if (outfitDraw?.hasBoots?.(av) && outfitDraw.drawBoot) {
+        outfitDraw.drawBoot(buf, fp.x, fp.y, bk, shoeSide, sit, { hemY: outfitDraw.cloakHemY?.(av, sit) });
+      }
       else drawShoe(buf, fp.x, fp.y, bk, shoeStyleOf(av.shoes), shoes, shoeSide, sit);
     });
   }
@@ -2930,6 +2932,13 @@ function composeAvatar(av, flagsIn, frame) {
     // Body first; the cube and framing hands are painted after so they float in front.
     if (sit) layers.push(body, head, fFoot, nFoot);
     else layers.push(fFoot, body, head, nFoot);
+  } else if (outfitDraw?.feetUnderBody?.(av)) {
+    // Cloak/cape hem covers the boot shafts; only the foot below the hem should show.
+    if (sit && sipOcclude) layers.push(fHand, nHand, fFoot, nFoot, body, head);
+    else if (sit) layers.push(fHand, fFoot, nFoot, body, head, nHand);
+    else if (sipOcclude) layers.push(fFoot, nFoot, nHand, body, head, fHand);
+    else if (backView) layers.push(fFoot, nFoot, body, head, fHand, nHand);
+    else layers.push(fFoot, nFoot, fHand, body, head, nHand);
   } else if (sit && sipOcclude) layers.push(fHand, nHand, body, head, fFoot, nFoot);
   else if (sit) layers.push(fHand, body, head, nHand, fFoot, nFoot);
   else if (sipOcclude) layers.push(fFoot, nHand, body, head, nFoot, fHand);
@@ -2942,7 +2951,7 @@ function composeAvatar(av, flagsIn, frame) {
     // Staff is taller than the figure; draw it on the composed sprite so the
     // holding hand (already in `out`) can cover the grip.
     const staffBuf = makeBuf();
-    outfitDraw.drawStaff(staffBuf, nearHand, bk, { ...t, cx: flipX(t.cx) });
+    outfitDraw.drawStaff(staffBuf, nearHand, bk, { ...t, cx: flipX(t.cx) }, { ...flags, frame });
     blitBuf(out, staffBuf);
     // Redraw the holding hand over the grip so the staff stays in the palm.
     blitBuf(out, nHand);
@@ -3031,7 +3040,8 @@ export function drawAvatarSprite(avatar = {}, flags = {}, frame = 0) {
   const mouth = flags.mouth || "line";
   const sipKey = Math.round((Number(flags.sipLift) || 0) * 8);
   const cubeKey = flags.solvingCube ? ("cube" + (flags.cubeT ?? phase)) : "";
-  const key = "chibi:" + JSON.stringify(av) + ":" + bodyDir + ":" + headDir + ":" + Boolean(flags.sitting) + ":" + Boolean(flags.lying) + ":" + walk + ":" + phase + ":" + Boolean(flags.usingPhone) + ":" + cubeKey + ":" + Boolean(flags.boxing) + ":" + (flags.actionEmote || "") + ":" + held + ":" + Boolean(flags.gym) + ":" + blink + ":" + lookX + ":" + lookY + ":" + pop + ":" + mouth + ":sip" + sipKey;
+  const shineKey = (flags.heldProp === "wizardstaff" || av.cloak === "wizard") ? (":fx" + ((flags.fxTick ?? 0) % 24)) : "";
+  const key = "chibi:" + JSON.stringify(av) + ":" + bodyDir + ":" + headDir + ":" + Boolean(flags.sitting) + ":" + Boolean(flags.lying) + ":" + walk + ":" + phase + ":" + Boolean(flags.usingPhone) + ":" + cubeKey + ":" + Boolean(flags.boxing) + ":" + (flags.actionEmote || "") + ":" + held + ":" + Boolean(flags.gym) + ":" + blink + ":" + lookX + ":" + lookY + ":" + pop + ":" + mouth + ":sip" + sipKey + shineKey;
   const hit = cache.get(key);
   if (hit) return hit;
   const composed = composeAvatar(av, flags, frame);

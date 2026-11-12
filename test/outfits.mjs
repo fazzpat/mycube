@@ -4,7 +4,7 @@ import { extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import { OUTFIT_STOCK, outfitById, wearingOutfit, stripOutfitItem, shouldDrawStaff } from "../public/js/outfits.js";
-import { HATS, PETS } from "../public/js/storeCatalog.js";
+import { HATS, PETS, PET_STOCK, petById } from "../public/js/storeCatalog.js";
 
 let passed = 0;
 function check(label, ok, detail) {
@@ -26,6 +26,10 @@ check("Wizard Staff costs 18 coins", prices["ow-wizard-staff"] === 18 && outfitB
 check("Flame Ball pet costs 28 coins", prices["ow-flame-ball"] === 28 && outfitById("ow-flame-ball")?.item === "flame");
 check("HATS allowlist includes wizard", HATS.includes("wizard"));
 check("PETS allowlist includes flame", PETS.includes("flame"));
+const petSku = petById("ow-flame-ball");
+check("Flame Ball is listed in the pet store under the same id",
+  petSku?.item === "flame" && petSku?.label === "Flame Ball" && petSku?.price === 28
+  && PET_STOCK.filter((p) => p.id === "ow-flame-ball").length === 1);
 
 const wearing = { hat: "wizard", cloak: "wizard", outfitPants: "wizard" };
 check("wearingOutfit sees each slot independently",
@@ -127,8 +131,8 @@ const measure = `<!DOCTYPE html><html><body>
   const wood = (r, g, b) => r > 50 && r > b + 20 && g < r && g > 20 && b < 80;
   const crystal = (r, g, b) => b > r + 20 && b > 140 && g > 80;
   const purple = (r, g, b) => r > 80 && b > 80 && g < 70 && Math.abs(r - b) < 50;
-  const flameOrange = (r, g, b) => r > 180 && g > 40 && g < 200 && b < 80;
-  const flameYellow = (r, g, b) => r > 220 && g > 180 && b < 160;
+  const emberCore = (r, g, b) => r > 160 && g > 30 && g < 220 && b < 100 && r > g;
+  const eyeHi = (r, g, b) => r > 240 && g > 230 && b > 200;
   const out = { facings: [], walk: null, sit: null, lie: null, flame: {}, eyes: null };
   for (const f of facings) {
     const spr = drawAvatarSprite(look, { facing: f.facing, heldProp: "wizardstaff", blink: "open" }, 0);
@@ -175,10 +179,9 @@ const measure = `<!DOCTYPE html><html><body>
   for (const key of ["s", "n", "e"]) {
     const pet = drawPetSprite("flame", { dir: key === "s" ? 1 : key === "n" ? 5 : 7, walking: true }, 4);
     const pimg = pet.c.getContext("2d").getImageData(0, 0, pet.w, pet.h).data;
-    const org = scan(pimg, pet.w, pet.h, flameOrange);
-    const yel = scan(pimg, pet.w, pet.h, flameYellow);
-    const eyes = scan(pimg, pet.w, pet.h, (r, g, b) => r > 240 && g > 230 && b > 200);
-    out.flame[key] = { px: org.n, orange: org.hits, yellow: yel.hits, eyes: eyes.hits };
+    const org = scan(pimg, pet.w, pet.h, emberCore);
+    const eyes = scan(pimg, pet.w, pet.h, eyeHi);
+    out.flame[key] = { px: org.n, ember: org.hits, eyes: eyes.hits };
   }
   window.__outfits = out;
 </script>
@@ -225,10 +228,10 @@ check("Walking frame still shows the hat", metrics.walk.px > 80 && metrics.walk.
 check("Sitting still shows the hat and cloak", metrics.sit.px > 80 && metrics.sit.hat >= 20 && metrics.sit.cloak >= 10, JSON.stringify(metrics.sit));
 check("Wizard hat does not cover the eyes",
   metrics.eyes.facePx >= 4 && metrics.eyes.eyeKept >= 2 && metrics.eyes.hatInFace === 0, JSON.stringify(metrics.eyes));
-check("Flame Ball has orange/yellow fire and eyes from the front",
-  metrics.flame.s.orange >= 20 && metrics.flame.s.yellow >= 4 && metrics.flame.s.eyes >= 2, JSON.stringify(metrics.flame));
-check("Flame Ball keeps a flame body from the back without front-facing eyes",
-  metrics.flame.n.orange >= 20 && metrics.flame.n.eyes === 0, JSON.stringify(metrics.flame));
+check("Flame Ball is a solid ember with a glowing core and oval-eye highlights from the front",
+  metrics.flame.s.ember >= 16 && metrics.flame.s.eyes >= 1, JSON.stringify(metrics.flame));
+check("Flame Ball keeps an ember body from the back without front-facing eye highlights",
+  metrics.flame.n.ember >= 16 && metrics.flame.n.eyes === 0, JSON.stringify(metrics.flame));
 
 if (process.exitCode) {
   console.error(`outfits: ${passed} passed, then failed`);

@@ -2099,6 +2099,16 @@ async function runStoresAndCyberShots(browser) {
   await page.locator('[data-testid="store-tab-pets"]').click();
   await page.evaluate(() => window.__openStore("pets", "bp-fox"));
   await page.waitForSelector('[data-testid="store-panel"]:not(.hidden)');
+  check("The Pets tab also lists the Flame Ball under the same item id",
+    await page.locator('[data-testid="store-item-ow-flame-ball"]').count() === 1);
+  check("A Flame Ball bought from Outfits is already owned in the pet store",
+    await page.evaluate(() => {
+      const card = document.querySelector('[data-testid="store-item-ow-flame-ball"]');
+      const buy = document.querySelector('[data-testid="store-buy"]');
+      const st = window.__storeState?.() || {};
+      const owned = (st.collection?.pets || []).some((p) => p.item === "flame");
+      return owned && Boolean(card);
+    }));
   await page.locator('[data-testid="store-item-bp-fox"]').click();
   await page.locator('[data-testid="store-buy"]').click();
   await page.waitForFunction(() => (window.__storeState()?.collection?.pets || []).some((p) => p.item === "fox"), null, { timeout: 8000 });

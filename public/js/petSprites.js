@@ -127,7 +127,7 @@ function plantPet(buf) {
   for (let y = PET_H - 1; y >= 0 && sole < 0; y--) {
     for (let x = 0; x < PET_W; x++) {
       const p = buf[y * PET_W + x];
-      if (p && p.slot !== "ink" && p.slot !== "sticker" && p.slot !== "shadow") { sole = y; break; }
+      if (p && p.slot !== "ink" && p.slot !== "sticker" && p.slot !== "shadow" && p.slot !== "spark" && p.slot !== "glow" && p.slot !== "halo") { sole = y; break; }
     }
   }
   if (sole < 0 || sole === PET_GROUND_Y) return buf;
@@ -144,7 +144,7 @@ function addInk(buf) {
         const xx = x + dx, yy = y + dy;
         if (xx < 0 || yy < 0 || xx >= PET_W || yy >= PET_H) continue;
         const c = buf[yy * PET_W + xx];
-        if (c && c.slot !== "ink" && c.slot !== "sticker") { n = c; break; }
+        if (c && c.slot !== "ink" && c.slot !== "sticker" && c.slot !== "spark" && c.slot !== "glow" && c.slot !== "halo") { n = c; break; }
       }
       if (!n) continue;
       const col = partOutlineColor({ r: n.r, g: n.g, b: n.b });
@@ -281,7 +281,7 @@ function bufToCanvas(buf) {
   for (let i = 0; i < buf.length; i++) {
     const p = buf[i]; if (!p) continue;
     const o = i * 4;
-    img.data[o] = p.r; img.data[o + 1] = p.g; img.data[o + 2] = p.b; img.data[o + 3] = 255;
+    img.data[o] = p.r; img.data[o + 1] = p.g; img.data[o + 2] = p.b; img.data[o + 3] = (p.a == null ? 255 : p.a);
   }
   ctx.putImageData(img, 0, 0);
   ctx.globalCompositeOperation = "destination-over";
@@ -304,7 +304,8 @@ export function drawPetSprite(kind, flags = {}, frame = 0) {
   const blink = flags.blink || "open";
   const wag = sit ? (flags.wag | 0) : 0;
   const bob = sit ? (flags.bob | 0) : 0;
-  const key = ["ink", k, view.key, view.flip ? 1 : 0, sit ? 1 : 0, walking ? 1 : 0, walkStep, blink, wag, bob].join(":");
+  const fx = (kindDrawers.get(kind) || kindDrawers.get(k)) ? (frame % 8) : 0;
+  const key = ["ink", k, view.key, view.flip ? 1 : 0, sit ? 1 : 0, walking ? 1 : 0, walkStep, blink, wag, bob, fx].join(":");
   if (cache.has(key)) return cache.get(key);
   let buf = makeBuf();
   const custom = kindDrawers.get(kind) || kindDrawers.get(k);

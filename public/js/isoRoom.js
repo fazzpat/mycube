@@ -3,7 +3,7 @@ import { heldKindOf, drawHeldItemSprite, sipAnim, steamFrameAt as heldSteamFrame
 import { applyEquippedGear } from "./storeCatalog.js";
 import { drawPetSprite as drawPetPixel, paintPetSheet, paintPetThumb, PET_W, PET_H, PET_GROUND_Y, setPetKindDrawer } from "./petSprites.js";
 import { installOutfitDraw } from "./outfits.js";
-import { installFlamePet } from "./flamePet.js";
+import { installFlamePet, drawFlameGlow } from "./flamePet.js";
 installOutfitDraw(setOutfitDraw);
 installFlamePet(setPetKindDrawer);
 import { programAt } from "./cubechannel.js";
@@ -1163,6 +1163,7 @@ export function createRoom3D(container, opts = {}) {
         shoePop: shoePopAt(p.username, (p.avatar || {}).shoes, now),
         mouth: mouthPhase(p.talkText, p.talkAt, Date.now()),
         cubeT: (p.solvingCube && !lying) ? Math.floor(now / 160) % 24 : 0,
+        fxTick: Math.floor(now / 180),
       };
       const av = applyEquippedGear(p.avatar || {}, p.gear);
       const heldKind = heldKindOf(lying ? null : p.heldItem) || heldKindOf(lying ? null : p.heldProp);
@@ -1776,6 +1777,9 @@ export function createRoom3D(container, opts = {}) {
         }
         if (!gone && !behind && !occluded) blit(item, ix, iy);
       } else {
+        if (it.kind === "pet" && it.raw?.item === "flame" && it.spr) {
+          drawFlameGlow(ctx, it.sx, it.sy, Math.floor(now / 96), lightsOn);
+        }
         blit(it.spr, it.sx, it.sy, it.alpha ?? 1);
       }
       if (it.recNotes?.length) {
