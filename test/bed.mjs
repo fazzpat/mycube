@@ -1,4 +1,4 @@
-import { BED_TILES, BED_NAME, BED_PRICE, bedDims, bedTiles, liePose, migrateBed } from "../public/js/bed.js";
+import { BED_TILES, BED_NAME, BED_PRICE, bedDims, bedTiles, liePose, lieDrawPose, migrateBed } from "../public/js/bed.js";
 
 let passed = 0;
 function check(label, ok, detail) {
@@ -41,6 +41,18 @@ const moved = migrateBed({ id: "b2", type: "bed", x: 5, y: 5, rot: 0 }, 6, (x, y
   return x >= 0 && y >= 0 && x + w <= 6 && y + h <= 6;
 });
 check("A bed hanging off the far corner is moved to a legal 1x2", moved.x + bedDims(moved.rot).w <= 6 && moved.y + bedDims(moved.rot).h <= 6, JSON.stringify(moved));
+
+
+function tileToScreen(tx, ty) {
+  const TW = 64, TH = 32;
+  return { sx: (tx - ty) * (TW / 2), sy: (tx + ty) * (TH / 2) };
+}
+for (const rot of [0, 1, 2, 3]) {
+  const furn = { x: 2, y: 2, rot };
+  const d = lieDrawPose(furn, tileToScreen, { headTop: 9, groundY: 69 });
+  const dist = Math.hypot(d.dx, d.dy);
+  check("Rot " + rot + " sleeper center matches bed center within 2px", dist <= 2, JSON.stringify({ dx: d.dx, dy: d.dy, dist, center: [d.centerSx, d.centerSy], av: [d.avCx, d.avCy] }));
+}
 
 if (process.exitCode) {
   console.error(`bed: ${passed} passed, then failed`);

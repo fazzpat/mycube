@@ -32,21 +32,69 @@ export function liePose(furn) {
   else if (r === 1) { hx = x; hy = y; fx = x + 1; fy = y; facing = { x: 1, z: 0 }; }
   else if (r === 2) { hx = x; hy = y + 1; fx = x; fy = y; facing = { x: 0, z: -1 }; }
   else { hx = x + 1; hy = y; fx = x; fy = y; facing = { x: -1, z: 0 }; }
-  // Pillow sits on the back third of the headboard tile, not the tile center.
-  const along = 0.20;
+  // Pillow sits near the headboard; the sleeper is centered on the bed.
+  const along = 0.22;
   const head = {
     x: hx + 0.5 + facing.x * (along - 0.5),
     y: hy + 0.5 + facing.z * (along - 0.5),
   };
   const foot = { x: fx + 0.5, y: fy + 0.5 };
-  const t = 0.22;
+  const dims = bedDims(r);
   return {
-    x: head.x + (foot.x - head.x) * t,
-    y: head.y + (foot.y - head.y) * t,
+    x: x + dims.w / 2,
+    y: y + dims.h / 2,
     facing,
     head,
     foot,
     rot: r,
+  };
+}
+
+/**
+ * Screen-space pose for drawing a full-size standing sprite lying on the bed.
+ * After translate(headSx, headSy) and rotate(angle), draw the sprite at
+ * (-avW/2, -(headTop+1)) so the head lands on the pillow and the body
+ * runs toward the foot. The midpoint of head-to-feet sits on the bed center.
+ */
+export function lieDrawPose(furn, toScreen, opts = {}) {
+  const headTop = opts.headTop != null ? opts.headTop : 9;
+  const groundY = opts.groundY != null ? opts.groundY : 69;
+  const headDrawY = headTop + (opts.headPad != null ? opts.headPad : 1);
+  const bodyLen = groundY - headDrawY;
+  const half = bodyLen / 2;
+  const pose = liePose(furn);
+  const dims = bedDims(pose.rot);
+  const x = Number(furn.x) || 0;
+  const y = Number(furn.y) || 0;
+  function xy(p) {
+    const s = toScreen(p.x, p.y);
+    return { sx: s.sx != null ? s.sx : s.x, sy: s.sy != null ? s.sy : s.y };
+  }
+  const head = xy(pose.head);
+  const foot = xy(pose.foot);
+  const center = xy({ x: x + dims.w / 2, y: y + dims.h / 2 });
+  const angle = Math.atan2(foot.sy - head.sy, foot.sx - head.sx) - Math.PI / 2;
+  // rotate(angle) maps (0, half) to (-half*sin, half*cos). Put that on the bed center.
+  const headSx = center.sx + half * Math.sin(angle);
+  const headSy = center.sy - half * Math.cos(angle);
+  const avCx = headSx - half * Math.sin(angle);
+  const avCy = headSy + half * Math.cos(angle);
+  return {
+    angle,
+    headSx,
+    headSy,
+    centerSx: center.sx,
+    centerSy: center.sy,
+    avCx,
+    avCy,
+    dx: avCx - center.sx,
+    dy: avCy - center.sy,
+    half,
+    bodyLen,
+    rot: pose.rot,
+    facing: pose.facing,
+    head: pose.head,
+    foot: pose.foot,
   };
 }
 
@@ -97,4 +145,4 @@ export function drawBedZeds(ctx, x, y, zeds, lights = true) {
   ctx.restore();
 }
 
-export default { BED_TYPE, BED_NAME, BED_PRICE, BED_TILES, bedDims, bedTiles, liePose, migrateBed, bedZeds, drawBedZeds };
+export default { BED_TYPE, BED_NAME, BED_PRICE, BED_TILES, bedDims, bedTiles, liePose, lieDrawPose, migrateBed, bedZeds, drawBedZeds };

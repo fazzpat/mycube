@@ -11,7 +11,7 @@ import { doorSlot as layoutDoorSlot, switchSlot as layoutSwitchSlot, windowSlots
 import { DEFAULT_DECOR, normalizeDecor, legacyAliases, floorColorHex, wallColorPal, drawWindowScenery, shadeHex } from "./roomDecor.js";
 import { chessSeatPose, chessBoardMetrics } from "./chessTable.js";
 import { steamFrameAt } from "./coffeeMaker.js";
-import { liePose, bedZeds, drawBedZeds } from "./bed.js";
+import { lieDrawPose, bedZeds, drawBedZeds } from "./bed.js";
 import {
   TYPE as RECORD_TYPE, spinFrameAt, notesAt, drawNotes, platterOffset, paintListenHint,
   isRecordListening,
@@ -1085,17 +1085,14 @@ export function createRoom3D(container, opts = {}) {
       const personItem = { kind: "person", id: p.username, type: "person", depth, sx: foot.sx - AV_W / 2, sy: foot.sy - AV_GROUND_Y, w: AV_W, h: AV_H, spr, raw: p, tileX: x, tileY: y };
       if (lying) {
         const bed = furniture.find((f) => f.id === (p.stationId || st.stationId) && f.type === "bed");
-        const pose = liePose(bed || { x, y, rot: 0 });
-        const head = tileToScreen(pose.head.x, pose.head.y);
-        const footPt = tileToScreen(pose.foot.x, pose.foot.y);
-        const angle = Math.atan2(footPt.sy - head.sy, footPt.sx - head.sx) - Math.PI / 2;
+        const draw = lieDrawPose(bed || { x, y, rot: 0 }, tileToScreen, { headTop: AV_HEAD_TOP, groundY: AV_GROUND_Y });
         const bedM = bed ? furnSpriteMetrics(bed.type, normalizeFurnRot(bed.rot)) : null;
         const bedDepth = bed ? (bed.x + bed.y + (bedM.tw + bedM.th) / 2 + 0.2) : depth;
-        personItem.lie = { angle, headSx: head.sx, headSy: head.sy - 8, zeds: bedZeds(p.lyingAt || st.lyingAt, Date.now()) };
-        // Draw above the mattress so the sleeper isn't hidden under the bed sprite.
+        personItem.lie = { angle: draw.angle, headSx: draw.headSx, headSy: draw.headSy, zeds: bedZeds(p.lyingAt || st.lyingAt, Date.now()) };
+        // Draw entirely above the bed (on top of the blanket), full standing scale.
         personItem.depth = bedDepth + 0.16;
-        personItem.sx = head.sx - AV_W / 2;
-        personItem.sy = head.sy - 20;
+        personItem.sx = draw.headSx - AV_W / 2;
+        personItem.sy = draw.headSy - AV_HEAD_TOP;
       }
       const heldKind = heldKindOf(p.heldItem);
       if (heldKind && !flags.usingPhone) {
@@ -1619,30 +1616,10 @@ export function createRoom3D(container, opts = {}) {
         ctx.save();
         ctx.translate(headSx, headSy);
         ctx.rotate(angle);
-        // Scale the standing sprite down so the body fits on a 2-tile mattress.
-        const lieScale = 0.72;
-        ctx.scale(lieScale, lieScale);
-        // Head of the sprite sits on the pillow; body runs toward the foot.
+        // Full standing scale, on top of the bed. No shrink, no cover overlay.
         ctx.drawImage(it.spr.c, -AV_W / 2, -AV_HEAD_TOP - 1);
-        // Blanket over the lower body (from mid-torso down)
-        ctx.fillStyle = "rgba(126, 160, 196, 0.92)";
-        ctx.strokeStyle = "rgba(42, 28, 20, 0.35)";
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        const bx = -10, by = 36, bw = 20, bh = 26;
-        ctx.moveTo(bx + 3, by);
-        ctx.lineTo(bx + bw - 3, by);
-        ctx.lineTo(bx + bw, by + 4);
-        ctx.lineTo(bx + bw - 2, by + bh);
-        ctx.lineTo(bx + 2, by + bh);
-        ctx.lineTo(bx, by + 4);
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
-        ctx.fillStyle = "rgba(158, 184, 208, 0.9)";
-        ctx.fillRect(bx + 3, by, bw - 6, 3);
         ctx.restore();
-        if (zeds) drawBedZeds(ctx, headSx, headSy - 8, zeds, lightsOn);
+        if (zeds) drawBedZeds(ctx, headSx, headSy - 10, zeds, lightsOn);
       } else if (it.kind === "person" && it.held && it.held.item) {
 
         const { item, anchor, face, sip } = it.held;
@@ -2126,10 +2103,9 @@ export function createRoom3D(container, opts = {}) {
       const lying = Boolean(st?.lying || p?.lying);
       if (lying) {
         const bed = furniture.find((f) => f.id === (p?.stationId || st?.stationId) && f.type === "bed");
-        const pose = liePose(bed || { x: st?.x ?? p.x, y: st?.y ?? p.y, rot: 0 });
-        const head = tileToScreen(pose.head.x, pose.head.y);
-        const c = clientFromWorld(head.sx, head.sy - 18);
-        const f = clientFromWorld(head.sx, head.sy + 8);
+        const draw = lieDrawPose(bed || { x: st?.x ?? p.x, y: st?.y ?? p.y, rot: 0 }, tileToScreen, { headTop: AV_HEAD_TOP, groundY: AV_GROUND_Y });
+        const c = clientFromWorld(draw.headSx, draw.headSy - 12);
+        const f = clientFromWorld(draw.headSx, draw.headSy + 8);
         const rect = container.getBoundingClientRect();
         return { x: c.x - rect.left, y: c.y - rect.top, footY: f.y - rect.top, visible: c.visible };
       }
