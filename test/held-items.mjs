@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import {
   HELD_KINDS, FRIDGE_ITEMS, heldKindOf, isDrink, heldItemLabel, sipAnim, sipLift,
-  steamFrameAt, hash32, SIP_MS, heldItemContentBox, drawHeldItemSprite,
+  steamFrameAt, hash32, SIP_MS, heldItemContentBox, drawHeldItemSprite, sodaLabelStamp,
 } from "../public/js/heldItems.js";
 
 let passed = 0;
@@ -62,9 +62,12 @@ const sodaBox = heldItemContentBox("soda");
 const waterBox = heldItemContentBox("water");
 const coffeeBox = heldItemContentBox("coffee");
 const pizzaBox = heldItemContentBox("pizza");
-check("Soda can is compact but wide enough for a CUBE SODA label", sodaBox.w >= 10 && sodaBox.w <= 16 && sodaBox.h <= 26, JSON.stringify(sodaBox));
+check("Held soda can is only a little larger than the hand", sodaBox.w >= 6 && sodaBox.w <= 9 && sodaBox.h >= 10 && sodaBox.h <= 16, JSON.stringify(sodaBox));
+check("Held soda stays close to the water bottle width", sodaBox.w <= waterBox.w + 2, JSON.stringify({ soda: sodaBox, water: waterBox }));
+const labeled = sodaLabelStamp();
+check("Picker/closeup can is a larger CUBE SODA label stamp", labeled && labeled.box.w >= 20 && labeled.box.h >= 28, JSON.stringify(labeled && labeled.box));
 check("Water bottle is shorter than the old tall bottle", waterBox.w <= 8 && waterBox.h <= 16, JSON.stringify(waterBox));
-check("Coffee mug is smaller than the head width", coffeeBox.w <= 13 && coffeeBox.h <= 18, JSON.stringify(coffeeBox));
+check("Coffee mug is a bit larger but still smaller than the face", coffeeBox.w >= 12 && coffeeBox.w <= 15 && coffeeBox.h <= 20, JSON.stringify(coffeeBox));
 check("Pizza slice stays a readable triangle", pizzaBox.w >= 10 && pizzaBox.h >= 10, JSON.stringify(pizzaBox));
 const pizzaSpr = drawHeldItemSprite("pizza", { hand: false, flip: false });
 check("Floppy pizza hangs down from the grip, not up into the face", pizzaSpr && pizzaSpr.box.y + pizzaSpr.box.h - 1 >= pizzaSpr.gy + 5, JSON.stringify(pizzaSpr && { box: pizzaSpr.box, gy: pizzaSpr.gy }));

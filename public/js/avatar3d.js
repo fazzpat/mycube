@@ -2456,8 +2456,15 @@ function handPose(kind, side, pose, t, upper, key, frame) {
     hy = t.y0 + upper + 3 + tap;
     hx = key === "e" ? t.cx + t.hw + 3 : t.cx + t.hw + 7;
   } else if (kind === "hold" || kind === "punch") {
-    hx = t.cx + side * 8;
-    hy = t.y0 + upper + 8;
+    // Front 3/4: raise the near hand in front of the torso. Back and profile
+    // views use the real side/front hand so a held item never sits on the spine.
+    if (key === "n" || key === "ne" || key === "e") {
+      hy = t.y0 + upper + h * 0.72;
+      hx = handClearance(t, side, squash, hy, upper);
+    } else {
+      hx = t.cx + side * 8;
+      hy = t.y0 + upper + 8;
+    }
   } else if (kind === "clap") {
     hx = t.cx + side * 3;
     hy = t.y0 + upper + 7;
@@ -3435,12 +3442,16 @@ export function heldItemHandAnchor(avatar = {}, flags = {}, frame = 0) {
   const bk = bodyView.key;
   const t = torsoBox(bk, sit);
   const aKind = pose.armKind || "idle";
+  // Use the same holding-hand pose the avatar is drawn with (not a fixed chest offset).
   const rightHand = handPose(aKind, 1, pose, t, upper, bk, frame);
   function flipX(x) { return bodyView.flip ? AV_W - 1 - x : x; }
+  const x = flipX(rightHand.x);
+  const y = rightHand.y;
+  // Back views: draw the item first so the body/arm can hide part of it; it peeks out at the side.
+  const behind = bk === "n" || bk === "ne";
   return {
-    x: flipX(rightHand.x),
-    y: rightHand.y,
-    behind: bk === "n" || bk === "ne",
+    x, y,
+    behind,
     side: bodyView.flip ? -1 : 1,
     flip: Boolean(bodyView.flip),
     key: bk,

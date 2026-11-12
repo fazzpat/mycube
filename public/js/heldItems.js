@@ -201,54 +201,171 @@ function drawSoda(grid) {
   const silverDk = "#8a8e94";
   const silverLt = "#f4f6f8";
   const hole = "#1a1410";
-  const holeRim = "#3a3230";
-  const label = "#fff4e8";
-  const ink = "#2a1c14";
+  const cream = "#fff4e8";
   const cube = "#f0d24a";
   const cubeDk = "#c4a050";
-  // Stout open can: wide enough for a CUBE SODA wordmark, still shy of head width.
-  // Body x=5..18, lid above, pull tab on top.
-  // Pull tab (ring + stem) above the lid, over the rivet.
-  plot(grid, 13, 3, silver);
-  plot(grid, 14, 3, silverLt);
-  plot(grid, 12, 4, silver);
-  plot(grid, 15, 4, silver);
-  plot(grid, 13, 5, silverLt);
-  plot(grid, 14, 5, silver);
-  plot(grid, 13, 6, silverDk);
-  plot(grid, 14, 6, silver);
-  // Silver lid ellipse with a dark drink opening and a rivet.
-  fill(grid, 6, 7, 17, 9, silver);
-  fill(grid, 7, 6, 16, 6, silver);
-  fill(grid, 8, 5, 11, 5, silverDk);
-  fill(grid, 6, 7, 6, 9, silverDk);
-  fill(grid, 17, 7, 17, 9, silverLt);
-  fill(grid, 7, 7, 11, 8, hole);
-  fill(grid, 7, 7, 11, 7, holeRim);
-  plot(grid, 13, 7, silverDk);
-  plot(grid, 14, 7, silverLt);
-  plot(grid, 13, 8, silver);
-  // Tiny cube logo on the lid, next to the opening.
-  plot(grid, 15, 8, cube);
-  plot(grid, 16, 8, cubeDk);
-  plot(grid, 15, 9, cubeDk);
-  // Red body — leave a band below the label for the cupping hand.
-  fill(grid, 5, 10, 18, 24, red);
-  fill(grid, 5, 10, 5, 24, redDk);
-  fill(grid, 18, 10, 18, 24, redLt);
-  fill(grid, 6, 25, 17, 25, silver);
-  fill(grid, 7, 26, 16, 26, silverDk);
-  // Dark-red label, cream letters: CUBE then SODA, both stacked so they stay legible.
+  // Hand-sized open can: about as wide as the water bottle, a little taller than the hand.
+  // No wordmark at this size — just a cream stripe and a tiny cube.
+  plot(grid, 12, 13, silverLt);
+  plot(grid, 11, 14, silver);
+  plot(grid, 13, 14, silver);
+  plot(grid, 12, 15, silverDk);
+  fill(grid, 10, 16, 14, 16, silver);
+  fill(grid, 11, 15, 13, 15, silver);
+  plot(grid, 10, 16, silverDk);
+  plot(grid, 14, 16, silverLt);
+  fill(grid, 10, 16, 12, 16, hole);
+  plot(grid, 13, 16, cube);
+  fill(grid, 10, 17, 14, 22, red);
+  fill(grid, 10, 17, 10, 22, redDk);
+  fill(grid, 14, 17, 14, 22, redLt);
+  fill(grid, 11, 19, 13, 19, cream);
+  plot(grid, 12, 19, cube);
+  plot(grid, 13, 19, cubeDk);
+  fill(grid, 11, 23, 13, 23, silver);
+}
+
+const SHOW_W = 32;
+const SHOW_H = 40;
+const CUBE_GLYPH5 = {
+  C: [".###.", "#....", "#....", "#....", ".###."],
+  U: ["#...#", "#...#", "#...#", "#...#", ".###."],
+  B: ["####.", "#...#", "####.", "#...#", "####."],
+  E: ["#####", "#....", "####.", "#....", "#####"],
+};
+const SODA_GLYPH5 = {
+  S: [".###", "#...", ".##.", "...#", "###."],
+  O: [".##.", "#..#", "#..#", "#..#", ".##."],
+  D: ["###.", "#..#", "#..#", "#..#", "###."],
+  A: [".##.", "#..#", "####", "#..#", "#..#"],
+};
+
+function plotOn(grid, w, h, x, y, color) {
+  if (x < 0 || y < 0 || x >= w || y >= h) return;
+  grid[y * w + x] = color;
+}
+function fillOn(grid, w, h, x0, y0, x1, y1, color) {
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) plotOn(grid, w, h, x, y, color);
+}
+function plotWord(grid, w, h, glyphs, word, x, y, color, gap) {
+  let cx = x;
+  for (const ch of word) {
+    const g = glyphs[ch];
+    if (!g) continue;
+    for (let row = 0; row < g.length; row++) {
+      for (let col = 0; col < g[row].length; col++) {
+        if (g[row][col] === "#") plotOn(grid, w, h, cx + col, y + row, color);
+      }
+    }
+    cx += (g[0] ? g[0].length : 0) + gap;
+  }
+}
+
+/** Larger CUBE SODA can for the fridge picker icon and closeup. Not used in-hand. */
+function paintSodaLabelGrid() {
+  const w = SHOW_W, h = SHOW_H;
+  const grid = new Array(w * h).fill(null);
+  const red = "#c4282a";
+  const redDk = "#8a1818";
+  const redLt = "#e85050";
+  const silver = "#d0d4d8";
+  const silverDk = "#8a8e94";
+  const silverLt = "#f4f6f8";
+  const hole = "#1a1410";
+  const holeRim = "#3a3230";
+  const cream = "#fff4e8";
+  const cube = "#f0d24a";
+  const cubeDk = "#c4a050";
   const badge = "#6a1018";
-  fill(grid, 6, 11, 17, 23, badge);
-  plotGlyph(grid, "C", 7, 11, label);
-  plotGlyph(grid, "U", 11, 11, label);
-  plotGlyph(grid, "B", 7, 14, label);
-  plotGlyph(grid, "E", 11, 14, label);
-  plotGlyph(grid, "S", 7, 18, label);
-  plotGlyph(grid, "O", 11, 18, label);
-  plotGlyph(grid, "D", 7, 21, label);
-  plotGlyph(grid, "A", 11, 21, label);
+  const ink = "#2a1c14";
+  // Pull tab
+  plotOn(grid, w, h, 16, 2, silverLt);
+  plotOn(grid, w, h, 15, 3, silver);
+  plotOn(grid, w, h, 17, 3, silver);
+  plotOn(grid, w, h, 14, 4, silver);
+  plotOn(grid, w, h, 18, 4, silver);
+  plotOn(grid, w, h, 16, 4, silverLt);
+  plotOn(grid, w, h, 15, 5, silverDk);
+  plotOn(grid, w, h, 16, 5, silver);
+  plotOn(grid, w, h, 17, 5, silver);
+  // Silver lid with dark opening and a gold cube
+  fillOn(grid, w, h, 5, 7, 26, 10, silver);
+  fillOn(grid, w, h, 6, 6, 25, 6, silver);
+  fillOn(grid, w, h, 5, 7, 5, 10, silverDk);
+  fillOn(grid, w, h, 26, 7, 26, 10, silverLt);
+  fillOn(grid, w, h, 9, 7, 15, 9, hole);
+  fillOn(grid, w, h, 9, 7, 15, 7, holeRim);
+  plotOn(grid, w, h, 20, 8, cube);
+  plotOn(grid, w, h, 21, 8, cube);
+  plotOn(grid, w, h, 20, 9, cube);
+  plotOn(grid, w, h, 21, 9, cubeDk);
+  plotOn(grid, w, h, 19, 9, cubeDk);
+  // Red body and dark-red badge — wide enough for 5px CUBE letters.
+  fillOn(grid, w, h, 3, 11, 28, 35, red);
+  fillOn(grid, w, h, 3, 11, 3, 35, redDk);
+  fillOn(grid, w, h, 28, 11, 28, 35, redLt);
+  fillOn(grid, w, h, 4, 36, 27, 36, silver);
+  fillOn(grid, w, h, 5, 37, 26, 37, silverDk);
+  fillOn(grid, w, h, 4, 13, 27, 32, badge);
+  // CUBE 5x5 with 1px gaps (23px) at x=4; SODA 4x5 with 1px gaps (19px) centered under it.
+  plotWord(grid, w, h, CUBE_GLYPH5, "CUBE", 4, 15, cream, 1);
+  plotWord(grid, w, h, SODA_GLYPH5, "SODA", 6, 25, cream, 1);
+  // Outline
+  const out = grid.slice();
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (grid[y * w + x]) continue;
+      let n = false;
+      for (let dy = -1; dy <= 1 && !n; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const nx = x + dx, ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+          if (grid[ny * w + nx]) n = true;
+        }
+      }
+      if (n) out[y * w + x] = ink;
+    }
+  }
+  return { grid: out, w, h };
+}
+
+function gridBBoxAny(grid, w, h) {
+  let x0 = w, y0 = h, x1 = -1, y1 = -1;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (!grid[y * w + x]) continue;
+      if (x < x0) x0 = x;
+      if (y < y0) y0 = y;
+      if (x > x1) x1 = x;
+      if (y > y1) y1 = y;
+    }
+  }
+  if (x1 < 0) return { x: 0, y: 0, w: 0, h: 0 };
+  return { x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1 };
+}
+
+export function sodaLabelStamp() {
+  const painted = paintSodaLabelGrid();
+  const box = gridBBoxAny(painted.grid, painted.w, painted.h);
+  const c = makeCanvas(painted.w, painted.h);
+  if (!c) return { c: null, w: painted.w, h: painted.h, box, kind: "soda" };
+  const ctx = c.getContext("2d");
+  ctx.imageSmoothingEnabled = false;
+  for (let y = 0; y < painted.h; y++) {
+    for (let x = 0; x < painted.w; x++) {
+      const col = painted.grid[y * painted.w + x];
+      if (!col) continue;
+      ctx.fillStyle = col;
+      ctx.fillRect(x, y, 1, 1);
+    }
+  }
+  const crop = document.createElement("canvas");
+  crop.width = box.w;
+  crop.height = box.h;
+  const cctx = crop.getContext("2d");
+  cctx.imageSmoothingEnabled = false;
+  cctx.drawImage(c, box.x, box.y, box.w, box.h, 0, 0, box.w, box.h);
+  return { c: crop, w: box.w, h: box.h, box, kind: "soda" };
 }
 
 function drawChicken(grid) {
@@ -303,24 +420,24 @@ function drawCoffee(grid, steamFrame, lights) {
   const coffeeLt = "#6a4030";
   const handle = "#e8e0d0";
   const handleDk = "#a89880";
-  // Compact mug: ~7px cup plus a 2px handle, shorter than the head.
-  fill(grid, 8, 13, 14, 19, mug);
-  fill(grid, 9, 12, 13, 12, mug);
-  fill(grid, 8, 13, 8, 19, mugDk);
-  fill(grid, 9, 19, 13, 20, mugSh);
-  fill(grid, 9, 13, 13, 14, coffee);
-  fill(grid, 9, 13, 11, 13, coffeeLt);
-  fill(grid, 15, 14, 16, 14, handle);
-  fill(grid, 16, 15, 17, 17, handle);
-  fill(grid, 15, 18, 16, 18, handle);
-  plot(grid, 17, 15, handleDk);
-  plot(grid, 17, 17, handleDk);
-  // Steam wisps
+  // Mug ~25% larger than the first compact pass, still smaller than the face.
+  fill(grid, 7, 12, 15, 19, mug);
+  fill(grid, 8, 11, 14, 11, mug);
+  fill(grid, 7, 12, 7, 19, mugDk);
+  fill(grid, 8, 20, 14, 20, mugSh);
+  fill(grid, 8, 12, 14, 14, coffee);
+  fill(grid, 8, 12, 11, 12, coffeeLt);
+  fill(grid, 16, 13, 17, 13, handle);
+  fill(grid, 17, 14, 18, 17, handle);
+  fill(grid, 16, 18, 17, 18, handle);
+  plot(grid, 18, 14, handleDk);
+  plot(grid, 18, 17, handleDk);
+  // Steam wisps, scaled up with the taller cup.
   const cols = lights ? ["#ffffff", "#f0ece4", "#d8d0c4"] : ["#c8c4bc", "#a8a49c", "#888480"];
   const wisps = [
-    { x: 9, y: 11, delay: 0 },
-    { x: 11, y: 11, delay: 2 },
-    { x: 13, y: 10, delay: 4 },
+    { x: 8, y: 10, delay: 0 },
+    { x: 11, y: 10, delay: 2 },
+    { x: 14, y: 9, delay: 4 },
   ];
   const frame = ((steamFrame % 6) + 6) % 6;
   for (let i = 0; i < wisps.length; i++) {
@@ -349,16 +466,16 @@ function paintItem(kind, steamFrame, lights) {
 
 const GRIP = {
   pizza: { x: 13, y: 10 },
-  soda: { x: 12, y: 24 },
+  soda: { x: 12, y: 21 },
   chicken: { x: 16, y: 8 },
   water: { x: 12, y: 16 },
-  coffee: { x: 11, y: 17 },
+  coffee: { x: 11, y: 18 },
 };
 // Rim / lip of drinks, so a sip lifts the opening to the mouth instead of the grip.
 const LIP = {
-  soda: { x: 9, y: 7 },
+  soda: { x: 11, y: 15 },
   water: { x: 12, y: 7 },
-  coffee: { x: 11, y: 12 },
+  coffee: { x: 11, y: 11 },
 };
 
 const DEFAULT_SKIN = "#f0c9a8";
@@ -565,7 +682,8 @@ export function paintFridgeThumbs(root = typeof document !== "undefined" ? docum
   const thumbs = root.querySelectorAll ? root.querySelectorAll("[data-fridge-thumb]") : [];
   thumbs.forEach((canvas) => {
     const kind = canvas.getAttribute("data-fridge-thumb");
-    const spr = drawHeldItemSprite(kind, { lights: true, steamFrame: 2, hand: false });
+    const labeled = kind === "soda" ? sodaLabelStamp() : null;
+    const spr = labeled && labeled.c ? labeled : drawHeldItemSprite(kind, { lights: true, steamFrame: 2, hand: false });
     if (!spr || !spr.c) return;
     const w = canvas.width || 40;
     const h = canvas.height || 40;
@@ -576,8 +694,12 @@ export function paintFridgeThumbs(root = typeof document !== "undefined" ? docum
     ctx.clearRect(0, 0, w, h);
     const box = spr.box && spr.box.w ? spr.box : { x: 0, y: 0, w: spr.w, h: spr.h };
     const pad = 1;
-    const sx = Math.max(0, box.x - pad), sy = Math.max(0, box.y - pad);
-    const sw = Math.min(spr.w - sx, box.w + pad * 2), sh = Math.min(spr.h - sy, box.h + pad * 2);
+    // Showcase stamp is already cropped to its box.
+    const cropped = Boolean(labeled && labeled.c);
+    const sx = cropped ? 0 : Math.max(0, box.x - pad);
+    const sy = cropped ? 0 : Math.max(0, box.y - pad);
+    const sw = cropped ? spr.w : Math.min(spr.w - sx, box.w + pad * 2);
+    const sh = cropped ? spr.h : Math.min(spr.h - sy, box.h + pad * 2);
     const scale = Math.max(1, Math.floor(Math.min(w / sw, h / sh) * 0.9));
     const dw = sw * scale, dh = sh * scale;
     ctx.drawImage(spr.c, sx, sy, sw, sh, ((w - dw) / 2) | 0, ((h - dh) / 2) | 0, dw, dh);
@@ -587,6 +709,7 @@ export function paintFridgeThumbs(root = typeof document !== "undefined" ? docum
 if (typeof window !== "undefined") {
   window.__drawHeldItemSprite = drawHeldItemSprite;
   window.__heldItemStamp = heldItemStamp;
+  window.__sodaLabelStamp = sodaLabelStamp;
   window.__sipAnim = sipAnim;
   window.__drawSipFaceOverlay = drawSipFaceOverlay;
   window.__paintFridgeThumbs = paintFridgeThumbs;
@@ -595,5 +718,5 @@ if (typeof window !== "undefined") {
 
 export default {
   HELD_KINDS, FRIDGE_ITEMS, heldKindOf, isDrink, heldItemLabel, sipAnim, sipLift,
-  steamFrameAt, drawHeldItemSprite, heldItemContentBox, heldItemStamp, drawSipFaceOverlay, paintFridgeThumbs,
+  steamFrameAt, drawHeldItemSprite, heldItemContentBox, heldItemStamp, sodaLabelStamp, drawSipFaceOverlay, paintFridgeThumbs,
 };
