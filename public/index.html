@@ -82,58 +82,62 @@
       </header>
       <div class="creator-stage">
         <div class="creator-window is-rail-layout" data-testid="creator-window">
+          <div class="edit-char-head" data-testid="edit-char-head">
+            <h2 class="edit-char-title">Edit Character</h2>
+            <button class="btn edit-char-done" data-testid="save-avatar" id="save-avatar" type="button">Done</button>
+          </div>
           <div class="creator-main">
             <div class="creator-left">
               <div class="creator-tabs" id="creator-tabs" data-testid="creator-tabs" role="tablist" aria-label="Character options">
-                <button type="button" data-testid="creator-tab-skin" data-tab="skin" role="tab" aria-label="Skin tone" title="Skin tone"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M12 3c3 3 5 6 5 9a5 5 0 11-10 0c0-3 2-6 5-9z" fill="currentColor"/></svg></button>
-                <button type="button" data-testid="creator-tab-hair" data-tab="hair" role="tab" aria-label="Hairstyles" title="Hairstyles"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M6 14c0-5 2.5-9 6-9s6 4 6 9v2H6v-2z" fill="currentColor"/><circle cx="9" cy="15" r="1.2" fill="#efe6d4"/><circle cx="15" cy="15" r="1.2" fill="#efe6d4"/></svg></button>
-                <button type="button" data-testid="creator-tab-shirt" data-tab="shirt" role="tab" aria-label="Shirt" title="Shirt"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M8 5l4 3 4-3 3 3-3 2v9H8V10L5 8z" fill="currentColor"/></svg></button>
-                <button type="button" data-testid="creator-tab-pants" data-tab="pants" role="tab" aria-label="Pants" title="Pants"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M8 4h8l-1 16H13l-1-8-1 8H9L8 4z" fill="currentColor"/></svg></button>
-                <button type="button" data-testid="creator-tab-shoes" data-tab="shoes" role="tab" aria-label="Shoes" title="Shoes"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M4 15c3-1 5-4 8-4 4 0 8 3 8 4v2H4v-2z" fill="currentColor"/></svg></button>
-                <button type="button" data-testid="creator-tab-head" data-tab="head" role="tab" aria-label="Head accessories" title="Head accessories"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M7 11c0-3 2.2-5 5-5s5 2 5 5v1H7v-1z" fill="currentColor"/><path d="M6 14h12v1.6c-2 .8-4 1.2-6 1.2s-4-.4-6-1.2V14z" fill="currentColor" opacity=".85"/><circle cx="9.5" cy="16.2" r="1.3" fill="none" stroke="#efe6d4" stroke-width="1.2"/><circle cx="14.5" cy="16.2" r="1.3" fill="none" stroke="#efe6d4" stroke-width="1.2"/></svg></button>
-                <button type="button" data-testid="creator-tab-extras" data-tab="extras" role="tab" aria-label="Accessories" title="Accessories"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M8 10c2-3 6-3 8 0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M12 11l2 3-2 3-2-3z" fill="currentColor"/></svg></button>
+                <button type="button" data-testid="creator-tab-skin" data-tab="skin" role="tab" aria-label="Skin tone" title="Skin tone"><svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true"><path d="M12 2.2S5.2 10 5.2 15.1a6.8 6.8 0 0013.6 0C18.8 10 12 2.2 12 2.2z" fill="currentColor"/></svg></button>
+                <button type="button" data-testid="creator-tab-hair" data-tab="hair" role="tab" aria-label="Hairstyles" title="Hairstyles"><svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true"><path d="M12 3C8.2 3 5.4 5.4 5 9.6c-.2 2 .4 3.7 1.2 4.9V16h11.6v-1.5c.8-1.2 1.4-2.9 1.2-4.9C18.6 5.4 15.8 3 12 3z" fill="currentColor"/><path d="M8.2 16.2c.6 2.2 2 3.6 3.8 3.6s3.2-1.4 3.8-3.6" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="9.3" cy="13.2" r="1.15" fill="#efe6d4"/><circle cx="14.7" cy="13.2" r="1.15" fill="#efe6d4"/></svg></button>
+                <button type="button" data-testid="creator-tab-shirt" data-tab="shirt" role="tab" aria-label="Shirt" title="Shirt"><svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true"><path d="M8.2 5.2l3.8 2.7 3.8-2.7 3.6 2.3-2.8 2.3V19H7.4V9.8L4.6 7.5z" fill="currentColor"/></svg></button>
+                <button type="button" data-testid="creator-tab-pants" data-tab="pants" role="tab" aria-label="Pants" title="Pants"><svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true"><path d="M7.2 3.8h9.6L16 20.2h-3.3l-.7-8.4-.7 8.4H7.9L7.2 3.8z" fill="currentColor"/></svg></button>
+                <button type="button" data-testid="creator-tab-shoes" data-tab="shoes" role="tab" aria-label="Shoes" title="Shoes"><svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true"><path d="M3.4 14.4c2.4-.7 4.4-3.5 7.4-3.5 4.3 0 9.5 2.7 10 4.4.3.9-.3 1.8-1.6 1.8H5.2c-1.5 0-2.1-1.1-1.8-2.7z" fill="currentColor"/><path d="M3.8 17.1h16.4v1.5c0 .6-.5 1.1-1.1 1.1H5.5c-1 0-1.8-.7-1.7-1.6z" fill="currentColor"/></svg></button>
+                <button type="button" data-testid="creator-tab-head" data-tab="head" role="tab" aria-label="Head accessories" title="Head accessories"><svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true"><path d="M6.2 11.4C6.2 7.8 8.7 5 12 5s5.8 2.8 5.8 6.4H6.2z" fill="currentColor"/><path d="M4.6 12.2h14.8v1.6H4.6z" fill="currentColor"/><circle cx="9" cy="16.6" r="2.05" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="15" cy="16.6" r="2.05" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M11.05 16.6h1.9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+                <button type="button" data-testid="creator-tab-extras" data-tab="extras" role="tab" aria-label="Accessories" title="Accessories"><svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true"><path d="M6.8 8.2c2.8 3.6 7.6 3.6 10.4 0" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/><path d="M12 11.2l2.5 4.1-2.5 1.8-2.5-1.8z" fill="currentColor"/></svg></button>
               </div>
               <div class="creator-tab-panels" id="creator-tab-panels" data-testid="creator-tab-panels">
                 <div data-testid="creator-panel-skin" data-panel="skin" role="tabpanel">
-                  <h3 class="visually-hidden">Skin tone</h3>
+                  <h3 class="swatch-heading">Color</h3>
                   <div class="swatch-row" id="skin-choices"></div>
                 </div>
                 <div class="hidden" data-testid="creator-panel-hair" data-panel="hair" role="tabpanel">
-                  <h3 class="visually-hidden">Hairstyles</h3>
+                  <h3 class="swatch-heading">Style</h3>
                   <div class="swatch-row" id="hair-choices"></div>
-                  <h3 class="visually-hidden">Hair color</h3>
+                  <h3 class="swatch-heading">Color</h3>
                   <div class="swatch-row swatch-colors" id="hair-color-choices"></div>
                 </div>
                 <div class="hidden" data-testid="creator-panel-shirt" data-panel="shirt" role="tabpanel">
-                  <h3 class="visually-hidden">Shirt</h3>
+                  <h3 class="swatch-heading">Style</h3>
                   <div class="swatch-row" id="top-choices"></div>
-                  <h3 class="visually-hidden">Shirt color</h3>
+                  <h3 class="swatch-heading">Color</h3>
                   <div class="swatch-row swatch-colors" id="shirt-choices"></div>
                 </div>
                 <div class="hidden" data-testid="creator-panel-pants" data-panel="pants" role="tabpanel">
-                  <h3 class="visually-hidden">Pants</h3>
+                  <h3 class="swatch-heading">Style</h3>
                   <div class="swatch-row" id="bottom-choices"></div>
-                  <h3 class="visually-hidden">Pants color</h3>
+                  <h3 class="swatch-heading">Color</h3>
                   <div class="swatch-row swatch-colors" id="bottom-color-choices"></div>
                 </div>
                 <div class="hidden" data-testid="creator-panel-shoes" data-panel="shoes" role="tabpanel">
-                  <h3 class="visually-hidden">Shoes</h3>
+                  <h3 class="swatch-heading">Style</h3>
                   <div class="swatch-row" id="shoes-choices"></div>
-                  <h3 class="visually-hidden">Shoe color</h3>
+                  <h3 class="swatch-heading">Color</h3>
                   <div class="swatch-row swatch-colors" id="shoe-color-choices"></div>
                 </div>
                 <div class="hidden" data-testid="creator-panel-head" data-panel="head" role="tabpanel">
-                  <h3 class="visually-hidden">Hats</h3>
+                  <h3 class="swatch-heading">Hats</h3>
                   <div class="swatch-row" id="hat-choices"></div>
-                  <h3 class="visually-hidden">Hat color</h3>
+                  <h3 class="swatch-heading">Color</h3>
                   <div class="swatch-row swatch-colors" id="hat-color-choices"></div>
-                  <h3 class="visually-hidden">Glasses</h3>
+                  <h3 class="swatch-heading">Glasses</h3>
                   <div class="swatch-row" id="glasses-choices"></div>
-                  <h3 class="visually-hidden">Glasses color</h3>
+                  <h3 class="swatch-heading">Color</h3>
                   <div class="swatch-row swatch-colors" id="glasses-color-choices"></div>
                 </div>
                 <div class="hidden" data-testid="creator-panel-extras" data-panel="extras" role="tabpanel">
-                  <h3 class="visually-hidden">Necklaces</h3>
+                  <h3 class="swatch-heading">Style</h3>
                   <div class="swatch-row" id="necklace-choices"></div>
                 </div>
               </div>
@@ -141,18 +145,17 @@
             <div class="creator-right">
               <div class="creator-preview-wrap">
                 <div class="preview-stage" id="creator-preview" data-testid="creator-preview"></div>
-                <button type="button" class="edit-char-rot" id="creator-rotate" data-testid="edit-char-rotate" aria-label="Rotate character">↻</button>
               </div>
-              <div class="creator-footer">
-                <div class="field">
-                  <label for="display-name">Name</label>
-                  <input id="display-name" data-testid="display-name" type="text" maxlength="16" placeholder="Your name" autocomplete="off" />
-                </div>
-                <div class="creator-footer-actions">
-                  <button class="btn secondary hidden" data-testid="creator-back" id="creator-back" type="button">Back</button>
-                  <button class="btn" data-testid="save-avatar" id="save-avatar" type="button">Done</button>
-                </div>
-              </div>
+              <button type="button" class="edit-char-rot" id="creator-rotate" data-testid="edit-char-rotate" aria-label="Rotate character">↻</button>
+            </div>
+          </div>
+          <div class="creator-footer">
+            <div class="field">
+              <label for="display-name">Name</label>
+              <input id="display-name" data-testid="display-name" type="text" maxlength="16" placeholder="Your name" autocomplete="off" />
+            </div>
+            <div class="creator-footer-actions">
+              <button class="btn secondary hidden" data-testid="creator-back" id="creator-back" type="button">Back</button>
             </div>
           </div>
           <input type="checkbox" id="glasses-toggle" data-testid="glasses-toggle" class="visually-hidden" tabindex="-1" />
@@ -207,6 +210,10 @@
               <circle cx="17.2" cy="19.2" r="1.5"/>
             </svg>
           </button>
+          <div class="room-plaque" data-testid="room-plaque">
+            <div class="room-name" id="room-title" data-testid="room-title">Cube</div>
+            <div class="item-sub" id="room-meta"></div>
+          </div>
         </div>
         <div class="topbar-right">
           <button type="button" class="edit-room-btn hidden" id="edit-room-btn" data-testid="edit-room-btn" aria-label="Edit Room" title="Edit Room" aria-pressed="false">
@@ -225,10 +232,6 @@
         <div class="room-stage">
           <div id="place-banner" class="place-banner hidden"></div>
           <div class="room3d-root" id="floor" data-testid="floor"></div>
-          <div class="room-plaque">
-            <div class="room-name" id="room-title" data-testid="room-title">Cube</div>
-            <div class="item-sub" id="room-meta"></div>
-          </div>
           <div class="mycube-badge" aria-hidden="true" data-testid="mycube-badge">
             <svg viewBox="0 0 32 32" width="22" height="22"><path d="M16 3 L29 10.5 L16 18 L3 10.5 Z" fill="#f4c15d"/><path d="M3 10.5 L16 18 L16 30 L3 22.5 Z" fill="#c43a4a"/><path d="M16 18 L29 10.5 L29 22.5 L16 30 Z" fill="#8a5a32"/></svg>
             <span>MyCube</span>
@@ -347,10 +350,10 @@
       <div class="dock room-fabs" id="chat-dock" data-testid="chat-dock">
         <button class="emote-btn phone-dock-btn" data-testid="phone-btn" id="phone-btn" type="button" title="Phone" aria-label="Open phone menu" aria-expanded="false">
           <span class="phone-fab-icon" aria-hidden="true">
-            <svg viewBox="0 0 32 32" width="22" height="22">
-              <rect x="8" y="2" width="16" height="28" rx="4" fill="#2a1c4a" stroke="#3a2418" stroke-width="1.8"/>
+            <svg viewBox="0 0 32 32" width="40" height="40">
+              <rect x="8" y="2" width="16" height="28" rx="4" fill="#f4efe6" stroke="#1a1020" stroke-width="1.8"/>
               <rect x="10" y="5" width="12" height="18" rx="1.4" fill="#9be7ff"/>
-              <circle cx="16" cy="26.2" r="1.5" fill="#3a2418"/>
+              <circle cx="16" cy="26.2" r="1.5" fill="#1a1020"/>
             </svg>
           </span>
           <span class="phone-fab-badge hidden" data-testid="phone-badge">1</span>

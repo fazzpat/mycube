@@ -527,14 +527,20 @@ export function createAvatarPreview(container, opts = {}) {
   }
   let raf = 0, alive = true;
 
+  const minScale = Number(opts.minScale) > 0 ? Number(opts.minScale) : 2;
+  let cssW = 160, cssH = 180, dpr = 1, drawScale = 2;
+
   function resize() {
-    const w = container.clientWidth || 160;
-    const h = container.clientHeight || 180;
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    canvas.width = Math.max(1, Math.floor(w * dpr));
-    canvas.height = Math.max(1, Math.floor(h * dpr));
-    canvas.style.width = w + "px";
-    canvas.style.height = h + "px";
+    cssW = container.clientWidth || 160;
+    cssH = container.clientHeight || 180;
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.max(1, Math.floor(cssW * dpr));
+    canvas.height = Math.max(1, Math.floor(cssH * dpr));
+    canvas.style.width = cssW + "px";
+    canvas.style.height = cssH + "px";
+    // Scale from the 48x64 figure (ignore sprite padding) so 3-4x fits a ~45% column.
+    const fit = Math.floor(Math.min(cssW / 48, cssH / 64));
+    drawScale = Math.max(minScale, fit);
   }
 
   function render(now) {
@@ -547,7 +553,7 @@ export function createAvatarPreview(container, opts = {}) {
       c.fillStyle = "#efe6d4";
       c.fillRect(0, 0, w, h);
     }
-    const scale = Math.max(2, Math.floor(Math.min(w / (AV_W + 8), h / (AV_H + 8))));
+    const scale = drawScale * dpr;
     const frame = Math.floor((now || 0) / 96) % 16;
     const targetDir = facingIndex8(facing);
     const anim = tickChibiAnim("preview", now || 0, { walking: false, targetDir, self: { x: 0, y: 0, username: "preview" }, others: [] });
@@ -563,6 +569,8 @@ export function createAvatarPreview(container, opts = {}) {
   canvas.style.cursor = "pointer";
   canvas.title = "Rotate";
   resize();
+  const ro = typeof ResizeObserver === "function" ? new ResizeObserver(() => resize()) : null;
+  try { ro?.observe(container); } catch {}
   raf = requestAnimationFrame(render);
   return {
     setAvatar(a) { avatar = a || {}; },
@@ -570,7 +578,7 @@ export function createAvatarPreview(container, opts = {}) {
     cycleFacing() { setDir(dirIndex + 1); },
     setFacing(f) { if (f) facing = f; },
     resize,
-    dispose() { alive = false; cancelAnimationFrame(raf); container.innerHTML = ""; },
+    dispose() { alive = false; cancelAnimationFrame(raf); try { ro?.disconnect(); } catch {} container.innerHTML = ""; },
   };
 }
 

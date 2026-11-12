@@ -299,7 +299,7 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     const box = $("#creator-preview");
     if (!state.preview3d) {
       box.innerHTML = "";
-      state.preview3d = createAvatarPreview(box, { transparent: true });
+      state.preview3d = createAvatarPreview(box, { transparent: true, minScale: 3 });
     }
     state.draft = migrateAvatar(state.draft || {});
     state.preview3d.setAvatar(state.draft);
@@ -3102,6 +3102,7 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     }
     dockSpinInPhone(false);
     HIDE($("#phone-overlay"));
+    $("#phone-overlay")?.classList.remove("phone-just-opened");
     document.body.classList.remove("phone-open");
     setPhoneExpanded(false);
     $("#phone-btn")?.setAttribute("aria-expanded", "false");
@@ -3249,7 +3250,18 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     SHOW($("#phone-overlay"));
     document.body.classList.add("phone-open");
     $("#phone-btn")?.setAttribute("aria-expanded", "true");
-    if (!wasOpen) beginPhoneHold();
+    if (!wasOpen) {
+      // Opening the phone exits Edit Room and can slide the handset under
+      // the same finger. Ignore the rest of this pointer so the backdrop
+      // or a home-screen app (Edit Character) cannot eat the opening tap.
+      ignorePhoneTaps(400);
+      phoneJustOpenedUntil = Date.now() + 400;
+      const overlay = $("#phone-overlay");
+      overlay?.classList.add("phone-just-opened");
+      clearTimeout(phoneJustOpenedTimer);
+      phoneJustOpenedTimer = setTimeout(() => overlay?.classList.remove("phone-just-opened"), 400);
+      beginPhoneHold();
+    }
     if (app) openPhoneApp(app);
     else showPhoneHome();
   }
@@ -3633,7 +3645,7 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
       hidePhoneUI();
       if (!openFromPhone()) return;
       applyDraftLive();
-      state.preview3d?.resize?.();
+      requestAnimationFrame(() => requestAnimationFrame(() => state.preview3d?.resize?.()));
       return;
     }
     closePhone();
@@ -3763,6 +3775,8 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     socket.emit("leaveRoom");
   });
   let phoneTapIgnoreUntil = 0;
+  let phoneJustOpenedUntil = 0;
+  let phoneJustOpenedTimer = 0;
   function ignorePhoneTaps(ms = 400) {
     phoneTapIgnoreUntil = Date.now() + ms;
   }
@@ -3805,10 +3819,22 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     if (phoneTapIgnored()) return;
     togglePhoneFromDock(e);
   });
-  $("#phone-overlay")?.querySelector(".phone-backdrop")?.addEventListener("click", closePhone);
+  $("#phone-overlay")?.querySelector(".phone-backdrop")?.addEventListener("click", (e) => {
+    if (Date.now() < phoneJustOpenedUntil) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+    closePhone();
+  });
   $("#phone-overlay")?.querySelector(".phone-backdrop")?.addEventListener("pointerdown", (e) => {
     // Close on the first pointer so a follow-up click isn't lost to the room.
     if (e.button != null && e.button !== 0) return;
+    if (Date.now() < phoneJustOpenedUntil) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
     if (e.target && e.target.closest && e.target.closest(".phone-device, #phone-btn")) return;
     e.preventDefault();
     closePhone();

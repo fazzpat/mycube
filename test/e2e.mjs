@@ -3046,6 +3046,43 @@ try {
   const leaveBox = await alice.locator('[data-testid="leave-cube"]').boundingBox();
   const coinBox = await alice.locator('[data-testid="room-coins"]').boundingBox();
   check("Leave Cube sits in the top right next to the coin pill", Boolean(leaveVisible && leaveBox && coinBox && leaveBox.y < 80 && leaveBox.x + leaveBox.width <= (coinBox.x + coinBox.width + 8) && Math.abs(leaveBox.y - coinBox.y) < 40), JSON.stringify(leaveBox && coinBox && { leave: { x: Math.round(leaveBox.x), y: Math.round(leaveBox.y) }, coins: { x: Math.round(coinBox.x), y: Math.round(coinBox.y) } }));
+  const topRow375 = await (async () => {
+    const prev = alice.viewportSize();
+    await alice.setViewportSize({ width: 375, height: 667 });
+    await alice.waitForTimeout(200);
+    const info = await alice.evaluate(() => {
+      const box = (sel) => {
+        const el = document.querySelector(sel);
+        if (!el || el.classList.contains("hidden") || el.closest(".hidden")) return null;
+        const r = el.getBoundingClientRect();
+        return { x: r.x, y: r.y, r: r.right, b: r.bottom, w: r.width, h: r.height };
+      };
+      const shop = box('[data-testid="shop-toggle"]');
+      const title = box('[data-testid="room-title"]');
+      const edit = box('[data-testid="edit-room-btn"]');
+      const leave = box('[data-testid="leave-cube"]');
+      const coins = box('[data-testid="room-coins"]');
+      const items = [shop, title, edit, leave, coins].filter(Boolean);
+      const overlap = [];
+      for (let i = 0; i < items.length; i++) {
+        for (let j = i + 1; j < items.length; j++) {
+          const a = items[i], b = items[j];
+          if (a.x < b.r - 1 && a.r > b.x + 1 && a.y < b.b - 1 && a.b > b.y + 1) overlap.push([i, j]);
+        }
+      }
+      const clipped = items.some((el) => el.x < -1 || el.y < -1 || el.r > 376 || el.b > 667);
+      const plaqueRightOfCart = Boolean(shop && title && title.x >= shop.r - 1 && Math.abs(title.y - shop.y) < 28);
+      const inTopRow = Boolean(title && title.y < 48);
+      return { overlap, clipped, plaqueRightOfCart, inTopRow, shop, title, edit, leave, coins };
+    });
+    await alice.setViewportSize(prev);
+    return info;
+  })();
+  check(
+    "The cube name sits in the top row next to the shop cart and nothing clips at 375px",
+    Boolean(topRow375.plaqueRightOfCart && topRow375.inTopRow && topRow375.overlap.length === 0 && !topRow375.clipped),
+    JSON.stringify(topRow375)
+  );
 
   log("Coins chip dropdown");
   await alice.setViewportSize({ width: 375, height: 667 });
@@ -3260,7 +3297,7 @@ try {
       };
     });
     check(
-      `${label}: the room fills down to the bottom of the screen with FABs at the bottom-left`,
+      `${label}: the room fills down to the bottom of the screen with FABs at the bottom`,
       Boolean(before.dock && before.canvas
         && before.canvas.y + before.canvas.h >= before.innerH - 24
         && before.canvas.y + before.canvas.h <= before.innerH + 4

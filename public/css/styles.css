@@ -3349,7 +3349,6 @@ body.shop-open .shop-toggle {
 /* While the shop is open, hide the cart, Cube/Owner plaque, and
    welcome/coin toasts so they cannot cover the header or tabs. */
 body.shop-open .shop-toggle,
-body.shop-open .room-plaque,
 body.shop-open #toasts {
   visibility: hidden;
   pointer-events: none;
@@ -4374,4 +4373,213 @@ body.edit-char-open .edit-char-overlay {
 #emote-wheel-btn,
 #chat-bubble-btn {
   pointer-events: auto !important;
+}
+
+
+/* HUD_TOPROW_PLAQUE_AND_CENTER_FABS */
+.room-view .topbar {
+  display: flex !important;
+  flex-wrap: nowrap !important;
+  align-items: center !important;
+  min-width: 0;
+  gap: 6px;
+}
+.room-view .topbar-left {
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  overflow: hidden;
+  align-items: center !important;
+  gap: 6px !important;
+}
+.room-view .topbar-right {
+  flex: 0 0 auto !important;
+  min-width: 0;
+  flex-shrink: 0;
+  gap: 5px !important;
+}
+.room-view .topbar .room-plaque,
+.room-plaque {
+  position: relative !important;
+  top: auto !important;
+  left: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  inset: auto !important;
+  flex: 1 1 auto;
+  min-width: 0 !important;
+  max-width: none !important;
+  width: auto !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  z-index: 1 !important;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0;
+  background: none !important;
+  box-shadow: none !important;
+  text-shadow: 0 1px 2px rgba(0,0,0,.8);
+}
+.room-view .topbar .room-plaque .room-name,
+.room-view .topbar .room-plaque .item-sub,
+.room-view .topbar #room-title,
+.room-view .topbar #room-meta {
+  font-size: 5px !important;
+  font-weight: 700 !important;
+  line-height: 1.15 !important;
+  letter-spacing: 0 !important;
+  margin: 0 !important;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #fff8ee !important;
+}
+.room-view .topbar .room-plaque .item-sub,
+.room-view .topbar #room-meta {
+  opacity: 0.9;
+}
+@media (max-width: 375px) {
+  .edit-room-btn span { display: none; }
+  .leave-cube-btn { padding: 5px 6px !important; font-size: 9px !important; }
+  .room-view .coin-chip { padding: 4px 6px; font-size: 10px; }
+  .room-view .topbar { gap: 4px; padding-left: calc(6px + var(--safe-left, 0px)); padding-right: calc(6px + var(--safe-right, 0px)); }
+  .room-view .topbar-left { gap: 4px !important; }
+}
+
+/* Bare dock icons, centered across the bottom safe area. */
+#chat-dock.dock,
+#chat-dock,
+.dock.room-fabs {
+  position: fixed !important;
+  left: var(--sal, env(safe-area-inset-left, 0px)) !important;
+  right: var(--sar, env(safe-area-inset-right, 0px)) !important;
+  bottom: calc(8px + var(--chrome-bottom, var(--sab, env(safe-area-inset-bottom, 0px)))) !important;
+  width: auto !important;
+  justify-content: space-evenly !important;
+  align-items: flex-end !important;
+  gap: 0 !important;
+  padding: 0 8px !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  border: 0 !important;
+  z-index: 55 !important;
+  pointer-events: none !important;
+}
+body.edit-mode #chat-dock,
+.room-view.edit-on #chat-dock {
+  left: var(--sal, env(safe-area-inset-left, 0px)) !important;
+  right: var(--sar, env(safe-area-inset-right, 0px)) !important;
+  bottom: calc(var(--inv-h, 104px) + 8px + var(--chrome-bottom, var(--sab, 0px))) !important;
+  justify-content: space-evenly !important;
+}
+#chat-dock > *,
+#phone-btn,
+#emote-wheel-btn,
+#chat-bubble-btn {
+  pointer-events: auto !important;
+}
+#phone-btn.phone-dock-btn,
+#phone-btn,
+#emote-wheel-btn,
+#chat-bubble-btn,
+#chat-bubble-btn[aria-expanded="true"],
+body.chat-open #chat-bubble-btn,
+body.phone-open #phone-btn {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,.85)) drop-shadow(0 0 5px rgba(0,0,0,.45));
+  color: #f4efe6 !important;
+  -webkit-tap-highlight-color: transparent;
+}
+#phone-btn.phone-dock-btn,
+#phone-btn {
+  width: 48px !important;
+  height: 48px !important;
+  min-width: 48px !important;
+  min-height: 48px !important;
+  flex: 0 0 48px !important;
+  border-radius: 0 !important;
+}
+#emote-wheel-btn,
+#chat-bubble-btn {
+  width: 42px !important;
+  height: 42px !important;
+  min-width: 42px !important;
+  min-height: 42px !important;
+  flex: 0 0 42px !important;
+  border-radius: 0 !important;
+  font-size: 36px !important;
+  line-height: 1 !important;
+}
+#phone-btn .phone-fab-icon svg,
+.phone-dock-btn .phone-fab-icon svg {
+  width: 40px !important;
+  height: 40px !important;
+  display: block;
+}
+#chat-bubble-btn svg {
+  width: 36px !important;
+  height: 36px !important;
+  display: block;
+  filter: none;
+}
+#chat-bubble-btn[aria-expanded="true"],
+body.chat-open #chat-bubble-btn {
+  background: transparent !important;
+  box-shadow: none !important;
+  color: #f4c15d !important;
+}
+#phone-btn.phone-dock-btn:active,
+#phone-btn.phone-dock-btn.is-pressed,
+#emote-wheel-btn:active,
+#chat-bubble-btn:active {
+  transform: translateY(1px);
+  filter: drop-shadow(0 1px 1px rgba(0,0,0,.85)) brightness(0.92);
+}
+
+
+/* Keep the MyCube wordmark above the centered bottom icon row. */
+.room-view .mycube-badge,
+.mycube-badge[data-testid="mycube-badge"] {
+  top: auto !important;
+  left: auto !important;
+  right: calc(8px + var(--sar, env(safe-area-inset-right, 0px))) !important;
+  bottom: calc(var(--fab-h, 48px) + 14px + var(--chrome-bottom, var(--sab, env(safe-area-inset-bottom, 0px)))) !important;
+}
+body.edit-mode .room-view .mycube-badge,
+.room-view.edit-on .mycube-badge {
+  bottom: calc(var(--inv-h, 104px) + var(--fab-h, 48px) + 14px + var(--chrome-bottom, var(--sab, 0px))) !important;
+}
+
+
+/* Keep the slim chat bar above the centered icon row when the keyboard is down,
+   and flush to the keyboard when it is up. */
+#chat-composer,
+.chat-composer {
+  bottom: max(
+    var(--kb-inset, 0px),
+    calc(var(--fab-h, 52px) + 8px + var(--chrome-bottom, var(--sab, env(safe-area-inset-bottom, 0px))))
+  ) !important;
+}
+
+
+/* In Edit Room the dock sits above the inventory, so keep the phone backdrop
+   clear of those raised icons as well. */
+body.edit-mode #phone-overlay.phone-overlay,
+.room-view.edit-on #phone-overlay.phone-overlay {
+  padding-bottom: calc(var(--inv-h, 104px) + 10px + var(--fab-h, 52px) + var(--chrome-bottom, var(--sab, 0px))) !important;
+}
+body.edit-mode #phone-overlay .phone-backdrop,
+.room-view.edit-on #phone-overlay .phone-backdrop {
+  bottom: calc(var(--inv-h, 104px) + var(--fab-h, 52px) + 16px + var(--chrome-bottom, var(--sab, env(safe-area-inset-bottom, 0px)))) !important;
+}
+
+
+/* Swallow the rest of the opening pointer so it cannot hit a phone app. */
+#phone-overlay.phone-just-opened .phone-device,
+#phone-overlay.phone-just-opened .phone-backdrop {
+  pointer-events: none !important;
 }

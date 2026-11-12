@@ -688,6 +688,7 @@ export function initCreatorMenu({ onShow, getBackdropRoom } = {}) {
     requestAnimationFrame(() => {
       paginate();
       window.dispatchEvent(new Event("resize"));
+      requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
     });
     return true;
   }
