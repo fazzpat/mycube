@@ -2163,7 +2163,7 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     return [
       "couch", "chair", "hoverchair", "capsulecouch",
       "tv", "holotv", "chesstable", "fridge", "punchbag", "heavybag",
-      "benchpress", "treadmill", "cubics", "clothescab", "coffeemachine",
+      "benchpress", "treadmill", "cubics", "clothescab", "coffeemachine", "stove",
       "recordplayer", "bed",
     ].includes(type) || type === RECORD_TYPE;
   }
@@ -2649,6 +2649,10 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
         socket.emit("useCoffee", { id });
         toast("Brewing a cup…");
       });
+      return;
+    }
+    if (type === "stove") {
+      approachFurniture(furn, () => socket.emit("useStove", { id }));
       return;
     }
     if (type === "recordplayer" || type === RECORD_TYPE) {
@@ -4958,6 +4962,7 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
   window.__stowItem = () => socket.emit("stowItem");
   window.__openWardrobe = (id) => openWardrobe(id);
   window.__useCoffee = (id) => socket.emit("useCoffee", { id });
+  window.__useStove = (id) => socket.emit("useStove", { id });
   window.__selectRecord = (id, vinyl) => socket.emit("selectRecordPlayer", { id, vinyl });
   window.__stopRecord = (id) => socket.emit("selectRecordPlayer", { id, stop: true });
   window.__openRecordPicker = (id) => openRecordPicker(id, state.room?.recordPlayers?.[id]);

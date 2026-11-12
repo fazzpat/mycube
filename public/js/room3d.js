@@ -1771,7 +1771,7 @@ export function buildFurnitureMesh(type, ghost = false, ok = true) {
 
 const INTERACTIVE_TYPES = new Set([
   "couch", "chair", "tv", "chesstable", "fridge", "punchbag",
-  "benchpress", "treadmill", "cubics", "clothescab", "coffeemachine",
+  "benchpress", "treadmill", "cubics", "clothescab", "coffeemachine", "stove",
 ]);
 
 function addFurnitureHitbox(g, type) {

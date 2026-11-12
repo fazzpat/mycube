@@ -75,6 +75,7 @@ const FURNITURE_CATALOG = {
   cubics: { name: "Retro Arcade", price: 40, w: 1, h: 1, blocks: true },
   clothescab: { name: "Clothes cabinet", price: 30, w: 1, h: 1, blocks: true },
   coffeemachine: { name: "Coffee maker", price: 25, w: 1, h: 1, blocks: true },
+  stove: { name: "Stove", price: 30, w: 1, h: 1, blocks: true },
   recordplayer: { name: "Record table", price: 28, w: 1, h: 1, blocks: true },
   art_mona: { name: "Mona Cuba", price: 22, w: 1, h: 1, blocks: false, surface: "wall" },
   art_starry: { name: "Starry Cube Night", price: 28, w: 1, h: 1, blocks: false, surface: "wall" },
@@ -2577,6 +2578,22 @@ io.on("connection", (socket) => {
       startHeldItem(user, "coffee");
       emitPerson(user);
     }, 3000);
+  });
+
+  socket.on("useStove", ({ id } = {}) => {
+    const user = getUser(socket);
+    if (!user?.roomId) return;
+    const room = rooms.get(user.roomId);
+    const furn = room?.furniture.find((f) => f.id === id && f.type === "stove");
+    if (!furn) return;
+    ensureRoomExtras(room);
+    if (room.uses[id]?.on) {
+      delete room.uses[id];
+      emitRoom(room, "useUpdated", { id, use: null });
+      return;
+    }
+    room.uses[id] = { type: "stove", on: true, user: user.username, startedAt: Date.now() };
+    emitRoom(room, "useUpdated", { id, use: room.uses[id] });
   });
 
   socket.on("useWardrobe", ({ id } = {}) => {

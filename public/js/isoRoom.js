@@ -11,6 +11,7 @@ import { doorSlot as layoutDoorSlot, switchSlot as layoutSwitchSlot, windowSlots
 import { DEFAULT_DECOR, normalizeDecor, legacyAliases, floorColorHex, wallColorPal, drawWindowScenery, shadeHex } from "./roomDecor.js";
 import { chessSeatPose, chessBoardMetrics } from "./chessTable.js";
 import { steamFrameAt } from "./coffeeMaker.js";
+import { steamFrameAt as stoveSteamFrameAt, flameFrameAt } from "./stove.js";
 import { lieDrawPose, bedZeds, drawBedZeds } from "./bed.js";
 import {
   TYPE as RECORD_TYPE, spinFrameAt, notesAt, drawNotes, platterOffset, paintListenHint,
@@ -1013,7 +1014,8 @@ export function createRoom3D(container, opts = {}) {
         open: type === "fridge" ? Boolean(uses[f.id]?.open) : false,
         sku: f.sku,
         brewing: type === "coffeemachine" && uses[f.id]?.phase === "brew",
-        steamFrame: type === "coffeemachine" ? steamFrameAt(now) : 0,
+        steamFrame: type === "coffeemachine" ? steamFrameAt(now) : (type === "stove" ? stoveSteamFrameAt(now) : 0),
+        flameFrame: type === "stove" ? flameFrameAt(now) : 0,
         spinFrame: isRec && recOn ? spinFrameAt(nowServer(), rec.startedAt) : 0,
         vinyl: isRec ? (rec.vinyl || null) : null,
         flicker: type === "cubics" ? Math.floor(now / 220) % 3 : 0,
