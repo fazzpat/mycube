@@ -1089,7 +1089,7 @@ export function createRoom3D(container, opts = {}) {
       const personItem = { kind: "person", id: p.username, type: "person", depth, sx: foot.sx - AV_W / 2, sy: foot.sy - AV_GROUND_Y, w: AV_W, h: AV_H, spr, raw: p, tileX: x, tileY: y };
       if (lying) {
         const bed = furniture.find((f) => f.id === (p.stationId || st.stationId) && f.type === "bed");
-        const draw = lieDrawPose(bed || { x, y, rot: 0 }, tileToScreen, { headTop: AV_HEAD_TOP, groundY: AV_GROUND_Y });
+        const draw = lieDrawPose(bed || { x, y, rot: 0 }, tileToScreen, { headTop: AV_HEAD_TOP, groundY: AV_GROUND_Y, avatar: spr.c, avW: AV_W, avH: AV_H });
         const bedM = bed ? furnSpriteMetrics(bed.type, normalizeFurnRot(bed.rot)) : null;
         const bedDepth = bed ? (bed.x + bed.y + (bedM.tw + bedM.th) / 2 + 0.2) : depth;
         personItem.lie = { angle: draw.angle, headSx: draw.headSx, headSy: draw.headSy, zeds: bedZeds(p.lyingAt || st.lyingAt, Date.now()) };
@@ -2114,7 +2114,7 @@ export function createRoom3D(container, opts = {}) {
       const lying = Boolean(st?.lying || p?.lying);
       if (lying) {
         const bed = furniture.find((f) => f.id === (p?.stationId || st?.stationId) && f.type === "bed");
-        const draw = lieDrawPose(bed || { x: st?.x ?? p.x, y: st?.y ?? p.y, rot: 0 }, tileToScreen, { headTop: AV_HEAD_TOP, groundY: AV_GROUND_Y });
+        const draw = lieDrawPose(bed || { x: st?.x ?? p.x, y: st?.y ?? p.y, rot: 0 }, tileToScreen, { headTop: AV_HEAD_TOP, groundY: AV_GROUND_Y, avW: AV_W, avH: AV_H });
         const c = clientFromWorld(draw.headSx, draw.headSy - 12);
         const f = clientFromWorld(draw.headSx, draw.headSy + 8);
         const rect = container.getBoundingClientRect();

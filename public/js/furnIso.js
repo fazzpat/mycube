@@ -6,6 +6,7 @@ import { drawRecordPlayer, TYPE as RECORD_PLAYER } from "./recordPlayer.js";
 import { drawChessTableSmall, drawChessStool, CHESS_STOOL_TYPE } from "./chessTable.js";
 import { drawStove } from "./stove.js";
 import { drawPoolTable } from "./billiards.js";
+import { blanketLocal, pillowLocal, foldLocal, BLANKET_LIFT, BLANKET_THICK, PILLOW_THICK } from "./bed.js";
 
 const TW = 64;
 const TH = 32;
@@ -24,7 +25,7 @@ const TILES = {
 
 const BODY_H = {
   rug: 4, plant: 36, podplant: 38, lamp: 48, table: 18, coffeetable: 14, counter: 20,
-  couch: 26, capsulecouch: 26, chair: 24, hoverchair: 32, bed: 16, tv: 60, holotv: 60,
+  couch: 26, capsulecouch: 26, chair: 24, hoverchair: 32, bed: 14, tv: 60, holotv: 60,
   fridge: 44, kitchenette: 24, bookshelf: 42, chesstable: 14, chessstool: 14, punchbag: 46, heavybag: 46,
   benchpress: 22, treadmill: 30, cubics: 64, pinball: 40, clothescab: 42, coffeemachine: 48, stove: 40, recordplayer: 40,
   djdeck: 18, sodavending: 46, neonsign: 46, rack: 36, mannequin: 42, petpen: 22, cage: 24, pooltable: 18,
@@ -467,44 +468,30 @@ function drawRug(ctx, tw, th, lights) {
 
 function drawBed(ctx, tw, th, rot, lights) {
   const r = normalizeFurnRot(rot);
-  const full = insetBox(tw, th);
-  const wood = pal("#6b4a32", lights);
-  const sheet = pal("#efe6d4", lights, { pillow: "#fff8f0" });
-  const blanket = pal(lights ? "#4a7ab0" : "#2a4a68", lights, { fold: "#6a96c4" });
-  shadow(ctx, full.x, full.y, full.w, full.h, 0.28);
-  // Plain wooden frame, low platform.
-  box(ctx, full.x, full.y, full.w, full.h, 0, 6, wood);
-  const inset = 0.08;
-  box(ctx, full.x + inset, full.y + inset, full.w - inset * 2, full.h - inset * 2, 6, 4, sheet);
-  // Low headboard — one simple wood plank, no extra panels.
-  const head = backRect(tw, th, r, 0.16);
-  box(ctx, head.x - 0.02, head.y - 0.02, head.w + 0.04, head.h + 0.04, 0, 14, wood);
-  // One white pillow on the mattress, just in front of the headboard (not on it).
-  const start = 0.20, depth = 0.24;
-  const x0 = full.x + inset, y0 = full.y + inset, fw = full.w - inset * 2, fh = full.h - inset * 2;
-  const pillow = (r === 0) ? { x: x0 + 0.08, y: y0 + start, w: fw - 0.16, h: depth }
-    : (r === 1) ? { x: x0 + start, y: y0 + 0.08, w: depth, h: fh - 0.16 }
-    : (r === 2) ? { x: x0 + 0.08, y: y0 + fh - start - depth, w: fw - 0.16, h: depth }
-    : { x: x0 + fw - start - depth, y: y0 + 0.08, w: depth, h: fh - 0.16 };
-  box(ctx, pillow.x, pillow.y, pillow.w, pillow.h, 10, 5, {
-    top: lights ? sheet.pillow : shade(sheet.pillow, -28),
-    left: shade("#efe6d4", -16),
-    right: shade("#efe6d4", -32),
-    outline: shade("#6b4a32", 16),
+  const cover = blanketLocal(r);
+  const pillow = pillowLocal(r);
+  const fold = foldLocal(r);
+  const blanket = pal(lights ? "#4a7ab0" : "#2a4a68", lights, { fold: "#6a96c4", hem: "#3a6494" });
+  const pillowPal = pal("#fff8f0", lights, { top: lights ? "#fffdf8" : "#d0ccc4" });
+  // Just a flat blanket on the floor — no frame, no headboard — plus one pillow on top.
+  shadow(ctx, cover.x, cover.y, cover.w, cover.h, 0.26);
+  box(ctx, cover.x, cover.y, cover.w, cover.h, BLANKET_LIFT, BLANKET_THICK, blanket);
+  // Soft hem / edge on the top face so the fabric reads as a stitched rectangle.
+  box(ctx, cover.x + 0.04, cover.y + 0.04, cover.w - 0.08, cover.h - 0.08, BLANKET_LIFT + BLANKET_THICK, 0.6, {
+    top: lights ? shade(blanket.base, 18) : shade(blanket.base, -16),
+    left: blanket.left, right: blanket.right, outline: blanket.hem,
   });
-  // Solid blue blanket from below the pillow to the foot, with a simple fold.
-  const cover = frontRect(tw, th, r, r % 2 === 0 ? Math.max(0.62, th - 0.72) : Math.max(0.62, tw - 0.72));
-  box(ctx, cover.x + 0.04, cover.y + 0.04, Math.max(0.2, cover.w - 0.08), Math.max(0.2, cover.h - 0.08), 10, 4, blanket);
-  const d = 0.12;
-  const fold = (r === 0) ? { x: x0 + 0.04, y: y0 + 0.48, w: fw - 0.08, h: d }
-    : (r === 1) ? { x: x0 + 0.48, y: y0 + 0.04, w: d, h: fh - 0.08 }
-    : (r === 2) ? { x: x0 + 0.04, y: y0 + fh - 0.48 - d, w: fw - 0.08, h: d }
-    : { x: x0 + fw - 0.48 - d, y: y0 + 0.04, w: d, h: fh - 0.08 };
-  box(ctx, fold.x, fold.y, fold.w, fold.h, 14, 2, {
+  box(ctx, fold.x, fold.y, fold.w, fold.h, BLANKET_LIFT + BLANKET_THICK + 0.6, 1.6, {
     top: lights ? blanket.fold : shade(blanket.fold, -30),
     left: blanket.left,
     right: blanket.right,
     outline: blanket.outline,
+  });
+  box(ctx, pillow.x, pillow.y, pillow.w, pillow.h, BLANKET_LIFT + BLANKET_THICK, PILLOW_THICK, {
+    top: pillowPal.top,
+    left: shade("#efe6d4", lights ? -8 : -28),
+    right: shade("#efe6d4", lights ? -22 : -40),
+    outline: shade("#6b4a32", 20),
   });
 }
 
