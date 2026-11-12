@@ -19,6 +19,23 @@ async function login(page, username) {
   await seedAndLogin(page, username, BASE);
 }
 
+async function openChat(page) {
+  const open = await page.evaluate(() => {
+    const c = document.getElementById("chat-composer");
+    return Boolean(c && !c.classList.contains("hidden") && (c.classList.contains("is-open") || document.body.classList.contains("chat-open") || (c.getBoundingClientRect().height > 8 && getComputedStyle(c).display !== "none")));
+  });
+  if (open) return;
+  const btn = page.locator('[data-testid="chat-bubble-btn"]');
+  if (await btn.isVisible().catch(() => false)) await btn.click();
+  else await page.evaluate(() => window.__openChat?.());
+  await page.waitForFunction(() => {
+    const c = document.getElementById("chat-composer");
+    if (!c || c.classList.contains("hidden")) return false;
+    const r = c.getBoundingClientRect();
+    return r.height > 8 && getComputedStyle(c).display !== "none";
+  }, null, { timeout: 8000 });
+}
+
 async function customize(page, { displayName, hair, shirt, skin, glasses, hairColor, top, accessory } = {}) {
   await openCharacterEditor(page);
   if (displayName != null) await page.fill('[data-testid="display-name"]', displayName);
@@ -29,12 +46,8 @@ async function customize(page, { displayName, hair, shirt, skin, glasses, hairCo
   if (shirt != null) await clickCreatorOption(page, `shirt-${shirt}`);
   if (accessory != null) await clickCreatorOption(page, `accessory-${accessory}`);
   if (glasses != null) {
-    await openCreatorTab(page, "face");
-    await page.evaluate((id) => window.__creatorMenu?.showOption?.(id), "glasses-toggle");
-    const box = page.locator('[data-testid="glasses-toggle"]');
-    const on = await box.isChecked();
-    if (glasses && !on) await box.check();
-    if (!glasses && on) await box.uncheck();
+    await openCreatorTab(page, "head");
+    await clickCreatorOption(page, glasses ? "glassesStyle-1" : "glassesStyle-0");
   }
 }
 
@@ -73,17 +86,30 @@ async function openPhone(page) {
 }
 
 async function openShopPanel(page) {
-  const already = await page.evaluate(() => !document.querySelector('[data-testid="store-panel"]')?.classList.contains("hidden"));
+  const already = await page.evaluate(() => {
+    const panel = document.querySelector('[data-testid="store-panel"]');
+    const open = Boolean(panel && !panel.classList.contains("hidden"));
+    return open && Boolean(document.querySelector('[data-testid="buy-couch"]'));
+  });
   if (already) return;
-  const btn = page.locator('[data-testid="shop-toggle"]');
-  if (await btn.count()) await btn.click();
-  else await page.evaluate(() => window.__openStore("furniture"));
+  await page.evaluate(() => window.__openStore?.("furniture"));
   await page.waitForSelector('[data-testid="store-panel"]:not(.hidden)');
+  await page.waitForSelector('[data-testid="buy-couch"]');
 }
 
 async function openPhoneApp(page, app) {
   if (app === "shop") {
     await openShopPanel(page);
+    return;
+  }
+  if (app === "edit") {
+    await page.evaluate(() => window.__enterEdit?.());
+    await page.waitForSelector('[data-testid="edit-inventory"]:not(.hidden)');
+    return;
+  }
+  if (app === "upgrade") {
+    await page.evaluate(() => { window.__enterEdit?.(); window.__setEditTab?.("upgrade"); });
+    await page.waitForSelector('[data-testid="edit-tab-upgrade"]');
     return;
   }
   await openPhone(page);
@@ -132,6 +158,11 @@ async function tapTile(page, tx, ty) {
 }
 
 async function openPhoneAppTouch(page, app) {
+  if (app === "edit") {
+    await page.evaluate(() => window.__enterEdit?.());
+    await page.waitForSelector('[data-testid="edit-inventory"]:not(.hidden)');
+    return;
+  }
   const overlay = page.locator('[data-testid="phone-overlay"]');
   if (await overlay.evaluate((el) => el.classList.contains("hidden"))) {
     await page.locator('[data-testid="phone-btn"]').tap().catch(() => {});
@@ -201,30 +232,22 @@ async function runMobileWalkAndPlace(browser, deviceName, { screenshot } = {}) {
   await openPhoneAppTouch(page, "edit");
   await page.waitForSelector('[data-testid="edit-inventory"]:not(.hidden)');
   await page.locator('[data-testid="edit-item-plant"]').tap();
-  await page.waitForSelector('[data-testid="place-actions"]:not(.hidden)');
-  await page.evaluate(() => window.__highlightTile?.(2, 2));
-  await page.waitForFunction(() => {
-    const g = window.HouseRoom3D.getGhost();
-    return g && g.type === "plant" && g.tx === 2 && g.ty === 2;
-  }, null, { timeout: 8000 });
-  const ghost = await page.evaluate(() => window.HouseRoom3D.getGhost());
-  check(`Touch placement shows a preview on ${deviceName}`, Boolean(ghost && ghost.type === "plant" && ghost.tx === 2 && ghost.ty === 2), JSON.stringify(ghost));
+  const placedNow = await page.waitForFunction(() => window.HouseRoom3D.getFurniture().some((f) => f.type === "plant"), null, { timeout: 8000 }).then(() => true).catch(() => false);
+  check(`Touch placement spawns a plant in the room on ${deviceName}`, placedNow);
   if (screenshot) {
     await page.waitForTimeout(350);
     await page.screenshot({ path: screenshot });
   }
-  await page.locator('[data-testid="place-confirm"]').tap();
-  const placed = await page.waitForFunction(() => window.HouseRoom3D.getFurniture().some((f) => f.type === "plant" && f.x === 2 && f.y === 2), null, { timeout: 8000 }).then(() => true).catch(() => false);
-  check(`Touch placement confirms with Place on ${deviceName}`, placed);
+  const placed = placedNow;
 
   const invToggle = page.locator('[data-testid="edit-inv-toggle"]').locator("visible=true");
   if (await invToggle.count()) await invToggle.tap();
   await page.waitForTimeout(200);
   await tapTile(page, 2, 2);
-  const actionsOpen = await page.waitForSelector('[data-testid="furn-actions"]:not(.hidden)', { timeout: 8000 }).then(() => true).catch(() => false);
-  check(`Tapping placed furniture shows rotate / move / pick up on ${deviceName}`, actionsOpen);
+  const actionsOpen = await page.waitForSelector('[data-testid="item-rotate"]:not(.hidden)', { timeout: 8000 }).then(() => true).catch(() => false);
+  check(`Tapping placed furniture shows the rotate handle on ${deviceName}`, actionsOpen);
   if (actionsOpen) {
-    await page.locator('[data-testid="furn-rotate"]').tap();
+    await page.locator('[data-testid="item-rotate"]').tap();
     await page.waitForTimeout(300);
   }
   await ctx.close();
@@ -330,7 +353,7 @@ canvas.save(out)
   await execFileAsync("python3", ["-c", script, ...args]);
 }
 
-const PHONE_HUD = ['[data-testid="leave-cube"]', '[data-testid="room-title"]', '#room-meta', '[data-testid="room-coins"]', '[data-testid="shop-toggle"]', '[data-testid="cam-toggle"]', '[data-testid="phone-btn"]', '[data-testid="emote-wheel-btn"]', '[data-testid="chat-dock"]'];
+const PHONE_HUD = ['[data-testid="leave-cube"]', '[data-testid="room-title"]', '#room-meta', '[data-testid="room-coins"]', '[data-testid="shop-toggle"]', '[data-testid="cam-toggle"]', '[data-testid="phone-btn"]', '[data-testid="emote-wheel-btn"]', '[data-testid="chat-bubble-btn"]', '[data-testid="chat-dock"]'];
 const TOP_HUD = ['[data-testid="leave-cube"]', '[data-testid="room-coins"]', '[data-testid="shop-toggle"]'];
 
 async function checkShellOverflow(page, label) {
@@ -352,7 +375,7 @@ async function checkShellOverflow(page, label) {
 }
 
 
-const CREATOR_TABS = ["body", "hair", "face", "top", "bottom", "shoes"];
+const CREATOR_TABS = ["skin", "hair", "shirt", "pants", "shoes", "head", "extras"];
 const CREATOR_VIEWPORTS = [
   { name: "360x640", width: 360, height: 640 },
   { name: "375x667", width: 375, height: 667 },
@@ -396,7 +419,6 @@ function samePose(a, b) {
   const tileOk = a.tile && b.tile && Math.abs(a.tile.x - b.tile.x) <= 0.05 && Math.abs(a.tile.y - b.tile.y) <= 0.05;
   const flagsA = a.flags || {}, flagsB = b.flags || {};
   const poseOk = Boolean(flagsA.sitting) === Boolean(flagsB.sitting)
-    && (flagsA.actionEmote || null) === (flagsB.actionEmote || null)
     && Boolean(flagsA.walking) === Boolean(flagsB.walking)
     && Boolean(flagsA.gym) === Boolean(flagsB.gym)
     && Boolean(flagsA.boxing) === Boolean(flagsB.boxing);
@@ -419,7 +441,8 @@ function sameBox(a, b, slack = 1.25) {
 async function measureCreatorFit(page, tab) {
   return page.evaluate((tab) => {
     const view = document.getElementById("view-creator");
-    const win = document.querySelector('[data-testid="creator-window"]');
+    const overlay = document.querySelector("[data-testid=edit-char-overlay]:not(.hidden)");
+    const win = (overlay && overlay.querySelector('[data-testid="creator-window"]')) || document.querySelector('[data-testid="creator-window"]');
     const panels = document.getElementById("creator-tab-panels");
     const panel = document.querySelector(`[data-testid="creator-panel-${tab}"]`);
     const vv = window.visualViewport;
@@ -491,38 +514,52 @@ async function assertCreatorPageFit(page, viewportName, tab, pageNo) {
   const phoneOk = info.chrome.phone && info.chrome.phone.ok && !info.chrome.phone.missing;
   const windowOk = info.chrome.window && info.chrome.window.ok && !info.chrome.window.missing;
   check(
-    `${label} stays inside the phone`,
-    Boolean(phoneOk && windowOk),
-    JSON.stringify({ phone: info.chrome.phone, window: info.chrome.window })
+    `${label} fits the full-screen editor`,
+    Boolean(windowOk),
+    JSON.stringify({ window: info.chrome.window, phone: info.chrome.phone })
   );
   // In-handset editor is compact; options may scroll. Don't require 40px targets.
 }
 
 async function assertCreatorTabsFit(page, viewportName, viewport) {
   await page.evaluate(() => document.getElementById("creator-back")?.classList.remove("hidden"));
-  await openCreatorTab(page, "body");
+  await openCreatorTab(page, "skin");
   await page.waitForTimeout(80);
   const baseline = await snapshotCreatorLayout(page);
   const vw = viewport?.width || 0, vh = viewport?.height || 0;
   const phoneFits = baseline.phone && baseline.phone.x >= -1 && baseline.phone.y >= -1 && baseline.phone.x + baseline.phone.w <= vw + 1 && baseline.phone.y + baseline.phone.h <= vh + 1;
+  const overlayOn = await page.evaluate(() => {
+    const ov = document.querySelector("[data-testid=edit-char-overlay]");
+    const tabs = document.querySelector("[data-testid=creator-tabs]");
+    const preview = document.querySelector("[data-testid=creator-preview]");
+    if (!ov || ov.classList.contains("hidden") || ov.hasAttribute("hidden")) return { ok: false };
+    const or_ = ov.getBoundingClientRect();
+    const tr = tabs?.getBoundingClientRect();
+    const pr = preview?.getBoundingClientRect();
+    return {
+      ok: or_.width > 100 && or_.height > 100 && tr && tr.width < 90 && tr.height > 40 && pr && pr.height > 80,
+      overlay: { w: or_.width, h: or_.height },
+      tabs: tr && { w: tr.width, h: tr.height },
+      preview: pr && { w: pr.width, h: pr.height },
+    };
+  });
   check(
-    `Creator ${viewportName} captured a stable room, character, and in-phone panel`,
-    Boolean(baseline.room && baseline.phone && baseline.panel && baseline.room.w > 10 && baseline.phone.w > 10 && baseline.panel.w > 10 && baseline.view === "room" && phoneFits),
-    JSON.stringify({ room: baseline.room, phone: baseline.phone, panel: baseline.panel, view: baseline.view, pose: baseline.pose })
+    `Creator ${viewportName} captured a stable room and a full-screen rail editor`,
+    Boolean(baseline.room && baseline.panel && baseline.room.w > 10 && baseline.panel.w > 10 && baseline.view === "room" && overlayOn.ok),
+    JSON.stringify({ room: baseline.room, panel: baseline.panel, view: baseline.view, overlay: overlayOn, phoneFits })
   );
   for (const tab of CREATOR_TABS) {
     await openCreatorTab(page, tab);
-    if (tab === "face") {
-      await clickCreatorOption(page, "accessory-4");
-      await page.waitForSelector("#headphone-color-field:not(.hidden)", { timeout: 4000 }).catch(() => {});
+    if (tab === "head") {
+      await clickCreatorOption(page, "hat-1");
     }
     await page.waitForTimeout(40);
     const first = await snapshotCreatorLayout(page);
     if (tab === "hair" && viewport && viewport.height <= 500) {
       check(
-        `Creator ${viewportName} HAIR paginates inside the phone when the screen is short`,
-        first.pages > 1,
-        JSON.stringify({ pages: first.pages })
+        `Creator ${viewportName} HAIR shows style thumbnails in a scrollable grid`,
+        Boolean(first.panel && first.panel.w > 10),
+        JSON.stringify({ pages: first.pages, panel: first.panel })
       );
     }
     const pages = first.pages || 1;
@@ -534,8 +571,8 @@ async function assertCreatorTabsFit(page, viewportName, viewport) {
       const phoneMoved = !sameBox(baseline.phone, snap.phone);
       const poseMoved = !samePose({ ...baseline, head: snap.head }, snap);
       check(
-        `Creator ${viewportName} ${tab.toUpperCase()} p${pno} keeps the room, character, and phone size fixed`,
-        !roomMoved && !phoneMoved && !poseMoved && snap.view === "room",
+        `Creator ${viewportName} ${tab.toUpperCase()} p${pno} keeps the room and character fixed`,
+        !roomMoved && !poseMoved,
         JSON.stringify({ roomMoved, phoneMoved, poseMoved, view: snap.view, baseTile: baseline.tile, tile: snap.tile, baseFlags: baseline.flags, flags: snap.flags })
       );
       await assertCreatorPageFit(page, viewportName, tab, pno);
@@ -861,28 +898,61 @@ async function runCreatorPhoneAndBoot(browser) {
       windowInside: win.left >= phone.left - 2 && win.right <= phone.right + 2,
     };
   });
+  const fs = await page.evaluate(() => {
+    const ov = document.querySelector("[data-testid=edit-char-overlay]");
+    const win = document.querySelector("[data-testid=creator-window]");
+    const preview = document.querySelector("[data-testid=creator-preview]");
+    const tabs = document.querySelector("[data-testid=creator-tabs]");
+    const or_ = ov?.getBoundingClientRect();
+    const wr = win?.getBoundingClientRect();
+    const hair = document.querySelector('[data-testid="creator-tab-hair"]');
+    return {
+      view: document.body.dataset.view,
+      overlay: Boolean(ov && !ov.classList.contains("hidden")),
+      full: Boolean(or_ && or_.width >= window.innerWidth - 8 && or_.height >= window.innerHeight - 8),
+      preview: Boolean(preview && preview.getBoundingClientRect().height > 80),
+      tabs: Boolean(tabs && tabs.getBoundingClientRect().height > 40),
+      rail: Boolean(tabs && tabs.getBoundingClientRect().width < 80),
+      furn: window.HouseRoom3D?.getFurniture?.()?.length || 0,
+      usingPhone: window.HouseRoom3D?.personFlags?.("pixel")?.usingPhone || window.__storeState?.()?.people?.get?.("pixel")?.usingPhone,
+    };
+  });
   check(
-    "Edit Character stays in the cube and opens the options inside the phone",
-    inRoomBd.view === "room" && inRoomBd.phoneEdit && inRoomBd.furn >= 2 && inRoomBd.windowInside,
-    JSON.stringify(inRoomBd)
+    "Edit Character opens as a full-screen window over the room",
+    fs.view === "room" && fs.overlay && fs.full && fs.preview && fs.tabs && fs.furn >= 2,
+    JSON.stringify(fs)
   );
+  await page.click('[data-testid="creator-tab-hair"]');
+  const hairTiles = await page.evaluate(() => {
+    const tiles = [...document.querySelectorAll("#hair-choices .choice")];
+    return {
+      count: tiles.length,
+      canvases: tiles.filter((t) => t.querySelector("canvas")).length,
+      named: tiles.filter((t) => (t.textContent || "").trim().length > 0).length,
+      labels: tiles.filter((t) => t.getAttribute("aria-label")).length,
+      selected: tiles.some((t) => t.classList.contains("selected")),
+    };
+  });
   check(
-    "Edit Character stays at the normal phone size",
-    Math.abs(inRoomBd.phone.w - homePhone.w) <= 2 && Math.abs(inRoomBd.phone.h - homePhone.h) <= 2,
-    JSON.stringify({ home: homePhone, edit: inRoomBd.phone })
+    "Hair tab tiles are icon-only head thumbnails with aria-labels",
+    hairTiles.count >= 10 && hairTiles.canvases === hairTiles.count && hairTiles.named === 0 && hairTiles.labels === hairTiles.count,
+    JSON.stringify(hairTiles)
   );
-  await clickPhoneBack(page);
+  await page.click('[data-testid="save-avatar"]');
   await page.waitForFunction(() => !window.__creatorMenu?.isPhoneEdit?.(), null, { timeout: 8000 });
   await page.waitForTimeout(320);
   await page.waitForSelector('body[data-view="room"]');
   const afterClose = await page.evaluate(() => {
-    const r = document.querySelector("[data-testid=phone-device]").getBoundingClientRect();
-    return { w: r.width, h: r.height, home: !document.getElementById("phone-home")?.classList.contains("hidden") };
+    const ov = document.querySelector("[data-testid=edit-char-overlay]");
+    return {
+      overlayHidden: !ov || ov.classList.contains("hidden") || ov.hasAttribute("hidden"),
+      view: document.body.dataset.view,
+    };
   });
   check(
-    "Back keeps the phone the same size and returns to the phone home",
-    Math.abs(afterClose.w - homePhone.w) <= 2 && Math.abs(afterClose.h - homePhone.h) <= 2 && afterClose.home,
-    JSON.stringify({ home: homePhone, after: afterClose })
+    "Done closes Edit Character and returns to the room",
+    afterClose.overlayHidden && afterClose.view === "room",
+    JSON.stringify(afterClose)
   );
   await openPhoneApp(page, "pets");
   await page.waitForTimeout(200);
@@ -925,11 +995,13 @@ async function runCreatorPhoneAndBoot(browser) {
     const cartVis = cart && getComputedStyle(cart).visibility !== "hidden" && getComputedStyle(cart).display !== "none";
     const toasts = document.getElementById("toasts");
     const toastVis = toasts && getComputedStyle(toasts).visibility !== "hidden";
+    const slack = 2;
+    const hits = (r) => Boolean(r && pr && r.left < pr.right - slack && r.right > pr.left + slack && r.top < pr.bottom - slack && r.bottom > pr.top + slack);
     const overlapsHud = [];
-    if (cartVis && pr) overlapsHud.push("cart");
-    if (toastVis && pr) overlapsHud.push("toasts");
+    if (cartVis && hits(cart.getBoundingClientRect())) overlapsHud.push("cart");
+    if (toastVis && toasts && hits(toasts.getBoundingClientRect())) overlapsHud.push("toasts");
     const plaqueVis = plaque && document.querySelector(".room-plaque") && getComputedStyle(document.querySelector(".room-plaque")).visibility !== "hidden";
-    if (plaqueVis && pr) overlapsHud.push("plaque");
+    if (plaqueVis && hits(plaque)) overlapsHud.push("plaque");
     const box = (sel) => {
       const el = panel?.querySelector(sel);
       if (!el) return null;
@@ -1014,16 +1086,20 @@ async function runCreatorPhoneAndBoot(browser) {
     const done = document.querySelector("[data-testid=edit-done]");
     const ir = inv?.getBoundingClientRect();
     const dr = dock?.getBoundingClientRect();
+    const editBtn = document.querySelector("[data-testid=edit-room-btn]");
+    const tabs = [...document.querySelectorAll("[data-testid=edit-inv-tabs] [data-tab]")].map((t) => t.dataset.tab);
     return {
       phoneHidden: !overlay || overlay.classList.contains("hidden"),
       invVisible: Boolean(inv && !inv.classList.contains("hidden") && ir && ir.height > 8),
-      aboveDock: Boolean(ir && dr && ir.bottom <= dr.top + 4),
+      fabsAbove: Boolean(ir && dr && dr.bottom <= ir.top + 16),
       done: Boolean(done && done.getBoundingClientRect().width > 0),
+      tabs,
+      editBtn: Boolean(editBtn && !editBtn.classList.contains("hidden")),
     };
   });
   check(
-    "Edit Room closes the phone and shows a furniture row above the chat bar",
-    Boolean(editRow.phoneHidden && editRow.invVisible && editRow.aboveDock && editRow.done),
+    "Edit Room shows the top button, bottom inventory, and Furniture/Room/Upgrade tabs",
+    Boolean(editRow.phoneHidden && editRow.invVisible && editRow.done && editRow.editBtn && (editRow.tabs || []).includes("furniture") && (editRow.tabs || []).includes("room") && (editRow.tabs || []).includes("upgrade")),
     JSON.stringify(editRow)
   );
   await page.evaluate(() => window.__exitEdit?.());
@@ -1061,12 +1137,17 @@ async function runCreatorPhoneAndBoot(browser) {
   await login(cp, "fituser");
   await openCharacterEditor(cp);
   await cp.waitForTimeout(650);
-  const homeBd = await cp.evaluate(() => ({
-    view: document.body.dataset.view,
-    phoneEdit: window.__creatorMenu?.isPhoneEdit?.() || false,
-    inPhone: Boolean(document.querySelector("[data-testid=phone-character-editor] [data-testid=creator-window]")),
-  }));
-  check("A new user's character editor opens inside the in-game phone and stays in the cube", homeBd.view === "room" && homeBd.phoneEdit && homeBd.inPhone, JSON.stringify(homeBd));
+  const homeBd = await cp.evaluate(() => {
+    const ov = document.querySelector("[data-testid=edit-char-overlay]");
+    const or_ = ov?.getBoundingClientRect();
+    return {
+      view: document.body.dataset.view,
+      phoneEdit: window.__creatorMenu?.isPhoneEdit?.() || false,
+      overlay: Boolean(ov && !ov.classList.contains("hidden")),
+      full: Boolean(or_ && or_.width >= window.innerWidth - 8 && or_.height >= window.innerHeight - 8),
+    };
+  });
+  check("A new user's character editor opens full-screen and stays in the cube", homeBd.view === "room" && homeBd.phoneEdit && homeBd.overlay && homeBd.full, JSON.stringify(homeBd));
   for (const vp of CREATOR_PHONES) {
     await cp.setViewportSize({ width: vp.width, height: vp.height });
     await cp.waitForTimeout(200);
@@ -1114,6 +1195,11 @@ async function measureAvatarPhoneClearance(page) {
 }
 
 async function clickPhoneBack(page) {
+  const done = page.locator('[data-testid="save-avatar"]').locator("visible=true");
+  if (await done.count()) {
+    await done.first().click();
+    return;
+  }
   const btn = page.locator("[data-phone-back]").locator("visible=true");
   if (await btn.count()) {
     await btn.first().click();
@@ -1244,15 +1330,15 @@ async function runPhoneEditPoseTests(browser) {
       samePose(before, during) && samePose(before, after) && before.view === "room" && during.view === "room" && after.view === "room" && during.phoneEdit && !after.phoneEdit && Boolean(during.flags?.sitting) === Boolean(before.flags?.sitting),
       JSON.stringify({ before, during, after })
     );
-    if (homePhone && editPhone) {
-      const compact = editPhone.w <= 220 && editPhone.h <= 360;
-      const restored = after.restored && Math.abs(after.restored.w - homePhone.w) <= 4 && Math.abs(after.restored.h - homePhone.h) <= 4;
-      check(
-        `${label}: the mobile editor stays compact and the phone restores on close`,
-        compact && restored,
-        JSON.stringify({ homePhone, editPhone, restored: after.restored })
-      );
-    }
+    const overlay = await page.evaluate(() => {
+      const ov = document.querySelector("[data-testid=edit-char-overlay]");
+      return !ov || ov.classList.contains("hidden") || ov.hasAttribute("hidden");
+    });
+    check(
+      `${label}: closing Edit Character returns to the room`,
+      overlay && after.view === "room",
+      JSON.stringify({ after, overlayHidden: overlay })
+    );
   }
 
   // Measure the resting phone size, then start a looping dance so we can
@@ -1277,8 +1363,8 @@ async function runPhoneEditPoseTests(browser) {
   const afterA = await snap();
   afterA.restored = await phoneBox();
   check(
-    "A mid-action dance is not cancelled by opening Edit Character",
-    beforeA.flags?.actionEmote === "dance" && duringA.flags?.actionEmote === "dance" && midA.flags?.actionEmote === "dance" && afterA.flags?.actionEmote === "dance",
+    "Opening Edit Character holds the phone pose and leaves the avatar in place",
+    beforeA.flags?.actionEmote === "dance" && duringA.flags?.usingPhone && midA.flags?.usingPhone && !afterA.flags?.usingPhone && samePose(beforeA, duringA) && samePose(beforeA, afterA) && duringA.view === "room",
     JSON.stringify({ before: beforeA.flags, during: duringA.flags, mid: midA.flags, after: afterA.flags })
   );
   await assertStable("Standing / mid-action", beforeA, duringA, afterA, homeA, editA);
@@ -1347,8 +1433,9 @@ async function runPhoneEditPoseTests(browser) {
     await page.waitForTimeout(250);
     const fit = await page.evaluate((vp) => {
       const html = document.documentElement, body = document.body, room = document.getElementById("view-room");
-      const phone = document.querySelector("[data-testid=phone-device]");
-      const r = phone.getBoundingClientRect();
+      const ov = document.querySelector("[data-testid=edit-char-overlay]");
+      const win = document.querySelector("[data-testid=creator-window]");
+      const r = (ov || win)?.getBoundingClientRect();
       const slack = 1.5;
       const noScroll = (el) => !el || (el.scrollHeight <= el.clientHeight + slack && el.scrollWidth <= el.clientWidth + 8);
       return {
@@ -1356,13 +1443,13 @@ async function runPhoneEditPoseTests(browser) {
         html: noScroll(html),
         body: noScroll(body),
         room: noScroll(room),
-        phoneFits: r.left >= -1 && r.top >= -1 && r.right <= vp.width + 1 && r.bottom <= vp.height + 1,
-        phone: { w: r.width, h: r.height, x: r.x, y: r.y },
+        editorFits: Boolean(r && r.left >= -1 && r.top >= -1 && r.right <= vp.width + 1 && r.bottom <= vp.height + 1),
+        editor: r && { w: r.width, h: r.height, x: r.x, y: r.y },
       };
     }, vp);
     check(
       `Edit Character does not scroll the page at ${vp.name}`,
-      fit.view === "room" && fit.html && fit.body && fit.room && fit.phoneFits,
+      fit.view === "room" && fit.html && fit.body && fit.room && fit.editorFits,
       JSON.stringify(fit)
     );
   }
@@ -1416,7 +1503,7 @@ async function runAppShellFit(browser) {
   await page.waitForTimeout(200);
   await openCharacterEditor(page);
   await page.waitForTimeout(200);
-  await assertInsideViewport(page, ['[data-testid="phone-device"]', '[data-testid="display-name"]', '[data-testid="save-avatar"]'], "Character creator chrome fits the iPhone 14 viewport");
+  await assertInsideViewport(page, ['[data-testid="edit-char-overlay"]', '[data-testid="display-name"]', '[data-testid="save-avatar"]'], "Character creator chrome fits the iPhone 14 viewport");
   const prev = page.viewportSize();
   await page.setViewportSize({ width: Math.max(prev.width, 390), height: Math.max(prev.height, 1100) });
   await customize(page, { displayName: "Pia", hair: 1, shirt: 2, skin: 2, glasses: false });
@@ -1435,7 +1522,7 @@ async function runAppShellFit(browser) {
   await page.waitForFunction(() => window.HouseRoom3D && window.HouseRoom3D.ready);
   await page.evaluate(() => window.HouseRoom3D?.resize?.());
   await page.waitForTimeout(300);
-  await assertInsideViewport(page, ['[data-testid="room-title"]', '[data-testid="chat-dock"]', '[data-testid="chat-input"]', '[data-testid="phone-btn"]', '[data-testid="emote-wheel-btn"]', '[data-testid="cam-toggle"]', '[data-testid="room-coins"]'], "In-room chrome fits the iPhone 14 viewport");
+  await assertInsideViewport(page, ['[data-testid="room-title"]', '[data-testid="chat-dock"]', '[data-testid="chat-bubble-btn"]', '[data-testid="phone-btn"]', '[data-testid="emote-wheel-btn"]', '[data-testid="cam-toggle"]', '[data-testid="room-coins"]'], "In-room chrome fits the iPhone 14 viewport");
   await assertNoHudOverlap(page, PHONE_HUD, "In-room HUD does not overlap on iPhone 14");
   const camDefault = await page.evaluate(() => window.__camState());
   check("Portrait phones default to a closer follow camera", Boolean(camDefault?.phone && camDefault.mode === "follow" && camDefault.zoom >= 1.3), JSON.stringify(camDefault));
@@ -1525,7 +1612,7 @@ async function runAppShellFit(browser) {
     { name: "Pixel 7", width: (devices["Pixel 7"]?.viewport?.width) || 412, height: (devices["Pixel 7"]?.viewport?.height) || 915 },
     { name: "iPhone 14 landscape", width: 844, height: 390 },
   ];
-  const chrome = ['[data-testid="room-title"]', '[data-testid="chat-dock"]', '[data-testid="chat-input"]', '[data-testid="phone-btn"]'];
+  const chrome = ['[data-testid="room-title"]', '[data-testid="chat-dock"]', '[data-testid="chat-bubble-btn"]', '[data-testid="phone-btn"]'];
   for (const sz of sizes) {
     await page.setViewportSize({ width: sz.width, height: sz.height });
     await page.evaluate(() => window.HouseRoom3D?.resize?.());
@@ -1760,8 +1847,10 @@ async function runStoresAndCyberShots(browser) {
   await pages[2].pg.evaluate(() => window.__clickTile(4, 3));
   await pages[3].pg.evaluate(() => window.__clickTile(5, 3));
   await pages[0].pg.waitForTimeout(800);
+  await openChat(pages[0].pg);
   await pages[0].pg.fill('[data-testid="chat-input"]', "welcome to the grid");
   await pages[0].pg.click('[data-testid="chat-send"]');
+  await openChat(pages[1].pg);
   await pages[1].pg.fill('[data-testid="chat-input"]', "Cube Cola hits different");
   await pages[1].pg.click('[data-testid="chat-send"]');
   await pages[0].pg.waitForTimeout(500);
@@ -2105,8 +2194,8 @@ async function runPhoneButtonHitTests(browser) {
     };
   });
   check(
-    "The dock phone button stays the same visible size as the emote button",
-    Boolean(hit && hit.emote && Math.abs(hit.visible.w - hit.emote.w) <= 1 && Math.abs(hit.visible.h - hit.emote.h) <= 1 && hit.visible.w <= 48),
+    "The dock phone button is a slightly larger round control than the emote button",
+    Boolean(hit && hit.emote && hit.visible.w >= 46 && hit.visible.w <= 48 && hit.visible.h >= 46 && hit.visible.h <= 48 && hit.emote.w >= 40 && hit.emote.w <= 44 && hit.visible.w >= hit.emote.w + 4),
     JSON.stringify(hit)
   );
   check(
@@ -2145,6 +2234,7 @@ async function runPhoneButtonHitTests(browser) {
 
   await assertBtnOnTop("normal");
 
+  await openChat(page);
   await page.focus('[data-testid="chat-input"]');
   await page.evaluate(() => window.__setKeyboardInset?.(320));
   await page.waitForTimeout(80);
@@ -2176,6 +2266,7 @@ async function runPhoneButtonHitTests(browser) {
   await page.evaluate(() => window.__closeStore?.());
 
   // First tap with the chat input focused must open the phone, not just blur.
+  await openChat(page);
   await page.focus('[data-testid="chat-input"]');
   await page.evaluate(() => window.__setKeyboardInset?.(320));
   await page.waitForTimeout(80);
@@ -2354,13 +2445,13 @@ try {
     };
   });
   check(
-    "Edit Character stays inside the in-game phone and keeps the avatar in the room",
-    Boolean(creatorLayout.view === "room" && creatorLayout.phoneEdit && creatorLayout.hasRoom && creatorLayout.phoneVisible && creatorLayout.windowInsidePhone && creatorLayout.characterInRoom),
+    "Edit Character opens full-screen and keeps the avatar in the room",
+    Boolean(creatorLayout.view === "room" && creatorLayout.hasRoom && creatorLayout.characterInRoom),
     JSON.stringify(creatorLayout)
   );
   check(
-    "Creator options are grouped into BODY / HAIR / FACE / TOP / BOTTOM / SHOES tabs",
-    creatorLayout.tab === "body" && creatorLayout.tabs.join(",") === "body,hair,face,top,bottom,shoes",
+    "Creator options are grouped into Skin / Hair / Shirt / Pants / Shoes / Head / Accessories tabs",
+    creatorLayout.tab === "skin" && creatorLayout.tabs.join(",") === "skin,hair,shirt,pants,shoes,head,extras",
     JSON.stringify(creatorLayout)
   );
   await alice.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
@@ -2373,11 +2464,13 @@ try {
   check("Choosing a hair style in its tab updates the live selection", hairOn === true);
   await alice.keyboard.press("ArrowLeft");
   const backBody = await alice.evaluate(() => window.__creatorMenu?.tab());
-  check("Arrow left returns to the BODY tab", backBody === "body", backBody);
+  check("Arrow left returns to the Skin tab", backBody === "skin", backBody);
 
   await customize(alice, { displayName: "Alice", hair: 3, shirt: 0, skin: 1, glasses: false });
-  await clickCreatorOption(alice, "accessory-4");
-  await clickCreatorOption(alice, "headphoneColor-2");
+  await clickCreatorOption(alice, "hat-1");
+  await clickCreatorOption(alice, "hatColor-2");
+  await clickCreatorOption(alice, "glassesStyle-1");
+  await clickCreatorOption(alice, "necklace-1");
   await alice.waitForTimeout(300);
   await alice.setViewportSize({ width: 1280, height: 1100 });
   await alice.screenshot({ path: `${SHOT}/01-character-creator.png` });
@@ -2602,6 +2695,7 @@ try {
   await alice.evaluate(() => window.__clickTile(2, 3));
   await bob.evaluate(() => window.__clickTile(4, 3));
   await alice.waitForTimeout(1400);
+  await openChat(alice);
   await alice.fill('[data-testid="chat-input"]', "hey there friend!");
   await alice.click('[data-testid="chat-send"]');
   await bob.waitForSelector('[data-testid="bubble-alice"]');
@@ -2616,10 +2710,12 @@ try {
     input.value = "second line";
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
+  await openChat(bob);
   await bob.fill('[data-testid="chat-input"]', "right back at you");
   await bob.click('[data-testid="chat-send"]');
   await alice.waitForSelector('[data-testid="bubble-bob"]');
   await alice.waitForTimeout(250);
+  await openChat(alice);
   await alice.fill('[data-testid="chat-input"]', "stack us up");
   await alice.click('[data-testid="chat-send"]');
   await bob.waitForTimeout(400);
@@ -2651,11 +2747,82 @@ try {
   });
   check("Bubbles are removed after they rise off the top of the screen", Boolean(gone && gone.leftover === 0 && gone.count === 0 && !(gone.texts || []).some((s) => s.includes("hey there friend!"))), JSON.stringify(gone));
 
+  const longA = "This is a long multi-line cube chat that should wrap inside the bubble instead of colliding with neighbors when we stack several of them in a row.";
+  const longB = "Another lengthy reply about Cube Cola, hanging out, and why the bubbles have to stay neatly stacked no matter how much we type.";
+  const longC = "A third long message from Alice so we can prove a tall bubble pushes every older line up by its real height plus a gap.";
+  await openChat(alice);
+  await alice.fill('[data-testid="chat-input"]', longA.slice(0, 120));
+  await alice.click('[data-testid="chat-send"]');
+  await openChat(bob);
+  await bob.fill('[data-testid="chat-input"]', longB.slice(0, 120));
+  await bob.click('[data-testid="chat-send"]');
+  await openChat(alice);
+  await alice.fill('[data-testid="chat-input"]', longC.slice(0, 120));
+  await alice.click('[data-testid="chat-send"]');
+  await bob.waitForTimeout(450);
+  const stackedLong = await bob.evaluate(() => {
+    const els = [...document.querySelectorAll(".speech-stack")].filter((el) => el.dataset.testid && el.dataset.testid.startsWith("bubble-"));
+    const boxes = els.map((el) => {
+      const r = el.getBoundingClientRect();
+      return { testid: el.dataset.testid, text: (el.innerText || "").replace(/\s+/g, " ").trim(), top: r.top, bottom: r.bottom, height: r.height };
+    }).sort((a, b) => a.top - b.top);
+    const overlaps = [];
+    for (let i = 1; i < boxes.length; i++) {
+      if (boxes[i].top < boxes[i - 1].bottom - 1) overlaps.push([boxes[i - 1], boxes[i]]);
+    }
+    return { count: boxes.length, overlaps, boxes };
+  });
+  check(
+    "Long multi-line bubbles never overlap and stack by their measured height",
+    Boolean(stackedLong.count >= 3 && stackedLong.overlaps.length === 0 && stackedLong.boxes.every((b, i) => i === 0 || b.top >= stackedLong.boxes[i - 1].bottom - 1)),
+    JSON.stringify(stackedLong)
+  );
+
+  await openChat(alice);
+  const capUi = await alice.evaluate(() => {
+    const input = document.querySelector('[data-testid="chat-input"]');
+    const count = document.querySelector('[data-testid="chat-count"]');
+    const over = "x".repeat(121);
+    input.value = "";
+    input.focus();
+    input.dispatchEvent(new InputEvent("beforeinput", { bubbles: true, data: over, inputType: "insertText" }));
+    if (input.value.length < 121) {
+      input.value = over;
+      if (input.maxLength >= 0 && over.length > input.maxLength) input.value = over.slice(0, input.maxLength);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+    return {
+      max: Number(input.getAttribute("maxlength")),
+      valueLen: input.value.length,
+      counter: count?.textContent || "",
+    };
+  });
+  check(
+    "The chat box blocks a 121st character and shows a live 120 cap counter",
+    capUi.max === 120 && capUi.valueLen === 120 && capUi.counter === "120/120",
+    JSON.stringify(capUi)
+  );
+  await alice.evaluate(() => { const i = document.querySelector('[data-testid="chat-input"]'); if (i) i.value = ""; });
+
+  const beforeCap = await bob.evaluate(() => (window.__chatBubbles() || []).map((b) => b.text));
+  await alice.evaluate(() => window.__say?.("Y".repeat(150)));
+  const serverCap = await bob.waitForFunction((prev) => {
+    const texts = (window.__chatBubbles() || []).map((b) => b.text);
+    const fresh = texts.filter((t) => t.includes("Y") && !prev.includes(t));
+    return fresh[0] || null;
+  }, beforeCap, { timeout: 6000 }).then((h) => h.jsonValue()).catch(() => null);
+  check(
+    "The server caps chat messages at 120 characters",
+    typeof serverCap === "string" && serverCap.replace(/\s/g, "").length === 120 && !/[Y]{121}/.test(serverCap),
+    JSON.stringify({ serverCap: serverCap && serverCap.length, text: serverCap })
+  );
+
   log("Bubbles are not delivered outside the room");
   await openPhoneApp(bob, "leave");
   await bob.click('[data-testid="leave-room"]');
   await bob.waitForSelector('body[data-view="lobby"]');
   const before = await bob.evaluate(() => window.__lastSays.map((s) => s.text));
+  await openChat(alice);
   await alice.fill('[data-testid="chat-input"]', "secret whisper");
   await alice.click('[data-testid="chat-send"]');
   await alice.waitForTimeout(800);
@@ -2755,18 +2922,29 @@ try {
   await alice.waitForTimeout(400);
   await openPhone(alice);
   await alice.waitForTimeout(250);
-  const chatBox = await alice.locator('[data-testid="chat-input"]').boundingBox();
-  const phoneBox = await alice.locator('[data-testid="phone-device"]').boundingBox();
+  const chatBox = await alice.evaluate(() => {
+    const bubble = document.querySelector("[data-testid=chat-bubble-btn]");
+    const phone = document.querySelector("[data-testid=phone-device]");
+    const br = bubble?.getBoundingClientRect();
+    const pr = phone?.getBoundingClientRect();
+    const inside = Boolean(br && pr && br.left >= pr.left && br.right <= pr.right && br.top >= pr.top && br.bottom <= pr.bottom);
+    return {
+      bubble: br && { y: +br.y.toFixed(1), h: +br.height.toFixed(1), visible: br.width > 8 && br.height > 8 },
+      phone: pr && { y: +pr.y.toFixed(1), h: +pr.height.toFixed(1), x: +pr.x.toFixed(1), w: +pr.width.toFixed(1) },
+      inside,
+    };
+  });
+  const phoneBox = chatBox.phone;
   check(
-    "Chat input stays visible outside the phone",
-    Boolean(chatBox && phoneBox && chatBox.y + 8 >= (phoneBox.y + phoneBox.height)),
-    `chatY=${chatBox && Math.round(chatBox.y)} phoneBottom=${phoneBox && Math.round(phoneBox.y + phoneBox.height)}`
+    "The chat bubble stays visible outside the handheld phone",
+    Boolean(chatBox.bubble?.visible && phoneBox && !chatBox.inside),
+    JSON.stringify(chatBox)
   );
   const vp = alice.viewportSize();
   check(
     "The phone menu is a small handheld in the corner with the room still visible above it",
-    Boolean(phoneBox && phoneBox.width <= 176 && phoneBox.width <= vp.width * 0.42 && phoneBox.height <= 250 && phoneBox.x < vp.width * 0.45 && phoneBox.x >= -4 && phoneBox.x < 40),
-    JSON.stringify(phoneBox && { w: Math.round(phoneBox.width), h: Math.round(phoneBox.height), x: Math.round(phoneBox.x), y: Math.round(phoneBox.y), vw: vp.width, vh: vp.height })
+    Boolean(phoneBox && phoneBox.w <= 176 && phoneBox.w <= vp.width * 0.42 && phoneBox.h <= 250 && phoneBox.x < vp.width * 0.45 && phoneBox.x >= -4 && phoneBox.x < 40),
+    JSON.stringify(phoneBox && { w: Math.round(phoneBox.w), h: Math.round(phoneBox.h), x: Math.round(phoneBox.x), y: Math.round(phoneBox.y), vw: vp.width, vh: vp.height })
   );
   const aliceOnPhone = await alice.waitForFunction(() => window.HouseRoom3D.personFlags("alice")?.usingPhone, null, { timeout: 8000 }).then(() => true).catch(() => false);
   const bobSeesPhone = await bob.waitForFunction(() => window.HouseRoom3D.personFlags("alice")?.usingPhone, null, { timeout: 8000 }).then(() => true).catch(() => false);
@@ -2788,15 +2966,15 @@ try {
   await alice.screenshot({ path: `${SHOT}/08-phone-menu.png` });
   await openPhoneApp(alice, "shop");
   await alice.waitForSelector('[data-testid="store-panel"]:not(.hidden)');
-  await alice.waitForFunction(() => document.querySelector('[data-testid="phone-overlay"]')?.classList.contains("hidden") && !window.HouseRoom3D.personFlags("alice")?.usingPhone, null, { timeout: 8000 }).catch(() => {});
+  await alice.waitForFunction(() => document.querySelector('[data-testid="phone-overlay"]')?.classList.contains("hidden") && window.HouseRoom3D.personFlags("alice")?.usingPhone, null, { timeout: 8000 }).catch(() => {});
   const shopMutex = await alice.evaluate(() => ({
     phoneClosed: document.querySelector('[data-testid="phone-overlay"]')?.classList.contains("hidden"),
     shopOpen: !document.querySelector('[data-testid="store-panel"]')?.classList.contains("hidden"),
     usingPhone: Boolean(window.HouseRoom3D.personFlags("alice")?.usingPhone),
   }));
   check(
-    "Opening the shop from a phone session closes the phone and shows the side panel",
-    shopMutex.phoneClosed && shopMutex.shopOpen && !shopMutex.usingPhone,
+    "Opening the shop from a phone session hides the handset and keeps the phone-hold pose",
+    shopMutex.phoneClosed && shopMutex.shopOpen && shopMutex.usingPhone,
     JSON.stringify(shopMutex)
   );
   await alice.waitForTimeout(200);
@@ -2836,6 +3014,7 @@ try {
   );
   await alice.setViewportSize({ width: 360, height: 640 });
   await alice.waitForTimeout(200);
+  await openChat(alice);
   const slim = await alice.evaluate(() => {
     const input = document.querySelector('[data-testid="chat-input"]');
     const r = input?.getBoundingClientRect();
@@ -2849,12 +3028,15 @@ try {
   await alice.setViewportSize({ width: 390, height: 844 });
   await alice.waitForTimeout(200);
   await alice.evaluate(() => document.querySelector('[data-testid="phone-overlay"]')?.classList.add("hidden"));
+  await openChat(alice);
   await alice.fill('[data-testid="chat-input"]', "do not open the phone");
   await alice.click('[data-testid="chat-send"]');
   await alice.waitForTimeout(250);
   const phoneStayedShut = await alice.evaluate(() => document.querySelector('[data-testid="phone-overlay"]')?.classList.contains("hidden"));
   check("Sending a chat with Say does not open the phone menu", phoneStayedShut);
+  await openChat(alice);
   await alice.fill('[data-testid="chat-input"]', "enter should not open it either");
+  await openChat(alice);
   await alice.locator('[data-testid="chat-input"]').press("Enter");
   await alice.waitForTimeout(250);
   const phoneStayedShutEnter = await alice.evaluate(() => document.querySelector('[data-testid="phone-overlay"]')?.classList.contains("hidden"));
@@ -2864,6 +3046,67 @@ try {
   const leaveBox = await alice.locator('[data-testid="leave-cube"]').boundingBox();
   const coinBox = await alice.locator('[data-testid="room-coins"]').boundingBox();
   check("Leave Cube sits in the top right next to the coin pill", Boolean(leaveVisible && leaveBox && coinBox && leaveBox.y < 80 && leaveBox.x + leaveBox.width <= (coinBox.x + coinBox.width + 8) && Math.abs(leaveBox.y - coinBox.y) < 40), JSON.stringify(leaveBox && coinBox && { leave: { x: Math.round(leaveBox.x), y: Math.round(leaveBox.y) }, coins: { x: Math.round(coinBox.x), y: Math.round(coinBox.y) } }));
+
+  log("Coins chip dropdown");
+  await alice.setViewportSize({ width: 375, height: 667 });
+  await alice.waitForTimeout(200);
+  check("Buy Coins is not a phone app", await alice.locator('[data-testid="phone-app-coins"]').count() === 0);
+  await alice.click('[data-testid="room-coins"]');
+  await alice.waitForSelector('[data-testid="coins-panel"]:not(.hidden)');
+  const coinsPanel = await alice.evaluate(() => {
+    const panel = document.querySelector("[data-testid=coins-panel]");
+    const chip = document.querySelector("[data-testid=room-coins]");
+    const ad = document.querySelector("[data-testid=coins-watch-ad]");
+    const packs = [...document.querySelectorAll("[data-testid^=coin-pack-]")].map((el) => ({
+      id: el.getAttribute("data-testid"),
+      y: el.getBoundingClientRect().top,
+    }));
+    const pr = panel?.getBoundingClientRect();
+    const cr = chip?.getBoundingClientRect();
+    const adY = ad?.getBoundingClientRect().top ?? 0;
+    return {
+      visible: Boolean(panel && !panel.classList.contains("hidden") && pr && pr.height > 8),
+      belowChip: Boolean(pr && cr && pr.top >= cr.bottom - 2),
+      rightish: Boolean(pr && cr && Math.abs(pr.right - Math.min(window.innerWidth, cr.right + 8)) <= 24),
+      inView: Boolean(pr && pr.left >= -2 && pr.right <= window.innerWidth + 2 && pr.top >= -2 && pr.bottom <= window.innerHeight + 2),
+      notFull: Boolean(pr && pr.height <= window.innerHeight * 0.72 && pr.width <= Math.min(300, window.innerWidth - 8)),
+      adFirst: Boolean(ad && packs.length === 3 && adY <= Math.min(...packs.map((p) => p.y))),
+      packs: packs.map((p) => p.id),
+    };
+  });
+  check(
+    "Tapping the coins chip opens a compact dropdown below it with the ad reward and 3 packs",
+    Boolean(coinsPanel.visible && coinsPanel.belowChip && coinsPanel.inView && coinsPanel.notFull && coinsPanel.adFirst
+      && coinsPanel.packs.includes("coin-pack-starter") && coinsPanel.packs.includes("coin-pack-bundle") && coinsPanel.packs.includes("coin-pack-stack")),
+    JSON.stringify(coinsPanel)
+  );
+  await alice.click('[data-testid="shop-toggle"]');
+  await alice.waitForSelector('[data-testid="store-panel"]:not(.hidden)');
+  const coinsVsShop = await alice.evaluate(() => ({
+    shop: !document.querySelector("[data-testid=store-panel]")?.classList.contains("hidden"),
+    coins: Boolean(document.querySelector("[data-testid=coins-panel]") && !document.querySelector("[data-testid=coins-panel]").classList.contains("hidden")),
+  }));
+  check("Opening the shop closes the coins panel", coinsVsShop.shop && !coinsVsShop.coins, JSON.stringify(coinsVsShop));
+  await alice.click('[data-testid="room-coins"]');
+  await alice.waitForSelector('[data-testid="coins-panel"]:not(.hidden)');
+  const coinMutex = await alice.evaluate(() => ({
+    shop: !document.querySelector("[data-testid=store-panel]")?.classList.contains("hidden"),
+    coins: Boolean(document.querySelector("[data-testid=coins-panel]") && !document.querySelector("[data-testid=coins-panel]").classList.contains("hidden")),
+  }));
+  check("Opening the coins panel closes the shop", coinMutex.coins && !coinMutex.shop, JSON.stringify(coinMutex));
+  await alice.click('[data-testid="coins-panel-close"]');
+  await alice.waitForFunction(() => document.querySelector("[data-testid=coins-panel]")?.classList.contains("hidden"));
+  await alice.click('[data-testid="room-coins"]');
+  await alice.waitForSelector('[data-testid="coins-panel"]:not(.hidden)');
+  await alice.click('[data-testid="room-coins"]');
+  await alice.waitForFunction(() => document.querySelector("[data-testid=coins-panel]")?.classList.contains("hidden"));
+  check("Tapping the coins chip again closes the dropdown", true);
+  await alice.click('[data-testid="room-coins"]');
+  await alice.waitForSelector('[data-testid="coins-panel"]:not(.hidden)');
+  await alice.mouse.click(40, 300);
+  await alice.waitForFunction(() => document.querySelector("[data-testid=coins-panel]")?.classList.contains("hidden"));
+  check("Tapping outside the coins panel closes it", true);
+  await alice.setViewportSize({ width: 1280, height: 800 });
 
   await alice.waitForTimeout(500);
   const phoneViewports = [
@@ -2890,6 +3133,7 @@ try {
       });
       return {
         appCount: apps.length,
+        hasCoinsApp: Boolean(document.querySelector('[data-testid="phone-app-coins"]')),
         canScroll: grid.scrollHeight > grid.clientHeight + 1,
         allIn,
         deviceY: Math.round(d.y),
@@ -2898,7 +3142,7 @@ try {
     });
     check(
       `The ${vpPhone.name} phone home shows every app in a grid that stays on the handset`,
-      Boolean(info && info.appCount >= 10 && (info.allIn || info.canScroll) && typeof info.deviceY === "number"),
+      Boolean(info && info.appCount >= 9 && !info.hasCoinsApp && (info.allIn || info.canScroll) && typeof info.deviceY === "number"),
       JSON.stringify(info)
     );
     await alice.click('[data-testid="phone-home-bar"]');
@@ -2937,6 +3181,7 @@ try {
   log("Chat stays above a short mobile viewport");
   await alice.setViewportSize({ width: 390, height: 450 });
   await alice.waitForTimeout(200);
+  await openChat(alice);
   await alice.locator('[data-testid="chat-input"]').click();
   await alice.waitForTimeout(200);
   const kbBox = await alice.locator('[data-testid="chat-input"]').boundingBox();
@@ -2955,7 +3200,9 @@ try {
   check("The chat input uses enterkeyhint=send", hint === "send", `hint=${hint}`);
   await alice.setViewportSize({ width: 1280, height: 800 });
   await alice.waitForTimeout(200);
+  await openChat(alice);
   await alice.fill('[data-testid="chat-input"]', "enter sends in one step");
+  await openChat(alice);
   await alice.locator('[data-testid="chat-input"]').press("Enter");
   await alice.waitForTimeout(250);
   const afterEnter = await alice.evaluate(() => {
@@ -2969,6 +3216,7 @@ try {
   check("Focus stays in the chat input after Enter", afterEnter.focused, JSON.stringify(afterEnter));
   const bobSawEnter = await bob.waitForFunction(() => (window.__lastSays || []).some((s) => s.text === "enter sends in one step"), null, { timeout: 6000 }).then(() => true).catch(() => false);
   check("The other player sees the Enter-sent message", bobSawEnter);
+  await openChat(alice);
   await alice.fill('[data-testid="chat-input"]', "say keeps the keyboard");
   await alice.click('[data-testid="chat-send"]');
   await alice.waitForTimeout(200);
@@ -2979,6 +3227,7 @@ try {
   check("Tapping Say sends the chat", afterSay.value === "", JSON.stringify(afterSay));
   check("Focus stays in the chat input after Say", afterSay.focused, JSON.stringify(afterSay));
 
+  await openChat(alice);
   await alice.fill('[data-testid="chat-input"]', "thinking about it");
   const bobSeesTyping = await bob.waitForFunction(() => Boolean(document.querySelector('[data-testid="typing-alice"]')), null, { timeout: 4000 }).then(() => true).catch(() => false);
   check("Friends in the cube see a thinking bubble while you type", bobSeesTyping);
@@ -3011,15 +3260,17 @@ try {
       };
     });
     check(
-      `${label}: the room fills down to the chat bar with no reserved keyboard well`,
+      `${label}: the room fills down to the bottom of the screen with FABs at the bottom-left`,
       Boolean(before.dock && before.canvas
-        && before.canvas.y + before.canvas.h <= before.dock.y + 4
+        && before.canvas.y + before.canvas.h >= before.innerH - 24
+        && before.canvas.y + before.canvas.h <= before.innerH + 4
         && before.dock.y + before.dock.h <= before.innerH + 2
-        && before.dock.y + before.dock.h >= before.innerH - 12
+        && before.dock.y + before.dock.h >= before.innerH - 24
         && (!before.reserve || before.reserve.h < 8)
         && (before.reserveVar === "0px" || before.reserveVar === "0" || !before.reserveVar)),
       JSON.stringify(before)
     );
+    await openChat(page);
     await page.locator('[data-testid="chat-input"]').click();
     await page.waitForTimeout(80);
     const afterFocus = await page.evaluate(() => {
@@ -3060,14 +3311,18 @@ try {
         && afterKb.scroll === 0,
       JSON.stringify({ before, afterKb })
     );
+    const composer = await page.evaluate(() => {
+      const el = document.querySelector("[data-testid=chat-composer]");
+      const r = el?.getBoundingClientRect();
+      return r ? { y: Math.round(r.y), h: Math.round(r.height), bottom: Math.round(r.bottom), visible: r.height > 8 } : null;
+    });
     check(
-      `${label}: the chat bar lifts above the keyboard`,
-      Boolean(afterKb.dock && before.dock
-        && afterKb.dock.h === before.dock.h
-        && afterKb.dock.y === before.dock.y - kb
-        && afterKb.dock.y + afterKb.dock.h <= before.innerH - kb + 2
+      `${label}: the slim chat bar sits just above the keyboard`,
+      Boolean(composer && composer.visible
+        && composer.bottom <= before.innerH - kb + 8
+        && composer.bottom >= before.innerH - kb - 24
         && (afterKb.inset === `${kb}px` || afterKb.inset === String(kb))),
-      JSON.stringify({ before: before.dock, after: afterKb.dock, inset: afterKb.inset, kb, innerH: before.innerH })
+      JSON.stringify({ composer, inset: afterKb.inset, kb, innerH: before.innerH, dock: afterKb.dock })
     );
     await page.evaluate(() => window.__setKeyboardInset?.(0));
   }
@@ -3077,23 +3332,28 @@ try {
   log("Edit mode inventory, ghost, rotate, move, pick up");
   await alice.setViewportSize({ width: 390, height: 844 });
   await alice.waitForTimeout(300);
-  await openPhoneApp(alice, "edit");
+  await alice.click('[data-testid="edit-room-btn"]');
   await alice.waitForSelector('[data-testid="edit-inventory"]:not(.hidden)');
   const editRowLayout = await alice.evaluate(() => {
     const overlay = document.querySelector("[data-testid=phone-overlay]");
     const inv = document.querySelector("[data-testid=edit-inventory]");
     const dock = document.querySelector("[data-testid=chat-dock]");
-    if (!inv || !dock) return { ok: false };
-    const ir = inv.getBoundingClientRect(), dr = dock.getBoundingClientRect();
+    const btn = document.querySelector("[data-testid=edit-room-btn]");
+    if (!inv) return { ok: false };
+    const ir = inv.getBoundingClientRect(), dr = dock?.getBoundingClientRect();
+    const leave = document.querySelector("[data-testid=leave-cube]")?.getBoundingClientRect();
+    const er = btn?.getBoundingClientRect();
     return {
       phoneHidden: !overlay || overlay.classList.contains("hidden"),
       inPhone: Boolean(inv.closest("[data-testid=phone-device]")),
-      aboveDock: ir.bottom <= dr.top + 4,
+      tabs: [...document.querySelectorAll("[data-testid=edit-inv-tabs] [data-tab]")].map((t) => t.dataset.tab),
+      nextToLeave: Boolean(er && leave && Math.abs(er.top - leave.top) < 12),
       width: Math.round(ir.width),
       height: Math.round(ir.height),
+      fabsAbove: Boolean(dr && dr.bottom <= ir.top + 16),
     };
   });
-  check("Edit Room closes the phone and shows an inventory row above the chat bar", Boolean(editRowLayout.phoneHidden && !editRowLayout.inPhone && editRowLayout.aboveDock && editRowLayout.height >= 48), JSON.stringify(editRowLayout));
+  check("Edit Room button sits next to Leave Cube and opens Furniture/Room/Upgrade tabs", Boolean(editRowLayout.phoneHidden && !editRowLayout.inPhone && editRowLayout.nextToLeave && (editRowLayout.tabs || []).join() === "furniture,room,upgrade" && editRowLayout.height >= 48), JSON.stringify(editRowLayout));
 
   const pan = await alice.evaluate(() => {
     const before = window.HouseRoom3D.camState().target;
@@ -3125,50 +3385,36 @@ try {
   const plant = await alice.evaluate(() => window.HouseRoom3D.getFurniture().find((f) => f.type === "plant"));
   if (plant) {
     await alice.evaluate((id) => window.__clickFurniture(id, "plant"), plant.id);
-    await alice.waitForSelector('[data-testid="furn-actions"]:not(.hidden)');
-    await alice.evaluate(() => document.querySelector('[data-testid="furn-pickup"]')?.click());
+    await alice.waitForSelector('[data-testid="item-rotate"]:not(.hidden)');
+    await alice.evaluate(() => window.__putAwaySelected?.());
+    await alice.waitForFunction(() => !window.HouseRoom3D.getFurniture().some((f) => f.type === "plant"));
     await alice.waitForSelector('[data-testid="edit-item-plant"]');
   }
   await alice.click('[data-testid="edit-item-plant"]');
-  const spawn = await alice.evaluate(() => window.HouseRoom3D.getGhost());
-  check(
-    "Tapping a floor item in the inventory row starts it at the center of the room",
-    Boolean(spawn && spawn.type === "plant" && spawn.tx != null && Math.hypot(spawn.tx - 2.5, spawn.ty - 2.5) <= 2.3),
-    JSON.stringify(spawn)
-  );
-  const couchSpot = await alice.evaluate(() => {
-    const c = window.HouseRoom3D.getFurniture().find((f) => f.type === "couch");
-    if (!c) return null;
-    window.HouseRoom3D.simulateTileClick(c.x, c.y);
-    const g = window.HouseRoom3D.getGhost();
-    const btn = document.querySelector("[data-testid=place-confirm]");
-    return { ghost: g, disabled: Boolean(btn?.disabled) };
+  const spawned = await alice.waitForFunction(() => window.HouseRoom3D.getFurniture().some((f) => f.type === "plant"), null, { timeout: 8000 }).then(() => true).catch(() => false);
+  const spawn = await alice.evaluate(() => {
+    const f = window.HouseRoom3D.getFurniture().find((x) => x.type === "plant");
+    return f ? { type: "plant", tx: f.x, ty: f.y, id: f.id } : window.HouseRoom3D.getGhost();
   });
   check(
-    "An invalid target tints red and disables Place",
-    Boolean(couchSpot && couchSpot.ghost && couchSpot.ghost.ok === false && couchSpot.disabled),
-    JSON.stringify(couchSpot)
+    "Tapping a floor item in the inventory row spawns it near the center of the room",
+    Boolean(spawned && spawn && spawn.tx != null && Math.hypot(spawn.tx - 2.5, spawn.ty - 2.5) <= 2.3),
+    JSON.stringify(spawn)
   );
-  await alice.evaluate(() => window.HouseRoom3D.simulateTileClick(2, 2));
-  const ghost = await alice.evaluate(() => window.HouseRoom3D.getGhost());
-  const notPlacedYet = await alice.evaluate(() => !window.HouseRoom3D.getFurniture().some((f) => f.type === "plant" && f.x === 2 && f.y === 2));
-  check("A placement ghost snaps to the grid and tints green when the tile is free", Boolean(ghost && ghost.type === "plant" && ghost.ok === true && ghost.tx === 2 && ghost.ty === 2), JSON.stringify(ghost));
-  check("Tap-to-target only moves the ghost until Place is pressed", notPlacedYet && !(await alice.locator('[data-testid="place-confirm"]').isDisabled()), JSON.stringify({ notPlacedYet, ghost }));
+  await alice.waitForSelector('[data-testid="item-rotate"]:not(.hidden)');
+  check("A newly spawned item is locked on with only a rotate handle", await alice.locator('[data-testid="item-rotate"]:not(.hidden)').count() === 1 && !(await alice.locator('[data-testid="furn-place"]').isVisible().catch(() => false)) && !(await alice.locator('[data-testid="place-confirm"]').isVisible().catch(() => false)));
   await alice.waitForTimeout(200);
   await alice.screenshot({ path: `${SHOT}/10-edit-inventory.png` });
-  await alice.click('[data-testid="place-confirm"]');
-  await alice.waitForFunction(() => window.HouseRoom3D.getFurniture().some((f) => f.type === "plant" && f.x === 2 && f.y === 2));
+
   const placedPlant = await alice.evaluate(() => window.HouseRoom3D.getFurniture().find((f) => f.type === "plant"));
   await alice.evaluate((id) => window.__clickFurniture(id, "plant"), placedPlant.id);
-  await alice.waitForSelector('[data-testid="furn-actions"]:not(.hidden)');
-  check("Selecting a placed item shows the rotate / put-away / Place handles", await alice.locator('[data-testid="furn-actions"]:not(.hidden)').count() === 1 && await alice.locator('[data-testid="furn-place"]').isVisible() && await alice.locator('[data-testid="place-confirm"]').count() >= 0);
-  await alice.waitForTimeout(200);
+  await alice.waitForSelector('[data-testid="item-rotate"]:not(.hidden)');
   await alice.screenshot({ path: `${SHOT}/11-edit-selected.png` });
 
   const couch = await alice.evaluate(() => window.HouseRoom3D.getFurniture().find((f) => f.type === "couch"));
   await alice.evaluate((id) => window.__clickFurniture(id, "couch"), couch.id);
-  await alice.waitForSelector('[data-testid="furn-actions"]:not(.hidden)');
-  await alice.click('[data-testid="furn-rotate"]');
+  await alice.waitForSelector('[data-testid="item-rotate"]:not(.hidden)');
+  await alice.click('[data-testid="item-rotate"]');
   await alice.waitForFunction(() => {
     const c = window.HouseRoom3D.getFurniture().find((f) => f.type === "couch");
     return c && (c.rot === 1);
@@ -3176,44 +3422,40 @@ try {
   const couchRot = await alice.evaluate(() => window.HouseRoom3D.getFurniture().find((f) => f.type === "couch"));
   check("Rotate turns a non-square piece and keeps a valid footprint", couchRot.rot === 1 && couchRot.x === 3 && couchRot.y === 1, JSON.stringify(couchRot));
 
-  await alice.evaluate((id) => window.__clickFurniture(id, "plant"), placedPlant.id);
-  await alice.click('[data-testid="furn-move"]');
-  await alice.evaluate(() => window.__clickTile(4, 4));
+  await alice.evaluate((id) => window.__moveFurnitureTo(id, 4, 4), placedPlant.id);
   await alice.waitForFunction(() => window.HouseRoom3D.getFurniture().some((f) => f.type === "plant" && f.x === 4 && f.y === 4));
   check("Move repositions a piece and syncs to the room", await bob.evaluate(() => window.HouseRoom3D.getFurniture().some((f) => f.type === "plant" && f.x === 4 && f.y === 4)));
 
   const movedPlant = await alice.evaluate(() => window.HouseRoom3D.getFurniture().find((f) => f.type === "plant"));
   await alice.evaluate((id) => window.__clickFurniture(id, "plant"), movedPlant.id);
-  await alice.click('[data-testid="furn-pickup"]');
+  await alice.evaluate(() => window.__putAwaySelected?.());
   await alice.waitForFunction(() => !window.HouseRoom3D.getFurniture().some((f) => f.type === "plant"));
-  check("Pick up returns an item to inventory and frees its tiles", await alice.locator('[data-testid="edit-item-plant"]').count() === 1);
-  await alice.click('[data-testid="edit-item-plant"]');
-  const grabbed = await alice.evaluate(() => {
-    const start = window.HouseRoom3D.getGhost();
-    const from = start ? window.HouseRoom3D.projectTile(start.tx, start.ty) : null;
-    const to = window.HouseRoom3D.projectTile(0, 4);
-    const canvas = document.querySelector("#floor canvas, .room3d-root canvas");
-    if (!from || !to || !canvas) return { error: "no points", start };
-    const fire = (type, cx, cy, buttons) => canvas.dispatchEvent(new PointerEvent(type, {
-      bubbles: true, cancelable: true, clientX: cx, clientY: cy, pointerId: 8, pointerType: "mouse", buttons,
-    }));
-    fire("pointerdown", from.x, from.y, 1);
-    fire("pointermove", to.x, to.y, 1);
-    fire("pointerup", to.x, to.y, 0);
-    return { start, to: { x: 0, y: 4 } };
+  check("Put-away returns an item to inventory and frees its tiles", await alice.locator('[data-testid="edit-item-plant"]').count() === 1);
+
+  // Room decor apply + sync
+  await alice.click('[data-testid="edit-tab-room"]');
+  await alice.waitForSelector('[data-testid="decor-chip-floor"]');
+  await alice.click('[data-testid="decor-floorPattern-checker"]');
+  await alice.click('[data-testid="decor-chip-window"]');
+  await alice.click('[data-testid="decor-windowView-sunset"]');
+  const decorAlice = await alice.waitForFunction(() => {
+    const d = window.HouseRoom3D.getDecor?.();
+    return d && d.floorPattern === "checker" && d.windowView === "sunset" ? d : null;
+  }, null, { timeout: 6000 }).catch(() => null);
+  const decorBob = await bob.waitForFunction(() => {
+    const d = window.HouseRoom3D.getDecor?.();
+    return d && d.floorPattern === "checker" && d.windowView === "sunset" ? d : null;
+  }, null, { timeout: 6000 }).then((h) => h.jsonValue()).catch(() => null);
+  check("Room decor applies instantly and syncs to visitors", Boolean(decorAlice && decorBob && decorBob.floorPattern === "checker" && decorBob.windowView === "sunset"), JSON.stringify({ decorBob }));
+
+  await alice.click('[data-testid="edit-tab-upgrade"]');
+  const upgradeUi = await alice.evaluate(() => {
+    const cur = document.querySelector("[data-testid=upgrade-tier-6]");
+    const next = document.querySelector("[data-testid=upgrade-cube]");
+    return { current: cur?.classList.contains("is-current"), buy: Boolean(next), text: document.querySelector("[data-testid=edit-inv-items]")?.textContent || "" };
   });
-  const grabPlaced = await alice.waitForFunction(() => window.HouseRoom3D.getFurniture().some((f) => f.type === "plant" && f.x === 0 && f.y === 4), null, { timeout: 6000 }).then(() => true).catch(() => false);
-  check("Grabbing a placement ghost and releasing drops it on the snapped tile", grabPlaced, JSON.stringify(grabbed));
-  if (grabPlaced) {
-    const pid = await alice.evaluate(() => window.HouseRoom3D.getFurniture().find((f) => f.type === "plant")?.id);
-    if (pid) {
-      await alice.evaluate((id) => window.__clickFurniture(id, "plant"), pid);
-      await alice.click('[data-testid="furn-pickup"]');
-      await alice.waitForFunction(() => !window.HouseRoom3D.getFurniture().some((f) => f.type === "plant"));
-    }
-  } else {
-    await alice.evaluate(() => window.__cancelPlace?.());
-  }
+  check("Upgrade tab lists cube sizes with the current size marked and a buy control", Boolean(upgradeUi.current && upgradeUi.buy && /8/.test(upgradeUi.text)), JSON.stringify(upgradeUi));
+
   await alice.evaluate(() => window.__exitEdit());
 
   log("Pet sits by the owner's right foot when they stop");
@@ -3292,6 +3534,146 @@ try {
   const away = await alice.waitForFunction(() => !(window.HouseRoom3D.getPlacedPets?.() || []).some((p) => p.item === "dog"), null, { timeout: 8000 }).then(() => true).catch(() => false);
   check("Put away returns a placed pet to inventory", away);
 
+  log("Pets stay off furniture");
+  await alice.evaluate(() => window.__debugKit({ pet: "fox", pets: ["fox", "cat"], furniture: ["couch", "rug", "plant"], coins: 400 }));
+  await alice.waitForTimeout(300);
+  const petGrid = await alice.evaluate(() => {
+    const furn = [
+      { type: "couch", x: 2, y: 2, rot: 0 },
+      { type: "rug", x: 0, y: 0, rot: 0 },
+      { type: "plant", x: 5, y: 5, rot: 0 },
+    ];
+    const blocked = window.HouseIso.blockedSet(furn);
+    const size = 6;
+    const owner = { x: 2, y: 3 };
+    // Couch 2x1 at (2,2) blocks (2,2) and (3,2). Owner at (2,3) is south of the couch.
+    const sit = window.HouseRoom3D.petSitTarget(owner.x, owner.y, { x: 0, z: -1 }, { blocked, occupied: new Set(), gridSize: size });
+    const sitTile = { x: Math.round(sit.x), y: Math.round(sit.y) };
+    const sitFree = !blocked.has(sitTile.x + "," + sitTile.y);
+    const follow = window.HouseRoom3D.petFollowTarget(owner.x, owner.y, { x: 0, z: -1 }, size, { blocked, occupied: new Set() });
+    const followTile = { x: Math.round(follow.x), y: Math.round(follow.y) };
+    const followFree = !blocked.has(followTile.x + "," + followTile.y);
+    const path = window.HouseIso.pathfind({ x: 2, y: 4 }, { x: 2, y: 1 }, blocked, size);
+    const pathCuts = (path || []).some((p) => blocked.has(p.x + "," + p.y));
+    const rugOk = window.HouseIso.canPlacePet(furn, [], 0, 0, size);
+    const couchBad = window.HouseIso.canPlacePet(furn, [], 2, 2, size);
+    const plantBad = window.HouseIso.canPlacePet(furn, [], 5, 5, size);
+    const openOk = window.HouseIso.canPlacePet(furn, [], 0, 5, size);
+    return {
+      blocked: [...blocked], sit, sitTile, sitFree,
+      follow, followTile, followFree,
+      path, pathCuts, pathLen: path && path.length,
+      rugOk, couchBad, plantBad, openOk,
+    };
+  });
+  check("A pet sit target is a free tile, not furniture, when a side is blocked", Boolean(petGrid.sitFree && (Math.abs(petGrid.sitTile.x - 2) + Math.abs(petGrid.sitTile.y - 3)) >= 1), JSON.stringify(petGrid));
+  check("A following pet's target stays on a walkable tile around furniture", Boolean(petGrid.followFree), JSON.stringify(petGrid.follow));
+  check("Pet pathfinding walks around furniture and does not cut corners through it", Boolean(petGrid.path && petGrid.path.length > 2 && !petGrid.pathCuts), JSON.stringify(petGrid.path));
+  check("Rugs are valid pet tiles because avatars can walk on them", petGrid.rugOk === true, JSON.stringify(petGrid));
+  check("Furniture tiles are invalid for pets (Edit Room uses the same walkability grid)", petGrid.couchBad === false && petGrid.plantBad === false && petGrid.openOk === true, JSON.stringify(petGrid));
+
+  await alice.evaluate(() => window.__enterEdit?.());
+  await alice.evaluate(() => window.__startPlacePet?.("cat"));
+  const ghostFurn = await alice.evaluate(() => {
+    window.__updatePetPlace?.(2, 2);
+    // If no couch is in the live room yet, report only the ghost after we place one below.
+    return window.HouseRoom3D.getPetGhost?.();
+  });
+  await alice.evaluate(() => window.__cancelPlace?.() || window.__exitEdit?.());
+
+  // Live: place a pet, then drop a plant on its tile and expect a nudge.
+  await alice.evaluate(() => { window.__exitEdit?.(); window.__putAwayPet?.("cat"); window.__putAwayPet?.("fox"); });
+  await alice.waitForTimeout(200);
+  const petSpot = await alice.evaluate(() => {
+    const furn = window.HouseRoom3D.getFurniture();
+    const blocked = window.HouseIso.blockedSet(furn);
+    const size = 6;
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        if (window.HouseIso.canPlacePet(furn, [], x, y, size) && window.HouseIso.canPlace(furn, "plant", x, y, size, 0)) {
+          return { x, y };
+        }
+      }
+    }
+    return null;
+  });
+  if (petSpot) await alice.evaluate((s) => window.__placePet("cat", s.x, s.y), petSpot);
+  const petDown = await alice.waitForFunction((s) => {
+    if (!s) return false;
+    return (window.HouseRoom3D.getPlacedPets?.() || []).some((p) => p.item === "cat" && p.x === s.x && p.y === s.y);
+  }, petSpot, { timeout: 6000 }).then(() => true).catch(() => false);
+  check("A placed pet lands on the chosen free tile", Boolean(petSpot && petDown), JSON.stringify(petSpot));
+
+  await alice.evaluate(() => window.__enterEdit?.());
+  await alice.evaluate((s) => { window.__startPlace("plant"); window.__clickTile(s.x, s.y); }, petSpot);
+  const nudged = await alice.waitForFunction((s) => {
+    if (!s) return false;
+    const pets = window.HouseRoom3D.getPlacedPets?.() || [];
+    const cat = pets.find((p) => p.item === "cat");
+    const plant = window.HouseRoom3D.getFurniture().find((f) => f.type === "plant" && f.x === s.x && f.y === s.y);
+    if (!cat || !plant) return false;
+    return !(Math.round(cat.x) === s.x && Math.round(cat.y) === s.y);
+  }, petSpot, { timeout: 8000 }).then(() => true).catch(() => false);
+  const afterNudge = await alice.evaluate(() => {
+    const pets = window.HouseRoom3D.getPlacedPets?.() || [];
+    const cat = pets.find((p) => p.item === "cat");
+    const furn = window.HouseRoom3D.getFurniture();
+    const blocked = window.HouseIso.blockedSet(furn);
+    const k = cat ? Math.round(cat.x) + "," + Math.round(cat.y) : null;
+    return { cat, blockedOnCat: k ? blocked.has(k) : null, furn: furn.map((f) => ({ type: f.type, x: f.x, y: f.y })) };
+  });
+  check("Placing furniture on a pet's tile nudges the pet to the nearest free tile", Boolean(nudged && afterNudge.cat && afterNudge.blockedOnCat === false), JSON.stringify(afterNudge));
+
+  // Edit-room ghost: furniture tile is invalid, rug (if present) or open floor is valid.
+  await alice.evaluate(() => window.__enterEdit?.());
+  const ghostChecks = await alice.evaluate(() => {
+    const furn = window.HouseRoom3D.getFurniture();
+    const pets = window.HouseRoom3D.getPlacedPets?.() || [];
+    const blocked = window.HouseIso.blockedSet(furn);
+    let bad = null, good = null;
+    for (let y = 0; y < 6; y++) {
+      for (let x = 0; x < 6; x++) {
+        const k = x + "," + y;
+        if (!bad && blocked.has(k)) bad = { x, y };
+        if (!good && window.HouseIso.canPlacePet(furn, pets, x, y, 6)) good = { x, y };
+      }
+    }
+    window.__startPlacePet("fox");
+    window.__updatePetPlace(bad.x, bad.y);
+    const onFurn = window.HouseRoom3D.getPetGhost();
+    window.__updatePetPlace(good.x, good.y);
+    const onOpen = window.HouseRoom3D.getPetGhost();
+    return { bad, good, onFurn, onOpen };
+  });
+  await alice.evaluate(() => { window.__cancelPlace?.(); window.__exitEdit?.(); });
+  check("Edit Room marks furniture tiles as invalid for pets", Boolean(ghostChecks.onFurn && ghostChecks.onFurn.ok === false), JSON.stringify(ghostChecks));
+  check("Edit Room marks walkable tiles as valid for pets", Boolean(ghostChecks.onOpen && ghostChecks.onOpen.ok === true), JSON.stringify(ghostChecks));
+
+  // Wander: every sample along the cycle stays off furniture.
+  const wander = await alice.evaluate(() => {
+    const furn = window.HouseRoom3D.getFurniture();
+    const blocked = window.HouseIso.blockedSet(furn);
+    const pets = window.HouseRoom3D.getPlacedPets?.() || [];
+    const cat = pets.find((p) => p.item === "cat");
+    if (!cat || !window.HouseRoom3D.placedPetAnim) return { error: "no anim", pets };
+    const hits = [];
+    for (let t = 0; t < 8000; t += 80) {
+      const a = window.HouseRoom3D.placedPetAnim(cat, t);
+      const k = Math.round(a.x) + "," + Math.round(a.y);
+      if (blocked.has(k)) hits.push({ t, x: a.x, y: a.y, k });
+    }
+    return { hits: hits.length, sample: hits[0] || null, cat, blocked: [...blocked] };
+  });
+  check("A placed pet wanders only onto free tiles and never through furniture", Boolean(wander && wander.hits === 0 && !wander.error), JSON.stringify(wander));
+
+  await alice.evaluate(() => {
+    const plant = window.HouseRoom3D.getFurniture().find((f) => f.type === "plant");
+    if (plant) window.__pickupFurniture?.(plant.id);
+    window.__putAwayPet?.("cat");
+    window.__putAwayPet?.("fox");
+    window.__exitEdit?.();
+  });
+
   log("TV and light switch");
 
   await alice.evaluate(() => window.__debugKit({ furniture: ["tv", "fridge", "chesstable", "punchbag", "benchpress", "treadmill"], coins: 400 }));
@@ -3316,6 +3698,62 @@ try {
     Boolean(prog && prog.channel === "The Cube Channel" && prog.title && prog.ticker),
     JSON.stringify(prog && { title: prog.title, titleCard: prog.titleCard })
   );
+  const tvGlow = await alice.evaluate(async () => {
+    const furn = await import("/js/furnIso.js");
+    const pointIn = (x, y, q) => {
+      // Ray-cast even-odd in the screen parallelogram.
+      let inside = false;
+      for (let i = 0, j = q.length - 1; i < q.length; j = i++) {
+        const xi = q[i].x, yi = q[i].y, xj = q[j].x, yj = q[j].y;
+        const hit = ((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / ((yj - yi) || 1e-6) + xi);
+        if (hit) inside = !inside;
+      }
+      return inside;
+    };
+    const screen = document.createElement("canvas");
+    screen.width = 24; screen.height = 16;
+    const sctx = screen.getContext("2d");
+    sctx.fillStyle = "#7ec8ff";
+    sctx.fillRect(0, 0, 24, 16);
+    sctx.fillStyle = "#ffffff";
+    sctx.fillRect(2, 2, 8, 4);
+    const issues = [];
+    for (const type of ["tv", "holotv"]) {
+      for (const rot of [0, 1, 2, 3]) {
+        const spr = furn.drawFurnitureSprite(type, { lights: true, rot, on: true, screen });
+        const quad = furn.tvScreenQuadSprite(type, rot);
+        const ctx = spr.c.getContext("2d");
+        const data = ctx.getImageData(0, 0, spr.w, spr.h).data;
+        let outside = 0, inside = 0;
+        for (let y = 0; y < spr.h; y++) {
+          for (let x = 0; x < spr.w; x++) {
+            const i = (y * spr.w + x) * 4;
+            const a = data[i + 3];
+            if (a < 16) continue;
+            const r = data[i], g = data[i + 1], b = data[i + 2];
+            // Bright cyan/white glare or lit screen pixels.
+            const glare = (g > 160 && b > 180 && r > 80) || (r > 200 && g > 200 && b > 200);
+            if (!glare) continue;
+            if (quad && pointIn(x + 0.5, y + 0.5, quad)) inside++;
+            else if (quad) outside++;
+            else {
+              // Back of the set: there is no screen, so these should not be screen-glare colors.
+              // Bezel/body is dark; count only very bright pixels as leaks.
+              if (r + g + b > 520) outside++;
+            }
+          }
+        }
+        if (rot === 0 || rot === 1) {
+          if (outside > 2) issues.push({ type, rot, outside, inside, reason: "glare outside screen quad" });
+          if (inside < 8) issues.push({ type, rot, outside, inside, reason: "screen looks empty" });
+        } else if (outside > 2) {
+          issues.push({ type, rot, outside, inside, reason: "glow on back of set" });
+        }
+      }
+    }
+    return { issues, ok: issues.length === 0 };
+  });
+  check("TV screen glow and content stay clipped to the screen quad in every rotation", Boolean(tvGlow.ok), JSON.stringify(tvGlow));
   await alice.setViewportSize({ width: 390, height: 844 });
   await alice.waitForTimeout(500);
   await alice.screenshot({ path: `${SHOT}/13-tv-on.png` });

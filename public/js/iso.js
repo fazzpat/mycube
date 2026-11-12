@@ -198,6 +198,43 @@
     return { x: cx - localY, y: cy + localX, facing: { x: -1, z: 0 } };
   }
 
+  function nearestFreeTile(fromX, fromY, blocked, size, extra) {
+    const sx = Math.round(fromX);
+    const sy = Math.round(fromY);
+    const seen = new Set();
+    const q = [];
+    function consider(x, y) {
+      const k = x + "," + y;
+      if (seen.has(k) || !inBounds(x, y, size)) return false;
+      seen.add(k);
+      const taken = (blocked && blocked.has(k)) || (extra && extra.has(k));
+      if (!taken) return true;
+      q.push({ x, y });
+      return false;
+    }
+    if (consider(sx, sy)) return { x: sx, y: sy };
+    while (q.length) {
+      const cur = q.shift();
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = cur.x + dx, ny = cur.y + dy;
+        if (consider(nx, ny)) return { x: nx, y: ny };
+      }
+    }
+    return null;
+  }
+
+  function canPlacePet(furniture, pets, x, y, size, ignore) {
+    const tx = Math.round(Number(x));
+    const ty = Math.round(Number(y));
+    if (!inBounds(tx, ty, size)) return false;
+    if (blockedSet(furniture).has(tx + "," + ty)) return false;
+    return !(pets || []).some((p) => {
+      if (ignore && ignore.id && p.id === ignore.id) return false;
+      if (ignore && p.owner === ignore.owner && p.item === ignore.item) return false;
+      return Math.round(p.x) === tx && Math.round(p.y) === ty;
+    });
+  }
+
   function pathfind(from, to, blocked, size) {
     const start = { x: Math.round(from.x), y: Math.round(from.y) };
     const goal = { x: Math.round(to.x), y: Math.round(to.y) };
@@ -406,7 +443,7 @@
   global.HouseIso = {
     GRID, TW, TH, WALL_H, CATALOG, WALLPAPERS, FLOORS, WALL_ART,
     tileToScreen, tileCenter, footprintCenter, sceneMetrics,
-    tilesFor, dims, normalizeRot, inBounds, blockedSet, occupiedSet, canPlace, pathfind,
+    tilesFor, dims, normalizeRot, inBounds, blockedSet, occupiedSet, canPlace, pathfind, nearestFreeTile, canPlacePet,
     isWallArt, reservedWallSlots, canPlaceWall, wallOccupied, seatCount, seatPose,
     roomSVG, furnitureSVG,
   };

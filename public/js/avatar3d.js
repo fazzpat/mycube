@@ -594,13 +594,32 @@ function shaveTorsoCrownOutlines(buf) {
   return next;
 }
 
+
+function hatOf(av = {}) {
+  if (av.hat && av.hat !== "none") return av.hat;
+  if (["cap", "beanie", "trucker", "bucket", "fitted"].includes(av.accessory)) return av.accessory;
+  return "none";
+}
+function glassesStyleOf(av = {}) {
+  if (av.glassesStyle && av.glassesStyle !== "none") return av.glassesStyle;
+  if (typeof av.glasses === "string" && av.glasses !== "none" && av.glasses !== "false" && av.glasses !== "true") return av.glasses;
+  if (av.accessory === "shades") return "shades";
+  if (av.glasses) return "round";
+  return "none";
+}
+function necklaceOf(av = {}) {
+  if (av.necklace && av.necklace !== "none") return av.necklace;
+  if (av.accessory === "chain") return "chain";
+  return "none";
+}
+
 function buildPalette(av) {
   const skin = tones(av.skin, true);
   const shirt = tones(av.shirt);
   const pants = tones(av.bottomColor);
   const hair = tones(av.hairColor, true);
-  const shoe = shoePal(av.shoes);
-  const acc = tones(av.headphoneColor || av.shirt || "#2a2a2e");
+  const shoe = shoePal(av.shoes, av.shoeColor);
+  const acc = tones(av.hatColor || av.headphoneColor || av.shirt || "#2a2a2e");
   const sole = (av.shoes === "gum" || av.shoes === "white") ? tones("#b08958", true) : tones("#1e1a18");
   return { skin, shirt, pants, hair, shoe, acc, sole, gold: tones("#c9a25a", true) };
 }
@@ -1920,7 +1939,7 @@ function drawHat(buf, av, key, pal, upper) {
   // Sit on the skull, not floating above it.
   const crown = cy - g.ry + 2.0;
   const acc = pal.acc;
-  const kind = av.accessory;
+  const kind = hatOf(av);
   if (kind === "beanie") {
     ellipse(buf, g.cx, crown + 5.0, g.rx * 1.04, 7.6, acc, "hat", 55);
     ellipse(buf, g.cx, crown + 2.4, g.rx * 0.80, 4.0, acc, "hat", 56);
@@ -1969,15 +1988,37 @@ function ring(buf, cx, cy, rx, ry, color, kind, depth) {
   }
 }
 
+function hexRgb(hex) {
+  const h = String(hex || "#2a2422").replace("#", "");
+  const n = h.length === 3 ? h.split("").map((c) => c + c).join("") : h;
+  const v = parseInt(n, 16);
+  return rgb((v >> 16) & 255, (v >> 8) & 255, v & 255);
+}
 function drawGlasses(buf, av, key, upper) {
-  if (key === "n" || key === "ne") return;
-  const tinted = av && (av.accessory === "shades");
-  const frame = tinted ? rgb(40, 24, 48) : rgb(48, 36, 32);
-  const lens = tinted ? rgb(72, 40, 80) : null;
+  const style = glassesStyleOf(av);
+  if (style === "none") return;
+  const col = hexRgb(av.glassesColor || (style === "shades" ? "#2a1c30" : "#2a2422"));
+  const frame = col;
+  const tinted = style === "shades";
+  const lens = tinted ? { hi: mix(col, rgb(255, 230, 240), 0.15), mid: mix(col, rgb(40, 20, 50), 0.25), sh: mix(col, rgb(0, 0, 0), 0.35) } : null;
   const anchors = eyeAnchors(key, upper, false);
+  const back = key === "n" || key === "ne";
+  if (back || !anchors.length) {
+    const g = headGeom(key);
+    const cy = g.cy + upper + 2;
+    // Temple arms on the back/side of the head so glasses exist in every view.
+    rect(buf, g.cx - g.rx + 1, cy, g.cx - g.rx + 5, cy + 1.2, frame, "glasses", 56);
+    rect(buf, g.cx + g.rx - 5, cy, g.cx + g.rx - 1, cy + 1.2, frame, "glasses", 56);
+    if (back) return;
+  }
   for (const a of anchors) {
-    if (lens) ellipse(buf, a.x, a.y, 3.2, 3.6, lens, "lens", 55, { shade: "flat" });
-    ring(buf, a.x, a.y, 4.0, 4.4, frame, "glasses", 56);
+    if (style === "square") {
+      if (lens) ellipse(buf, a.x, a.y, 3.0, 2.8, lens, "lens", 55, { shade: "flat" });
+      rect(buf, a.x - 3.4, a.y - 3.2, a.x + 3.4, a.y + 3.2, frame, "glasses", 56, 1);
+    } else {
+      if (lens) ellipse(buf, a.x, a.y, 3.2, 3.6, lens, "lens", 55, { shade: "flat" });
+      ring(buf, a.x, a.y, 4.0, 4.4, frame, "glasses", 56);
+    }
     if (tinted) plot(buf, Math.round(a.x) - 1, Math.round(a.y) - 2, rgb(255, 230, 240), "lens-hi", 57);
   }
   if (anchors.length === 2) {
@@ -2087,8 +2128,22 @@ function drawTorso(buf, av, key, pal, upper, sit, squash = 0) {
     const gx = key === "e" ? t.cx + 2 : t.cx;
     rect(buf, gx - 2, y0 + 6, gx + 2, y0 + 9, rgb(255, 250, 240), "number", 26, 1);
   }
-  if (av.accessory === "chain" && key !== "n") {
-    ellipse(buf, t.cx, y0 + 4, 3.2, 1.8, pal.gold, "chain", 27);
+  const neck = necklaceOf(av);
+  if (neck !== "none") {
+    const back = key === "n" || key === "ne";
+    const cy = back ? y0 + 2.2 : y0 + 4;
+    const rx = back ? 2.6 : 3.2;
+    ellipse(buf, t.cx, cy, rx, back ? 1.2 : 1.8, pal.gold, "chain", 27);
+    if (neck === "diamond" && !back) {
+      const dx = t.cx, dy = y0 + 6.4;
+      const ice = { hi: rgb(230, 245, 255), mid: rgb(180, 220, 235), sh: rgb(90, 140, 170) };
+      // Small diamond pendant, shaded, no white outline.
+      ellipse(buf, dx, dy, 1.7, 2.2, ice, "chain", 28);
+      plot(buf, Math.round(dx), Math.round(dy) - 1, ice.hi, "chain", 29);
+      ellipse(buf, dx, dy + 2.2, 1.1, 0.7, pal.gold, "chain", 28);
+    } else if (neck === "diamond" && back) {
+      ellipse(buf, t.cx, y0 + 3.2, 1.2, 1.0, pal.gold, "chain", 28);
+    }
   }
   if (av.accessory === "belt") {
     for (let x = Math.round(t.cx - rx); x <= Math.round(t.cx + rx); x++) {
@@ -2227,20 +2282,85 @@ function drawArms(buf, av, key, pal, upper, pose) {
   return { near };
 }
 
-function drawHeldPhone(buf, x, y, { tap = false, thumb } = {}) {
-  const out = x >= AV_W / 2 ? 1 : -1;
+function plotPhoneRect(buf, x0, y0, x1, y1, color, kind, depth, { shear = 0, round = 1 } = {}) {
+  // Crisp axis-aligned (or slightly sheared) rectangle. `round` of 1 only
+  // skips the four literal corner pixels — straight edges stay sharp.
+  const miny = Math.round(Math.min(y0, y1));
+  const maxy = Math.round(Math.max(y0, y1));
+  const base0 = Math.round(Math.min(x0, x1));
+  const base1 = Math.round(Math.max(x0, x1));
+  const h = Math.max(1, maxy - miny);
+  for (let y = miny; y <= maxy; y++) {
+    const sh = Math.round(shear * ((maxy - y) / h));
+    const xa = base0 + sh;
+    const xb = base1 + sh;
+    for (let x = xa; x <= xb; x++) {
+      if (round && (x === xa || x === xb) && (y === miny || y === maxy)) continue;
+      plot(buf, x, y, color, kind, depth);
+    }
+  }
+}
+
+function drawHeldPhone(buf, x, y, { tap = false, thumb, key = "s" } = {}) {
+  const hx = Math.round(x);
+  const hy = Math.round(y);
+  const out = hx >= AV_W / 2 ? 1 : -1;
   const inn = -out;
-  const ph = tones("#2a2420");
-  // Handset sits in the palm, body slightly outward, screen facing the face.
-  rect(buf, x + inn * 1, y - 4, x + out * 3, y + 4, ph, "phone", 60, 1);
-  const screen = rgb(200, 240, 210);
-  rect(buf, x + inn * 1, y - 3, x + inn * 3, y + 3, screen, "phone-screen", 61);
-  const glow = rgb(232, 255, 226);
-  plot(buf, Math.round(x + inn * 4), Math.round(y - 1), glow, "phone-glow", 62);
-  plot(buf, Math.round(x + inn * 4), Math.round(y), glow, "phone-glow", 62);
-  plot(buf, Math.round(x + inn * 4), Math.round(y + 1), glow, "phone-glow", 62);
+  const back = key === "n" || key === "ne";
+  const side = key === "e";
+  const threeQ = key === "se";
+  const body = rgb(36, 30, 28);
+  const edge = rgb(62, 54, 50);
+  const screen = rgb(196, 236, 208);
+  const glow = rgb(226, 255, 228);
+  // Portrait handset, 9px tall, gripped at the lower 3px so the rectangle
+  // reads clearly above the mitten.
+  const y1 = hy + 3;
+  const y0 = y1 - 8;
+  let x0, x1, shear = 0, wide;
+  if (side) {
+    // Thin angled rectangle leaning toward the face.
+    x0 = hx + (out > 0 ? 0 : -2);
+    x1 = x0 + 2;
+    wide = 3;
+    shear = inn * 2;
+  } else if (threeQ) {
+    x0 = hx + (out > 0 ? 0 : -3);
+    x1 = x0 + 3;
+    wide = 4;
+    shear = inn * 1;
+  } else {
+    // Front and back: a clear 5x9 upright rectangle.
+    x0 = hx + (out > 0 ? 0 : -4);
+    x1 = x0 + 4;
+    wide = 5;
+    shear = 0;
+  }
+  plotPhoneRect(buf, x0, y0, x1, y1, body, "phone", 60, { shear, round: 0 });
+  // A 1px lighter outer edge keeps the long side crisp.
+  if (wide >= 3) {
+    const ox0 = out > 0 ? x1 : x0;
+    const ox1 = ox0;
+    plotPhoneRect(buf, ox0, y0 + 1, ox1, y1 - 1, edge, "phone", 61, { shear, round: 0 });
+  }
+  if (!back) {
+    // Inset screen (1px bezel). Side view: a 1px column on the inward face.
+    const sx0 = side ? (out > 0 ? x0 : x1) : x0 + 1;
+    const sx1 = side ? sx0 : x1 - 1;
+    plotPhoneRect(buf, sx0, y0 + 1, sx1, y1 - 1, screen, "phone-screen", 62, { shear, round: 0 });
+    // Soft glow toward the face, not part of the body silhouette.
+    const midY = Math.round((y0 + y1) / 2);
+    const gx = Math.round((out > 0 ? x0 : x1) + inn);
+    plot(buf, gx, midY - 1, glow, "phone-glow", 63);
+    plot(buf, gx, midY, glow, "phone-glow", 63);
+    plot(buf, gx, midY + 1, glow, "phone-glow", 63);
+  } else {
+    // Dark back of the rectangle, with a tiny camera at the top.
+    const camX = Math.round((x0 + x1) / 2 + out);
+    plot(buf, camX, y0 + 1, rgb(18, 14, 14), "phone", 61);
+  }
   if (tap && thumb) {
-    circle(buf, x + inn * 1.5, y + 1, 1.4, thumb, "hand", 63);
+    circle(buf, hx + inn * 1, hy + 1, 1.3, thumb, "hand", 64);
   }
 }
 
@@ -2249,7 +2369,7 @@ function drawProp(buf, flags, hand, key, pose) {
   if (!hand) return;
   const held = flags.heldItem?.kind || flags.heldProp || (typeof flags.heldItem === "string" ? flags.heldItem : "");
   if (pose.armKind && String(pose.armKind).startsWith("phone") || flags.usingPhone) {
-    drawHeldPhone(buf, hand.x, hand.y, { tap: String(pose.armKind) === "phone1" });
+    drawHeldPhone(buf, hand.x, hand.y, { tap: String(pose.armKind) === "phone1", key });
     return;
   }
   if (!held) return;
@@ -2282,8 +2402,13 @@ function shoeStyleOf(id) {
   return "white";
 }
 
-function shoePal(id) {
+function shoePal(id, color) {
   const style = shoeStyleOf(id);
+  const painted = (hex) => ({ upper: tones(hex, true), sole: tones("#6a7a8a", true), accent: tones("#d8d0c4", true), lace: rgb(230, 220, 210) });
+  if (color) {
+    const base = shoePal(id);
+    return { ...base, upper: tones(color, true) };
+  }
   if (style === "black") return { upper: tones("#2a2624", true), sole: tones("#d8d0c4", true), accent: tones("#efe6d6", true), lace: rgb(230, 220, 210) };
   if (style === "red") return { upper: tones("#c43632", true), sole: tones("#efe6d6", true), accent: tones("#f4f0e6", true), lace: rgb(250, 246, 236) };
   if (style === "gum") return { upper: tones("#e8d4b0", true), sole: tones("#c47a32", true), accent: tones("#5a3a24", true), lace: rgb(90, 60, 40) };
@@ -2552,7 +2677,7 @@ function composeAvatar(av, flagsIn, frame) {
     flags.lookY = 1; // pupils drop toward the phone
   }
   const pal = buildPalette(av);
-  const shoes = shoePal(av.shoes);
+  const shoes = shoePal(av.shoes, av.shoeColor);
   const pose = walkPose(frame, walk, sit);
   pose.armKind = armKindFromFlags(flags, frame);
   const breathe = (!walk && !sit) ? ((frame % 16) < 8 ? 0 : -1) : 0;
@@ -2562,7 +2687,7 @@ function composeAvatar(av, flagsIn, frame) {
   const motion = phoneIdle ? { y: (motion0.y || 0) + 3, x: (motion0.x || 0) + 2 } : motion0;
   const headUpper = motion.y;
   const emote = flags.actionEmote || "";
-  const hatOn = av.accessory === "cap" || av.accessory === "beanie" || av.accessory === "trucker" || av.accessory === "bucket" || av.accessory === "fitted";
+  const hatOn = hatOf(av) !== "none";
   const bk = bodyView.key;
 
   let body = makeBuf();
@@ -2584,7 +2709,7 @@ function composeAvatar(av, flagsIn, frame) {
     drawFace(head, hk, pal, headUpper, emote);
     if (!hatOn) drawHairFront(head, av, hk, pal, headUpper);
   }
-  if (av.glasses || av.accessory === "shades") drawGlasses(head, av, hk, headUpper);
+  if (glassesStyleOf(av) !== "none") drawGlasses(head, av, hk, headUpper);
   if (hatOn) drawHat(head, av, hk, pal, headUpper);
   if (hatOn) drawHairPeeks(head, av, hk, pal, headUpper, bob, frame, walk);
   if (av.accessory === "headphones") drawHeadphones(head, av, hk, pal, headUpper);
@@ -2627,9 +2752,15 @@ function composeAvatar(av, flagsIn, frame) {
   }
   function handSpr(hp, holdPhone, tapPhone) {
     return stickerSprite((buf) => {
-      drawMitten(buf, hp.x, hp.y, pal, hp.side);
+      // Phone first so the mitten can grip the lower part and leave the
+      // upright rectangle readable above the palm.
       if (holdPhone) {
-        drawHeldPhone(buf, hp.x, hp.y, { tap: tapPhone, thumb: pal.skin });
+        drawHeldPhone(buf, hp.x, hp.y, { key: bk });
+      }
+      drawMitten(buf, hp.x, hp.y, pal, hp.side);
+      if (holdPhone && tapPhone) {
+        const inn = hp.x >= AV_W / 2 ? -1 : 1;
+        circle(buf, hp.x + inn * 1, hp.y + 1, 1.3, pal.skin, "hand", 64);
       }
     });
   }

@@ -55,12 +55,39 @@ export const BASE_ACCESSORIES = ["none", "cap", "beanie", "chain", "headphones"]
 export const BASE_HAIR = ["short", "long", "curly", "bun", "spiky", "bangs"];
 
 export const HAT_ACCESSORIES = new Set(["cap", "beanie", "trucker", "bucket", "fitted"]);
+export const HATS = ["none", "cap", "beanie", "trucker", "bucket", "fitted"];
+export const HAT_LABELS = { none: "No hat", cap: "Cap", beanie: "Beanie", trucker: "Trucker hat", bucket: "Bucket hat", fitted: "Fitted cap" };
+export const GLASSES_STYLES = ["none", "round", "square", "shades"];
+export const GLASSES_LABELS = { none: "No glasses", round: "Round glasses", square: "Square glasses", shades: "Shades" };
+export const GLASSES_COLORS = ["#2a2422", "#6b3a2a", "#d4b46a", "#c0c4c8", "#ef476f", "#4a90d9", "#1a1a22"];
+export const NECKLACES = ["none", "chain", "diamond"];
+export const NECKLACE_LABELS = { none: "No necklace", chain: "Gold chain", diamond: "Diamond necklace" };
+export const SHOE_COLORS = ["#f4efe6", "#2a2624", "#c43632", "#e8d4b0", "#3a5a8a", "#c4a056", "#1a1a1a", "#3d4f7c"];
+export const HAT_COLORS = ["#2a2a2e", "#ff7a59", "#7c5cff", "#f4c15d", "#ef476f", "#20b2aa", "#f6f3ee", "#3d4f7c", "#6a8a3a", "#c43a3a"];
+
+export function migrateAvatar(raw = {}) {
+  const a = { ...raw };
+  const hats = HAT_ACCESSORIES;
+  if (!a.hat || a.hat === "") a.hat = hats.has(a.accessory) ? a.accessory : "none";
+  if (!a.hatColor) a.hatColor = a.headphoneColor || "#2a2a2e";
+  if (!a.glassesStyle) {
+    if (typeof a.glasses === "string" && a.glasses !== "true" && a.glasses !== "false") a.glassesStyle = a.glasses;
+    else if (a.accessory === "shades") a.glassesStyle = "shades";
+    else a.glassesStyle = a.glasses ? "round" : "none";
+  }
+  if (!a.glassesColor) a.glassesColor = a.glassesStyle === "shades" ? "#2a1c30" : "#2a2422";
+  if (!a.necklace) a.necklace = a.accessory === "chain" ? "chain" : "none";
+  a.glasses = a.glassesStyle && a.glassesStyle !== "none";
+  if (!a.headphoneColor) a.headphoneColor = a.hatColor;
+  return a;
+}
 
 export const STORE_LOCKED = {
   top: new Set(["bandtee", "ziphoodie", "oversized", "velour", "varsity", "truckertee", "puffer", "polo", "babytee", "crophoodie", "jersey"]),
   bottom: new Set(["cargo", "shorts", "baggy", "track", "skirt", "flares"]),
   shoes: new Set(["skate", "hightop", "boots", "checker"]),
   accessory: new Set(["trucker", "wristband", "belt", "bucket", "fitted", "shades"]),
+  hat: new Set(["trucker", "bucket", "fitted"]),
   hair: new Set(["undercut"]),
 };
 

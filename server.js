@@ -15,6 +15,13 @@ import {
   SHOES as CAT_SHOES,
   ACCESSORIES as CAT_ACCESSORIES,
   HEADPHONE_COLORS as CAT_HEADPHONE_COLORS,
+  HATS as CAT_HATS,
+  HAT_COLORS as CAT_HAT_COLORS,
+  GLASSES_STYLES as CAT_GLASSES_STYLES,
+  GLASSES_COLORS as CAT_GLASSES_COLORS,
+  NECKLACES as CAT_NECKLACES,
+  SHOE_COLORS as CAT_SHOE_COLORS,
+  migrateAvatar,
   PETS as CAT_PETS,
   STORE_LOCKED,
   CLOTHING_STOCK,
@@ -94,6 +101,62 @@ for (const piece of ART_PIECES) {
 }
 const WALLPAPERS = ["paint-cream", "paint-sage", "paint-blush", "paint-slate"];
 const FLOORS = ["wood", "tile", "carpet"];
+
+const FLOOR_COLORS = ["honey","cream","butter","cocoa","cherry","sage","sky","lilac","blush","slate"];
+const FLOOR_PATTERNS = ["wood","checker","carpet","marble","stone","grid"];
+const WALL_COLOR_IDS = ["cream","sage","blush","slate","honey","sky","lilac","cocoa","mint","peach"];
+const WALL_PATTERNS = ["plain","tiles","stripes","brick","floral","dots","woodpanel"];
+const WINDOW_VIEWS = ["day","city","sunset","beach","snow","forest","space"];
+const DOOR_STYLES = ["wood","modern","metal","glass","arch","shutter"];
+const DEFAULT_DECOR = {
+  floorColor: "honey",
+  floorPattern: "wood",
+  wallColor: "cream",
+  wallPattern: "tiles",
+  windowView: "day",
+  doorStyle: "wood",
+};
+const LEGACY_WALL = {
+  "paint-cream": { wallColor: "cream", wallPattern: "tiles" },
+  "paint-sage": { wallColor: "sage", wallPattern: "tiles" },
+  "paint-blush": { wallColor: "blush", wallPattern: "tiles" },
+  "paint-slate": { wallColor: "slate", wallPattern: "tiles" },
+  "stars-mint": { wallColor: "mint", wallPattern: "dots" },
+  "dots-peach": { wallColor: "peach", wallPattern: "dots" },
+  "stripes-lilac": { wallColor: "lilac", wallPattern: "stripes" },
+};
+const LEGACY_FLOOR = { wood: "wood", tile: "grid", carpet: "carpet" };
+function normalizeDecor(input = {}, room = {}) {
+  const legacy = LEGACY_WALL[input.wallpaper || room.wallpaper] || {};
+  const floorFromLegacy = LEGACY_FLOOR[input.floorStyle || room.floorStyle];
+  const src = { ...DEFAULT_DECOR, ...legacy, ...(floorFromLegacy ? { floorPattern: floorFromLegacy } : {}), ...room, ...input };
+  const pick = (list, v, fb) => (list.includes(v) ? v : fb);
+  return {
+    floorColor: pick(FLOOR_COLORS, src.floorColor, DEFAULT_DECOR.floorColor),
+    floorPattern: pick(FLOOR_PATTERNS, src.floorPattern, DEFAULT_DECOR.floorPattern),
+    wallColor: pick(WALL_COLOR_IDS, src.wallColor, DEFAULT_DECOR.wallColor),
+    wallPattern: pick(WALL_PATTERNS, src.wallPattern, DEFAULT_DECOR.wallPattern),
+    windowView: pick(WINDOW_VIEWS, src.windowView, DEFAULT_DECOR.windowView),
+    doorStyle: pick(DOOR_STYLES, src.doorStyle, DEFAULT_DECOR.doorStyle),
+  };
+}
+function legacyAliases(decor) {
+  const d = normalizeDecor(decor);
+  const wallMap = { cream: "paint-cream", sage: "paint-sage", blush: "paint-blush", slate: "paint-slate", mint: "stars-mint", peach: "dots-peach", lilac: "stripes-lilac" };
+  const floorMap = { wood: "wood", carpet: "carpet", checker: "tile", grid: "tile", marble: "tile", stone: "tile" };
+  return { wallpaper: wallMap[d.wallColor] || "paint-cream", floorStyle: floorMap[d.floorPattern] || "wood" };
+}
+function applyRoomDecor(room, input) {
+  const d = normalizeDecor(input || {}, room || {});
+  const alias = legacyAliases(d);
+  Object.assign(room, d, alias);
+  return d;
+}
+function decorState(room) {
+  const d = normalizeDecor(room, room);
+  const alias = legacyAliases(d);
+  return { ...d, ...alias };
+}
 const START_COINS = 50;
 const DAILY_LOGIN_BONUS = 20;
 const HANGOUT_INTERVAL_MS = 2 * 60 * 1000;
@@ -200,6 +263,52 @@ function blockedSet(room) {
   return set;
 }
 
+function nearestFreeTile(fromX, fromY, blocked, size, extra) {
+  const sx = Math.round(fromX);
+  const sy = Math.round(fromY);
+  const seen = new Set();
+  const q = [];
+  function consider(x, y) {
+    const k = `${x},${y}`;
+    if (seen.has(k) || !inBounds(x, y, size)) return false;
+    seen.add(k);
+    const taken = (blocked && blocked.has(k)) || (extra && extra.has(k));
+    if (!taken) return true;
+    q.push({ x, y });
+    return false;
+  }
+  if (consider(sx, sy)) return { x: sx, y: sy };
+  while (q.length) {
+    const cur = q.shift();
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = cur.x + dx, ny = cur.y + dy;
+      if (consider(nx, ny)) return { x: nx, y: ny };
+    }
+  }
+  return null;
+}
+
+function nudgePetsOffFurniture(room) {
+  if (!room?.pets?.length) return false;
+  const blocked = blockedSet(room);
+  const n = roomSize(room);
+  let changed = false;
+  const taken = new Set(room.pets.map((p) => `${Math.round(p.x)},${Math.round(p.y)}`));
+  for (const pet of room.pets) {
+    const k = `${Math.round(pet.x)},${Math.round(pet.y)}`;
+    if (inBounds(pet.x, pet.y, n) && !blocked.has(k)) continue;
+    taken.delete(k);
+    const dest = nearestFreeTile(pet.x, pet.y, blocked, n, taken);
+    if (dest && (dest.x !== pet.x || dest.y !== pet.y)) {
+      pet.x = dest.x;
+      pet.y = dest.y;
+      taken.add(`${dest.x},${dest.y}`);
+      changed = true;
+    }
+  }
+  return changed;
+}
+
 function occupancyTiles(f) {
   const tiles = tilesFor(f.type, f.x, f.y, f.rot);
   if (f.type === "chesstable") {
@@ -265,6 +374,12 @@ const BOTTOM_COLORS = CAT_BOTTOM_COLORS;
 const SHOES = CAT_SHOES;
 const ACCESSORIES = CAT_ACCESSORIES;
 const HEADPHONE_COLORS = CAT_HEADPHONE_COLORS;
+const HATS = CAT_HATS;
+const HAT_COLORS = CAT_HAT_COLORS;
+const GLASSES_STYLES = CAT_GLASSES_STYLES;
+const GLASSES_COLORS = CAT_GLASSES_COLORS;
+const NECKLACES = CAT_NECKLACES;
+const SHOE_COLORS = CAT_SHOE_COLORS;
 const PROPS = ["guitar", "skateboard", "coffee"];
 const PETS = CAT_PETS;
 
@@ -275,7 +390,13 @@ let furnSeq = 1;
 
 function userOwnsStyle(user, field, value) {
   if (!STORE_LOCKED[field] || !STORE_LOCKED[field].has(value)) return true;
-  return (user?.collection?.clothes || []).some((c) => c.item && c.item[field] === value);
+  return (user?.collection?.clothes || []).some((c) => {
+    const item = c.item || {};
+    if (item[field] === value) return true;
+    if (field === "hat" && item.accessory === value) return true;
+    if (field === "accessory" && item.hat === value) return true;
+    return false;
+  });
 }
 
 function makePlaceFurniture(place) {
@@ -347,22 +468,34 @@ function clamp(n, min, max) {
 }
 
 function sanitizeAvatar(raw = {}) {
-  const displayName = String(raw.displayName || "")
+  const m = migrateAvatar(raw || {});
+  const displayName = String(m.displayName || "")
     .trim()
     .slice(0, 16);
+  const hat = HATS.includes(m.hat) ? m.hat : "none";
+  const glassesStyle = GLASSES_STYLES.includes(m.glassesStyle) ? m.glassesStyle : "none";
+  const necklace = NECKLACES.includes(m.necklace) ? m.necklace : "none";
+  const hatColor = HAT_COLORS.includes(m.hatColor) ? m.hatColor : (HEADPHONE_COLORS.includes(m.headphoneColor) ? m.headphoneColor : HEADPHONE_COLORS[0]);
+  const accessory = hat !== "none" ? hat : (ACCESSORIES.includes(m.accessory) && m.accessory !== "chain" && m.accessory !== "shades" ? m.accessory : "none");
   return {
     displayName: displayName || "",
-    skin: SKINS.includes(raw.skin) ? raw.skin : SKINS[1],
-    hair: HAIR_STYLES.includes(raw.hair) ? raw.hair : "short",
-    hairColor: HAIR_COLORS.includes(raw.hairColor) ? raw.hairColor : HAIR_COLORS[0],
-    shirt: SHIRTS.includes(raw.shirt) ? raw.shirt : SHIRTS[0],
-    glasses: Boolean(raw.glasses),
-    top: TOPS.includes(raw.top) ? raw.top : "tshirt",
-    bottom: BOTTOMS.includes(raw.bottom) ? raw.bottom : "jeans",
-    bottomColor: BOTTOM_COLORS.includes(raw.bottomColor) ? raw.bottomColor : BOTTOM_COLORS[0],
-    shoes: SHOES.includes(raw.shoes) ? raw.shoes : "white",
-    accessory: ACCESSORIES.includes(raw.accessory) ? raw.accessory : "none",
-    headphoneColor: HEADPHONE_COLORS.includes(raw.headphoneColor) ? raw.headphoneColor : HEADPHONE_COLORS[0],
+    skin: SKINS.includes(m.skin) ? m.skin : SKINS[1],
+    hair: HAIR_STYLES.includes(m.hair) ? m.hair : "short",
+    hairColor: HAIR_COLORS.includes(m.hairColor) ? m.hairColor : HAIR_COLORS[0],
+    shirt: SHIRTS.includes(m.shirt) ? m.shirt : SHIRTS[0],
+    glasses: glassesStyle !== "none",
+    glassesStyle,
+    glassesColor: GLASSES_COLORS.includes(m.glassesColor) ? m.glassesColor : GLASSES_COLORS[0],
+    top: TOPS.includes(m.top) ? m.top : "tshirt",
+    bottom: BOTTOMS.includes(m.bottom) ? m.bottom : "jeans",
+    bottomColor: BOTTOM_COLORS.includes(m.bottomColor) ? m.bottomColor : BOTTOM_COLORS[0],
+    shoes: SHOES.includes(m.shoes) ? m.shoes : "white",
+    shoeColor: SHOE_COLORS.includes(m.shoeColor) ? m.shoeColor : undefined,
+    accessory,
+    hat,
+    hatColor,
+    necklace,
+    headphoneColor: hatColor,
   };
 }
 
@@ -435,6 +568,12 @@ function roomState(room) {
     furniture: room.furniture,
     wallpaper: room.wallpaper,
     floorStyle: room.floorStyle,
+    floorColor: room.floorColor,
+    floorPattern: room.floorPattern,
+    wallColor: room.wallColor,
+    wallPattern: room.wallPattern,
+    windowView: room.windowView,
+    doorStyle: room.doorStyle,
     lightsOn: room.lightsOn !== false,
     tvs: room.tvs || {},
     recordPlayers: room.recordPlayers || {},
@@ -728,6 +867,7 @@ function ensureRoomExtras(room) {
   if (!room.arcade) room.arcade = {};
   if (!Array.isArray(room.pets)) room.pets = [];
   if (room.lightsOn === undefined) room.lightsOn = true;
+  applyRoomDecor(room, room);
   if (Array.isArray(room.furniture)) {
     for (const f of room.furniture) f.rot = normalizeRot(f.rot);
     migrateRoomChessTables(room);
@@ -1284,7 +1424,7 @@ io.on("connection", (socket) => {
           if (field === "top") next[field] = "tshirt";
           else if (field === "bottom") next[field] = "jeans";
           else if (field === "shoes") next[field] = "white";
-          else if (field === "accessory") next[field] = "none";
+          else if (field === "accessory" || field === "hat") next[field] = "none";
           else if (field === "hair") next[field] = "short";
         }
       }
@@ -1460,7 +1600,7 @@ io.on("connection", (socket) => {
   socket.on("say", ({ text, shout } = {}) => {
     const user = getUser(socket);
     if (!user?.roomId) return;
-    text = String(text || "").replace(/\s+/g, " ").trim().slice(0, 80);
+    text = String(text || "").replace(/\s+/g, " ").trim().slice(0, 120);
     if (!text) return;
     if (user.typing) {
       user.typing = false;
@@ -1587,6 +1727,7 @@ io.on("connection", (socket) => {
     room.furniture.push(piece);
     emitProfile(user);
     io.to(room.id).emit("furniturePlaced", piece);
+    if (nudgePetsOffFurniture(room)) emitRoomPets(room);
   });
 
   socket.on("moveFurniture", ({ id, x, y, rot } = {}) => {
@@ -1611,6 +1752,7 @@ io.on("connection", (socket) => {
     piece.y = ty;
     piece.rot = r;
     io.to(room.id).emit("furnitureUpdated", piece);
+    if (nudgePetsOffFurniture(room)) emitRoomPets(room);
   });
 
   socket.on("pickupFurniture", ({ id } = {}) => {
@@ -1693,14 +1835,13 @@ io.on("connection", (socket) => {
     broadcastRooms();
   });
 
-  socket.on("setRoomStyle", ({ wallpaper, floorStyle } = {}) => {
+  socket.on("setRoomStyle", (payload = {}) => {
     const user = getUser(socket);
     if (!user?.roomId) return;
     const room = rooms.get(user.roomId);
     if (!room || !isRoomOwner(user, room)) return;
-    if (WALLPAPERS.includes(wallpaper)) room.wallpaper = wallpaper;
-    if (FLOORS.includes(floorStyle)) room.floorStyle = floorStyle;
-    io.to(room.id).emit("roomStyle", { wallpaper: room.wallpaper, floorStyle: room.floorStyle });
+    const next = applyRoomDecor(room, payload);
+    io.to(room.id).emit("roomStyle", decorState(room));
   });
 
   socket.on("claimAdReward", () => {
@@ -1794,13 +1935,9 @@ io.on("connection", (socket) => {
     let x = Math.max(0, Math.min(size - 1, Math.round(Number(user.x) || 0)));
     let y = Math.max(0, Math.min(size - 1, Math.round(Number(user.y) || 0)));
     const taken = new Set(room.pets.map((p) => p.x + "," + p.y));
-    if (taken.has(x + "," + y)) {
-      const spots = [[1, 0], [0, 1], [-1, 0], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]];
-      for (const [dx, dy] of spots) {
-        const nx = x + dx, ny = y + dy;
-        if (nx >= 0 && ny >= 0 && nx < size && ny < size && !taken.has(nx + "," + ny)) { x = nx; y = ny; break; }
-      }
-    }
+    const blocked = blockedSet(room);
+    const dest = nearestFreeTile(x, y, blocked, size, taken) || nearestFreeTile(x, y, blocked, size);
+    if (dest) { x = dest.x; y = dest.y; }
     room.pets.push({
       id: "pet-" + Date.now() + "-" + Math.floor(Math.random() * 1000),
       item,
@@ -1847,6 +1984,10 @@ io.on("connection", (socket) => {
     const size = roomSize(room);
     const tx = Math.max(0, Math.min(size - 1, Math.round(Number(x) || 0)));
     const ty = Math.max(0, Math.min(size - 1, Math.round(Number(y) || 0)));
+    if (blockedSet(room).has(`${tx},${ty}`)) {
+      socket.emit("errorMsg", { message: "Pets can't sit on furniture." });
+      return;
+    }
     if ((room.pets || []).some((p) => p.x === tx && p.y === ty && !(p.owner === user.username && p.item === item))) {
       socket.emit("errorMsg", { message: "A pal is already on that tile." });
       return;

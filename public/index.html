@@ -81,75 +81,81 @@
         <div class="user-chip" id="creator-user"></div>
       </header>
       <div class="creator-stage">
-        <div class="creator-hero">
-          <div class="preview-stage" id="creator-preview" data-testid="creator-preview"></div>
-        </div>
-        <div class="creator-window" data-testid="creator-window">
-          <div class="creator-logo">CREATE</div>
-          <p class="creator-tag">YOUR CHARACTER</p>
-          <div class="creator-tabs" id="creator-tabs" data-testid="creator-tabs" role="tablist" aria-label="Character options">
-            <button type="button" data-testid="creator-tab-body" data-tab="body" role="tab">BODY</button>
-            <button type="button" data-testid="creator-tab-hair" data-tab="hair" role="tab">HAIR</button>
-            <button type="button" data-testid="creator-tab-face" data-tab="face" role="tab">FACE</button>
-            <button type="button" data-testid="creator-tab-top" data-tab="top" role="tab">TOP</button>
-            <button type="button" data-testid="creator-tab-bottom" data-tab="bottom" role="tab">BOTTOM</button>
-            <button type="button" data-testid="creator-tab-shoes" data-tab="shoes" role="tab">SHOES</button>
-          </div>
-          <div class="creator-tab-panels" id="creator-tab-panels" data-testid="creator-tab-panels">
-            <div data-testid="creator-panel-body" data-panel="body" role="tabpanel">
-              <h3>Skin tone</h3>
-              <div class="swatch-row" id="skin-choices"></div>
-            </div>
-            <div class="hidden" data-testid="creator-panel-hair" data-panel="hair" role="tabpanel">
-              <h3>Hair style</h3>
-              <div class="swatch-row" id="hair-choices"></div>
-              <h3>Hair color</h3>
-              <div class="swatch-row" id="hair-color-choices"></div>
-            </div>
-            <div class="hidden" data-testid="creator-panel-face" data-panel="face" role="tabpanel">
-              <h3>Accessory</h3>
-              <div class="swatch-row" id="accessory-choices"></div>
-              <div id="headphone-color-field" class="hidden">
-                <h3>Headphone color</h3>
-                <div class="swatch-row" id="headphone-color-choices"></div>
+        <div class="creator-window is-rail-layout" data-testid="creator-window">
+          <div class="creator-main">
+            <div class="creator-left">
+              <div class="creator-tabs" id="creator-tabs" data-testid="creator-tabs" role="tablist" aria-label="Character options">
+                <button type="button" data-testid="creator-tab-skin" data-tab="skin" role="tab" aria-label="Skin tone" title="Skin tone"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M12 3c3 3 5 6 5 9a5 5 0 11-10 0c0-3 2-6 5-9z" fill="currentColor"/></svg></button>
+                <button type="button" data-testid="creator-tab-hair" data-tab="hair" role="tab" aria-label="Hairstyles" title="Hairstyles"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M6 14c0-5 2.5-9 6-9s6 4 6 9v2H6v-2z" fill="currentColor"/><circle cx="9" cy="15" r="1.2" fill="#efe6d4"/><circle cx="15" cy="15" r="1.2" fill="#efe6d4"/></svg></button>
+                <button type="button" data-testid="creator-tab-shirt" data-tab="shirt" role="tab" aria-label="Shirt" title="Shirt"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M8 5l4 3 4-3 3 3-3 2v9H8V10L5 8z" fill="currentColor"/></svg></button>
+                <button type="button" data-testid="creator-tab-pants" data-tab="pants" role="tab" aria-label="Pants" title="Pants"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M8 4h8l-1 16H13l-1-8-1 8H9L8 4z" fill="currentColor"/></svg></button>
+                <button type="button" data-testid="creator-tab-shoes" data-tab="shoes" role="tab" aria-label="Shoes" title="Shoes"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M4 15c3-1 5-4 8-4 4 0 8 3 8 4v2H4v-2z" fill="currentColor"/></svg></button>
+                <button type="button" data-testid="creator-tab-head" data-tab="head" role="tab" aria-label="Head accessories" title="Head accessories"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M7 11c0-3 2.2-5 5-5s5 2 5 5v1H7v-1z" fill="currentColor"/><path d="M6 14h12v1.6c-2 .8-4 1.2-6 1.2s-4-.4-6-1.2V14z" fill="currentColor" opacity=".85"/><circle cx="9.5" cy="16.2" r="1.3" fill="none" stroke="#efe6d4" stroke-width="1.2"/><circle cx="14.5" cy="16.2" r="1.3" fill="none" stroke="#efe6d4" stroke-width="1.2"/></svg></button>
+                <button type="button" data-testid="creator-tab-extras" data-tab="extras" role="tab" aria-label="Accessories" title="Accessories"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M8 10c2-3 6-3 8 0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M12 11l2 3-2 3-2-3z" fill="currentColor"/></svg></button>
               </div>
-              <label class="check-row">
-                <input type="checkbox" id="glasses-toggle" data-testid="glasses-toggle" />
-                Sunglasses
-              </label>
+              <div class="creator-tab-panels" id="creator-tab-panels" data-testid="creator-tab-panels">
+                <div data-testid="creator-panel-skin" data-panel="skin" role="tabpanel">
+                  <h3 class="visually-hidden">Skin tone</h3>
+                  <div class="swatch-row" id="skin-choices"></div>
+                </div>
+                <div class="hidden" data-testid="creator-panel-hair" data-panel="hair" role="tabpanel">
+                  <h3 class="visually-hidden">Hairstyles</h3>
+                  <div class="swatch-row" id="hair-choices"></div>
+                  <h3 class="visually-hidden">Hair color</h3>
+                  <div class="swatch-row swatch-colors" id="hair-color-choices"></div>
+                </div>
+                <div class="hidden" data-testid="creator-panel-shirt" data-panel="shirt" role="tabpanel">
+                  <h3 class="visually-hidden">Shirt</h3>
+                  <div class="swatch-row" id="top-choices"></div>
+                  <h3 class="visually-hidden">Shirt color</h3>
+                  <div class="swatch-row swatch-colors" id="shirt-choices"></div>
+                </div>
+                <div class="hidden" data-testid="creator-panel-pants" data-panel="pants" role="tabpanel">
+                  <h3 class="visually-hidden">Pants</h3>
+                  <div class="swatch-row" id="bottom-choices"></div>
+                  <h3 class="visually-hidden">Pants color</h3>
+                  <div class="swatch-row swatch-colors" id="bottom-color-choices"></div>
+                </div>
+                <div class="hidden" data-testid="creator-panel-shoes" data-panel="shoes" role="tabpanel">
+                  <h3 class="visually-hidden">Shoes</h3>
+                  <div class="swatch-row" id="shoes-choices"></div>
+                  <h3 class="visually-hidden">Shoe color</h3>
+                  <div class="swatch-row swatch-colors" id="shoe-color-choices"></div>
+                </div>
+                <div class="hidden" data-testid="creator-panel-head" data-panel="head" role="tabpanel">
+                  <h3 class="visually-hidden">Hats</h3>
+                  <div class="swatch-row" id="hat-choices"></div>
+                  <h3 class="visually-hidden">Hat color</h3>
+                  <div class="swatch-row swatch-colors" id="hat-color-choices"></div>
+                  <h3 class="visually-hidden">Glasses</h3>
+                  <div class="swatch-row" id="glasses-choices"></div>
+                  <h3 class="visually-hidden">Glasses color</h3>
+                  <div class="swatch-row swatch-colors" id="glasses-color-choices"></div>
+                </div>
+                <div class="hidden" data-testid="creator-panel-extras" data-panel="extras" role="tabpanel">
+                  <h3 class="visually-hidden">Necklaces</h3>
+                  <div class="swatch-row" id="necklace-choices"></div>
+                </div>
+              </div>
             </div>
-            <div class="hidden" data-testid="creator-panel-top" data-panel="top" role="tabpanel">
-              <h3>Top</h3>
-              <div class="swatch-row" id="top-choices"></div>
-              <h3>Top color</h3>
-              <div class="swatch-row" id="shirt-choices"></div>
-            </div>
-            <div class="hidden" data-testid="creator-panel-bottom" data-panel="bottom" role="tabpanel">
-              <h3>Bottom</h3>
-              <div class="swatch-row" id="bottom-choices"></div>
-              <h3>Bottom color</h3>
-              <div class="swatch-row" id="bottom-color-choices"></div>
-            </div>
-            <div class="hidden" data-testid="creator-panel-shoes" data-panel="shoes" role="tabpanel">
-              <h3>Shoes</h3>
-              <div class="swatch-row" id="shoes-choices"></div>
+            <div class="creator-right">
+              <div class="creator-preview-wrap">
+                <div class="preview-stage" id="creator-preview" data-testid="creator-preview"></div>
+                <button type="button" class="edit-char-rot" id="creator-rotate" data-testid="edit-char-rotate" aria-label="Rotate character">↻</button>
+              </div>
+              <div class="creator-footer">
+                <div class="field">
+                  <label for="display-name">Name</label>
+                  <input id="display-name" data-testid="display-name" type="text" maxlength="16" placeholder="Your name" autocomplete="off" />
+                </div>
+                <div class="creator-footer-actions">
+                  <button class="btn secondary hidden" data-testid="creator-back" id="creator-back" type="button">Back</button>
+                  <button class="btn" data-testid="save-avatar" id="save-avatar" type="button">Done</button>
+                </div>
+              </div>
             </div>
           </div>
-          <div class="creator-pager" id="creator-pager" data-testid="creator-pager">
-            <button type="button" class="creator-page-btn" data-testid="creator-page-prev" id="creator-page-prev" aria-label="Previous options">◀</button>
-            <div class="creator-page-dots" id="creator-page-dots" data-testid="creator-page-dots"></div>
-            <button type="button" class="creator-page-btn" data-testid="creator-page-next" id="creator-page-next" aria-label="Next options">▶</button>
-          </div>
-          <div class="creator-footer">
-            <div class="field">
-              <label for="display-name">CHARACTER NAME</label>
-              <input id="display-name" data-testid="display-name" type="text" maxlength="16" placeholder="Shown under your avatar" />
-            </div>
-            <div class="creator-footer-actions">
-              <button class="btn secondary hidden" data-testid="creator-back" id="creator-back" type="button">BACK</button>
-              <button class="btn" data-testid="save-avatar" id="save-avatar" type="button">LOOKS GOOD</button>
-            </div>
-          </div>
+          <input type="checkbox" id="glasses-toggle" data-testid="glasses-toggle" class="visually-hidden" tabindex="-1" />
         </div>
       </div>
     </section>
@@ -192,9 +198,27 @@
     <!-- ROOM -->
     <section id="view-room" class="view room-view hidden">
       <header class="topbar">
+        <div class="topbar-left">
+          <button type="button" id="shop-toggle" class="shop-toggle" data-testid="shop-toggle" aria-label="Open shop" title="Shop" aria-expanded="false">
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round">
+              <path d="M6 7h15l-1.6 8.2H8.2L6 7z"/>
+              <path d="M6 7L4.8 3.5H2"/>
+              <circle cx="9.2" cy="19.2" r="1.5"/>
+              <circle cx="17.2" cy="19.2" r="1.5"/>
+            </svg>
+          </button>
+        </div>
         <div class="topbar-right">
+          <button type="button" class="edit-room-btn hidden" id="edit-room-btn" data-testid="edit-room-btn" aria-label="Edit Room" title="Edit Room" aria-pressed="false">
+            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" stroke-linecap="round">
+              <path d="M4 20V10.5L12 4l8 6.5V20H4z"/>
+              <path d="M9 20v-6h6v6"/>
+              <path d="M15.2 8.2l3.3-3.3 1.6 1.6-3.3 3.3z"/>
+            </svg>
+            <span>Edit</span>
+          </button>
           <button class="leave-cube-btn" type="button" data-testid="leave-cube" id="leave-cube" aria-label="Leave Cube">Leave Cube</button>
-          <button class="coin-chip" type="button" data-testid="room-coins" id="room-coins-btn" aria-label="Open coins">🪙 <span id="room-coins">50</span></button>
+          <button class="coin-chip" type="button" data-testid="room-coins" id="room-coins-btn" aria-label="Open coins" aria-expanded="false" aria-haspopup="dialog">🪙 <span id="room-coins">50</span></button>
         </div>
       </header>
       <div class="stage-wrap">
@@ -209,14 +233,6 @@
             <svg viewBox="0 0 32 32" width="22" height="22"><path d="M16 3 L29 10.5 L16 18 L3 10.5 Z" fill="#f4c15d"/><path d="M3 10.5 L16 18 L16 30 L3 22.5 Z" fill="#c43a4a"/><path d="M16 18 L29 10.5 L29 22.5 L16 30 Z" fill="#8a5a32"/></svg>
             <span>MyCube</span>
           </div>
-          <button type="button" id="shop-toggle" class="shop-toggle" data-testid="shop-toggle" aria-label="Open shop" title="Shop" aria-expanded="false">
-            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round">
-              <path d="M6 7h15l-1.6 8.2H8.2L6 7z"/>
-              <path d="M6 7L4.8 3.5H2"/>
-              <circle cx="9.2" cy="19.2" r="1.5"/>
-              <circle cx="17.2" cy="19.2" r="1.5"/>
-            </svg>
-          </button>
           <button type="button" id="cam-toggle" class="cam-toggle" data-testid="cam-toggle" aria-label="Show the whole cube" title="Show the whole cube">
             <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round">
               <path d="M8.5 7l1.3-2.1h4.4L15.5 7H18a2 2 0 012 2v9a2 2 0 01-2 2H6a2 2 0 01-2-2V9a2 2 0 012-2h2.5z"/>
@@ -235,17 +251,9 @@
         <button type="button" class="btn small" data-testid="pet-follow" id="pet-follow">Follow me</button>
         <button type="button" class="btn small" data-testid="pet-putaway" id="pet-putaway">Put away</button>
       </div>
-      <div id="furn-actions" class="furn-actions hidden" data-testid="furn-actions">
-        <button type="button" class="btn small" data-testid="furn-rotate" id="furn-rotate">Rotate</button>
-        <button type="button" class="btn small" data-testid="furn-move" id="furn-move">Move</button>
-        <button type="button" class="btn small" data-testid="furn-pickup" id="furn-pickup">Put away</button>
-        <button type="button" class="btn small sage" data-testid="furn-place" id="furn-place">Place</button>
-      </div>
-      <div id="place-actions" class="place-actions hidden" data-testid="place-actions">
-        <button type="button" class="btn secondary" id="place-cancel" data-testid="place-cancel">Cancel</button>
-        <button type="button" class="btn" id="place-rotate" data-testid="place-rotate">Rotate</button>
-        <button type="button" class="btn sage" id="place-confirm" data-testid="place-confirm">Place</button>
-      </div>
+      <button type="button" id="item-rotate" class="item-rotate hidden" data-testid="item-rotate" aria-label="Rotate">↻</button>
+      <div id="furn-actions" class="furn-actions hidden" data-testid="furn-actions" hidden></div>
+      <div id="place-actions" class="place-actions hidden" data-testid="place-actions" hidden></div>
       <div id="activity-chip" class="activity-chip hidden" data-testid="activity-chip"></div>
       <div id="fridge-picker" class="fridge-picker hidden" data-testid="fridge-picker">
         <div class="fridge-picker-title">Grab a snack</div>
@@ -320,13 +328,26 @@
       </div>
       <div class="chat-frame" id="chat-frame" data-testid="chat-frame">
       <div id="edit-inventory" class="edit-inventory hidden" data-testid="edit-inventory">
+        <div class="edit-inv-head">
+          <div class="edit-inv-tabs" id="edit-inv-tabs" data-testid="edit-inv-tabs" role="tablist" aria-label="Edit room">
+            <button type="button" class="edit-inv-tab is-on" data-testid="edit-tab-furniture" data-tab="furniture" role="tab" aria-selected="true">Furniture</button>
+            <button type="button" class="edit-inv-tab" data-testid="edit-tab-room" data-tab="room" role="tab" aria-selected="false">Room</button>
+            <button type="button" class="edit-inv-tab" data-testid="edit-tab-upgrade" data-tab="upgrade" role="tab" aria-selected="false">Upgrade</button>
+          </div>
+          <button type="button" class="btn tiny sage edit-done-btn" id="edit-done" data-testid="edit-done" aria-label="Done editing">✕</button>
+        </div>
+        <div class="edit-inv-subtabs hidden" id="edit-decor-chips" data-testid="edit-decor-chips" role="tablist" aria-label="Room decor">
+          <button type="button" class="edit-chip is-on" data-testid="decor-chip-floor" data-decor="floor">Floor</button>
+          <button type="button" class="edit-chip" data-testid="decor-chip-wall" data-decor="wall">Wall</button>
+          <button type="button" class="edit-chip" data-testid="decor-chip-window" data-decor="window">Window</button>
+          <button type="button" class="edit-chip" data-testid="decor-chip-door" data-decor="door">Door</button>
+        </div>
         <div id="edit-inv-items" class="edit-inv-items" data-testid="edit-inv-items"></div>
-        <button type="button" class="btn tiny sage edit-done-btn" id="edit-done" data-testid="edit-done" aria-label="Done editing">✕</button>
       </div>
-      <div class="dock" id="chat-dock" data-testid="chat-dock">
+      <div class="dock room-fabs" id="chat-dock" data-testid="chat-dock">
         <button class="emote-btn phone-dock-btn" data-testid="phone-btn" id="phone-btn" type="button" title="Phone" aria-label="Open phone menu" aria-expanded="false">
           <span class="phone-fab-icon" aria-hidden="true">
-            <svg viewBox="0 0 32 32" width="20" height="20">
+            <svg viewBox="0 0 32 32" width="22" height="22">
               <rect x="8" y="2" width="16" height="28" rx="4" fill="#2a1c4a" stroke="#3a2418" stroke-width="1.8"/>
               <rect x="10" y="5" width="12" height="18" rx="1.4" fill="#9be7ff"/>
               <circle cx="16" cy="26.2" r="1.5" fill="#3a2418"/>
@@ -335,12 +356,29 @@
           <span class="phone-fab-badge hidden" data-testid="phone-badge">1</span>
         </button>
         <button class="emote-btn emote-wheel-btn" data-testid="emote-wheel-btn" id="emote-wheel-btn" type="button" title="Emotes" aria-expanded="false" aria-label="Open emotes">😀</button>
-        <textarea id="chat-input" data-testid="chat-input" maxlength="80" rows="1" wrap="off" placeholder="Say something..." autocomplete="off" enterkeyhint="send" inputmode="text" autocapitalize="sentences" spellcheck="false"></textarea>
-        <button class="btn small" data-testid="chat-send" id="chat-send" type="button">Say</button>
+        <button class="emote-btn chat-bubble-btn" data-testid="chat-bubble-btn" id="chat-bubble-btn" type="button" title="Chat" aria-expanded="false" aria-label="Open chat">
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="currentColor">
+            <path d="M4 4.8A2.8 2.8 0 016.8 2h10.4A2.8 2.8 0 0120 4.8v8.4A2.8 2.8 0 0117.2 16H9.2L4 20.2V4.8z"/>
+          </svg>
+        </button>
+      </div>
+      <div class="chat-composer hidden" id="chat-composer" data-testid="chat-composer">
+        <textarea id="chat-input" data-testid="chat-input" maxlength="120" rows="1" wrap="off" placeholder="Say something..." autocomplete="off" enterkeyhint="send" inputmode="text" autocapitalize="sentences" spellcheck="false"></textarea>
+        <span class="chat-count" id="chat-count" data-testid="chat-count">0/120</span>
+        <button class="btn small" data-testid="chat-send" id="chat-send" type="button">Send</button>
       </div>
       </div>
       <div id="emote-wheel-backdrop" class="emote-wheel-backdrop hidden" data-testid="emote-wheel-backdrop"></div>
       <div id="emote-wheel" class="emote-wheel hidden" data-testid="emote-wheel" aria-label="Emotes"></div>
+  
+  <div id="coins-panel" class="coins-panel hidden" data-testid="coins-panel" role="dialog" aria-label="Coins">
+    <div class="coins-panel-head">
+      <strong>Coins</strong>
+      <button type="button" class="shop-panel-close" id="coins-panel-close" data-testid="coins-panel-close" aria-label="Close coins">✕</button>
+    </div>
+    <div class="coins-panel-body" id="coins-panel-body" data-testid="coins-panel-body"></div>
+  </div>
+
   <div id="store-panel" class="store-panel hidden" data-testid="store-panel">
         <div class="store-panel-head">
           <strong id="store-panel-title" data-testid="store-panel-title">Shop</strong>
@@ -393,12 +431,6 @@
                 CUBE PHONE
               </div>
               <div class="phone-grid">
-                <button type="button" class="phone-app" data-testid="phone-app-edit" data-app="edit">
-                  <span class="phone-app-icon" style="background:linear-gradient(180deg,#ffb089,#ff7a59)">
-                    <svg viewBox="0 0 32 32" width="28" height="28"><path d="M7 23h14l-3-8h-8z" fill="#fff"/><path d="M12 6h8l-2 9h-6z" fill="#fff6"/><rect x="13" y="3" width="6" height="5" rx="2" fill="#ffe08a"/><path d="M6 25h16v3H6z" fill="#fff" opacity=".9"/></svg>
-                  </span>
-                  <span class="phone-app-label">Edit Room</span>
-                </button>
                 <button type="button" class="phone-app" data-testid="phone-app-edit-character" data-app="edit-character">
                   <span class="phone-app-icon" style="background:linear-gradient(180deg,#ffd36b,#f4c15d)">
                     <svg viewBox="0 0 32 32" width="28" height="28"><circle cx="16" cy="11" r="5" fill="#fff"/><path d="M6 27c1-7 5-10 10-10s9 3 10 10z" fill="#fff"/><path d="M22 8l3-1 1 3-3 1z" fill="#7c5cff"/></svg>
@@ -447,18 +479,6 @@
                   </span>
                   <span class="phone-app-label">Daily Spin</span>
                   <span class="phone-app-badge hidden" data-testid="spin-app-badge">!</span>
-                </button>
-                <button type="button" class="phone-app" data-testid="phone-app-coins" data-app="coins">
-                  <span class="phone-app-icon" style="background:linear-gradient(180deg,#ffe08a,#e0a020)">
-                    <svg viewBox="0 0 32 32" width="28" height="28"><ellipse cx="16" cy="22" rx="10" ry="5" fill="#fff"/><ellipse cx="16" cy="16" rx="10" ry="5" fill="#fff6"/><ellipse cx="16" cy="11" rx="10" ry="5" fill="#fff"/><text x="16" y="14" text-anchor="middle" font-size="8" font-weight="800" fill="#e0a020">C</text></svg>
-                  </span>
-                  <span class="phone-app-label">Coins</span>
-                </button>
-                <button type="button" class="phone-app" data-testid="phone-app-upgrade" data-app="upgrade">
-                  <span class="phone-app-icon" style="background:linear-gradient(180deg,#b7a6ff,#5b3fd4)">
-                    <svg viewBox="0 0 32 32" width="28" height="28"><path d="M16 5l11 6.5-11 6.5L5 11.5z" fill="#fff"/><path d="M5 14.5v6L16 27V21z" fill="#d4c4ff"/><path d="M27 14.5v6L16 27V21z" fill="#8b7cff"/><path d="M16 4v-2M16 4l-2-2M16 4l2-2" stroke="#ffe08a" stroke-width="1.8" stroke-linecap="round"/></svg>
-                  </span>
-                  <span class="phone-app-label">Upgrade</span>
                 </button>
                 <button type="button" class="phone-app phone-app-leave" data-testid="phone-app-leave" data-app="leave">
                   <span class="phone-app-icon" style="background:linear-gradient(180deg,#ff7a7a,#d61f3a)">
@@ -666,7 +686,14 @@
       </div>
     </div>
   </div>
-  <script src="/socket.io/socket.io.js"></script>
+  
+    <div id="edit-char-overlay" class="edit-char-overlay hidden" data-testid="edit-char-overlay" hidden>
+      <div class="edit-char-shell" data-testid="edit-char-shell">
+        <div class="edit-char-mount" id="edit-char-mount" data-testid="edit-char-mount"></div>
+      </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
   <script src="/js/avatar.js"></script>
   <script src="/js/iso.js"></script>
   <script type="module" src="/js/client.js"></script>

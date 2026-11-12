@@ -1,9 +1,10 @@
 import { createRoom3D, createAvatarPreview } from "./isoRoom.js";
 import { drawFurnitureSprite } from "./furnIso.js";
-import { drawAvatarSprite, AV_W, AV_H } from "./avatar3d.js";
+import { drawAvatarSprite, AV_W, AV_H, AV_HEAD_TOP, AV_GROUND_Y } from "./avatar3d.js";
 import { initStartMenu } from "./startMenu.js";
 import { initCreatorMenu, openFromPhone, closeFromPhone, isPhoneEditOpen } from "./creatorMenu.js";
-import { CLOTHING_STOCK, PET_STOCK, PUBLIC_PLACES, clothingSlot, CLOTHING_SLOTS, HAIR_STYLES as CAT_HAIR_STYLES, HAIR_LABELS, TOP_LABELS, BOTTOM_LABELS, ACC_LABELS, BASE_TOPS, BASE_BOTTOMS, BASE_ACCESSORIES, TOPS as CAT_TOPS, BOTTOMS as CAT_BOTTOMS, ACCESSORIES as CAT_ACCESSORIES } from "./storeCatalog.js";
+import { CLOTHING_STOCK, PET_STOCK, PUBLIC_PLACES, clothingSlot, CLOTHING_SLOTS, HAIR_STYLES as CAT_HAIR_STYLES, HAIR_LABELS, TOP_LABELS, BOTTOM_LABELS, ACC_LABELS, BASE_TOPS, BASE_BOTTOMS, BASE_ACCESSORIES, TOPS as CAT_TOPS, BOTTOMS as CAT_BOTTOMS, ACCESSORIES as CAT_ACCESSORIES, HAT_ACCESSORIES, HATS, HAT_LABELS, HAT_COLORS, GLASSES_STYLES, GLASSES_LABELS, GLASSES_COLORS, NECKLACES, NECKLACE_LABELS, SHOE_COLORS, migrateAvatar } from "./storeCatalog.js";
+import { DECOR_GROUPS, paintDecorThumb, normalizeDecor, DEFAULT_DECOR } from "./roomDecor.js";
 import { ART_PIECES, paintArtThumb, registerArtCatalog, installPaintings } from "./artPieces.js";
 import { installWallLayout, switchFloorTile } from "./wallLayout.js";
 import { installChessLayout } from "./chessTable.js";
@@ -234,12 +235,73 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
   }
 
   /* ---------- creator ---------- */
-  function paintCreator() {
+
+  const optionThumbCache = new Map();
+  function paintOptionThumb(canvas, kind, value, draft) {
+    if (!canvas) return;
+    const d = draft || {};
+    const key = [kind, value, d.skin, d.hair, d.hairColor, d.top, d.shirt, d.bottom, d.bottomColor, d.shoes, d.accessory, d.glasses, d.headphoneColor].join("|");
+    const ctx = canvas.getContext("2d");
+    const w = canvas.width || 72, h = canvas.height || 72;
+    ctx.imageSmoothingEnabled = false;
+    const cached = optionThumbCache.get(key);
+    if (cached) {
+      ctx.clearRect(0, 0, w, h);
+      ctx.drawImage(cached, 0, 0, w, h);
+      return;
+    }
+    const av = { ...HearthAvatar.defaults(), ...d };
+    if (kind === "hair") { av.hair = value; av.hat = "none"; av.accessory = "none"; }
+    else if (kind === "hat") { av.hat = value; av.accessory = value === "none" ? av.accessory : value; }
+    else if (kind === "glasses") { av.glassesStyle = value; av.glasses = value !== "none"; }
+    else if (kind === "necklace") { av.necklace = value; }
+    else if (kind === "face") { av.accessory = value; }
+    else if (kind === "top") av.top = value;
+    else if (kind === "bottom") av.bottom = value;
+    else if (kind === "shoes") av.shoes = value;
+    const facing = { x: 1, z: 0.85 };
+    const spr = drawAvatarSprite(av, { facing }, 0);
+    const off = document.createElement("canvas");
+    off.width = w; off.height = h;
+    const octx = off.getContext("2d");
+    octx.imageSmoothingEnabled = false;
+    octx.fillStyle = "#f7efe0";
+    octx.fillRect(0, 0, w, h);
+    let sx = 0, sy = 0, sw = spr.w, sh = spr.h;
+    if (kind === "hair" || kind === "hat" || kind === "face" || kind === "glasses") {
+      sy = Math.max(0, AV_HEAD_TOP - 8);
+      sh = Math.min(spr.h - sy, 38);
+      sx = Math.max(0, (spr.w - 52) / 2);
+      sw = Math.min(52, spr.w - sx);
+    } else if (kind === "necklace") {
+      sy = Math.max(0, AV_HEAD_TOP + 16);
+      sh = Math.min(spr.h - sy, 28);
+    } else if (kind === "shoes") {
+      sy = Math.max(0, AV_GROUND_Y - 22);
+      sh = Math.min(spr.h - sy, 24);
+    } else if (kind === "bottom") {
+      sy = Math.max(0, AV_HEAD_TOP + 28);
+      sh = Math.min(spr.h - sy, 36);
+    } else if (kind === "top") {
+      sy = Math.max(0, AV_HEAD_TOP + 14);
+      sh = Math.min(spr.h - sy, 32);
+    }
+    const scale = Math.max(1, Math.floor(Math.min((w - 2) / sw, (h - 2) / sh)));
+    const dw = sw * scale, dh = sh * scale;
+    octx.drawImage(spr.c, sx, sy, sw, sh, Math.floor((w - dw) / 2), Math.floor((h - dh) / 2), dw, dh);
+    if (optionThumbCache.size > 400) optionThumbCache.clear();
+    optionThumbCache.set(key, off);
+    ctx.clearRect(0, 0, w, h);
+    ctx.drawImage(off, 0, 0, w, h);
+  }
+
+    function paintCreator() {
     const box = $("#creator-preview");
     if (!state.preview3d) {
       box.innerHTML = "";
       state.preview3d = createAvatarPreview(box, { transparent: true });
     }
+    state.draft = migrateAvatar(state.draft || {});
     state.preview3d.setAvatar(state.draft);
     if (isPhoneEditOpen()) applyDraftLive();
     paintPhoneEditPreview();
@@ -248,47 +310,58 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
       $("#display-name").value = state.draft.displayName || state.me?.username || "";
     }
 
-    const swatch = (list, key, el, asColor) => {
+    const labelsFor = { hair: HAIR_LABELS, top: TOP_LABELS, bottom: BOTTOM_LABELS, accessory: ACC_LABELS, hat: HAT_LABELS, glassesStyle: GLASSES_LABELS, necklace: NECKLACE_LABELS, shoes: { white: "White", black: "Black", red: "Red", gum: "Gum", skate: "Skate", hightop: "High-top", boots: "Boots", checker: "Checker" } };
+    const swatch = (list, key, el, asColor, thumbKind) => {
+      if (!el) return;
       el.innerHTML = "";
       list.forEach((val, i) => {
         const b = document.createElement("button");
         b.type = "button";
         b.className = asColor ? "swatch" : "choice";
+        const pretty = asColor
+          ? `${key} ${val}`
+          : (labelsFor[key]?.[val] || (typeof val === "string" ? val : String(val)));
+        b.title = pretty;
+        b.setAttribute("aria-label", pretty);
+        b.dataset.testid = `${key}-${i}`;
+        const field = key;
         if (asColor) {
           b.style.background = val;
-          b.title = String(val);
-          b.setAttribute("aria-label", `${key} ${val}`);
         } else {
-          const labels = { hair: HAIR_LABELS, top: TOP_LABELS, bottom: BOTTOM_LABELS, accessory: ACC_LABELS };
-          const pretty = labels[key]?.[val] || (typeof val === "string" ? val : "");
-          b.textContent = pretty;
-          b.title = pretty;
-          b.setAttribute("aria-label", pretty);
+          const canvas = document.createElement("canvas");
+          canvas.width = 72;
+          canvas.height = 72;
+          canvas.setAttribute("aria-hidden", "true");
+          b.appendChild(canvas);
+          paintOptionThumb(canvas, thumbKind || key, val, state.draft);
         }
-        b.dataset.testid = `${key}-${i}`;
-        if (state.draft[key] === val) b.classList.add("selected");
+        if (state.draft[field] === val) b.classList.add("selected");
         b.addEventListener("click", () => {
-          state.draft[key] = val;
+          state.draft[field] = val;
+          if (field === "hatColor") state.draft.headphoneColor = val;
+          if (field === "glassesStyle") state.draft.glasses = val !== "none";
+          if (field === "hat") state.draft.accessory = val === "none" ? (state.draft.accessory && !HAT_ACCESSORIES.has(state.draft.accessory) ? state.draft.accessory : "none") : val;
           paintCreator();
         });
         el.appendChild(b);
       });
     };
     swatch(HearthAvatar.SKINS, "skin", $("#skin-choices"), true);
-    swatch(HearthAvatar.HAIR_STYLES, "hair", $("#hair-choices"), false);
+    swatch(HearthAvatar.HAIR_STYLES, "hair", $("#hair-choices"), false, "hair");
     swatch(HearthAvatar.HAIR_COLORS, "hairColor", $("#hair-color-choices"), true);
     swatch(HearthAvatar.SHIRTS, "shirt", $("#shirt-choices"), true);
-    swatch(HearthAvatar.TOPS, "top", $("#top-choices"), false);
-    swatch(HearthAvatar.BOTTOMS, "bottom", $("#bottom-choices"), false);
+    swatch(HearthAvatar.TOPS, "top", $("#top-choices"), false, "top");
+    swatch(HearthAvatar.BOTTOMS, "bottom", $("#bottom-choices"), false, "bottom");
     swatch(HearthAvatar.BOTTOM_COLORS, "bottomColor", $("#bottom-color-choices"), true);
-    swatch(HearthAvatar.SHOES, "shoes", $("#shoes-choices"), false);
-    swatch(HearthAvatar.ACCESSORIES, "accessory", $("#accessory-choices"), false);
-    if (HearthAvatar.HEADPHONE_COLORS && $("#headphone-color-choices")) {
-      swatch(HearthAvatar.HEADPHONE_COLORS, "headphoneColor", $("#headphone-color-choices"), true);
-    }
-    const hpField = $("#headphone-color-field");
-    if (hpField) hpField.classList.toggle("hidden", state.draft.accessory !== "headphones");
-    $("#glasses-toggle").checked = state.draft.glasses;
+    swatch(HearthAvatar.SHOES, "shoes", $("#shoes-choices"), false, "shoes");
+    swatch(SHOE_COLORS, "shoeColor", $("#shoe-color-choices"), true);
+    swatch(HATS, "hat", $("#hat-choices"), false, "hat");
+    swatch(HAT_COLORS, "hatColor", $("#hat-color-choices"), true);
+    swatch(GLASSES_STYLES, "glassesStyle", $("#glasses-choices"), false, "glasses");
+    swatch(GLASSES_COLORS, "glassesColor", $("#glasses-color-choices"), true);
+    swatch(NECKLACES, "necklace", $("#necklace-choices"), false, "necklace");
+    const gToggle = $("#glasses-toggle");
+    if (gToggle) gToggle.checked = state.draft.glassesStyle && state.draft.glassesStyle !== "none";
   }
 
   /* ---------- lobby ---------- */
@@ -301,6 +374,7 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     const shop = $("#shop-panel-coins");
     if (shop) shop.textContent = `🪙 ${n}`;
     updatePhoneBadge();
+    if (typeof coinsPanelOpen === "function" && coinsPanelOpen()) paintCoinsPanel();
   }
 
   function showAddSheet() {
@@ -691,9 +765,11 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     $("#room-title").textContent = "Cube: " + room.name;
     $("#room-meta").textContent = "Owner: " + room.owner;
     updatePhoneBadge();
+    syncEditRoomButton();
     const r3 = ensureRoom3D();
     r3.setGridSize(room.size || 6);
     r3.setStyle(room.wallpaper || "paint-cream", room.floorStyle || "wood");
+    r3.setDecor?.(normalizeDecor(room));
     r3.setFurniture(room.furniture || []);
     r3.setPlacedPets?.(room.pets || []);
     r3.setNpcs?.(room.npcs || []);
@@ -756,15 +832,21 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     return `<div class="speech-bubble${fade}"><span class="bubble-name" style="background:${tab.bg};color:${tab.fg}">${escapeHtml(displayOf(p))}</span><span class="bubble-text">${escapeHtml(text)}</span></div>`;
   }
 
+  const CHAT_MAX = 120;
   const CHAT_ROW_H = 24;
-  function layoutChatRows(baseY) {
+  const CHAT_STACK_GAP = 6;
+  const CHAT_RISE_STEP = 24;
+  const CHAT_ROW_MS = 2250;
+  function layoutChatRows(baseY, heights) {
     const list = state.chatFloats || [];
     if (!list.length) return;
-    const base = baseY;
-    for (let i = 0; i < list.length; i++) {
+    let y = baseY;
+    for (let i = list.length - 1; i >= 0; i--) {
       const row = list.length - 1 - i;
       list[i].row = row;
-      list[i].targetY = base - row * CHAT_ROW_H;
+      list[i].targetY = y;
+      const h = Math.max(CHAT_ROW_H, heights?.[i] || list[i].height || CHAT_ROW_H);
+      y -= h + CHAT_STACK_GAP;
     }
   }
   function pushChatFloat(p, text) {
@@ -794,8 +876,10 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
   function stepChatRows() {
     if (!state.chatFloats) state.chatFloats = [];
     if (!state.chatFloats.length) return;
-    const newest = state.chatFloats[state.chatFloats.length - 1];
-    layoutChatRows(newest.targetY - CHAT_ROW_H);
+    for (const b of state.chatFloats) b.targetY -= CHAT_RISE_STEP;
+    for (let i = 0; i < state.chatFloats.length; i++) {
+      state.chatFloats[i].row = state.chatFloats.length - 1 - i;
+    }
     state.chatQuietAt = Date.now();
   }
 
@@ -892,10 +976,8 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
         state.lastBoxing.set(p.username, nowBox);
       }
     }
-    // Habbo/MyCoke rows: newest just above head height; each new line
-    // and each quiet tick pushes every older bubble up exactly one row.
-    const CHAT_ROW_H = 24;
-    const CHAT_ROW_MS = 4500;
+    // Habbo/MyCoke rows: newest just above head height; older bubbles stack
+    // by their measured height plus a gap so long messages never overlap.
     const CHAT_FADE_TOP = 16;
     if (!state.chatFloats) state.chatFloats = [];
     if (state.chatFloats.length && state.chatQuietAt && now - state.chatQuietAt >= CHAT_ROW_MS) {
@@ -904,7 +986,7 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     const usedIds = new Set();
     const latestOf = new Map();
     for (const b of state.chatFloats) latestOf.set(b.username, b);
-    const remain = [];
+    const els = [];
     for (const b of state.chatFloats) {
       const p = state.people.get(b.username);
       if (p) {
@@ -928,6 +1010,16 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
         el.dataset.sig = sig;
         el.innerHTML = bubbleMarkup(p || { username: b.username, avatar: { displayName: b.username } }, b.text, false);
       }
+      b.height = el.offsetHeight || b.height || CHAT_ROW_H;
+      els.push({ b, el, testid });
+    }
+    if (state.chatFloats.length) {
+      const newest = state.chatFloats[state.chatFloats.length - 1];
+      layoutChatRows(newest.targetY, state.chatFloats.map((b) => b.height));
+    }
+    const remain = [];
+    for (const { b, el } of els) {
+      el.dataset.row = String(b.row);
       const w = el.offsetWidth || 80;
       const bx = Math.min(Math.max(b.x, PAD + w / 2), W - PAD - w / 2);
       const by = b.targetY;
@@ -1212,8 +1304,10 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     return Boolean(g && g.ok);
   }
   function showPlaceActions() {
+    HIDE($("#place-actions"));
     const bar = $("#place-actions");
     if (!bar) return;
+    if (state.editMode) return;
     // Existing furniture uses the compact furn-actions bar (Rotate / Put away / Place).
     // New inventory placements use place-actions (Cancel / Rotate / Place).
     const furnBarOn = Boolean(state.movingId || state.movingWallId || (state.selectedFurnId && !$("#furn-actions")?.classList.contains("hidden")));
@@ -1459,7 +1553,7 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
 
   function openWardrobe(id) {
     state.wardId = id;
-    state.draft = { ...HearthAvatar.defaults(), ...(state.me?.avatar || {}) };
+    state.draft = migrateAvatar({ ...HearthAvatar.defaults(), ...(state.me?.avatar || {}) });
     SHOW($("#wardrobe-panel"));
     paintWardrobe();
   }
@@ -1529,19 +1623,35 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     state.phoneApp = "edit";
     setPhoneExpanded?.(true);
   }
+  function syncEditRoomButton() {
+    const btn = $("#edit-room-btn");
+    if (!btn) return;
+    const on = isOwner();
+    btn.classList.toggle("hidden", !on);
+    btn.setAttribute("aria-pressed", state.editMode ? "true" : "false");
+    btn.classList.toggle("is-on", Boolean(state.editMode));
+  }
+  function toggleEditMode() {
+    if (state.editMode) exitEditMode();
+    else enterEditMode();
+  }
   function enterEditMode() {
     if (!isOwner()) {
       toast("Only the cube owner can decorate.");
       return;
     }
-    if (phoneOpen()) closePhone();
+    if (phoneOpen()) hidePhoneUI();
+    endPhoneHoldIfIdle();
+    if (isChatOpen?.()) closeChatComposer?.();
     state.editMode = true;
+    state.editTab = state.editTab || "furniture";
     document.body.classList.add("edit-mode");
     SHOW($("#edit-inventory"));
     paintEditInventory();
     bindEditInvDrag();
     state.room3d?.setPlacing("edit");
     state.room3d?.setPanLocked?.(false);
+    syncEditRoomButton();
     syncAppShell();
   }
 
@@ -1549,19 +1659,53 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     state.editMode = false;
     document.body.classList.remove("edit-mode");
     HIDE($("#edit-inventory"));
+    $("#edit-inventory")?.classList.remove("putaway-hover");
     hideFurnActions();
     cancelPlace();
     state.selectedFurnId = null;
+    state.selectedPet = null;
     state.movingId = null;
     state.room3d?.highlightFurniture(null);
     state.room3d?.setPlacing(null);
     state.room3d?.setPanLocked?.(false);
+    syncEditRoomButton();
     syncAppShell();
   }
 
+  function setEditTab(tab) {
+    state.editTab = tab || "furniture";
+    if (tab !== "room") state.decorSection = state.decorSection || "floor";
+    paintEditInventory();
+  }
+  function currentDecor() {
+    return normalizeDecor(state.room || {});
+  }
+  function applyDecorPatch(patch) {
+    const next = normalizeDecor({ ...currentDecor(), ...patch });
+    state.room = Object.assign(state.room || {}, next);
+    state.room3d?.setDecor?.(next);
+    socket.emit("setRoomStyle", next);
+    paintEditInventory();
+  }
   function paintEditInventory() {
     const box = $("#edit-inv-items");
     if (!box) return;
+    const tab = state.editTab || "furniture";
+    document.querySelectorAll("#edit-inv-tabs [data-tab]").forEach((b) => {
+      const on = b.dataset.tab === tab;
+      b.classList.toggle("is-on", on);
+      b.setAttribute("aria-selected", on ? "true" : "false");
+    });
+    const chips = $("#edit-decor-chips");
+    if (chips) chips.classList.toggle("hidden", tab !== "room");
+    if (tab === "room") {
+      paintDecorTab(box);
+      return;
+    }
+    if (tab === "upgrade") {
+      paintUpgradeTab(box);
+      return;
+    }
     const counts = {};
     for (const t of state.me?.inventory || []) counts[t] = (counts[t] || 0) + 1;
     const types = Object.keys(counts);
@@ -1592,15 +1736,79 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
         state.movingId = null;
         state.selectedFurnId = null;
         hideFurnActions();
+        state._selectAfterPlace = true;
         startPlace(b.dataset.place);
+        confirmGhostPlace();
       });
     });
     box.querySelectorAll("[data-pet-place]").forEach((b) => {
       b.addEventListener("click", () => {
         if (state._invDragging) return;
+        state._selectAfterPlace = true;
         startPlacePet(b.dataset.petPlace);
+        confirmPlacePet();
       });
     });
+  }
+  function paintDecorTab(box) {
+    const section = state.decorSection || "floor";
+    document.querySelectorAll("#edit-decor-chips [data-decor]").forEach((b) => {
+      b.classList.toggle("is-on", b.dataset.decor === section);
+    });
+    const group = DECOR_GROUPS.find((g) => g.id === section) || DECOR_GROUPS[0];
+    const decor = currentDecor();
+    const bits = [];
+    const addItems = (list, kind, key) => {
+      for (const it of list) {
+        const on = decor[key] === it.id ? " selected" : "";
+        bits.push(`<button type="button" class="edit-decor-item${on}" data-testid="decor-${key}-${it.id}" data-decor-key="${key}" data-decor-id="${it.id}" title="${escapeHtml(it.name)}" aria-label="${escapeHtml(it.name)}">
+          <canvas width="40" height="28" data-decor-thumb="${kind}" data-decor-id="${it.id}" aria-hidden="true"></canvas>
+          <span>${escapeHtml(it.name)}</span>
+        </button>`);
+      }
+    };
+    if (group.colors) {
+      addItems(group.colors, group.colorKey, group.colorKey);
+    }
+    if (group.patterns) {
+      addItems(group.patterns, group.patternKey, group.patternKey);
+    }
+    if (group.options) {
+      addItems(group.options, group.key, group.key);
+    }
+    box.innerHTML = bits.join("");
+    box.querySelectorAll("canvas[data-decor-thumb]").forEach((c) => {
+      paintDecorThumb(c, c.dataset.decorThumb, c.dataset.decorId, decor);
+    });
+    box.querySelectorAll("[data-decor-key]").forEach((b) => {
+      b.addEventListener("click", () => applyDecorPatch({ [b.dataset.decorKey]: b.dataset.decorId }));
+    });
+  }
+  function paintUpgradeTab(box) {
+    const size = state.room?.size || 6;
+    const tiers = [
+      { size: 6, cost: 0 },
+      { size: 8, cost: 25 },
+      { size: 10, cost: 40 },
+    ];
+    const coins = state.me?.coins ?? 0;
+    const bits = tiers.map((t) => {
+      const current = size === t.size;
+      const owned = size >= t.size;
+      const next = (size === 6 && t.size === 8) || (size === 8 && t.size === 10);
+      const can = next && coins >= t.cost;
+      let action = "";
+      if (current) action = `<span class="up-cost">Current</span>`;
+      else if (owned) action = `<span class="up-cost">Owned</span>`;
+      else if (next) action = `<button type="button" class="edit-upgrade-buy" data-testid="upgrade-cube" ${can ? "" : "disabled"}>🪙 ${t.cost}</button>`;
+      else action = `<span class="up-cost">🪙 ${t.cost}</span>`;
+      return `<div class="edit-upgrade-item${current ? " is-current" : ""}" data-testid="upgrade-tier-${t.size}">
+        <div class="up-size">${t.size}×${t.size}</div>
+        ${action}
+      </div>`;
+    });
+    box.innerHTML = bits.join("");
+    box.querySelector("[data-testid=upgrade-cube]")?.addEventListener("click", () => socket.emit("upgradeCube"));
   }
 
   function bindEditInvDrag() {
@@ -1614,19 +1822,19 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
       if (!item) return;
       const typ = item.dataset.place;
       const pet = item.dataset.petPlace;
-      state.movingId = null;
-      state.selectedFurnId = null;
-      hideFurnActions();
-      if (typ) startPlace(typ);
-      else if (pet) startPlacePet(pet);
       drag = { x: e.clientX, y: e.clientY, moved: false, typ, pet };
       try { item.setPointerCapture?.(e.pointerId); } catch {}
     });
     box.addEventListener("pointermove", (e) => {
       if (!drag) return;
-      if (Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > 8) {
+      if (!drag.moved && Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > 8) {
         drag.moved = true;
         state._invDragging = true;
+        state.movingId = null;
+        state.selectedFurnId = null;
+        hideFurnActions();
+        if (drag.typ) startPlace(drag.typ);
+        else if (drag.pet) startPlacePet(drag.pet);
       }
       if (!drag.moved) return;
       const tile = tileAt(e.clientX, e.clientY);
@@ -1758,19 +1966,18 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
 
   function hideFurnActions() {
     HIDE($("#furn-actions"));
+    HIDE($("#item-rotate"));
   }
 
   function showFurnActions(id) {
     state.selectedFurnId = id;
     state.room3d?.highlightFurniture(id);
-    SHOW($("#furn-actions"));
-    updateFurnActionPos();
+    HIDE($("#furn-actions"));
     HIDE($("#place-actions"));
-    const fp = $("#furn-place");
-    const ok = currentPlaceOk();
-    if (fp) {
-      fp.disabled = !ok;
-      fp.classList.toggle("disabled", !ok);
+    const rot = $("#item-rotate");
+    if (rot) {
+      SHOW(rot);
+      updateFurnActionPos();
     }
   }
 
@@ -1823,6 +2030,12 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
 
   function handleGrabStart(hit) {
     state._grabbing = true;
+    state._grabMoved = false;
+    state._grabStartX = null;
+    state._grabStartY = null;
+    state._grabOrigin = null;
+    const f0 = hit?.id && (state.room?.furniture || []).find((x) => x.id === hit.id);
+    if (f0) state._grabOrigin = { x: f0.x, y: f0.y, rot: f0.rot };
     if (!state.editMode) return;
     if (hit?.kind === "ghost") return;
     if (state.pendingPlace && !state.movingId && !state.movingWallId) return;
@@ -1838,6 +2051,16 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
   }
   function handleGrabMove(cx, cy, hit) {
     state._grabbing = true;
+    if (state._grabStartX == null) { state._grabStartX = cx; state._grabStartY = cy; }
+    if (Math.hypot(cx - state._grabStartX, cy - state._grabStartY) > 8) state._grabMoved = true;
+    const invHover = state.editMode && (function () {
+      const inv = $("#edit-inventory");
+      if (!inv || inv.classList.contains("hidden")) return false;
+      const r = inv.getBoundingClientRect();
+      return cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom;
+    })();
+    $("#edit-inventory")?.classList.toggle("putaway-hover", Boolean(invHover));
+    if (invHover) return;
     if (pendingWallType()) {
       const at = state.room3d?.pickHitAt?.(cx, cy);
       if (at?.kind === "wall") updateWallHighlight(at.wall, at.slot);
@@ -1848,12 +2071,54 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     if (state.pendingPet) updatePetPlaceHighlight(tile.x, tile.y);
     else updatePlaceHighlight(tile.x, tile.y);
   }
+  function overEditInventory(cx, cy) {
+    const inv = $("#edit-inventory");
+    if (!inv || inv.classList.contains("hidden")) return false;
+    const r = inv.getBoundingClientRect();
+    return cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom;
+  }
+  function putAwaySelected() {
+    if (state.selectedPet?.item) {
+      socket.emit("putAwayPet", { item: state.selectedPet.item, id: state.selectedPet.id });
+      state.selectedPet = null;
+    } else if (state.movingWallId || (state.selectedFurnId && (state.room?.wallArt || []).some((a) => a.id === state.selectedFurnId))) {
+      socket.emit("pickupWallArt", { id: state.movingWallId || state.selectedFurnId });
+    } else if (state.movingId || state.selectedFurnId) {
+      socket.emit("pickupFurniture", { id: state.movingId || state.selectedFurnId });
+    }
+    cancelPlace();
+    state.selectedFurnId = null;
+    hideFurnActions();
+    state.room3d?.highlightFurniture(null);
+    $("#edit-inventory")?.classList.remove("putaway-hover");
+  }
   function handleGrabEnd(cx, cy, hit) {
     handleGrabMove(cx, cy, hit);
+    const moved = state._grabMoved || overEditInventory(cx, cy);
     state._grabbing = false;
+    $("#edit-inventory")?.classList.remove("putaway-hover");
+    if (overEditInventory(cx, cy) && state.editMode) { putAwaySelected(); return; }
+    if (!moved) {
+      if (state.movingId || state.movingWallId) {
+        const id = state.movingId || state.movingWallId || state.selectedFurnId;
+        state.movingId = null;
+        state.movingWallId = null;
+        state.pendingPlace = null;
+        state.room3d?.setGhost(null);
+        state.room3d?.setWallGhost(null);
+        if (id) showFurnActions(id);
+      }
+      return;
+    }
     if (pendingWallType()) {
       const g = state.room3d?.getWallGhost?.();
       if (g && g.ok) confirmWallGhost();
+      else {
+        const art = (state.room?.wallArt || []).find((x) => x.id === state.movingWallId);
+        if (art) updateWallHighlight(art.wall, art.slot);
+        state.movingWallId = null;
+        state.room3d?.setWallGhost(null);
+      }
       return;
     }
     if (state.pendingPet) {
@@ -1863,17 +2128,31 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     }
     if (state.pendingPlace || state.movingId) {
       const g = state.room3d?.getGhost?.();
-      if (g && g.ok) confirmGhostPlace();
+      if (g && g.ok) {
+        state._deselectAfterCommit = true;
+        confirmGhostPlace();
+        if (state.editMode) {
+          cancelPlace();
+          hideFurnActions();
+          state.selectedFurnId = null;
+          state.room3d?.highlightFurniture(null);
+        }
+      } else if (state._grabOrigin) {
+        updatePlaceHighlight(state._grabOrigin.x, state._grabOrigin.y);
+        state.movingId = null;
+        state.room3d?.setGhost(null);
+        if (state.selectedFurnId) showFurnActions(state.selectedFurnId);
+      }
     }
   }
 
   function updateFurnActionPos() {
-    const bar = $("#furn-actions");
+    const bar = $("#item-rotate") || $("#furn-actions");
     if (!bar || bar.classList.contains("hidden") || !state.selectedFurnId) return;
-    const pos = state.room3d?.projectFurniture(state.selectedFurnId);
+    const pos = state.room3d?.projectFurniture(state.selectedFurnId) || state.room3d?.projectPet?.(state.selectedFurnId);
     if (!pos || !pos.visible) return;
     bar.style.left = pos.x + "px";
-    bar.style.top = pos.y + "px";
+    bar.style.top = Math.max(24, pos.y - 8) + "px";
   }
 
   function inBoundsTile(x, y, size) {
@@ -2018,6 +2297,8 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
   }
 
   function closeStorePanel() {
+    state.shopFromPhone = false;
+    endPhoneHoldIfIdle();
     HIDE($("#store-panel"));
     setShopOpenUi(false);
     if (state.storePreview) {
@@ -2262,7 +2543,9 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     const stock = storeStock(k);
     const idOf = (s) => s.id || s.type;
     state.storeSel = sku && stock.some((s) => idOf(s) === sku) ? sku : idOf(stock[0] || {});
-    if (phoneOpen()) closePhone();
+    if (phoneOpen() || state.phoneHeld) state.shopFromPhone = true;
+    if (phoneOpen()) hidePhoneUI();
+    if (typeof closeCoinsPanel === "function") closeCoinsPanel();
     SHOW($("#store-panel"));
     setShopOpenUi(true);
     paintStorePanel();
@@ -2558,18 +2841,26 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     return Math.max(0, Math.round(layoutH - vv.height - (vv.offsetTop || 0)));
   }
   try { localStorage.removeItem("mycubeKbReserve"); } catch {}
+  function chromeBottom() {
+    const vv = window.visualViewport;
+    const layoutH = window.innerHeight;
+    if (!vv) return 0;
+    const gap = Math.max(0, Math.round(layoutH - vv.height - (vv.offsetTop || 0)));
+    // A software keyboard is much taller than Safari's toolbar (~44–60px).
+    if (gap >= 120) return null;
+    return gap;
+  }
   function measureChatFrame() {
     const root = document.documentElement;
-    const dock = document.getElementById("chat-dock");
-    if (!dock) return;
-    const dockH = Math.round(dock.getBoundingClientRect().height);
     const inv = document.getElementById("edit-inventory");
     const invH = (inv && !inv.classList.contains("hidden")) ? Math.round(inv.getBoundingClientRect().height) : 0;
-    const h = dockH + invH;
-    if (h > 0) {
-      root.style.setProperty("--dock-h", h + "px");
-      document.querySelector(".room-view")?.style.setProperty("--dock-h", h + "px");
-    }
+    const chrome = getComputedStyle(root).getPropertyValue("--chrome-bottom").trim();
+    const chromePx = parseFloat(chrome) || 0;
+    const h = invH + Math.max(8, chromePx);
+    root.style.setProperty("--dock-h", h + "px");
+    root.style.setProperty("--inv-h", invH + "px");
+    document.querySelector(".room-view")?.style.setProperty("--dock-h", h + "px");
+    document.querySelector(".room-view")?.style.setProperty("--inv-h", invH + "px");
   }
 
   function syncAppShell() {
@@ -2596,10 +2887,16 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     const kb = keyboardHeight();
     const root = document.documentElement;
     const px = kb + "px";
-    // Lift only the chat frame (dock + edit row). Do not change --dock-h,
-    // pan, scale, or resize the room; the keyboard overlays it.
+    // Only the slim composer anchors to the keyboard. The room and fabs stay put.
     root.style.setProperty("--kb-inset", px);
     document.querySelector(".room-view")?.style.setProperty("--kb-inset", px);
+    const chrome = chromeBottom();
+    if (chrome != null) {
+      const cpx = chrome + "px";
+      root.style.setProperty("--chrome-bottom", cpx);
+      document.querySelector(".room-view")?.style.setProperty("--chrome-bottom", cpx);
+    }
+    measureChatFrame();
   }
 
   let typingOn = false;
@@ -2638,9 +2935,17 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     }
   }
 
+  function updateChatCount() {
+    const el = $("#chat-input");
+    const count = $("#chat-count");
+    if (!el || !count) return;
+    if (el.value.length > CHAT_MAX) el.value = el.value.slice(0, CHAT_MAX);
+    count.textContent = `${el.value.length}/${CHAT_MAX}`;
+  }
   function autosizeChat() {
     const el = $("#chat-input");
     if (!el) return;
+    updateChatCount();
     el.style.height = "44px";
     const val = el.value.trim();
     if (val) emitTyping(true);
@@ -2770,6 +3075,38 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
   function phoneOpen() {
     return Boolean($("#phone-overlay") && !$("#phone-overlay").classList.contains("hidden"));
   }
+  function isEditCharOpen() {
+    const el = $("#edit-char-overlay");
+    return Boolean(el && !el.classList.contains("hidden") && !el.hasAttribute("hidden"));
+  }
+  function phoneHoldActive() {
+    return Boolean(phoneOpen() || isEditCharOpen() || isPhoneEditOpen() || (typeof storePanelOpen === "function" && storePanelOpen() && state.shopFromPhone));
+  }
+  function beginPhoneHold() {
+    if (state.phoneHeld) return;
+    state.phoneHeld = true;
+    socket.emit("usePhone", { on: true });
+  }
+  function endPhoneHoldIfIdle() {
+    if (!state.phoneHeld) return;
+    if (phoneHoldActive()) return;
+    state.phoneHeld = false;
+    socket.emit("usePhone", { on: false });
+  }
+  function hidePhoneUI() {
+    if (isPhoneEditOpen() && !isEditCharOpen()) {
+      persistDraft();
+      closeFromPhone();
+      state.creatorReturn = null;
+      HIDE($("#creator-back"));
+    }
+    dockSpinInPhone(false);
+    HIDE($("#phone-overlay"));
+    document.body.classList.remove("phone-open");
+    setPhoneExpanded(false);
+    $("#phone-btn")?.setAttribute("aria-expanded", "false");
+    state.phoneApp = null;
+  }
 
   function setPhoneExpanded(on) {
     $("#phone-overlay")?.classList.toggle("app-open", Boolean(on));
@@ -2790,20 +3127,9 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
   }
 
   function closePhone() {
-    if (isPhoneEditOpen()) {
-      persistDraft();
-      closeFromPhone();
-      state.creatorReturn = null;
-      HIDE($("#creator-back"));
-    }
-    const wasOpen = phoneOpen();
-    dockSpinInPhone(false);
-    HIDE($("#phone-overlay"));
-    document.body.classList.remove("phone-open");
-    setPhoneExpanded(false);
-    $("#phone-btn")?.setAttribute("aria-expanded", "false");
-    state.phoneApp = null;
-    if (wasOpen) socket.emit("usePhone", { on: false });
+    hidePhoneUI();
+    if (isEditCharOpen()) return;
+    endPhoneHoldIfIdle();
   }
 
   function paintPhoneEditPreview() {
@@ -2895,7 +3221,7 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     showPetActions(pet);
   }
 
-    const OWNER_APPS = new Set(["edit", "invite", "lock", "upgrade"]);
+    const OWNER_APPS = new Set(["invite", "lock"]);
   const APP_TITLES = {
     edit: "Edit Room",
     shop: "Shop",
@@ -2905,11 +3231,17 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
   };
 
   function openPhone(app) {
+    if (app === "coins") {
+      openCoinsPanel();
+      return;
+    }
     if (app === "shop" || app === "clothes-store" || app === "pets-store") {
       openPhoneApp(app);
       return;
     }
     if (storePanelOpen()) closeStorePanel();
+    if (typeof closeCoinsPanel === "function") closeCoinsPanel();
+    if (typeof closeChatComposer === "function" && isChatOpen?.()) closeChatComposer();
     const wasOpen = phoneOpen();
     state.phoneBadgeSeen = true;
     tickPhoneTime();
@@ -2917,7 +3249,7 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     SHOW($("#phone-overlay"));
     document.body.classList.add("phone-open");
     $("#phone-btn")?.setAttribute("aria-expanded", "true");
-    if (!wasOpen) socket.emit("usePhone", { on: true });
+    if (!wasOpen) beginPhoneHold();
     if (app) openPhoneApp(app);
     else showPhoneHome();
   }
@@ -2943,7 +3275,7 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
       SHOW($("#phone-overlay"));
       document.body.classList.add("phone-open");
       $("#phone-btn")?.setAttribute("aria-expanded", "true");
-      socket.emit("usePhone", { on: true });
+      beginPhoneHold();
     }
     if (OWNER_APPS.has(app) && !isOwner()) {
       const title = APP_TITLES[app] || "App";
@@ -3111,12 +3443,11 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     if (!state.pendingPet) return;
     const size = state.room?.size || 6;
     const cx = (size - 1) / 2;
-    const occupied = new Set((state.room?.pets || []).filter((p) => p.item !== state.pendingPet || p.owner !== state.me?.username).map((p) => p.x + "," + p.y));
+    const ignore = { owner: state.me?.username, item: state.pendingPet };
     const spots = [];
     for (let y = 0; y < size; y++) {
       for (let x = 0; x < size; x++) {
-        const furnOk = HouseIso.canPlace(state.room?.furniture || [], "plant", x, y, size, 0);
-        if (furnOk && !occupied.has(x + "," + y)) {
+        if (HouseIso.canPlacePet(state.room?.furniture || [], state.room?.pets || [], x, y, size, ignore)) {
           spots.push({ x, y, d: Math.hypot(x - cx, y - cx) });
         }
       }
@@ -3130,9 +3461,8 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
       return;
     }
     const size = state.room?.size || 6;
-    const occupied = (state.room?.pets || []).some((p) => p.x === tx && p.y === ty && p.item !== state.pendingPet);
-    const furnOk = HouseIso.canPlace(state.room?.furniture || [], "plant", tx, ty, size, 0);
-    const ok = Boolean(furnOk) && !occupied && tx >= 0 && ty >= 0 && tx < size && ty < size;
+    const ignore = { owner: state.me?.username, item: state.pendingPet };
+    const ok = HouseIso.canPlacePet(state.room?.furniture || [], state.room?.pets || [], tx, ty, size, ignore);
     state.room3d?.setPetGhost?.(state.pendingPet, tx, ty, ok);
     showPlaceActions();
     const conf = $("#place-confirm");
@@ -3170,41 +3500,69 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     });
   }
 
-  function paintPhoneCoins() {
-    const body = $("#phone-coins-body");
-    if (!body || !state.me) return;
-    const r = state.me.rewards || {};
-    const packs = r.packs || {};
-    const adsLeft = r.adsLeft ?? 3;
+  function defaultCoinPacks() {
+    return state.me?.rewards?.packs || {
+      starter: { coins: 80, price: "$0.99", label: "Starter pack" },
+      bundle: { coins: 500, price: "$4.99", label: "Bundle" },
+      stack: { coins: 1200, price: "$9.99", label: "Stack" },
+    };
+  }
+  function coinsPanelOpen() {
+    const el = $("#coins-panel");
+    return Boolean(el && !el.classList.contains("hidden"));
+  }
+  function closeCoinsPanel() {
+    const el = $("#coins-panel");
+    if (el) HIDE(el);
+    document.body.classList.remove("coins-open");
+    $("#room-coins-btn")?.setAttribute("aria-expanded", "false");
+    $("#room-coins-btn")?.setAttribute("aria-label", "Open coins");
+  }
+  function paintCoinsPanel() {
+    const body = $("#coins-panel-body");
+    if (!body) return;
+    const packs = defaultCoinPacks();
+    const adsLeft = state.me?.rewards?.adsLeft ?? 3;
     const packHtml = Object.entries(packs)
       .map(
         ([id, pack]) => `
-      <button type="button" class="pack-card" data-pack="${id}">
-        <strong>${pack.label || id}</strong>
-        <span>+${pack.coins} coins</span>
+      <button type="button" class="coins-pack pack-card" data-pack="${id}" data-testid="coin-pack-${id}">
+        <span class="pack-meta"><strong>${pack.label || id}</strong><span class="pack-coins">+${pack.coins} coins</span></span>
         <span class="pack-price">${pack.price}</span>
       </button>`
       )
       .join("");
     body.innerHTML = `
-      <p class="lede">You have 🪙 ${state.me.coins ?? 0}. Watch an ad or grab a coin pack.</p>
-      <button class="btn small" type="button" id="phone-watch-ad" ${adsLeft <= 0 ? "disabled" : ""}>${
-      adsLeft > 0 ? `Watch ad · +15 coins (${adsLeft} left today)` : "Ad cap reached today"
+      <button class="coins-watch-ad" type="button" data-testid="coins-watch-ad" id="coins-watch-ad" ${adsLeft <= 0 ? "disabled" : ""}>${
+      adsLeft > 0 ? `Watch ad for coins · +15 (${adsLeft} left today)` : "Ad cap reached today"
     }</button>
-      <h3 style="margin-top:16px">Coin store</h3>
-      <p class="item-sub">Prototype checkout — real purchases would use Apple In-App Purchase.</p>
-      <div class="pack-row">${packHtml}</div>
+      <div class="coins-pack-row">${packHtml}</div>
     `;
-    $("#phone-watch-ad")?.addEventListener("click", () => playAd("coins"));
+    $("#coins-watch-ad")?.addEventListener("click", () => playAd("coins"));
     body.querySelectorAll("[data-pack]").forEach((b) => {
       b.addEventListener("click", () => {
         state.pendingPack = b.dataset.pack;
         const pack = packs[b.dataset.pack];
+        if (!pack) return;
         $("#buy-confirm-copy").textContent = `Get ${pack.coins} coins for ${pack.price}? This is a fake purchase for the prototype.`;
         SHOW($("#buy-confirm"));
       });
     });
   }
+  function openCoinsPanel() {
+    if (storePanelOpen()) closeStorePanel();
+    if (phoneOpen()) closePhone();
+    paintCoinsPanel();
+    SHOW($("#coins-panel"));
+    document.body.classList.add("coins-open");
+    $("#room-coins-btn")?.setAttribute("aria-expanded", "true");
+    $("#room-coins-btn")?.setAttribute("aria-label", "Close coins");
+  }
+  function toggleCoinsPanel() {
+    if (coinsPanelOpen()) closeCoinsPanel();
+    else openCoinsPanel();
+  }
+  function paintPhoneCoins() { paintCoinsPanel(); }
 
   function paintUpgrade() {
     const body = $("#phone-upgrade-body");
@@ -3232,7 +3590,7 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     if (state.phoneApp === "lock") paintLock();
     if (state.phoneApp === "pets") paintPets();
     if (state.phoneApp === "props") paintProps();
-    if (state.phoneApp === "coins") paintPhoneCoins();
+    if (coinsPanelOpen()) paintCoinsPanel();
     if (state.phoneApp === "upgrade") paintUpgrade();
   }
 
@@ -3255,11 +3613,13 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
   }
 
   function closePhoneEditor() {
-    if (!isPhoneEditOpen()) return;
+    if (!isEditCharOpen() && !isPhoneEditOpen()) return;
+    persistDraft();
     closeFromPhone();
     state.creatorReturn = null;
     HIDE($("#creator-back"));
-    showPhoneHome();
+    hidePhoneUI();
+    endPhoneHoldIfIdle();
   }
 
   function openCharacterEditor(returnTo = "room") {
@@ -3267,25 +3627,23 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     const nameEl = $("#display-name");
     if (nameEl) nameEl.value = state.draft.displayName || state.me?.username || "";
     paintCreator();
-    SHOW($("#creator-back"));
     if ((returnTo === "phone" || returnTo === "room") && state.view === "room" && state.room) {
       state.creatorReturn = "phone";
-      // Reveal the handset without emitting usePhone, so a seated or mid-action
-      // avatar is not stood up or cancelled.
-      if (!phoneOpen()) SHOW($("#phone-overlay"));
+      beginPhoneHold();
+      hidePhoneUI();
       if (!openFromPhone()) return;
       applyDraftLive();
-      paintPhoneEditPreview();
+      state.preview3d?.resize?.();
       return;
     }
-    // Lobby / leftover full-screen path (sign-out / You / new-flow).
     closePhone();
     state.creatorReturn = returnTo === "phone" ? "room" : returnTo;
+    SHOW($("#creator-back"));
     setView("creator");
   }
 
   function returnFromCreator() {
-    if (isPhoneEditOpen() || state.creatorReturn === "phone") {
+    if (isEditCharOpen() || isPhoneEditOpen() || state.creatorReturn === "phone") {
       persistDraft();
       closePhoneEditor();
       return;
@@ -3313,13 +3671,15 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     state.draft.displayName = $("#display-name").value;
     if (isPhoneEditOpen()) applyDraftLive();
   });
-  $("#glasses-toggle").addEventListener("change", () => {
-    state.draft.glasses = $("#glasses-toggle").checked;
+  $("#glasses-toggle")?.addEventListener("change", () => {
+    const on = $("#glasses-toggle").checked;
+    state.draft.glassesStyle = on ? (state.draft.glassesStyle && state.draft.glassesStyle !== "none" ? state.draft.glassesStyle : "round") : "none";
+    state.draft.glasses = on;
     paintCreator();
   });
   $("#save-avatar").addEventListener("click", () => {
     persistDraft();
-    if (isPhoneEditOpen() || state.creatorReturn === "phone") {
+    if (isEditCharOpen() || isPhoneEditOpen() || state.creatorReturn === "phone") {
       closePhoneEditor();
     }
   });
@@ -3332,6 +3692,14 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     setView("creator");
   });
   $("#creator-back")?.addEventListener("click", returnFromCreator);
+  $("#edit-char-done")?.addEventListener("click", () => {
+    persistDraft();
+    closePhoneEditor();
+  });
+  $("#edit-char-rotate, #creator-rotate")?.addEventListener?.("click", () => state.preview3d?.cycleFacing?.());
+  document.getElementById("creator-rotate")?.addEventListener("click", () => state.preview3d?.cycleFacing?.());
+  document.querySelectorAll("[data-testid=edit-char-rotate]").forEach((b) => b.addEventListener("click", () => state.preview3d?.cycleFacing?.()));
+  $("#save-avatar")?.setAttribute("aria-label", "Looks good");
 
   $("#room-locked").addEventListener("change", () => {
     $("#password-field").classList.toggle("hidden", !$("#room-locked").checked);
@@ -3458,8 +3826,26 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
       showPhoneHome();
     });
   });
-  $("#room-coins-btn")?.addEventListener("click", () => openPhone("coins"));
+  $("#room-coins-btn")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    toggleCoinsPanel();
+  });
+  $("#coins-panel-close")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    closeCoinsPanel();
+  });
+  document.addEventListener("pointerdown", (e) => {
+    if (!coinsPanelOpen()) return;
+    const t = e.target;
+    if (t?.closest?.("#coins-panel, #room-coins-btn, #buy-confirm, #ad-overlay")) return;
+    closeCoinsPanel();
+  });
+
   document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && coinsPanelOpen()) {
+      closeCoinsPanel();
+      return;
+    }
     if (e.key === "Escape" && phoneOpen()) {
       if (state.phoneApp && state.phoneApp !== "home") showPhoneHome();
       else closePhone();
@@ -3704,11 +4090,54 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
   $("#emote-eat")?.addEventListener("click", () => socket.emit("emote", { type: "eat" }));
   $("#emote-drink")?.addEventListener("click", () => socket.emit("emote", { type: "drink" }));
   window.__emote = (type) => socket.emit("emote", { type });
+  function isChatOpen() {
+    return document.body.classList.contains("chat-open");
+  }
+  function openChatComposer() {
+    const composer = document.getElementById("chat-composer");
+    const btn = document.getElementById("chat-bubble-btn");
+    const input = document.getElementById("chat-input");
+    if (composer) {
+      composer.classList.remove("hidden");
+      composer.classList.add("is-open");
+    }
+    document.body.classList.add("chat-open");
+    btn?.setAttribute("aria-expanded", "true");
+    updateChatCount();
+    ignorePhoneTaps(300);
+    lockPageScroll();
+    requestAnimationFrame(() => {
+      input?.focus?.({ preventScroll: true });
+      lockPageScroll();
+      syncKeyboardInset();
+    });
+  }
+  function closeChatComposer() {
+    const composer = document.getElementById("chat-composer");
+    const btn = document.getElementById("chat-bubble-btn");
+    const input = document.getElementById("chat-input");
+    input?.blur?.();
+    if (composer) {
+      composer.classList.add("hidden");
+      composer.classList.remove("is-open");
+    }
+    document.body.classList.remove("chat-open");
+    btn?.setAttribute("aria-expanded", "false");
+    emitTyping(false);
+    syncKeyboardInset();
+  }
+  function toggleChatComposer() {
+    if (isChatOpen()) closeChatComposer();
+    else openChatComposer();
+  }
+  window.__openChat = openChatComposer;
+  window.__closeChatComposer = closeChatComposer;
+
   function sendChat(e) {
     e?.preventDefault?.();
     e?.stopPropagation?.();
     const input = $("#chat-input");
-    const text = input?.value || "";
+    const text = (input?.value || "").slice(0, CHAT_MAX);
     if (!text.trim()) {
       ignorePhoneTaps(400);
       input?.focus?.({ preventScroll: true });
@@ -3753,8 +4182,45 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
   });
   $("#chat-input").addEventListener("blur", () => {
     ignorePhoneTaps(400);
-    setTimeout(syncKeyboardInset, 50);
+    setTimeout(() => {
+      syncKeyboardInset();
+      if (!isChatOpen()) return;
+      const ae = document.activeElement;
+      if (ae && (ae.id === "chat-input" || ae.id === "chat-send" || ae.closest?.("#chat-composer"))) return;
+      closeChatComposer();
+    }, 80);
   });
+  $("#chat-bubble-btn")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    toggleChatComposer();
+  });
+  // Tap outside the composer (on the room) closes chat.
+  document.addEventListener("pointerdown", (e) => {
+    if (!isChatOpen()) return;
+    const t = e.target;
+    if (t?.closest?.("#chat-composer") || t?.closest?.("#chat-bubble-btn") || t?.closest?.("#chat-send") || t?.closest?.("#phone-btn") || t?.closest?.("#emote-wheel-btn") || t?.closest?.("#chat-dock")) return;
+    closeChatComposer();
+  }, true);
+  // Swipe down on the composer dismisses it (and the keyboard).
+  (function bindComposerSwipe() {
+    const el = document.getElementById("chat-composer");
+    if (!el) return;
+    let y0 = 0, tracking = false;
+    el.addEventListener("touchstart", (e) => {
+      if (!e.touches?.[0]) return;
+      y0 = e.touches[0].clientY;
+      tracking = true;
+    }, { passive: true });
+    el.addEventListener("touchmove", (e) => {
+      if (!tracking || !e.touches?.[0]) return;
+      if (e.touches[0].clientY - y0 > 36) {
+        tracking = false;
+        closeChatComposer();
+      }
+    }, { passive: true });
+    el.addEventListener("touchend", () => { tracking = false; }, { passive: true });
+  })();
   window.addEventListener("scroll", lockPageScroll, { passive: true, capture: true });
   if (window.visualViewport) {
     window.visualViewport.addEventListener("resize", syncKeyboardInset);
@@ -3814,6 +4280,18 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
   });
 
   $("#edit-done")?.addEventListener("click", exitEditMode);
+  $("#edit-room-btn")?.addEventListener("click", (e) => { e.stopPropagation(); toggleEditMode(); });
+  $("#edit-inv-tabs")?.addEventListener("click", (e) => {
+    const tab = e.target.closest("[data-tab]");
+    if (tab) setEditTab(tab.dataset.tab);
+  });
+  $("#edit-decor-chips")?.addEventListener("click", (e) => {
+    const chip = e.target.closest("[data-decor]");
+    if (!chip) return;
+    state.decorSection = chip.dataset.decor;
+    paintEditInventory();
+  });
+  $("#item-rotate")?.addEventListener("click", (e) => { e.stopPropagation(); rotatePending(1); });
   $("#edit-inv-toggle")?.addEventListener("click", () => {
     $("#edit-inventory")?.classList.toggle("collapsed");
   });
@@ -4129,7 +4607,10 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
       state.room.furniture.push(piece);
       addFurnitureEl(piece);
     }
+    const select = state.editMode && state._selectAfterPlace;
+    state._selectAfterPlace = false;
     cancelPlace();
+    if (select && piece?.id) showFurnActions(piece.id);
     if (state.editMode) paintEditInventory();
     if (state.phoneApp === "edit") paintEditRoom();
   });
@@ -4142,8 +4623,15 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     renderFloorStatic();
     if (state.movingId === piece.id) {
       cancelPlace();
-      state.selectedFurnId = piece.id;
-      showFurnActions(piece.id);
+      if (state._deselectAfterCommit) {
+        state._deselectAfterCommit = false;
+        state.selectedFurnId = null;
+        hideFurnActions();
+        state.room3d?.highlightFurniture(null);
+      } else {
+        state.selectedFurnId = piece.id;
+        showFurnActions(piece.id);
+      }
     } else if (state.selectedFurnId === piece.id) {
       state.room3d?.highlightFurniture(piece.id);
       updateFurnActionPos();
@@ -4209,9 +4697,12 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     state.room.wallArt = state.room.wallArt || [];
     if (!state.room.wallArt.some((a) => a.id === piece.id)) state.room.wallArt.push(piece);
     state.room3d?.setWallArt(state.room.wallArt);
+    const select = state.editMode && state._selectAfterPlace;
+    state._selectAfterPlace = false;
     cancelPlace();
     state.movingWallId = null;
     state.room3d?.setWallGhost(null);
+    if (select && piece?.id) showFurnActions(piece.id);
     if (state.editMode) paintEditInventory();
   });
   socket.on("wallArtUpdated", (piece) => {
@@ -4284,12 +4775,13 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     refreshPhoneScreens();
   });
 
-  socket.on("roomStyle", ({ wallpaper, floorStyle }) => {
+  socket.on("roomStyle", (style = {}) => {
     if (!state.room) return;
-    state.room.wallpaper = wallpaper;
-    state.room.floorStyle = floorStyle;
-    state.room3d?.setStyle(wallpaper, floorStyle);
+    Object.assign(state.room, style);
+    state.room3d?.setStyle(style.wallpaper, style.floorStyle);
+    state.room3d?.setDecor?.(normalizeDecor(state.room));
     state.room3d?.setFurniture(state.room.furniture || []);
+    if (state.editMode) paintEditInventory();
     renderPeople();
     refreshPhoneScreens();
   });
@@ -4367,15 +4859,28 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     toast(`${label}: +${coins} coins (${price} prototype)`);
   });
 
+  window.__openCoins = openCoinsPanel;
+  window.__closeCoins = closeCoinsPanel;
   window.__debugKit = (kit) => socket.emit("debugKit", kit);
   window.__pickupFurniture = (id) => socket.emit("pickupFurniture", { id });
   window.__equipPet = (item) => socket.emit("equipPet", { item: item || null });
   window.__placePet = (item, x, y) => socket.emit("placePet", { item, x, y });
+  window.__startPlacePet = startPlacePet;
+  window.__updatePetPlace = updatePetPlaceHighlight;
   window.__putAwayPet = (item) => socket.emit("putAwayPet", { item });
 
   window.__inventory = () => [...(state.me?.inventory || [])];
   window.__clickFurniture = (id, type, extra) => handleFurnitureClick(id, type, extra || {});
   window.__enterEdit = enterEditMode;
+  window.__setEditTab = setEditTab;
+  window.__putAwaySelected = putAwaySelected;
+  window.__moveFurnitureTo = (id, x, y) => {
+    const f = (state.room?.furniture || []).find((p) => p.id === id);
+    if (!f) return;
+    beginMoveFurniture(f);
+    updatePlaceHighlight(x, y);
+    confirmGhostPlace();
+  };
   window.__toast = (message) => toast(message);
   window.__exitEdit = exitEditMode;
   window.__startPlace = startPlace;
@@ -4410,6 +4915,7 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
   window.__buyStoreSel = () => socket.emit("buyStoreItem", { kind: state.storeKind, id: state.storeSel });
 
   window.__closePhone = () => closePhone();
+  window.__say = (text) => socket.emit("say", { text });
   window.__chatBubbles = () => (state.chatFloats || []).map((b) => ({ id: b.id, username: b.username, text: b.text, row: b.row, x: b.x, y: b.targetY }));
   window.__stepChatRows = () => { stepChatRows(); paintOverlays(); return window.__chatBubbles(); };
 

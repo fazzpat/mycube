@@ -225,6 +225,25 @@ function tvFrontCorners(tw, th, rot) {
   return faceCorners(L.body.x, L.body.y, L.body.w, L.body.h, L.standH, L.bodyH, front);
 }
 
+function uvQuad(corners, uv) {
+  const [bl, br, tr, tl] = corners;
+  const p = (u, v) => lerp2(lerp2(bl, br, u), lerp2(tl, tr, u), v);
+  return [p(uv.u0, uv.v0), p(uv.u1, uv.v0), p(uv.u1, uv.v1), p(uv.u0, uv.v1)];
+}
+
+export function tvScreenQuad(tw, th, rot) {
+  const fc = tvFrontCorners(tw, th, rot);
+  if (!fc) return null;
+  return uvQuad(fc, TV_SCREEN_UV);
+}
+
+export function tvScreenQuadSprite(type, rot) {
+  const m = furnSpriteMetrics(type, rot);
+  const q = tvScreenQuad(m.tw, m.th, rot);
+  if (!q) return null;
+  return q.map((p) => ({ x: p.x + m.ox, y: p.y + m.oy }));
+}
+
 function backRect(tw, th, rot, depth) {
   const x0 = I, y0 = I, w = tw - 2 * I, h = th - 2 * I;
   const d = Math.min(depth, (rot % 2 === 0 ? h : w) * 0.5);
@@ -600,20 +619,27 @@ function drawTV(ctx, tw, th, rot, lights, on, holo, screen) {
     const fc = faceCorners(L.body.x, L.body.y, L.body.w, L.body.h, L.standH, L.bodyH, front);
     faceRect(ctx, fc, 0.02, 0.03, 0.98, 0.97, lights ? "#14161a" : "#0c0c0e", bezel.outline);
     const lit = on && lights;
+    const screenQ = uvQuad(fc, uv);
     faceRect(ctx, fc, uv.u0, uv.v0, uv.u1, uv.v1, lit ? "#0a1020" : "#09090c", "#111");
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(screenQ[0].x, screenQ[0].y);
+    for (let i = 1; i < screenQ.length; i++) ctx.lineTo(screenQ[i].x, screenQ[i].y);
+    ctx.closePath();
+    ctx.clip();
     if (screen && lit) {
       faceImage(ctx, fc, uv.u0, uv.v0, uv.u1, uv.v1, screen);
     } else if (lit) {
       faceRect(ctx, fc, uv.u0, uv.v0, uv.u1, uv.v1, holo ? "#1a2840" : "#152238", null);
     }
     if (lights) {
-      ctx.save();
       ctx.globalAlpha = lit ? 0.18 : 0.08;
       faceRect(ctx, fc, uv.u0 + 0.04, uv.v0 + 0.06, uv.u0 + 0.28, uv.v1 - 0.08, "#e8f0ff", null);
       ctx.globalAlpha = lit ? 0.10 : 0.05;
       faceRect(ctx, fc, uv.u0 + 0.06, uv.v0 + 0.04, uv.u1 - 0.08, uv.v0 + 0.16, "#ffffff", null);
-      ctx.restore();
+      ctx.globalAlpha = 1;
     }
+    ctx.restore();
     faceRect(ctx, fc, 0.46, 0.015, 0.54, 0.04, lights ? "#2a2c30" : "#161616", null);
     faceRect(ctx, fc, 0.88, 0.015, 0.93, 0.04, on && lights ? "#3d8a3a" : "#622", null);
   } else {
@@ -1490,8 +1516,6 @@ function paintPiece(ctx, type, rot, lights, on, open, opts = {}) {
   }
 }
 
-const tvScratch = new Map();
-
 export function drawFurnitureSprite(type, opts = {}) {
   if (type === "shopkeeper") return null;
   const lights = opts.lights !== false;
@@ -1513,17 +1537,12 @@ export function drawFurnitureSprite(type, opts = {}) {
     ctx.restore();
   });
   if (!screen || !on || (type !== "tv" && type !== "holotv")) return body;
-  const sk = m.w + "x" + m.h;
-  let s = tvScratch.get(sk);
-  if (!s) {
-    s = document.createElement("canvas");
-    s.width = body.c.width;
-    s.height = body.c.height;
-    tvScratch.set(sk, s);
-  }
+  // Fresh canvas per draw so two TVs (or a preview sheet) cannot share pixels.
+  const s = document.createElement("canvas");
+  s.width = body.c.width;
+  s.height = body.c.height;
   const ctx = s.getContext("2d");
   ctx.imageSmoothingEnabled = false;
-  ctx.clearRect(0, 0, s.width, s.height);
   ctx.drawImage(body.c, 0, 0);
   ctx.save();
   ctx.translate(m.ox, m.oy);

@@ -9,17 +9,23 @@ export async function openStartForm(page, action = "start") {
 }
 
 const TAB_FOR = {
-  skin: "body",
+  skin: "skin",
   hair: "hair",
   hairColor: "hair",
-  glasses: "face",
-  accessory: "face",
-  headphoneColor: "face",
-  top: "top",
-  shirt: "top",
-  bottom: "bottom",
-  bottomColor: "bottom",
+  glasses: "head",
+  glassesStyle: "head",
+  glassesColor: "head",
+  accessory: "head",
+  hat: "head",
+  hatColor: "head",
+  headphoneColor: "head",
+  top: "shirt",
+  shirt: "shirt",
+  bottom: "pants",
+  bottomColor: "pants",
   shoes: "shoes",
+  shoeColor: "shoes",
+  necklace: "extras",
 };
 
 export async function openCreatorTab(page, tab) {
@@ -35,12 +41,21 @@ export async function openCreatorTab(page, tab) {
   }
 }
 
+const ACCESSORY_TO_HAT = { 1: "hat-1", 2: "hat-2", 5: "hat-3", 8: "hat-4", 9: "hat-5" }; // cap, beanie, trucker, bucket, fitted
 export async function clickCreatorOption(page, testId) {
-  const key = String(testId).split("-")[0];
+  let id = String(testId);
+  if (id.startsWith("accessory-")) {
+    const n = id.slice("accessory-".length);
+    if (n === "3") id = "necklace-1"; // gold chain
+    else if (ACCESSORY_TO_HAT[n]) id = ACCESSORY_TO_HAT[n];
+    else if (n === "10") id = "glassesStyle-3"; // shades
+  }
+  if (id === "glasses-toggle") id = "glassesStyle-1";
+  const key = id.split("-")[0];
   const tab = TAB_FOR[key];
   if (tab) await openCreatorTab(page, tab);
-  await page.evaluate((id) => window.__creatorMenu?.showOption?.(id), testId);
-  await page.click(`[data-testid="${testId}"]`);
+  await page.evaluate((tid) => window.__creatorMenu?.showOption?.(tid), id);
+  await page.click(`[data-testid="${id}"]`);
 }
 
 export async function closePhoneIfOpen(page) {

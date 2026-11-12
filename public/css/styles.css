@@ -2591,7 +2591,8 @@ input, select, textarea, .chat-input, [data-testid="chat-input"] {
   display: inline-flex !important;
   flex-direction: row !important;
   align-items: stretch !important;
-  max-width: 220px;
+  max-width: min(260px, 72vw) !important;
+  align-items: flex-start !important;
   border: 1px solid #1a1020 !important;
   border-radius: 10px !important;
   overflow: hidden !important;
@@ -2619,11 +2620,12 @@ input, select, textarea, .chat-input, [data-testid="chat-input"] {
   padding: 2px 8px 3px !important;
   font-size: 10px !important;
   font-weight: 700 !important;
-  max-width: 150px;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+  max-width: none;
+  display: block !important;
+  white-space: normal !important;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  overflow: visible;
 }
 .speech-bubble .bubble-tail,
 .speech-stack .speech-bubble .bubble-tail { display: none !important; }
@@ -3588,3 +3590,788 @@ body.shop-open #toasts {
   filter: brightness(0.9);
 }
 
+
+
+/* ===== Compact top HUD + floating fabs + on-demand chat ===== */
+:root {
+  --chrome-bottom: var(--sab, env(safe-area-inset-bottom, 0px));
+  --fab-size: 48px;
+  --fab-gap: 8px;
+  --fab-h: 52px;
+  --dock-h: calc(10px + var(--chrome-bottom, var(--sab, 0px)));
+}
+.room-view .topbar {
+  justify-content: space-between;
+  align-items: center;
+  padding: calc(4px + var(--sat, env(safe-area-inset-top, 0px))) calc(8px + var(--safe-right, 0px)) 4px calc(8px + var(--safe-left, 0px));
+  min-height: 0;
+  gap: 8px;
+}
+.room-view .topbar-left,
+.room-view .topbar-right {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.room-view .topbar-left { justify-content: flex-start; }
+.room-view .topbar-right { justify-content: flex-end; }
+#shop-toggle.shop-toggle,
+.shop-toggle {
+  position: relative !important;
+  top: auto !important;
+  left: auto !important;
+  width: 36px !important;
+  height: 36px !important;
+  flex: 0 0 36px;
+  z-index: 1;
+}
+.leave-cube-btn {
+  font-size: 10px !important;
+  font-weight: 800;
+  padding: 5px 8px !important;
+  border-radius: 999px !important;
+  line-height: 1;
+  white-space: nowrap;
+}
+.room-view .coin-chip {
+  font-size: 11px;
+  padding: 4px 8px;
+  min-height: 0;
+  line-height: 1;
+}
+.room-plaque {
+  position: fixed !important;
+  top: calc(var(--vv-top, 0px) + var(--room-topbar-h, 36px) + 2px) !important;
+  left: calc(8px + var(--safe-left, 0px)) !important;
+  bottom: auto !important;
+  max-width: min(58vw, 280px);
+  z-index: 70;
+}
+.room-plaque,
+.room-plaque .room-name,
+.room-plaque .item-sub,
+#room-title,
+#room-meta {
+  font-size: 10px !important;
+  font-weight: 600 !important;
+  line-height: 1.25 !important;
+  letter-spacing: 0 !important;
+}
+
+/* Room fills down to the bottom of the screen (fabs overlay it). */
+.chat-frame {
+  transform: none !important;
+  position: static;
+  flex: 0 0 auto;
+}
+#chat-dock.dock,
+#chat-dock,
+.dock.room-fabs {
+  position: fixed !important;
+  left: calc(8px + var(--safe-left, 0px));
+  right: auto;
+  bottom: calc(8px + var(--chrome-bottom, var(--sab, env(safe-area-inset-bottom, 0px))));
+  width: auto;
+  height: auto;
+  margin: 0;
+  padding: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  border: 0 !important;
+  gap: var(--fab-gap, 8px);
+  align-items: flex-end;
+  z-index: 55;
+  pointer-events: auto;
+  transform: none !important;
+}
+#phone-btn.phone-dock-btn,
+#phone-btn {
+  width: 48px !important;
+  height: 48px !important;
+  min-width: 48px;
+  min-height: 48px;
+  border-radius: 50% !important;
+  flex: 0 0 48px;
+  background: #1a1420ee;
+  color: #f4e6cc;
+  box-shadow: 0 0 0 1px #8a6a44, 0 2px 0 #3a2a18;
+}
+#emote-wheel-btn,
+#chat-bubble-btn {
+  width: 42px !important;
+  height: 42px !important;
+  min-width: 42px;
+  min-height: 42px;
+  border-radius: 50% !important;
+  flex: 0 0 42px;
+  background: #1a1420ee;
+  color: #f4e6cc;
+  box-shadow: 0 0 0 1px #8a6a44, 0 2px 0 #3a2a18;
+  display: grid;
+  place-items: center;
+  padding: 0;
+}
+#chat-bubble-btn svg { display: block; }
+#chat-bubble-btn[aria-expanded="true"],
+body.chat-open #chat-bubble-btn {
+  background: #2a1c10ee;
+  color: #f4c15d;
+  box-shadow: 0 0 0 1px #c4a060, 0 1px 0 #3a2a18;
+}
+#phone-btn.phone-dock-btn::after,
+#emote-wheel-btn::after,
+#chat-bubble-btn::after {
+  content: "";
+  position: absolute;
+  top: -10px;
+  right: -8px;
+  /* Keep the slop on-screen (844 - 836 = 8px of pad below a 48px FAB). */
+  bottom: -6px;
+  left: -8px;
+}
+#emote-wheel-btn,
+#chat-bubble-btn,
+#phone-btn { position: relative; }
+
+/* Slim composer, hidden until chat is opened; sits on the keyboard. */
+#chat-composer,
+.chat-composer {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: var(--kb-inset, 0px);
+  z-index: 90;
+  display: none;
+  align-items: center;
+  gap: 8px;
+  height: 48px;
+  padding: 6px 8px;
+  padding-left: calc(8px + var(--safe-left, 0px));
+  padding-right: calc(8px + var(--safe-right, 0px));
+  background: #efe6d6f2;
+  box-shadow: 0 -1px 0 #5a3a20, inset 0 1px 0 #fff8ee;
+  pointer-events: auto;
+}
+#chat-composer.is-open,
+body.chat-open #chat-composer,
+.chat-composer.is-open {
+  display: flex !important;
+}
+#chat-composer.hidden { display: none !important; }
+#chat-composer #chat-input,
+#chat-composer [data-testid="chat-input"] {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 36px !important;
+  max-height: 36px !important;
+  height: 36px !important;
+  margin: 0;
+  padding: 8px 10px !important;
+  font-size: 16px !important;
+  line-height: 1.2;
+  border-radius: 18px !important;
+  background: #fffaf3 !important;
+  color: #2a1c16;
+  box-shadow: inset 0 0 0 1px #c4a888;
+  resize: none;
+}
+#chat-composer #chat-send,
+#chat-send {
+  flex: 0 0 auto;
+  min-height: 36px;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 18px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+/* Edit inventory sits at the bottom, where the old chat bar was. */
+.chat-frame #edit-inventory,
+#edit-inventory.edit-inventory,
+#edit-inventory {
+  position: fixed !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: var(--chrome-bottom, var(--sab, env(safe-area-inset-bottom, 0px))) !important;
+  width: 100% !important;
+  height: 64px;
+  z-index: 54;
+}
+body.edit-mode #chat-dock,
+.room-view.edit-on #chat-dock {
+  bottom: calc(64px + 8px + var(--chrome-bottom, var(--sab, 0px)));
+}
+
+/* Phone / emote wheel sit above the floating fabs, not above a tall dock. */
+@media (max-width: 820px) {
+  .phone-overlay {
+    padding-bottom: calc(8px + var(--fab-h) + var(--chrome-bottom, var(--sab, 0px))) !important;
+  }
+  .phone-device {
+    height: var(--phone-h, min(228px, calc(var(--layout-h, var(--app-h, 100dvh)) - var(--fab-h) - var(--chrome-bottom, 0px) - 20px))) !important;
+    max-height: var(--phone-h, min(228px, calc(var(--layout-h, var(--app-h, 100dvh)) - var(--fab-h) - var(--chrome-bottom, 0px) - 20px))) !important;
+  }
+  .activity-chip {
+    bottom: calc(var(--fab-h) + var(--chrome-bottom, var(--sab, 0px)) + 12px) !important;
+  }
+}
+.emote-wheel-backdrop {
+  bottom: 0 !important;
+}
+.emote-wheel {
+  bottom: calc(var(--fab-h) + var(--chrome-bottom, var(--sab, 0px)) + 8px) !important;
+}
+#store-panel.store-panel,
+.store-panel {
+  height: calc((100% - var(--chrome-bottom, 0px) - max(var(--room-topbar-h, 0px), calc(36px + var(--sat, env(safe-area-inset-top, 0px))))) / 2) !important;
+  max-height: calc((100% - var(--chrome-bottom, 0px) - max(var(--room-topbar-h, 0px), calc(36px + var(--sat, env(safe-area-inset-top, 0px))))) / 2) !important;
+}
+/* Cart stays in the top bar even while the shop is open (it's the toggle). */
+body.shop-open .shop-toggle {
+  visibility: visible;
+  pointer-events: auto;
+}
+
+/* ---- Edit Room button, inventory tabs, rotate handle, decor ---- */
+.edit-room-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 5px 8px;
+  border-radius: 999px;
+  line-height: 1;
+  white-space: nowrap;
+  border: 1px solid rgba(58, 36, 24, 0.25);
+  background: #efe4d2;
+  color: #3a2418;
+  min-height: 0;
+}
+.edit-room-btn.hidden { display: none !important; }
+.edit-room-btn.is-on,
+.edit-room-btn[aria-pressed="true"] {
+  background: #f4c15d;
+  border-color: #8a5a32;
+}
+.edit-room-btn svg { display: block; flex: 0 0 auto; }
+
+.item-rotate {
+  position: fixed;
+  z-index: 80;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1.5px solid #3a2418;
+  background: #efe4d2;
+  color: #3a2418;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 6px rgba(42, 28, 22, 0.25);
+  pointer-events: auto;
+  transform: translate(-50%, -120%);
+}
+.item-rotate.hidden { display: none !important; }
+
+#edit-inventory.edit-inventory,
+#edit-inventory {
+  height: auto !important;
+  min-height: 96px;
+  max-height: 128px;
+  padding: 6px 8px 8px !important;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: #efe6d4;
+  border-top: 1px solid #c4b090;
+  box-sizing: border-box;
+}
+#edit-inventory.hidden { display: none !important; }
+#edit-inventory.putaway-hover {
+  background: #f4e4bc;
+  box-shadow: inset 0 0 0 2px #d4b46a;
+}
+.edit-inv-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+.edit-inv-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.edit-inv-tabs::-webkit-scrollbar { display: none; }
+.edit-inv-tab,
+.edit-chip {
+  flex: 0 0 auto;
+  border: 1px solid #c4b090;
+  background: #e8dcc4;
+  color: #3a2418;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 3px 9px;
+  border-radius: 999px;
+  line-height: 1.2;
+}
+.edit-inv-tab.is-on,
+.edit-chip.is-on {
+  background: #f4c15d;
+  border-color: #8a5a32;
+}
+.edit-inv-subtabs {
+  display: flex;
+  gap: 4px;
+  flex: 0 0 auto;
+  overflow-x: auto;
+}
+.edit-inv-subtabs.hidden { display: none !important; }
+#edit-inventory .edit-inv-items {
+  flex: 1 1 auto;
+  min-height: 52px;
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  align-items: stretch;
+  -webkit-overflow-scrolling: touch;
+}
+#edit-inventory .edit-inv-item,
+#edit-inventory .edit-decor-item,
+#edit-inventory .edit-upgrade-item {
+  flex: 0 0 auto;
+  width: 64px;
+  min-width: 64px;
+  border: 1px solid #c4b090;
+  background: #f7efe0;
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 4px;
+  font-size: 9px;
+  font-weight: 700;
+  color: #3a2418;
+  position: relative;
+}
+#edit-inventory .edit-inv-item.selected,
+#edit-inventory .edit-decor-item.selected,
+#edit-inventory .edit-upgrade-item.is-current {
+  outline: 2px solid #d4b46a;
+  border-color: #8a5a32;
+  background: #fff6e0;
+}
+#edit-inventory .edit-decor-item canvas {
+  width: 40px;
+  height: 28px;
+  image-rendering: pixelated;
+  display: block;
+}
+#edit-inventory .edit-upgrade-item {
+  width: auto;
+  min-width: 88px;
+  padding: 6px 10px;
+  text-align: center;
+}
+#edit-inventory .edit-upgrade-item .up-size { font-size: 13px; font-weight: 800; }
+#edit-inventory .edit-upgrade-item .up-cost { font-size: 10px; opacity: 0.85; }
+#edit-inventory .edit-upgrade-buy {
+  margin-top: 2px;
+  font-size: 10px;
+  font-weight: 800;
+  border-radius: 999px;
+  border: 1px solid #8a5a32;
+  background: #f4c15d;
+  padding: 2px 8px;
+}
+#edit-inventory .edit-upgrade-buy:disabled { opacity: 0.45; }
+body.edit-mode #chat-dock,
+.room-view.edit-on #chat-dock {
+  bottom: calc(var(--inv-h, 104px) + 8px + var(--chrome-bottom, var(--sab, 0px))) !important;
+}
+
+/* Full-screen Edit Character overlay */
+.edit-char-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 240;
+  background: #efe6d4;
+  display: flex;
+  flex-direction: column;
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+.edit-char-overlay.hidden,
+.edit-char-overlay[hidden] { display: none !important; }
+body.edit-char-open { overflow: hidden; }
+.edit-char-shell {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 430px;
+  margin: 0 auto;
+  padding: 8px 12px 10px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+.edit-char-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 0 0 auto;
+  gap: 8px;
+  padding: 2px 0 6px;
+}
+.edit-char-title {
+  font-size: 16px;
+  font-weight: 800;
+  color: #3a2418;
+}
+.edit-char-done {
+  border-radius: 999px;
+  border: 1px solid #8a5a32;
+  background: #f4c15d;
+  color: #3a2418;
+  font-weight: 800;
+  font-size: 13px;
+  padding: 6px 14px;
+}
+.edit-char-preview-wrap {
+  position: relative;
+  flex: 0 0 auto;
+  height: min(38vh, 280px);
+  min-height: 140px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.edit-char-preview-wrap .preview-stage,
+.edit-char-overlay #creator-preview {
+  width: 100%;
+  height: 100%;
+}
+.edit-char-rot {
+  position: absolute;
+  right: 4px;
+  bottom: 8px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1.5px solid #3a2418;
+  background: #efe4d2;
+  font-size: 18px;
+}
+.edit-char-mount {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.edit-char-overlay .creator-window {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+  max-height: none;
+}
+.edit-char-overlay .creator-logo,
+.edit-char-overlay .creator-tag { display: none; }
+.edit-char-overlay .creator-tabs {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 4px 0 8px;
+  flex: 0 0 auto;
+}
+.edit-char-overlay .creator-tabs::-webkit-scrollbar { display: none; }
+.edit-char-overlay .creator-tabs button {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 6px 12px;
+  border: 1px solid #c4b090;
+  background: #e8dcc4;
+  color: #3a2418;
+}
+.edit-char-overlay .creator-tabs button.is-selected {
+  background: #f4c15d;
+  border-color: #8a5a32;
+}
+.edit-char-overlay .creator-tab-panels {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.edit-char-overlay .swatch-row {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+  gap: 8px;
+  padding: 4px 2px 10px;
+}
+.edit-char-overlay .creator-footer {
+  flex: 0 0 auto;
+  padding-top: 6px;
+}
+.edit-char-overlay .creator-pager { flex: 0 0 auto; }
+
+
+/* RAIL_OVERLAY_SYNC: keep the fullscreen editor on the left-rail layout. */
+.edit-char-overlay {
+  padding: var(--sat, env(safe-area-inset-top, 0px)) var(--sar, env(safe-area-inset-right, 0px)) var(--sab, env(safe-area-inset-bottom, 0px)) var(--sal, env(safe-area-inset-left, 0px));
+}
+.edit-char-overlay .creator-tabs {
+  display: flex !important;
+  flex-direction: column !important;
+  flex-wrap: nowrap !important;
+  flex: 0 0 48px !important;
+  width: 48px !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  padding: 2px 0 !important;
+  gap: 6px !important;
+}
+.edit-char-overlay .creator-tabs button {
+  width: 44px !important;
+  height: 44px !important;
+  min-width: 44px !important;
+  min-height: 44px !important;
+  padding: 0 !important;
+  border-radius: 12px !important;
+  font-size: 0 !important;
+}
+.edit-char-shell { padding: 6px 8px 8px; }
+
+
+/* PHONE_ABOVE_FABS: keep the handset above the FAB row, but do not let the
+   dimmed backdrop swallow taps on the phone / emote / chat buttons. */
+#phone-overlay.phone-overlay,
+.phone-overlay {
+  bottom: 0 !important;
+  z-index: 70;
+  padding-bottom: calc(10px + var(--fab-h, 52px) + var(--chrome-bottom, var(--sab, 0px))) !important;
+  pointer-events: none !important;
+}
+#phone-overlay .phone-backdrop,
+.phone-overlay .phone-backdrop {
+  pointer-events: auto;
+  bottom: calc(var(--fab-h, 52px) + 16px + var(--chrome-bottom, var(--sab, env(safe-area-inset-bottom, 0px))));
+}
+#phone-overlay .phone-device,
+.phone-device {
+  pointer-events: auto;
+  max-height: min(228px, calc(var(--layout-h, var(--app-h, 100dvh)) - var(--fab-h, 52px) - var(--chrome-bottom, 0px) - 20px)) !important;
+}
+
+
+/* COINS_DROPDOWN_PANEL: compact card under the top-right coin chip. */
+#coins-panel.coins-panel,
+.coins-panel {
+  position: fixed;
+  top: calc(var(--vv-top, 0px) + max(var(--room-topbar-h, 36px), calc(36px + var(--sat, env(safe-area-inset-top, 0px)))) + 4px);
+  right: calc(8px + var(--sar, env(safe-area-inset-right, 0px)));
+  left: auto;
+  width: min(280px, calc(100vw - 16px));
+  max-height: min(420px, calc(100dvh - var(--vv-top, 0px) - max(var(--room-topbar-h, 36px), calc(36px + var(--sat, 0px))) - 16px));
+  overflow: auto;
+  z-index: 82;
+  display: flex;
+  flex-direction: column;
+  background: #f4efe4ee;
+  color: #1a1020;
+  border-radius: 14px;
+  box-shadow: 0 4px 0 #8a6a44, 0 10px 22px rgba(42, 24, 16, 0.28);
+  font-family: "Nunito", "Trebuchet MS", sans-serif;
+  pointer-events: auto;
+  box-sizing: border-box;
+}
+#coins-panel.coins-panel.hidden,
+.coins-panel.hidden { display: none !important; }
+.coins-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px 6px 12px;
+  flex: 0 0 auto;
+  box-shadow: 0 1px 0 #c4a878;
+}
+.coins-panel-head strong {
+  flex: 1 1 auto;
+  font-size: 15px;
+  font-weight: 800;
+  color: #3a2418;
+}
+.coins-panel-body {
+  padding: 8px 10px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+}
+.coins-panel-body .coins-watch-ad {
+  width: 100%;
+  border: 1px solid #8a5a32;
+  background: #f4c15d;
+  color: #3a2418;
+  font-weight: 800;
+  font-size: 12px;
+  border-radius: 999px;
+  padding: 8px 10px;
+  min-height: 36px;
+}
+.coins-panel-body .coins-watch-ad:disabled { opacity: 0.45; }
+.coins-panel-body .coins-pack-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.coins-panel-body .pack-card,
+.coins-panel-body .coins-pack {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  border: 1px solid #c4b090;
+  background: #f7efe0;
+  color: #3a2418;
+  border-radius: 12px;
+  padding: 8px 10px;
+  box-shadow: 0 2px 0 #c4b090;
+}
+.coins-panel-body .pack-card:active,
+.coins-panel-body .coins-pack:active { transform: translateY(1px); box-shadow: none; }
+.coins-panel-body .pack-card strong,
+.coins-panel-body .coins-pack strong { font-size: 13px; }
+.coins-panel-body .pack-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.coins-panel-body .pack-coins { font-size: 11px; font-weight: 700; opacity: 0.85; }
+.coins-panel-body .pack-price {
+  font-size: 12px;
+  font-weight: 800;
+  color: #8a5a32;
+  background: #efe3c8;
+  border-radius: 999px;
+  padding: 3px 8px;
+  white-space: nowrap;
+}
+body.coins-open .room-view .coin-chip,
+body.coins-open #room-coins-btn {
+  box-shadow: 0 0 0 2px #f4c15d, 0 0 0 4px #8a5a32;
+}
+@media (max-width: 375px) {
+  #coins-panel.coins-panel,
+  .coins-panel {
+    width: min(260px, calc(100vw - 12px));
+    right: 6px;
+  }
+}
+
+#chat-composer .chat-count,
+.chat-count {
+  flex: 0 0 auto;
+  font-size: 10px;
+  font-weight: 800;
+  color: #8a6a4a;
+  min-width: 3.4em;
+  text-align: right;
+  line-height: 1;
+  user-select: none;
+}
+
+/* IN_ROOM_PANELS_ABOVE_FABS: wardrobe/cubics/fridge sit above the floating
+   action buttons so their Save/Close controls stay tappable. */
+.wardrobe-panel, .cubics-panel, .fridge-picker {
+  z-index: 80 !important;
+  bottom: calc(var(--fab-h, 52px) + 16px + var(--chrome-bottom, var(--sab, env(safe-area-inset-bottom, 0px)))) !important;
+  pointer-events: auto;
+}
+
+/* RAIL_OVERLAY_FIT: the arcade creator's unscoped .creator-window media
+   queries (absolute top/bottom/transform) must not leak into the fullscreen
+   Edit Character overlay. */
+.edit-char-overlay,
+body.edit-char-open .edit-char-overlay {
+  padding: var(--sat, env(safe-area-inset-top, 0px)) var(--sar, env(safe-area-inset-right, 0px)) var(--sab, env(safe-area-inset-bottom, 0px)) var(--sal, env(safe-area-inset-left, 0px)) !important;
+  box-sizing: border-box !important;
+}
+.edit-char-overlay .edit-char-shell,
+.edit-char-overlay .edit-char-mount {
+  position: relative !important;
+  height: auto !important;
+  max-height: none !important;
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  width: 100% !important;
+  max-width: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  overflow: hidden !important;
+}
+.edit-char-overlay .creator-window,
+.edit-char-overlay .creator-window.is-rail-layout {
+  position: relative !important;
+  inset: auto !important;
+  top: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  left: auto !important;
+  transform: none !important;
+  width: 100% !important;
+  max-width: 430px !important;
+  height: 100% !important;
+  max-height: 100% !important;
+  margin: 0 auto !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+@media (min-width: 700px) and (orientation: landscape), (min-width: 900px) {
+  .edit-char-overlay .creator-window,
+  .edit-char-overlay .creator-window.is-rail-layout {
+    max-width: 900px !important;
+  }
+}
+
+/* PHONE_FAB_ABOVE_BACKDROP: the dock is click-through so empty slop does
+   not cover the handset; keep it below the slim composer (z 90). */
+#chat-dock.dock,
+#chat-dock,
+.dock.room-fabs {
+  z-index: 55 !important;
+  pointer-events: none !important;
+}
+#chat-dock > *,
+#phone-btn,
+#emote-wheel-btn,
+#chat-bubble-btn {
+  pointer-events: auto !important;
+}

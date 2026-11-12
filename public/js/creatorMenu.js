@@ -4,12 +4,13 @@
 import { createEmptyRoomBackdrop } from "./isoRoom.js";
 
 const TABS = [
-  { id: "body", label: "BODY" },
-  { id: "hair", label: "HAIR" },
-  { id: "face", label: "FACE" },
-  { id: "top", label: "TOP" },
-  { id: "bottom", label: "BOTTOM" },
-  { id: "shoes", label: "SHOES" },
+  { id: "skin", label: "Skin tone" },
+  { id: "hair", label: "Hairstyles" },
+  { id: "shirt", label: "Shirt" },
+  { id: "pants", label: "Pants" },
+  { id: "shoes", label: "Shoes" },
+  { id: "head", label: "Head accessories" },
+  { id: "extras", label: "Accessories" },
 ];
 
 /* Phone hook: Edit Character enlarges the in-game handset and mounts the
@@ -52,8 +53,13 @@ export function initCreatorMenu({ onShow, getBackdropRoom } = {}) {
   function overlayEl() {
     return document.getElementById("phone-overlay");
   }
+  function editCharOverlay() {
+    return document.getElementById("edit-char-overlay");
+  }
 
   function phoneEditOpen() {
+    const el = editCharOverlay();
+    if (el && !el.classList.contains("hidden") && !el.hasAttribute("hidden")) return true;
     return Boolean(overlayEl()?.classList.contains("is-character-edit"));
   }
 
@@ -243,6 +249,14 @@ export function initCreatorMenu({ onShow, getBackdropRoom } = {}) {
   }
 
   function paginate() {
+    const rail = windowEl?.classList.contains("is-rail-layout") || document.body.classList.contains("edit-char-open");
+    if (rail) {
+      const panel = panelEl(currentId());
+      panel?.querySelectorAll(".creator-offpage").forEach((el) => el.classList.remove("creator-offpage"));
+      document.querySelector(".creator-pager")?.classList.add("hidden");
+      paintOptionCursor();
+      return;
+    }
     const panel = panelEl(currentId());
     const rebuild = () => {
       pages = buildPages(panel);
@@ -658,35 +672,22 @@ export function initCreatorMenu({ onShow, getBackdropRoom } = {}) {
   }
 
   function openFromPhoneInner() {
-    const overlay = overlayEl();
-    const mount = document.querySelector("[data-testid='phone-character-editor']");
-    const screen = document.getElementById("phone-screen-edit-character");
-    if (!overlay || !mount || !windowEl || !screen) return false;
+    const fs = editCharOverlay();
+    const mount = document.getElementById("edit-char-mount");
+    if (!fs || !mount || !windowEl) return false;
     if (windowEl.parentElement !== mount) {
       phoneHomeParent = windowEl.parentElement;
       phoneHomeNext = windowEl.nextSibling;
       mount.appendChild(windowEl);
     }
-    document.getElementById("phone-home")?.classList.add("hidden");
-    document.querySelectorAll(".phone-app-screen").forEach((el) => {
-      el.classList.toggle("hidden", el !== screen);
-    });
-    screen.classList.remove("hidden");
-    overlay.classList.add("is-character-edit");
-    overlay.classList.remove("hidden");
-    overlay.classList.remove("is-compact-edit");
+    fs.classList.remove("hidden");
+    fs.removeAttribute("hidden");
+    document.body.classList.add("edit-char-open");
+    document.getElementById("phone-overlay")?.classList.add("hidden");
+    pageIndex = 0;
     requestAnimationFrame(() => {
-      pageIndex = 0;
-      layoutPhoneAwayFromAvatar();
       paginate();
-      requestAnimationFrame(() => {
-        layoutPhoneAwayFromAvatar();
-        paginate();
-        setTimeout(() => {
-          layoutPhoneAwayFromAvatar();
-          paginate();
-        }, 200);
-      });
+      window.dispatchEvent(new Event("resize"));
     });
     return true;
   }
@@ -700,6 +701,10 @@ export function initCreatorMenu({ onShow, getBackdropRoom } = {}) {
     clearPhoneDock(overlay);
     const screen = document.getElementById("phone-screen-edit-character");
     screen?.classList.add("hidden");
+    const fs = editCharOverlay();
+    fs?.classList.add("hidden");
+    fs?.setAttribute("hidden", "");
+    document.body.classList.remove("edit-char-open");
     if (windowEl && phoneHomeParent && windowEl.parentElement !== phoneHomeParent) {
       if (phoneHomeNext && phoneHomeNext.parentElement === phoneHomeParent) {
         phoneHomeParent.insertBefore(windowEl, phoneHomeNext);

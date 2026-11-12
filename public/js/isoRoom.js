@@ -5,9 +5,10 @@ import { programAt } from "./cubechannel.js";
 import { getTvScreen, tvChannelName } from "./tvChannels.js";
 import {
   normalizeFurnRot, snapFacingToAxis, furnTileDims, furnSpriteMetrics, furnBlitPos,
-  drawFurnitureSprite, drawChessStoolSprite, paintFurnitureSheet, hitFurnitureAt, FURN_SHEET_TYPES, tvGlowColor,
+  drawFurnitureSprite, drawChessStoolSprite, paintFurnitureSheet, hitFurnitureAt, FURN_SHEET_TYPES, tvGlowColor, tvScreenQuadSprite,
 } from "./furnIso.js";
 import { doorSlot as layoutDoorSlot, switchSlot as layoutSwitchSlot, windowSlots as layoutWindowSlots } from "./wallLayout.js";
+import { DEFAULT_DECOR, normalizeDecor, legacyAliases, floorColorHex, wallColorPal, drawWindowScenery, shadeHex } from "./roomDecor.js";
 import { chessSeatPose, chessBoardMetrics } from "./chessTable.js";
 import { steamFrameAt } from "./coffeeMaker.js";
 import { liePose, bedZeds, drawBedZeds } from "./bed.js";
@@ -230,23 +231,32 @@ function drawDiamond(ctx, cx, cy, fill, edge) {
   }
 }
 
-function floorTileSprite(kind, lights, variant) {
-  const key = "floor:" + kind + ":" + lights + ":" + variant;
+function floorTileSprite(pattern, colorId, lights, variant) {
+  const key = "floor:" + pattern + ":" + colorId + ":" + lights + ":" + variant;
   return sprite(key, TW + 2, TH + 2, (ctx) => {
     const dim = lights ? 0 : -36;
     const cx = TW / 2 + 1, cy = 1;
-    if (kind === "tile") {
-      const a = shade(variant % 2 ? "#e8e4dc" : "#ddd6cc", dim);
-      drawDiamond(ctx, cx, cy, a, shade("#b8b0a4", dim));
-      ctx.strokeStyle = shade("#ccc4b8", dim);
+    const base = floorColorHex(colorId);
+    const edge = shade(base, dim - 40);
+    if (pattern === "grid" || pattern === "tile") {
+      const a = shade(variant % 2 ? shade(base, 10) : shade(base, -8), dim);
+      drawDiamond(ctx, cx, cy, a, shade(base, dim - 36));
+      ctx.strokeStyle = shade(base, dim - 28);
       ctx.beginPath();
       ctx.moveTo(cx, cy + TH / 2);
       ctx.lineTo(cx + TW / 4, cy + TH / 4);
       ctx.stroke();
-    } else if (kind === "carpet") {
-      const a = shade(variant % 3 === 0 ? "#d44a5a" : (variant % 3 === 1 ? "#c43c4c" : "#e05666"), dim);
-      drawDiamond(ctx, cx, cy, a, shade("#8a2030", dim));
-      ctx.strokeStyle = shade("#f0c878", dim);
+      ctx.beginPath();
+      ctx.moveTo(cx, cy + TH / 2);
+      ctx.lineTo(cx - TW / 4, cy + TH / 4);
+      ctx.stroke();
+    } else if (pattern === "checker") {
+      const a = shade((variant % 2) ? shade(base, 16) : shade(base, -22), dim);
+      drawDiamond(ctx, cx, cy, a, edge);
+    } else if (pattern === "carpet") {
+      const a = shade(variant % 3 === 0 ? base : (variant % 3 === 1 ? shade(base, -12) : shade(base, 10)), dim);
+      drawDiamond(ctx, cx, cy, a, shade(base, dim - 40));
+      ctx.strokeStyle = shade(base, dim + 28);
       ctx.beginPath();
       ctx.moveTo(cx, cy + 6);
       ctx.lineTo(cx + TW / 2 - 8, cy + TH / 2);
@@ -254,11 +264,32 @@ function floorTileSprite(kind, lights, variant) {
       ctx.lineTo(cx - TW / 2 + 8, cy + TH / 2);
       ctx.closePath();
       ctx.stroke();
-      pset(ctx, cx, cy + TH / 2, shade("#e8c878", dim));
+      pset(ctx, cx, cy + TH / 2, shade(base, dim + 30));
+    } else if (pattern === "marble") {
+      drawDiamond(ctx, cx, cy, shade(base, dim + 8), edge);
+      ctx.strokeStyle = shade(base, dim + 28);
+      ctx.beginPath();
+      ctx.moveTo(cx - TW / 3, cy + TH * 0.35);
+      ctx.quadraticCurveTo(cx, cy + TH * 0.2, cx + TW / 3, cy + TH * 0.4);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(cx - TW / 4, cy + TH * 0.65);
+      ctx.quadraticCurveTo(cx + 4, cy + TH * 0.55, cx + TW / 5, cy + TH * 0.75);
+      ctx.stroke();
+    } else if (pattern === "stone") {
+      const a = shade(variant % 3 === 0 ? base : (variant % 3 === 1 ? shade(base, -14) : shade(base, 8)), dim);
+      drawDiamond(ctx, cx, cy, a, edge);
+      ctx.strokeStyle = shade(base, dim - 30);
+      ctx.beginPath();
+      ctx.moveTo(cx - 8, cy + TH * 0.4);
+      ctx.lineTo(cx + 4, cy + TH * 0.55);
+      ctx.stroke();
+      pset(ctx, cx + 6, cy + TH * 0.45, shade(base, dim - 20));
     } else {
-      const woods = ["#d4a05a", "#e0b068", "#c89448", "#e8bc78"];
-      drawDiamond(ctx, cx, cy, shade(woods[variant % 4], dim), shade("#a07038", dim));
-      ctx.strokeStyle = shade("#b88848", dim);
+      // wood planks
+      const woods = [base, shade(base, 12), shade(base, -12), shade(base, 22)];
+      drawDiamond(ctx, cx, cy, shade(woods[variant % 4], dim), shade(base, dim - 40));
+      ctx.strokeStyle = shade(base, dim - 28);
       ctx.lineWidth = 1;
       for (let i = 1; i <= 2; i++) {
         const t = i / 3;
@@ -267,7 +298,7 @@ function floorTileSprite(kind, lights, variant) {
         ctx.lineTo(cx + t * TW / 2, cy + t * TH);
         ctx.stroke();
       }
-      pset(ctx, cx - 6, cy + TH / 2, shade("#f0d090", dim));
+      pset(ctx, cx - 6, cy + TH / 2, shade(base, dim + 28));
     }
   });
 }
@@ -387,8 +418,17 @@ function facingVec(facing) {
   return { fx: fx / len, fz: fz / len };
 }
 
-// Sit beside the owner's feet, slightly in front, on the iso-camera-visible side.
-// Camera looks from +x/+y, so the side that increases x+y is more visible.
+function tileKey(x, y) { return Math.round(x) + "," + Math.round(y); }
+
+function tileIsFree(x, y, gridSize, blocked, occupied) {
+  const tx = Math.round(x), ty = Math.round(y);
+  if (tx < 0 || ty < 0 || tx >= gridSize || ty >= gridSize) return false;
+  const k = tx + "," + ty;
+  return !blocked.has(k) && !(occupied && occupied.has(k));
+}
+
+// Sit on a free tile beside the owner's feet (try the visible side, then
+// other adjacent sides, then the nearest free tile). Never sit on furniture.
 export function petSitTarget(ox, oy, facing, opts = {}) {
   const { fx, fz } = facingVec(facing);
   const rx = -fz, ry = fx;
@@ -398,48 +438,64 @@ export function petSitTarget(ox, oy, facing, opts = {}) {
   const gridSize = opts.gridSize || 6;
   const blocked = opts.blocked || new Set();
   const occupied = opts.occupied || new Set();
+  const ownerKey = tileKey(ox, oy);
+  const occ = new Set(occupied);
+  occ.add(ownerKey);
   const ideal = { x: ox + rx * side * SIDE + fx * front, y: oy + ry * side * SIDE + fz * front };
-  const candidates = [ideal];
-  const push = (x, y) => candidates.push({ x, y });
-  push(ox + rx * side * 0.46, oy + ry * side * 0.46);
-  push(ox + rx * side * SIDE + 0.16, oy + ry * side * SIDE + 0.16);
-  push(ox + rx * (-side) * SIDE + fx * front, oy + ry * (-side) * SIDE + fz * front);
-  push(ox + 0.22, oy + 0.22);
-  const dirs = [
-    [rx * side, ry * side], [fx, fz], [1, 0], [0, 1], [1, 1],
-    [-1, 0], [0, -1], [1, -1], [-1, 1], [-1, -1],
+  const adj = [
+    [Math.round(ox + rx * side), Math.round(oy + ry * side)],
+    [Math.round(ox + fx), Math.round(oy + fz)],
+    [Math.round(ox - rx * side), Math.round(oy - ry * side)],
+    [Math.round(ox - fx), Math.round(oy - fz)],
+    [Math.round(ox + 1), Math.round(oy)],
+    [Math.round(ox), Math.round(oy + 1)],
+    [Math.round(ox - 1), Math.round(oy)],
+    [Math.round(ox), Math.round(oy - 1)],
+    [Math.round(ox + 1), Math.round(oy + 1)],
+    [Math.round(ox + 1), Math.round(oy - 1)],
+    [Math.round(ox - 1), Math.round(oy + 1)],
+    [Math.round(ox - 1), Math.round(oy - 1)],
   ];
-  for (const dist of [0.50, 0.62, 0.75, 0.9, 1.05]) {
-    for (const [dx, dy] of dirs) {
-      const len = Math.hypot(dx, dy) || 1;
-      push(ox + (dx / len) * dist, oy + (dy / len) * dist);
-    }
+  const seen = new Set();
+  function poseOnTile(tx, ty) {
+    const dx = ox - tx, dy = oy - ty;
+    const len = Math.hypot(dx, dy) || 1;
+    const pull = Math.min(0.28, len * 0.5);
+    return { x: tx + (dx / len) * pull, y: ty + (dy / len) * pull };
   }
-  function legal(x, y) {
-    const tx = Math.round(x), ty = Math.round(y);
-    if (tx < 0 || ty < 0 || tx >= gridSize || ty >= gridSize) return false;
+  for (const [tx, ty] of adj) {
     const k = tx + "," + ty;
-    return !occupied.has(k) && !blocked.has(k);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    if (!tileIsFree(tx, ty, gridSize, blocked, occ)) continue;
+    return poseOnTile(tx, ty);
   }
-  let best = null, bestD = Infinity;
-  for (const c of candidates) {
-    if (!legal(c.x, c.y)) continue;
-    const d = Math.hypot(c.x - ideal.x, c.y - ideal.y);
-    if (d < bestD) { bestD = d; best = c; }
-  }
-  if (best) return best;
-  return {
-    x: Math.max(0, Math.min(gridSize - 0.05, ideal.x)),
-    y: Math.max(0, Math.min(gridSize - 0.05, ideal.y)),
-  };
+  const nearest = globalThis.HouseIso?.nearestFreeTile?.(ox, oy, blocked, gridSize, occ);
+  if (nearest) return poseOnTile(nearest.x, nearest.y);
+  if (tileIsFree(ideal.x, ideal.y, gridSize, blocked, occ)) return ideal;
+  return { x: ox, y: oy };
 }
 
-export function petFollowTarget(ox, oy, facing, gridSize = 6) {
+export function petFollowTarget(ox, oy, facing, gridSize = 6, opts = {}) {
+  const blocked = opts.blocked || new Set();
+  const occupied = opts.occupied || new Set();
   const { fx, fz } = facingVec(facing);
-  return {
+  const ideal = {
     x: Math.max(0, Math.min(gridSize - 0.05, ox - fx * 0.55)),
     y: Math.max(0, Math.min(gridSize - 0.05, oy - fz * 0.55)),
   };
+  if (tileIsFree(ideal.x, ideal.y, gridSize, blocked, occupied)) return ideal;
+  const tx = Math.round(ideal.x), ty = Math.round(ideal.y);
+  for (const [dx, dy] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+    if (tileIsFree(tx + dx, ty + dy, gridSize, blocked, occupied)) {
+      return { x: tx + dx, y: ty + dy };
+    }
+  }
+  const nearest = globalThis.HouseIso?.nearestFreeTile?.(ideal.x, ideal.y, blocked, gridSize, occupied);
+  if (nearest) return nearest;
+  if (tileIsFree(ox, oy, gridSize, blocked, occupied)) return { x: ox, y: oy };
+  const atOwner = globalThis.HouseIso?.nearestFreeTile?.(ox, oy, blocked, gridSize, occupied);
+  return atOwner || { x: ox, y: oy };
 }
 
 export function petSitFacing(facing) {
@@ -460,6 +516,15 @@ export function createAvatarPreview(container, opts = {}) {
   container.appendChild(canvas);
   let avatar = {};
   let facing = { x: 1, z: 1 };
+  let dirIndex = 1;
+  const DIRS = [
+    { x: 0, z: 1 }, { x: 1, z: 1 }, { x: 1, z: 0 }, { x: 1, z: -1 },
+    { x: 0, z: -1 }, { x: -1, z: -1 }, { x: -1, z: 0 }, { x: -1, z: 1 },
+  ];
+  function setDir(i) {
+    dirIndex = ((i % DIRS.length) + DIRS.length) % DIRS.length;
+    facing = DIRS[dirIndex];
+  }
   let raf = 0, alive = true;
 
   function resize() {
@@ -494,11 +559,16 @@ export function createAvatarPreview(container, opts = {}) {
     raf = requestAnimationFrame(render);
   }
 
+  canvas.addEventListener("click", () => setDir(dirIndex + 1));
+  canvas.style.cursor = "pointer";
+  canvas.title = "Rotate";
   resize();
   raf = requestAnimationFrame(render);
   return {
     setAvatar(a) { avatar = a || {}; },
     setPose() {},
+    cycleFacing() { setDir(dirIndex + 1); },
+    setFacing(f) { if (f) facing = f; },
     resize,
     dispose() { alive = false; cancelAnimationFrame(raf); container.innerHTML = ""; },
   };
@@ -531,6 +601,7 @@ export function createRoom3D(container, opts = {}) {
   let gridSize = 6;
   let wallpaper = "paint-cream";
   let floorStyle = "wood";
+  let decor = { ...DEFAULT_DECOR };
   let lightsOn = true;
   let furniture = [];
   let wallArt = [];
@@ -826,35 +897,81 @@ export function createRoom3D(container, opts = {}) {
     for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
     return h >>> 0;
   }
+  function pathLen(path) {
+    let L = 0;
+    for (let i = 1; i < path.length; i++) L += Math.hypot(path[i].x - path[i - 1].x, path[i].y - path[i - 1].y);
+    return L;
+  }
+  function pointAlong(path, dist) {
+    if (!path || !path.length) return { x: 0, y: 0 };
+    if (path.length === 1 || dist <= 0) return { x: path[0].x, y: path[0].y };
+    let left = dist;
+    for (let i = 1; i < path.length; i++) {
+      const seg = Math.hypot(path[i].x - path[i - 1].x, path[i].y - path[i - 1].y);
+      if (left <= seg || i === path.length - 1) {
+        const t = seg ? Math.min(1, left / (seg || 1)) : 1;
+        return { x: path[i - 1].x + (path[i].x - path[i - 1].x) * t, y: path[i - 1].y + (path[i].y - path[i - 1].y) * t };
+      }
+      left -= seg;
+    }
+    const last = path[path.length - 1];
+    return { x: last.x, y: last.y };
+  }
+  function petWalkBlocked() {
+    return (globalThis.HouseIso?.blockedSet(furniture) || new Set());
+  }
+  function snapPetHome(pet, blocked) {
+    const hx = Math.round(pet.x), hy = Math.round(pet.y);
+    if (tileIsFree(hx, hy, gridSize, blocked, null)) return { x: hx, y: hy };
+    return globalThis.HouseIso?.nearestFreeTile?.(hx, hy, blocked, gridSize) || { x: hx, y: hy };
+  }
+  function placedWanderDest(pet, blocked, home) {
+    const seed = hashStr(pet.id || pet.item);
+    const dirs = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]];
+    const order = [];
+    for (let i = 0; i < 8; i++) order.push(dirs[(seed + i) % 8]);
+    const extra = new Set(); // stay unique vs home only
+    for (const dist of [1 + (seed % 2), 1, 2]) {
+      for (const [dx, dy] of order) {
+        const tx = Math.max(0, Math.min(gridSize - 1, home.x + dx * dist));
+        const ty = Math.max(0, Math.min(gridSize - 1, home.y + dy * dist));
+        if (!tileIsFree(tx, ty, gridSize, blocked, null)) continue;
+        if (tx === home.x && ty === home.y) continue;
+        const path = globalThis.HouseIso?.pathfind(home, { x: tx, y: ty }, blocked, gridSize);
+        if (path && path.length) return { x: tx, y: ty, path };
+      }
+    }
+    return { x: home.x, y: home.y, path: [home] };
+  }
   function placedPetAnim(pet, now) {
+    const blocked = petWalkBlocked();
+    const home = snapPetHome(pet, blocked);
     const seed = hashStr(pet.id || pet.item);
     const period = 8000;
     const t = (now + (seed % period)) % period;
-    const dirs = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]];
-    const [dx, dy] = dirs[seed % 8];
-    const dist = 1 + (seed % 2);
-    let tx = pet.x + dx * dist;
-    let ty = pet.y + dy * dist;
-    tx = Math.max(0, Math.min(gridSize - 1, tx));
-    ty = Math.max(0, Math.min(gridSize - 1, ty));
+    const dest = placedWanderDest(pet, blocked, home);
+    const outPath = dest.path && dest.path.length ? dest.path : [home, dest];
+    const backPath = outPath.slice().reverse();
     const walkOut = 1600, sitAway = 4600, walkBack = 6200;
     const faceTo = (ax, ay, bx, by) => {
       const fx = Math.sign(bx - ax) || 0;
       const fy = Math.sign(by - ay) || 0;
       return { x: fx, z: fy };
     };
-    if (t < walkOut) {
+    if (t < walkOut && outPath.length > 1) {
       const u = t / walkOut;
-      return { x: pet.x + (tx - pet.x) * u, y: pet.y + (ty - pet.y) * u, walking: true, sit: false, facing: faceTo(pet.x, pet.y, tx, ty) };
+      const pt = pointAlong(outPath, pathLen(outPath) * u);
+      return { x: pt.x, y: pt.y, walking: true, sit: false, facing: faceTo(home.x, home.y, dest.x, dest.y) };
     }
     if (t < sitAway) {
-      return { x: tx, y: ty, walking: false, sit: true, facing: faceTo(pet.x, pet.y, tx, ty) };
+      return { x: dest.x, y: dest.y, walking: false, sit: true, facing: faceTo(home.x, home.y, dest.x, dest.y) };
     }
-    if (t < walkBack) {
+    if (t < walkBack && backPath.length > 1) {
       const u = (t - sitAway) / (walkBack - sitAway);
-      return { x: tx + (pet.x - tx) * u, y: ty + (pet.y - ty) * u, walking: true, sit: false, facing: faceTo(tx, ty, pet.x, pet.y) };
+      const pt = pointAlong(backPath, pathLen(backPath) * u);
+      return { x: pt.x, y: pt.y, walking: true, sit: false, facing: faceTo(dest.x, dest.y, home.x, home.y) };
     }
-    return { x: pet.x, y: pet.y, walking: false, sit: true, facing: { x: 1, z: 0 } };
+    return { x: home.x, y: home.y, walking: false, sit: true, facing: { x: 1, z: 0 } };
   }
   function collectDrawList(now) {
     const list = [];
@@ -895,7 +1012,8 @@ export function createRoom3D(container, opts = {}) {
         screen,
       });
       const recNotes = isRec && recOn ? notesAt(f.id, rec, nowServer()) : null;
-      list.push({ kind: "furn", id: f.id, type, depth: f.x + f.y + (m.tw + m.th) / 2 + 0.2, sx: pos.sx, sy: pos.sy, w: pos.w, h: pos.h, spr, raw: f, glow, recNotes, recOn });
+      const screenQuad = (isTv && tvOn && glow) ? tvScreenQuadSprite(type, rot) : null;
+      list.push({ kind: "furn", id: f.id, type, depth: f.x + f.y + (m.tw + m.th) / 2 + 0.2, sx: pos.sx, sy: pos.sy, w: pos.w, h: pos.h, spr, raw: f, glow: Boolean(screenQuad), screenQuad, recNotes, recOn });
       if (type === "chesstable") {
         for (const seat of [0, 1]) {
           const pose = chessSeatPose(f, seat);
@@ -1034,10 +1152,11 @@ export function createRoom3D(container, opts = {}) {
     const a = tileToScreen(0, n);
     const b = tileToScreen(n, n);
     const c = tileToScreen(n, 0);
+    const fc = floorColorHex(decor.floorColor || "honey");
     const down = (p) => ({ sx: p.sx, sy: p.sy + SLAB });
-    fillPoly(ctx, [a, b, down(b), down(a)], "#c49258", "#8a6038");
-    fillPoly(ctx, [b, c, down(c), down(b)], "#d4a468", "#8a6038");
-    ctx.strokeStyle = "#8a5a30";
+    fillPoly(ctx, [a, b, down(b), down(a)], shade(fc, -18), shade(fc, -48));
+    fillPoly(ctx, [b, c, down(c), down(b)], shade(fc, -6), shade(fc, -48));
+    ctx.strokeStyle = shade(fc, -40);
     ctx.beginPath();
     ctx.moveTo(down(a).sx, down(a).sy);
     ctx.lineTo(down(b).sx, down(b).sy);
@@ -1045,9 +1164,9 @@ export function createRoom3D(container, opts = {}) {
     ctx.stroke();
   }
 
-  function drawWalls() {
+  function drawWalls(now = 0) {
     const n = gridSize;
-    const pal = WALL_COLORS[wallpaper] || WALL_COLORS["paint-cream"];
+    const pal = wallColorPal(decor.wallColor || "cream");
     const dim = lightsOn ? 0 : -36;
     const base = shade(pal.base, dim);
     const grout = shade(pal.grout || "#6d727a", dim);
@@ -1072,23 +1191,71 @@ export function createRoom3D(container, opts = {}) {
       const mid = wall === "back" ? shade(base, 8) : shade(base, -10);
       const inner = (t, up) => wallPt(wall, t, up);
       fillPoly(ctx, [inner(0, 0), inner(n, 0), inner(n, WALL_H), inner(0, WALL_H)], mid, grout);
-      // Square wall tiles with visible grout: paint grout field, then tile faces.
       const rows = 3;
       const skirtH = 7, capH = 6;
       const usable = WALL_H - skirtH - capH;
       const rowH = usable / rows;
       const tileA = shade(base, 12);
       const tileB = shade(base, -8);
-      for (let i = 0; i < n; i++) {
-        for (let r = 0; r < rows; r++) {
-          const u0 = skirtH + r * rowH + 0.8;
-          const u1 = skirtH + (r + 1) * rowH - 0.8;
+      const pattern = decor.wallPattern || "tiles";
+      const skipDoor = (t0, t1, u0) => wall === "left" && t0 < doorT1 && t1 > doorT0 && u0 < doorH;
+      if (pattern === "tiles" || pattern === "plain" && false) {
+        for (let i = 0; i < n; i++) {
+          for (let r = 0; r < rows; r++) {
+            const u0 = skirtH + r * rowH + 0.8;
+            const u1 = skirtH + (r + 1) * rowH - 0.8;
+            const t0 = i + 0.06, t1 = i + 1 - 0.06;
+            if (skipDoor(t0, t1, u0)) continue;
+            const fill = (i + r) % 2 ? tileA : tileB;
+            fillPoly(ctx, [inner(t0, u0), inner(t1, u0), inner(t1, u1), inner(t0, u1)], fill, grout);
+          }
+        }
+      } else if (pattern === "stripes") {
+        const cols = n * 2;
+        for (let i = 0; i < cols; i++) {
+          const t0 = i * (n / cols) + 0.04, t1 = (i + 1) * (n / cols) - 0.04;
+          if (skipDoor(t0, t1, skirtH)) continue;
+          const fill = i % 2 ? shade(base, 10) : shade(base, -12);
+          fillPoly(ctx, [inner(t0, skirtH + 1), inner(t1, skirtH + 1), inner(t1, WALL_H - capH - 1), inner(t0, WALL_H - capH - 1)], fill, null);
+        }
+      } else if (pattern === "brick") {
+        const br = 4, bc = n * 2;
+        const bh = usable / br, bw = n / bc;
+        for (let r = 0; r < br; r++) {
+          const off = (r % 2) ? bw / 2 : 0;
+          for (let i = -1; i <= bc; i++) {
+            const t0 = i * bw + off + 0.04, t1 = (i + 1) * bw + off - 0.04;
+            const u0 = skirtH + r * bh + 0.6, u1 = skirtH + (r + 1) * bh - 0.6;
+            if (t1 <= 0 || t0 >= n) continue;
+            if (skipDoor(Math.max(0, t0), Math.min(n, t1), u0)) continue;
+            fillPoly(ctx, [inner(Math.max(0, t0), u0), inner(Math.min(n, t1), u0), inner(Math.min(n, t1), u1), inner(Math.max(0, t0), u1)], (i + r) % 2 ? tileA : tileB, grout);
+          }
+        }
+      } else if (pattern === "floral" || pattern === "dots") {
+        for (let i = 0; i < n; i++) {
+          for (let r = 0; r < 3; r++) {
+            const t = i + 0.5, u = skirtH + 8 + r * (usable / 3);
+            if (skipDoor(t - 0.2, t + 0.2, u - 4)) continue;
+            const cx = inner(t, u);
+            if (pattern === "dots") {
+              ctx.fillStyle = shade(base, -28);
+              ctx.beginPath(); ctx.arc(cx.sx, cx.sy, 2.2, 0, Math.PI * 2); ctx.fill();
+            } else {
+              ctx.fillStyle = shade(base, -30);
+              ctx.beginPath(); ctx.arc(cx.sx, cx.sy, 2.6, 0, Math.PI * 2); ctx.fill();
+              ctx.fillStyle = shade(base, 18);
+              ctx.beginPath(); ctx.arc(cx.sx, cx.sy, 1.1, 0, Math.PI * 2); ctx.fill();
+            }
+          }
+        }
+      } else if (pattern === "woodpanel") {
+        for (let i = 0; i < n; i++) {
           const t0 = i + 0.06, t1 = i + 1 - 0.06;
-          if (wall === "left" && t0 < doorT1 && t1 > doorT0 && u0 < doorH) continue;
-          const fill = (i + r) % 2 ? tileA : tileB;
-          fillPoly(ctx, [inner(t0, u0), inner(t1, u0), inner(t1, u1), inner(t0, u1)], fill, grout);
+          if (skipDoor(t0, t1, skirtH)) continue;
+          fillPoly(ctx, [inner(t0, skirtH + 1), inner(t1, skirtH + 1), inner(t1, WALL_H - capH - 1), inner(t0, WALL_H - capH - 1)], i % 2 ? tileA : shade(base, -4), shade(base, -36));
         }
       }
+      // plain: just the base fill, no extra pattern
       // skirting board
       if (wall === "left") {
         fillPoly(ctx, [inner(0, 0), inner(doorT0, 0), inner(doorT0, 7), inner(0, 7)], skirt, cap);
@@ -1115,29 +1282,70 @@ export function createRoom3D(container, opts = {}) {
 
     function drawEntryDoor() {
       const inner = (t, up) => wallPt("left", t, up);
-      const frameC = lightsOn ? "#3a2418" : "#221610";
-      const wood = lightsOn ? "#6b3e22" : "#3a2416";
-      const woodLite = lightsOn ? "#8a5630" : "#4a3020";
-      const woodDark = lightsOn ? "#4a2a16" : "#2a1810";
-      const knob = lightsOn ? "#d4b46a" : "#7a6438";
+      const style = decor.doorStyle || "wood";
+      const dim = lightsOn ? 0 : -28;
+      const palettes = {
+        wood: { frame: "#3a2418", body: "#6b3e22", lite: "#8a5630", dark: "#4a2a16", knob: "#d4b46a" },
+        modern: { frame: "#3a3a40", body: "#efe8dc", lite: "#fff6ea", dark: "#d4ccc0", knob: "#c0c4c8" },
+        metal: { frame: "#2a2c30", body: "#8a9098", lite: "#b0b4b8", dark: "#5a6068", knob: "#d0d4d8" },
+        glass: { frame: "#3a444c", body: "#8ab8c8", lite: "#c8e4ee", dark: "#5a8898", knob: "#d0d4d8" },
+        arch: { frame: "#3a2418", body: "#7a4a28", lite: "#9a6840", dark: "#5a3018", knob: "#d4b46a" },
+        shutter: { frame: "#2a2c30", body: "#6a6e74", lite: "#8a8e94", dark: "#4a4e54", knob: "#d0d4d8" },
+      };
+      const dpal = palettes[style] || palettes.wood;
+      const frameC = shade(dpal.frame, dim);
+      const wood = shade(dpal.body, dim);
+      const woodLite = shade(dpal.lite, dim);
+      const woodDark = shade(dpal.dark, dim);
+      const knob = shade(dpal.knob, dim);
       const fw = 0.055;
-      fillPoly(ctx, [inner(doorT0 - fw, 0), inner(doorT1 + fw, 0), inner(doorT1 + fw, doorH + 4), inner(doorT0 - fw, doorH + 4)], frameC, "#111");
-      fillPoly(ctx, [inner(doorT0, 0), inner(doorT1, 0), inner(doorT1, doorH), inner(doorT0, doorH)], wood, "#1a100c");
-      // recessed panels
+      const topH = style === "arch" ? doorH + 8 : doorH + 4;
+      fillPoly(ctx, [inner(doorT0 - fw, 0), inner(doorT1 + fw, 0), inner(doorT1 + fw, topH), inner(doorT0 - fw, topH)], frameC, "#111");
+      if (style === "arch") {
+        const steps = 6;
+        const pts = [];
+        for (let i = 0; i <= steps; i++) {
+          const t = i / steps;
+          const tt = doorT0 + t * (doorT1 - doorT0);
+          const rise = Math.sin(t * Math.PI) * 8;
+          pts.push(inner(tt, doorH + rise));
+        }
+        fillPoly(ctx, [inner(doorT0, 0), ...pts, inner(doorT1, 0)], wood, "#1a100c");
+      } else {
+        fillPoly(ctx, [inner(doorT0, 0), inner(doorT1, 0), inner(doorT1, doorH), inner(doorT0, doorH)], wood, "#1a100c");
+      }
       const p0 = doorT0 + 0.12, p1 = doorT1 - 0.12;
-      fillPoly(ctx, [inner(p0, doorH * 0.52), inner(p1, doorH * 0.52), inner(p1, doorH * 0.88), inner(p0, doorH * 0.88)], woodDark, "#1a100c");
-      fillPoly(ctx, [inner(p0 + 0.04, doorH * 0.56), inner(p1 - 0.04, doorH * 0.56), inner(p1 - 0.04, doorH * 0.84), inner(p0 + 0.04, doorH * 0.84)], woodLite, null);
-      fillPoly(ctx, [inner(p0, doorH * 0.10), inner(p1, doorH * 0.10), inner(p1, doorH * 0.42), inner(p0, doorH * 0.42)], woodDark, "#1a100c");
-      fillPoly(ctx, [inner(p0 + 0.04, doorH * 0.14), inner(p1 - 0.04, doorH * 0.14), inner(p1 - 0.04, doorH * 0.38), inner(p0 + 0.04, doorH * 0.38)], woodLite, null);
-      // knob on the switch side (left of the far-right door)
-      const kt0 = doorT0 + 0.08, kt1 = doorT0 + 0.16;
-      const kh0 = doorH * 0.44, kh1 = doorH * 0.52;
-      fillPoly(ctx, [inner(kt0, kh0), inner(kt1, kh0), inner(kt1, kh1), inner(kt0, kh1)], knob, "#2a2010");
-      const kmid = wallPt("left", (kt0 + kt1) / 2, (kh0 + kh1) / 2);
-      ctx.fillStyle = lightsOn ? "#efe0b0" : "#8a7038";
-      ctx.beginPath();
-      ctx.arc(kmid.sx, kmid.sy, 1.6, 0, Math.PI * 2);
-      ctx.fill();
+      if (style === "glass") {
+        const mid = (doorT0 + doorT1) / 2;
+        fillPoly(ctx, [inner(doorT0 + 0.06, 6), inner(mid - 0.04, 6), inner(mid - 0.04, doorH - 6), inner(doorT0 + 0.06, doorH - 6)], woodLite, frameC);
+        fillPoly(ctx, [inner(mid + 0.04, 6), inner(doorT1 - 0.06, 6), inner(doorT1 - 0.06, doorH - 6), inner(mid + 0.04, doorH - 6)], woodLite, frameC);
+      } else if (style === "shutter") {
+        for (let i = 0; i < 6; i++) {
+          const u0 = 4 + i * ((doorH - 8) / 6);
+          const u1 = u0 + (doorH - 8) / 6 - 1.2;
+          fillPoly(ctx, [inner(p0, u0), inner(p1, u0), inner(p1, u1), inner(p0, u1)], i % 2 ? woodLite : woodDark, frameC);
+        }
+      } else if (style === "metal") {
+        fillPoly(ctx, [inner(p0, 8), inner(p1, 8), inner(p1, doorH - 8), inner(p0, doorH - 8)], woodDark, frameC);
+        fillPoly(ctx, [inner(p0 + 0.08, doorH * 0.46), inner(p1 - 0.08, doorH * 0.46), inner(p1 - 0.08, doorH * 0.54), inner(p0 + 0.08, doorH * 0.54)], knob, frameC);
+      } else if (style === "modern") {
+        fillPoly(ctx, [inner(p0, 8), inner(p1, 8), inner(p1, doorH - 8), inner(p0, doorH - 8)], woodLite, null);
+      } else {
+        fillPoly(ctx, [inner(p0, doorH * 0.52), inner(p1, doorH * 0.52), inner(p1, doorH * 0.88), inner(p0, doorH * 0.88)], woodDark, "#1a100c");
+        fillPoly(ctx, [inner(p0 + 0.04, doorH * 0.56), inner(p1 - 0.04, doorH * 0.56), inner(p1 - 0.04, doorH * 0.84), inner(p0 + 0.04, doorH * 0.84)], woodLite, null);
+        fillPoly(ctx, [inner(p0, doorH * 0.10), inner(p1, doorH * 0.10), inner(p1, doorH * 0.42), inner(p0, doorH * 0.42)], woodDark, "#1a100c");
+        fillPoly(ctx, [inner(p0 + 0.04, doorH * 0.14), inner(p1 - 0.04, doorH * 0.14), inner(p1 - 0.04, doorH * 0.38), inner(p0 + 0.04, doorH * 0.38)], woodLite, null);
+      }
+      if (style !== "metal") {
+        const kt0 = doorT0 + 0.08, kt1 = doorT0 + 0.16;
+        const kh0 = doorH * 0.44, kh1 = doorH * 0.52;
+        fillPoly(ctx, [inner(kt0, kh0), inner(kt1, kh0), inner(kt1, kh1), inner(kt0, kh1)], knob, "#2a2010");
+        const kmid = wallPt("left", (kt0 + kt1) / 2, (kh0 + kh1) / 2);
+        ctx.fillStyle = lightsOn ? shade(knob, 30) : shade(knob, -20);
+        ctx.beginPath();
+        ctx.arc(kmid.sx, kmid.sy, 1.6, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
 
     function drawLightSwitch() {
@@ -1173,10 +1381,12 @@ export function createRoom3D(container, opts = {}) {
       const v0 = 28, v1 = 70;
       const pts = [wallPt("back", t0, v0), wallPt("back", t1, v0), wallPt("back", t1, v1), wallPt("back", t0, v1)];
       fillPoly(ctx, pts, "#000000", "#2a2c30");
+      drawWindowScenery(ctx, pts, decor.windowView || "day", now, lightsOn);
       const mid = (t0 + t1) / 2;
       const m0 = wallPt("back", mid, v0), m1 = wallPt("back", mid, v1);
       const h0 = wallPt("back", t0, (v0 + v1) / 2), h1 = wallPt("back", t1, (v0 + v1) / 2);
-      ctx.strokeStyle = "#3a3c40";
+      ctx.strokeStyle = "#3a2c24";
+      ctx.lineWidth = 1.4;
       ctx.beginPath(); ctx.moveTo(m0.sx, m0.sy); ctx.lineTo(m1.sx, m1.sy); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(h0.sx, h0.sy); ctx.lineTo(h1.sx, h1.sy); ctx.stroke();
       fillPoly(ctx, pts, null, "#2a2c30");
@@ -1249,11 +1459,18 @@ export function createRoom3D(container, opts = {}) {
   function stepPets(now) {
     const dt = lastPetStep ? Math.min(0.05, (now - lastPetStep) / 1000) : 0;
     lastPetStep = now;
-    const blocked = (globalThis.HouseIso?.blockedSet(furniture) || new Set());
+    const blocked = petWalkBlocked();
     const occupied = new Set();
     for (const p of people) {
       const ost = personState.get(p.username) || p;
       occupied.add(Math.round(ost.x ?? p.x) + "," + Math.round(ost.y ?? p.y));
+    }
+    // Keep placed pets off furniture if a piece landed on their tile.
+    for (const pet of placedPets) {
+      const hx = Math.round(pet.x), hy = Math.round(pet.y);
+      if (tileIsFree(hx, hy, gridSize, blocked, null)) continue;
+      const n = globalThis.HouseIso?.nearestFreeTile?.(hx, hy, blocked, gridSize);
+      if (n) { pet.x = n.x; pet.y = n.y; }
     }
     for (const p of people) {
       const st = personState.get(p.username);
@@ -1261,38 +1478,70 @@ export function createRoom3D(container, opts = {}) {
       if (!(p.activePet || st.activePet)) {
         st.petSit = false;
         st.petWalking = false;
+        st.petPath = null;
         continue;
       }
       const ox = st.x, oy = st.y;
       const walking = Boolean(st.walking);
       const facing = p.facing || st.facing || { x: 1, z: 0 };
-      const ownerKey = Math.round(ox) + "," + Math.round(oy);
       const occ = new Set(occupied);
-      occ.delete(ownerKey);
+      occ.delete(Math.round(ox) + "," + Math.round(oy));
       const want = walking
-        ? petFollowTarget(ox, oy, facing, gridSize)
+        ? petFollowTarget(ox, oy, facing, gridSize, { blocked, occupied: occ })
         : petSitTarget(ox, oy, facing, { blocked, occupied: occ, gridSize, sitting: p.sitting || st.sitting });
       if (st.petX == null) { st.petX = ox; st.petY = oy; }
-      const dx = want.x - st.petX, dy = want.y - st.petY;
-      const dist = Math.hypot(dx, dy);
+      // If the pet is already inside a blocked tile, hop to the nearest free one.
+      if (!tileIsFree(st.petX, st.petY, gridSize, blocked, null)) {
+        const n = globalThis.HouseIso?.nearestFreeTile?.(st.petX, st.petY, blocked, gridSize);
+        if (n) { st.petX = n.x; st.petY = n.y; st.petPath = null; }
+      }
+      const gk = tileKey(want.x, want.y);
+      if (!st.petPath || st.petPathGoal !== gk) {
+        const path = globalThis.HouseIso?.pathfind({ x: st.petX, y: st.petY }, { x: want.x, y: want.y }, blocked, gridSize);
+        st.petPath = path && path.length ? path.slice() : null;
+        st.petPathGoal = gk;
+      }
       const speed = walking ? 3.15 : 3.35;
-      if (dist < 0.08) {
-        st.petX = want.x;
-        st.petY = want.y;
+      const dxWant = want.x - st.petX, dyWant = want.y - st.petY;
+      if (!st.petPath || !st.petPath.length) {
+        if (Math.hypot(dxWant, dyWant) < 0.08 && tileIsFree(want.x, want.y, gridSize, blocked, null)) {
+          st.petX = want.x;
+          st.petY = want.y;
+        }
         st.petWalking = false;
         st.petSit = !walking;
-      } else if (dt > 0) {
-        const step = Math.min(dist, speed * dt);
-        st.petX += (dx / dist) * step;
-        st.petY += (dy / dist) * step;
-        st.petWalking = true;
-        st.petSit = false;
       } else {
-        st.petWalking = true;
-        st.petSit = false;
+        const next = st.petPath[0];
+        const dx = next.x - st.petX, dy = next.y - st.petY;
+        const dist = Math.hypot(dx, dy);
+        if (dist < 0.08) {
+          st.petX = next.x;
+          st.petY = next.y;
+          st.petPath.shift();
+          if (!st.petPath.length) {
+            if (tileIsFree(want.x, want.y, gridSize, blocked, null)) {
+              st.petX = want.x;
+              st.petY = want.y;
+            }
+            st.petWalking = false;
+            st.petSit = !walking;
+          } else {
+            st.petWalking = true;
+            st.petSit = false;
+          }
+        } else if (dt > 0) {
+          const step = Math.min(dist, speed * dt);
+          st.petX += (dx / dist) * step;
+          st.petY += (dy / dist) * step;
+          st.petWalking = true;
+          st.petSit = false;
+        } else {
+          st.petWalking = true;
+          st.petSit = false;
+        }
       }
       st.petFacing = st.petWalking
-        ? { x: dx, z: dy }
+        ? { x: want.x - st.petX, z: want.y - st.petY }
         : (walking ? facing : petSitFacing(facing));
     }
   }
@@ -1320,11 +1569,12 @@ export function createRoom3D(container, opts = {}) {
     ctx.save();
     ctx.translate(ox * zoom, oy * zoom);
     ctx.scale(zoom, zoom);
-    const kind = FLOOR_KIND[floorStyle] || "panel";
+    const floorPat = decor.floorPattern || "wood";
+    const floorCol = decor.floorColor || "honey";
     for (let y = 0; y < gridSize; y++) {
       for (let x = 0; x < gridSize; x++) {
         const p = tileToScreen(x, y);
-        const spr = floorTileSprite(kind, lightsOn, (x + y) + x * 3);
+        const spr = floorTileSprite(floorPat, floorCol, lightsOn, (x + y) + x * 3);
         blit(spr, p.sx - TW / 2 - 1, p.sy - 1);
         if (hoverTile && hoverTile.x === x && hoverTile.y === y) {
           drawTileShadow(ctx, x, y, "hover");
@@ -1344,7 +1594,7 @@ export function createRoom3D(container, opts = {}) {
       }
     }
     drawFloorSlab();
-    drawWalls();
+    drawWalls(now);
     const list = collectDrawList(now);
     for (const it of list) {
       if (highlightId && it.id === highlightId && it.raw) {
@@ -1413,11 +1663,16 @@ export function createRoom3D(container, opts = {}) {
         const off = platterOffset(it.raw?.rot);
         drawNotes(ctx, it.sx + off.x, it.sy + off.y, it.recNotes, lightsOn);
       }
-      if (it.glow) {
+      if (it.glow && it.screenQuad && it.screenQuad.length >= 4) {
+        // Subtle ambient only, clipped to the TV screen parallelogram.
         ctx.save();
-        ctx.fillStyle = tvGlowColor();
         ctx.beginPath();
-        ctx.ellipse(it.sx + it.w * 0.5, it.sy + it.h * 0.82, it.w * 0.42, 16, 0, 0, Math.PI * 2);
+        const q = it.screenQuad;
+        ctx.moveTo(it.sx + q[0].x, it.sy + q[0].y);
+        for (let i = 1; i < q.length; i++) ctx.lineTo(it.sx + q[i].x, it.sy + q[i].y);
+        ctx.closePath();
+        ctx.clip();
+        ctx.fillStyle = "rgba(120, 180, 255, 0.10)";
         ctx.fill();
         ctx.restore();
       }
@@ -1523,7 +1778,7 @@ export function createRoom3D(container, opts = {}) {
 
   canvas.addEventListener("pointerdown", (e) => {
     const over = document.elementFromPoint(e.clientX, e.clientY);
-    if (over && over.closest && over.closest("#chat-dock, .chat-frame, #phone-btn, #emote-wheel-btn, #chat-send, #chat-input, #edit-inventory, #shop-toggle, .shop-toggle")) {
+    if (over && over.closest && over.closest("#chat-dock, .chat-frame, #phone-btn, #emote-wheel-btn, #chat-send, #chat-input, #edit-inventory, #shop-toggle, .shop-toggle, #item-rotate, #edit-room-btn, #edit-char-overlay")) {
       return;
     }
     try { canvas.setPointerCapture?.(e.pointerId); } catch {}
@@ -1736,7 +1991,18 @@ export function createRoom3D(container, opts = {}) {
     ready: true,
     overlay,
     resize,
-    setStyle(wp, fl) { if (wp) wallpaper = wp; if (fl) floorStyle = fl; },
+    setStyle(wp, fl) {
+      if (wp) wallpaper = wp;
+      if (fl) floorStyle = fl;
+      decor = normalizeDecor({ wallpaper, floorStyle, ...decor });
+    },
+    setDecor(next) {
+      decor = normalizeDecor(next || {}, decor);
+      const alias = legacyAliases(decor);
+      wallpaper = alias.wallpaper;
+      floorStyle = alias.floorStyle;
+    },
+    getDecor() { return { ...decor }; },
     setGridSize(n) { gridSize = Math.max(4, Math.min(12, n || 6)); applyCamera(); },
     setFurniture(list) { furniture = (list || []).map((f) => ({ ...f, rot: normalizeFurnRot(f.rot) })); },
     setPlacedPets(list) { placedPets = (list || []).map((p) => ({ ...p })); },
@@ -1819,6 +2085,8 @@ export function createRoom3D(container, opts = {}) {
       };
     },
     petSitTarget,
+    petFollowTarget,
+    placedPetAnim,
     bagSwinging(id) { const u = uses[id]; return Boolean(u && (u.hit || u.swing || u.move || (u.lastHitAt && (Date.now() - u.lastHitAt) < 2500))); },
     personFlags(name) {
       const p = people.find((x) => x.username === name);
