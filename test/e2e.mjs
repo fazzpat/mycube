@@ -1986,6 +1986,21 @@ async function runStoresAndCyberShots(browser) {
   await page.evaluate(() => window.__openStore("clothes", "nt-tee"));
   await page.waitForSelector('[data-testid="store-panel"]:not(.hidden)');
   check("The shop shows Furniture, Clothes, Outerwear, Pets, Wall art, and Outfits tabs", (await page.locator('[data-testid="store-tab-furniture"]').count()) === 1 && (await page.locator('[data-testid="store-tab-clothes"]').count()) === 1 && (await page.locator('[data-testid="store-tab-outerwear"]').count()) === 1 && (await page.locator('[data-testid="store-tab-pets"]').count()) === 1 && (await page.locator('[data-testid="store-tab-art"]').count()) === 1 && (await page.locator('[data-testid="store-tab-outfits"]').count()) === 1);
+
+  const tabFit = await page.evaluate(() => {
+    const panel = document.querySelector('[data-testid="store-panel"]');
+    const ids = ["store-tab-furniture", "store-tab-clothes", "store-tab-outerwear", "store-tab-pets", "store-tab-art", "store-tab-outfits"];
+    const pr = panel.getBoundingClientRect();
+    const rows = ids.map((id) => {
+      const el = document.querySelector(`[data-testid="${id}"]`);
+      if (!el) return { id, missing: true };
+      const r = el.getBoundingClientRect();
+      const visible = r.width > 8 && r.height > 8 && r.left >= pr.left - 1 && r.right <= pr.right + 1 && r.top >= pr.top - 1 && r.bottom <= pr.bottom + 1;
+      return { id, visible, left: +r.left.toFixed(1), right: +r.right.toFixed(1), top: +r.top.toFixed(1), bottom: +r.bottom.toFixed(1), text: (el.textContent || "").trim() };
+    });
+    return { panel: { w: +pr.width.toFixed(1), left: +pr.left.toFixed(1), right: +pr.right.toFixed(1) }, rows, all: rows.every((r) => r.visible) };
+  });
+  check("All six shop tabs are fully visible in the 390px shop panel", tabFit.all, JSON.stringify(tabFit));
   await page.locator('[data-testid="store-item-nt-tee"]').click();
   await page.waitForTimeout(200);
   const previewOn = await page.evaluate(() => Boolean(document.querySelector('[data-testid="store-preview"] canvas, [data-testid="store-preview"] *')));
