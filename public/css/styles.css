@@ -4583,3 +4583,336 @@ body.edit-mode #phone-overlay .phone-backdrop,
 #phone-overlay.phone-just-opened .phone-backdrop {
   pointer-events: none !important;
 }
+
+/* KEYBOARD_ONLY_CHAT: tapping the chat icon shows only the native
+   keyboard. The composer stays in the DOM (font-size 16px) so iOS will
+   focus it, but it is visually hidden — no bar sits above the keyboard. */
+#chat-composer.is-open,
+body.chat-open #chat-composer,
+.chat-composer.is-open {
+  display: block !important;
+  position: fixed !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100% !important;
+  height: 1px !important;
+  min-height: 0 !important;
+  max-height: 2px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  opacity: 0.01 !important;
+  overflow: hidden !important;
+  pointer-events: none !important;
+  z-index: 1 !important;
+}
+#chat-composer.hidden:not(.is-open) { display: none !important; }
+body.chat-open #chat-composer #chat-input,
+body.chat-open #chat-composer [data-testid="chat-input"],
+#chat-composer.is-open #chat-input,
+#chat-composer.is-open [data-testid="chat-input"] {
+  position: absolute !important;
+  left: 0 !important;
+  bottom: 0 !important;
+  width: 100% !important;
+  height: 16px !important;
+  min-height: 16px !important;
+  max-height: 16px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  font-size: 16px !important;
+  line-height: 16px !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: transparent !important;
+  caret-color: transparent !important;
+  opacity: 0.01 !important;
+  resize: none !important;
+}
+#chat-composer.is-open #chat-send,
+#chat-composer.is-open .chat-count,
+body.chat-open #chat-composer #chat-send,
+body.chat-open #chat-composer .chat-count {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0);
+  opacity: 0.01;
+  pointer-events: none;
+}
+
+.thinking-stack.is-local-draft {
+  max-width: min(240px, calc(100vw - 24px));
+}
+.thinking-bubble.draft-bubble {
+  line-height: 1.25 !important;
+  max-width: min(240px, calc(100vw - 24px));
+  min-width: 72px;
+  padding: 7px 10px 6px;
+  text-align: left;
+  overflow: visible;
+}
+.draft-text {
+  font-size: 12px;
+  font-weight: 700;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  max-width: 100%;
+  color: #2a1c16;
+  min-height: 1em;
+}
+.draft-count {
+  display: block;
+  margin-top: 3px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: #8a5a32;
+  text-align: right;
+}
+
+/* EDIT_ROOM_SAFE_SHEET: keep the Edit Room panel fully inside the iPhone
+   safe area (home indicator + Safari toolbar). Tabs, close, and every
+   option row stay visible; item rows scroll horizontally and decor
+   sections scroll vertically so the room above remains in view. */
+#edit-inventory.edit-inventory,
+.chat-frame #edit-inventory,
+#edit-inventory {
+  position: fixed !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: var(--chrome-bottom, var(--sab, env(safe-area-inset-bottom, 0px))) !important;
+  width: 100% !important;
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: min(48dvh, calc(var(--layout-h, 100dvh) - var(--vv-top, 0px) - var(--chrome-bottom, var(--sab, 0px)) - 110px)) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+  gap: 6px !important;
+  z-index: 60;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+  padding-top: 8px !important;
+  padding-left: max(10px, var(--sal, env(safe-area-inset-left, 0px))) !important;
+  padding-right: max(10px, var(--sar, env(safe-area-inset-right, 0px))) !important;
+  padding-bottom: max(8px, var(--sab, env(safe-area-inset-bottom, 0px))) !important;
+  background: #efe6d4 !important;
+  border-top: 1px solid #c4b090;
+  pointer-events: auto !important;
+  touch-action: pan-x pan-y;
+  overscroll-behavior: contain;
+}
+#edit-inventory.hidden { display: none !important; }
+#edit-inventory .edit-inv-head,
+#edit-inventory .edit-inv-subtabs {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+#edit-inventory .edit-inv-tabs,
+#edit-inventory .edit-inv-subtabs {
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x;
+  scrollbar-width: none;
+}
+#edit-inventory .edit-inv-items,
+#edit-inventory #edit-inv-items {
+  flex: 1 1 auto;
+  min-height: 64px;
+  min-width: 0;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  touch-action: pan-x pan-y;
+}
+#edit-inventory .edit-inv-items.is-item-row,
+#edit-inventory #edit-inv-items.is-item-row {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  touch-action: pan-x;
+  -webkit-overflow-scrolling: touch;
+}
+#edit-inventory .edit-inv-items.is-decor-stack,
+#edit-inventory #edit-inv-items.is-decor-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+}
+#edit-inventory .edit-decor-section {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+#edit-inventory .edit-decor-heading {
+  margin: 0 0 4px;
+  font-size: 11px;
+  font-weight: 800;
+  color: #3a2418;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+#edit-inventory .edit-decor-row {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  gap: 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x;
+  overscroll-behavior: contain;
+  padding-bottom: 2px;
+}
+#edit-inventory .edit-inv-item,
+#edit-inventory .edit-decor-item,
+#edit-inventory .edit-upgrade-item {
+  touch-action: manipulation;
+}
+body.edit-mode #chat-dock,
+.room-view.edit-on #chat-dock {
+  bottom: calc(var(--inv-h, 120px) + 8px + var(--chrome-bottom, var(--sab, 0px))) !important;
+}
+
+/* COLOR_WHEEL: last swatch in every color row opens a compact hue disc
+   plus brightness slider. The popover stays small and out of the way of
+   the avatar preview and option tiles. */
+.color-wheel-swatch {
+  position: relative;
+  background: conic-gradient(#ff0040, #ffcc00, #33cc33, #00e5ff, #3355ff, #cc33ff, #ff0040) !important;
+  overflow: hidden;
+}
+.color-wheel-swatch.has-custom::after,
+.color-wheel-swatch .color-wheel-chip {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border-radius: inherit;
+  background: var(--custom-color, transparent);
+  pointer-events: none;
+}
+.edit-decor-item.color-wheel-swatch {
+  width: 64px;
+  min-width: 64px;
+  justify-content: flex-end;
+}
+.edit-decor-item.color-wheel-swatch .color-wheel-chip {
+  position: absolute;
+  inset: 4px 4px 18px;
+  border-radius: 8px;
+  background: var(--custom-color, transparent);
+}
+.edit-decor-item.color-wheel-swatch:not(.has-custom) .color-wheel-chip {
+  background: transparent;
+}
+.color-wheel-pop {
+  position: fixed;
+  z-index: 280;
+  width: 164px;
+  padding: 8px 8px 10px;
+  box-sizing: border-box;
+  background: #f7efe0;
+  border: 1px solid #8a5a32;
+  border-radius: 14px;
+  box-shadow: 0 8px 24px rgba(26, 16, 32, 0.28);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  pointer-events: auto;
+  touch-action: none;
+}
+.color-wheel-pop.hidden { display: none !important; }
+.color-wheel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 8px;
+}
+.color-wheel-preview {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  border: 1px solid #8a5a32;
+  flex: 0 0 auto;
+}
+.color-wheel-ok {
+  margin-left: auto;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: 1px solid #8a5a32;
+  background: #f4c15d;
+  color: #3a2418;
+  font-weight: 800;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0;
+}
+.color-wheel-disc {
+  width: 132px;
+  height: 132px;
+  border-radius: 50%;
+  touch-action: none;
+  cursor: crosshair;
+  display: block;
+}
+.color-wheel-brightness {
+  width: 132px;
+  height: 18px;
+  border-radius: 999px;
+  border: 1px solid #8a5a32;
+  touch-action: none;
+  cursor: pointer;
+  display: block;
+}
+
+/* PUTAWAY_DOUBLE_TAP: no iOS double-tap zoom on the room canvas. */
+#floor, #floor canvas, .room3d-root, .room3d-root canvas, .iso-overlay, .bubble-layer {
+  touch-action: manipulation !important;
+}
+
+/* PUTAWAY_BTN: sits in the Edit Room header corner, next to close,
+   so it never covers the tabs or the item rows. */
+#edit-inventory .edit-putaway-btn,
+.edit-putaway-btn {
+  flex: 0 0 auto;
+  margin-left: auto;
+  border: 1px solid #c4b090;
+  background: #f4c15d;
+  color: #3a2418;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.2;
+  padding: 4px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+#edit-inventory .edit-putaway-btn:disabled,
+.edit-putaway-btn:disabled,
+.edit-putaway-btn.is-dim {
+  opacity: 0.4;
+  background: #e8dcc4;
+  color: #6a5648;
+  cursor: default;
+}
+#edit-inventory .edit-inv-head .edit-done-btn {
+  margin-left: 4px;
+}

@@ -5,6 +5,8 @@ import { initStartMenu } from "./startMenu.js";
 import { initCreatorMenu, openFromPhone, closeFromPhone, isPhoneEditOpen } from "./creatorMenu.js";
 import { CLOTHING_STOCK, PET_STOCK, PUBLIC_PLACES, clothingSlot, CLOTHING_SLOTS, HAIR_STYLES as CAT_HAIR_STYLES, HAIR_LABELS, TOP_LABELS, BOTTOM_LABELS, ACC_LABELS, BASE_TOPS, BASE_BOTTOMS, BASE_ACCESSORIES, TOPS as CAT_TOPS, BOTTOMS as CAT_BOTTOMS, ACCESSORIES as CAT_ACCESSORIES, HAT_ACCESSORIES, HATS, HAT_LABELS, HAT_COLORS, GLASSES_STYLES, GLASSES_LABELS, GLASSES_COLORS, NECKLACES, NECKLACE_LABELS, SHOE_COLORS, migrateAvatar } from "./storeCatalog.js";
 import { DECOR_GROUPS, paintDecorThumb, normalizeDecor, DEFAULT_DECOR } from "./roomDecor.js";
+import { canonHex } from "./hexColor.js";
+import { openColorWheel, closeColorWheel, isColorWheelOpen } from "./colorWheel.js";
 import { ART_PIECES, paintArtThumb, registerArtCatalog, installPaintings } from "./artPieces.js";
 import { installWallLayout, switchFloorTile } from "./wallLayout.js";
 import { installChessLayout } from "./chessTable.js";
@@ -239,8 +241,8 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
   const optionThumbCache = new Map();
   function paintOptionThumb(canvas, kind, value, draft) {
     if (!canvas) return;
-    const d = draft || {};
-    const key = [kind, value, d.skin, d.hair, d.hairColor, d.top, d.shirt, d.bottom, d.bottomColor, d.shoes, d.accessory, d.glasses, d.headphoneColor].join("|");
+    const d = migrateAvatar(draft || {});
+    const key = [kind, value, d.skin, d.hair, d.hairColor, d.top, d.shirt, d.bottom, d.bottomColor, d.shoes, d.shoeColor, d.accessory, d.hat, d.hatColor, d.glassesStyle, d.glassesColor, d.necklace].join("|");
     const ctx = canvas.getContext("2d");
     const w = canvas.width || 72, h = canvas.height || 72;
     ctx.imageSmoothingEnabled = false;
@@ -250,16 +252,21 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
       ctx.drawImage(cached, 0, 0, w, h);
       return;
     }
-    const av = { ...HearthAvatar.defaults(), ...d };
-    if (kind === "hair") { av.hair = value; av.hat = "none"; av.accessory = "none"; }
-    else if (kind === "hat") { av.hat = value; av.accessory = value === "none" ? av.accessory : value; }
-    else if (kind === "glasses") { av.glassesStyle = value; av.glasses = value !== "none"; }
+    const av = migrateAvatar({ ...HearthAvatar.defaults(), ...d });
+    if (kind === "hair") { av.hair = value; av.hat = "none"; if (HAT_ACCESSORIES.has(av.accessory)) av.accessory = "none"; }
+    else if (kind === "hat") {
+      av.hat = value;
+      av.accessory = value === "none" ? (HAT_ACCESSORIES.has(av.accessory) ? "none" : av.accessory) : value;
+      // Short hair so the hat silhouette is not buried in a bulky cut.
+      if (value !== "none") av.hair = "short";
+    }
+    else if (kind === "glasses") { av.glassesStyle = value; av.glasses = value !== "none"; av.hat = "none"; }
     else if (kind === "necklace") { av.necklace = value; }
     else if (kind === "face") { av.accessory = value; }
     else if (kind === "top") av.top = value;
     else if (kind === "bottom") av.bottom = value;
     else if (kind === "shoes") av.shoes = value;
-    const facing = { x: 1, z: 0.85 };
+    const facing = { x: 0, z: 1 };
     const spr = drawAvatarSprite(av, { facing }, 0);
     const off = document.createElement("canvas");
     off.width = w; off.height = h;
@@ -268,23 +275,36 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     octx.fillStyle = "#f7efe0";
     octx.fillRect(0, 0, w, h);
     let sx = 0, sy = 0, sw = spr.w, sh = spr.h;
-    if (kind === "hair" || kind === "hat" || kind === "face" || kind === "glasses") {
-      sy = Math.max(0, AV_HEAD_TOP - 8);
-      sh = Math.min(spr.h - sy, 38);
-      sx = Math.max(0, (spr.w - 52) / 2);
-      sw = Math.min(52, spr.w - sx);
+    const midX = (wide) => { sx = Math.max(0, (spr.w - wide) / 2); sw = Math.min(wide, spr.w - sx); };
+    if (kind === "hair") {
+      // Hair plus enough face that the cut reads as a head, not a floating blob.
+      sy = 0;
+      sh = Math.min(spr.h, 48);
+      midX(56);
+    } else if (kind === "hat" || kind === "face") {
+      // Full head so the actual hat sits on a face.
+      sy = 0;
+      sh = Math.min(spr.h, 50);
+      midX(56);
+    } else if (kind === "glasses") {
+      // Eyes sit mid-face; include hairline to chin.
+      sy = Math.max(0, AV_HEAD_TOP - 4);
+      sh = Math.min(spr.h - sy, 46);
+      midX(56);
     } else if (kind === "necklace") {
-      sy = Math.max(0, AV_HEAD_TOP + 16);
+      // Chin to upper chest, tightly cropped so the gold chain or diamond reads.
+      sy = Math.max(0, AV_HEAD_TOP + 22);
       sh = Math.min(spr.h - sy, 28);
+      midX(44);
     } else if (kind === "shoes") {
-      sy = Math.max(0, AV_GROUND_Y - 22);
-      sh = Math.min(spr.h - sy, 24);
+      sy = Math.max(0, AV_GROUND_Y - 16);
+      sh = Math.min(spr.h - sy, 20);
     } else if (kind === "bottom") {
       sy = Math.max(0, AV_HEAD_TOP + 28);
       sh = Math.min(spr.h - sy, 36);
     } else if (kind === "top") {
-      sy = Math.max(0, AV_HEAD_TOP + 14);
-      sh = Math.min(spr.h - sy, 32);
+      sy = Math.max(0, AV_HEAD_TOP + 8);
+      sh = Math.min(spr.h - sy, 38);
     }
     const scale = Math.max(1, Math.floor(Math.min((w - 2) / sw, (h - 2) / sh)));
     const dw = sw * scale, dh = sh * scale;
@@ -295,6 +315,61 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     ctx.drawImage(off, 0, 0, w, h);
   }
 
+    function colorAvoidRects() {
+      return [
+        document.querySelector(".edit-char-preview-wrap"),
+        document.querySelector("#creator-preview"),
+        document.querySelector("#ward-preview"),
+        document.querySelector(".room3d-root"),
+        document.querySelector("#floor"),
+      ];
+    }
+    function colorWithinEl() {
+      return document.querySelector("#edit-char-overlay:not(.hidden), .edit-char-overlay:not(.hidden)")
+        || document.querySelector("#edit-inventory:not(.hidden)")
+        || document.querySelector(".wardrobe-panel:not(.hidden)")
+        || document.body;
+    }
+    function rememberCustom(key, hex, kind) {
+      const bag = kind === "decor" ? "customDecorColors" : "customColors";
+      state[bag] = { ...(state[bag] || {}), [key]: hex };
+    }
+    function appendColorWheelSwatch(el, key, list, hooks = {}) {
+      if (!el) return;
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "swatch color-wheel-swatch";
+      b.dataset.testid = `${key}-wheel`;
+      b.setAttribute("aria-label", "Custom color");
+      const current = hooks.getValue ? hooks.getValue() : state.draft?.[key];
+      const saved = canonHex((hooks.customBag === "decor" ? state.customDecorColors : state.customColors)?.[key]);
+      const custom = (canonHex(current) && !(list || []).includes(current) ? canonHex(current) : null) || saved;
+      if (custom) {
+        b.classList.add("has-custom");
+        b.style.setProperty("--custom-color", custom);
+      }
+      if (canonHex(current) && !(list || []).includes(current)) b.classList.add("selected");
+      b.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const start = canonHex(hooks.getValue ? hooks.getValue() : state.draft?.[key]) || custom || (list && list[0]) || "#ff4d6d";
+        openColorWheel({
+          anchor: b,
+          color: start,
+          avoid: colorAvoidRects(),
+          within: colorWithinEl(),
+          onLive(hex) {
+            rememberCustom(key, hex, hooks.customBag);
+            b.classList.add("has-custom", "selected");
+            b.style.setProperty("--custom-color", hex);
+            el.querySelectorAll(".swatch").forEach((s) => { if (s !== b) s.classList.remove("selected"); });
+            hooks.onLive?.(hex, b);
+          },
+          onClose() { hooks.onClose?.(); },
+        });
+      });
+      el.appendChild(b);
+    }
     function paintCreator() {
     const box = $("#creator-preview");
     if (!state.preview3d) {
@@ -344,6 +419,16 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
           paintCreator();
         });
         el.appendChild(b);
+      });
+      if (asColor) appendColorWheelSwatch(el, key, list, {
+        onLive(hex) {
+          state.draft[key] = hex;
+          if (key === "hatColor") state.draft.headphoneColor = hex;
+          state.preview3d?.setAvatar(state.draft);
+          if (typeof isPhoneEditOpen === "function" && isPhoneEditOpen()) applyDraftLive();
+          paintPhoneEditPreview();
+        },
+        onClose() { paintCreator(); },
       });
     };
     swatch(HearthAvatar.SKINS, "skin", $("#skin-choices"), true);
@@ -745,7 +830,7 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
       socket.emit("move", { x: goal.x, y: goal.y });
     });
     state.room3d.onWallHover((wall, slot) => updateWallHighlight(wall, slot));
-    state.room3d.onWallClick((wall, slot) => handleWallClick(wall, slot));
+    state.room3d.onWallClick((wall, slot, art) => handleWallClick(wall, slot, art));
     return state.room3d;
   }
 
@@ -933,20 +1018,52 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
         seen.add("e:" + p.username);
       }
 
-      const typingLive = Boolean(p.typing) && now - (p.typingAt || 0) < 4000;
+      const isMe = p.username === state.me?.username;
+      const draftOn = isMe && isChatOpen();
+      const typingLive = draftOn || (Boolean(p.typing) && now - (p.typingAt || 0) < 4000);
       if (typingLive) {
         let typ = layer.querySelector(`[data-testid="typing-${cssEscape(p.username)}"]`);
         if (!typ) {
           typ = document.createElement("div");
           typ.className = "thinking-stack";
           typ.dataset.testid = "typing-" + p.username;
-          typ.innerHTML = '<div class="thinking-bubble" aria-label="typing"><span class="think-dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="think-trail" aria-hidden="true"><i></i><i></i></span></div>';
           layer.appendChild(typ);
         }
+        const draft = draftOn ? (($("#chat-input")?.value || "").slice(0, CHAT_MAX)) : null;
+        const sig = draftOn ? `d:${draft}` : "dots";
+        if (typ.dataset.sig !== sig || !typ.firstChild) {
+          typ.dataset.sig = sig;
+          typ.replaceChildren();
+          typ.classList.toggle("is-local-draft", draftOn);
+          if (draftOn) {
+            const bubble = document.createElement("div");
+            bubble.className = "thinking-bubble draft-bubble";
+            bubble.setAttribute("aria-label", "your typying");
+            const text = document.createElement("div");
+            text.className = "draft-text";
+            text.dataset.testid = "typying-draft";
+            text.textContent = draft;
+            const count = document.createElement("span");
+            count.className = "draft-count";
+            count.dataset.testid = "typying-count";
+            count.textContent = `${draft.length}/${CHAT_MAX}`;
+            bubble.append(text, count);
+            typ.append(bubble);
+          } else {
+            typ.innerHTML = '<div class="thinking-bubble" aria-label="typing"><span class="think-dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="think-trail" aria-hidden="true"><i></i><i></i></span></div>';
+          }
+        }
+        typ.classList.toggle("is-local-draft", draftOn);
+        const typW = Math.max(typ.offsetWidth || 80, 80);
+        const typH = typ.offsetHeight || 40;
         const nameH = nameEl.offsetHeight || 16;
-        typ.style.left = Math.min(Math.max(pos.x, 48), W - 48) + "px";
-        typ.style.top = Math.round(ny - nameH - 2) + "px";
+        let tx = Math.min(Math.max(pos.x, typW / 2 + PAD), W - typW / 2 - PAD);
+        let ty = Math.round(ny - nameH - 2);
+        if (ty - typH < PAD) ty = typH + PAD;
+        typ.style.left = tx + "px";
+        typ.style.top = ty + "px";
         typ.style.zIndex = "12";
+        typ.style.maxWidth = Math.min(240, W - PAD * 2) + "px";
         seen.add("t:" + p.username);
       }
 
@@ -1080,7 +1197,7 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
       const name = el.dataset.testid.replace("combo-", "");
       if (!seen.has("c:" + name)) el.remove();
     });
-    layer.querySelectorAll("[data-testid^='typing-']").forEach((el) => {
+    layer.querySelectorAll(".thinking-stack[data-testid^='typing-']").forEach((el) => {
       const name = el.dataset.testid.replace("typing-", "");
       if (!seen.has("t:" + name)) el.remove();
     });
@@ -1474,7 +1591,13 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     }
     if (state.editMode) {
       const piece = art || (state.room?.wallArt || []).find((a) => a.wall === wall && a.slot === slot);
-      if (piece) beginMoveWall(piece);
+      if (!piece) return;
+      if (isEditDoubleTap("wall:" + piece.id)) {
+        state.selectedFurnId = piece.id;
+        putAwaySelected();
+        return;
+      }
+      selectWallArt(piece);
     }
   }
 
@@ -1585,6 +1708,15 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
         b.addEventListener("click", () => { state.draft[key] = val; paintWardrobe(); });
         wrap.appendChild(b);
       });
+      if (asColor) appendColorWheelSwatch(wrap, key, list, {
+        onLive(hex) {
+          state.draft[key] = hex;
+          if (key === "hatColor") state.draft.headphoneColor = hex;
+          state.wardPreview?.setAvatar(state.draft);
+          state.preview3d?.setAvatar(state.draft);
+        },
+        onClose() { paintWardrobe(); },
+      });
       row.appendChild(wrap);
       return row;
     };
@@ -1650,6 +1782,7 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     paintEditInventory();
     bindEditInvDrag();
     state.room3d?.setPlacing("edit");
+    syncPutAwayBtn();
     state.room3d?.setPanLocked?.(false);
     syncEditRoomButton();
     syncAppShell();
@@ -1662,6 +1795,7 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     $("#edit-inventory")?.classList.remove("putaway-hover");
     hideFurnActions();
     cancelPlace();
+    syncPutAwayBtn();
     state.selectedFurnId = null;
     state.selectedPet = null;
     state.movingId = null;
@@ -1680,12 +1814,37 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
   function currentDecor() {
     return normalizeDecor(state.room || {});
   }
-  function applyDecorPatch(patch) {
+  let decorPersistTimer = 0;
+  let pendingDecor = null;
+  function previewDecorPatch(patch, { persist = true, repaint = true } = {}) {
     const next = normalizeDecor({ ...currentDecor(), ...patch });
     state.room = Object.assign(state.room || {}, next);
     state.room3d?.setDecor?.(next);
-    socket.emit("setRoomStyle", next);
-    paintEditInventory();
+    pendingDecor = next;
+    if (persist) {
+      socket.emit("setRoomStyle", next);
+      pendingDecor = null;
+    }
+    if (repaint) paintEditInventory();
+  }
+  function scheduleDecorPersist() {
+    clearTimeout(decorPersistTimer);
+    decorPersistTimer = setTimeout(flushDecorPersist, 120);
+  }
+  function flushDecorPersist() {
+    clearTimeout(decorPersistTimer);
+    if (!pendingDecor) return;
+    socket.emit("setRoomStyle", pendingDecor);
+    pendingDecor = null;
+  }
+  function applyDecorPatch(patch) {
+    previewDecorPatch(patch, { persist: true, repaint: true });
+  }
+  function decorColorHex(key, id) {
+    if (canonHex(id)) return canonHex(id);
+    const group = DECOR_GROUPS.find((g) => g.colorKey === key);
+    const item = group?.colors?.find((c) => c.id === id);
+    return item?.hex || "#e0b068";
   }
   function paintEditInventory() {
     const box = $("#edit-inv-items");
@@ -1698,12 +1857,16 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     });
     const chips = $("#edit-decor-chips");
     if (chips) chips.classList.toggle("hidden", tab !== "room");
+    box.classList.toggle("is-decor-stack", tab === "room");
+    box.classList.toggle("is-item-row", tab !== "room");
     if (tab === "room") {
       paintDecorTab(box);
+      afterPaintInventory();
       return;
     }
     if (tab === "upgrade") {
       paintUpgradeTab(box);
+      afterPaintInventory();
       return;
     }
     const counts = {};
@@ -1749,39 +1912,87 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
         confirmPlacePet();
       });
     });
+    afterPaintInventory();
+  }
+  function afterPaintInventory() {
+    bindInventoryScrollGuard();
+    measureChatFrame();
+    requestAnimationFrame(() => measureChatFrame());
+  }
+  function bindInventoryScrollGuard() {
+    const inv = document.getElementById("edit-inventory");
+    if (!inv || inv.dataset.scrollGuard) return;
+    inv.dataset.scrollGuard = "1";
+    const stop = (e) => e.stopPropagation();
+    inv.addEventListener("touchstart", stop, { passive: true });
+    inv.addEventListener("touchmove", stop, { passive: true });
+    inv.addEventListener("wheel", stop, { passive: true });
+    inv.addEventListener("pointerdown", stop);
   }
   function paintDecorTab(box) {
     const section = state.decorSection || "floor";
     document.querySelectorAll("#edit-decor-chips [data-decor]").forEach((b) => {
       b.classList.toggle("is-on", b.dataset.decor === section);
     });
-    const group = DECOR_GROUPS.find((g) => g.id === section) || DECOR_GROUPS[0];
     const decor = currentDecor();
     const bits = [];
     const addItems = (list, kind, key) => {
+      const row = [];
       for (const it of list) {
         const on = decor[key] === it.id ? " selected" : "";
-        bits.push(`<button type="button" class="edit-decor-item${on}" data-testid="decor-${key}-${it.id}" data-decor-key="${key}" data-decor-id="${it.id}" title="${escapeHtml(it.name)}" aria-label="${escapeHtml(it.name)}">
+        row.push(`<button type="button" class="edit-decor-item${on}" data-testid="decor-${key}-${it.id}" data-decor-key="${key}" data-decor-id="${it.id}" title="${escapeHtml(it.name)}" aria-label="${escapeHtml(it.name)}">
           <canvas width="40" height="28" data-decor-thumb="${kind}" data-decor-id="${it.id}" aria-hidden="true"></canvas>
           <span>${escapeHtml(it.name)}</span>
         </button>`);
       }
+      return row.join("");
     };
-    if (group.colors) {
-      addItems(group.colors, group.colorKey, group.colorKey);
+    for (const group of DECOR_GROUPS) {
+      bits.push(`<section class="edit-decor-section" data-testid="decor-section-${group.id}" id="decor-section-${group.id}">`);
+      bits.push(`<h4 class="edit-decor-heading">${escapeHtml(group.label || group.id)}</h4>`);
+      if (group.colors) {
+        const custom = canonHex(decor[group.colorKey]) || state.customDecorColors?.[group.colorKey] || "";
+        const wheelOn = Boolean(canonHex(decor[group.colorKey]));
+        bits.push(`<div class="edit-decor-row" data-testid="decor-row-${group.id}-color">${addItems(group.colors, group.colorKey, group.colorKey)}<button type="button" class="edit-decor-item color-wheel-swatch${custom ? " has-custom" : ""}${wheelOn ? " selected" : ""}" data-testid="decor-${group.colorKey}-wheel" data-color-wheel="${group.colorKey}" style="--custom-color:${custom || "transparent"}" aria-label="Custom ${escapeHtml(group.label || "color")}"><span class="color-wheel-chip"></span><span>Custom</span></button></div>`);
+      }
+      if (group.patterns) bits.push(`<div class="edit-decor-row" data-testid="decor-row-${group.id}-pattern">${addItems(group.patterns, group.patternKey, group.patternKey)}</div>`);
+      if (group.options) bits.push(`<div class="edit-decor-row" data-testid="decor-row-${group.id}">${addItems(group.options, group.key, group.key)}</div>`);
+      bits.push(`</section>`);
     }
-    if (group.patterns) {
-      addItems(group.patterns, group.patternKey, group.patternKey);
-    }
-    if (group.options) {
-      addItems(group.options, group.key, group.key);
-    }
+    const keepY = box.scrollTop;
     box.innerHTML = bits.join("");
+    box.scrollTop = keepY;
     box.querySelectorAll("canvas[data-decor-thumb]").forEach((c) => {
       paintDecorThumb(c, c.dataset.decorThumb, c.dataset.decorId, decor);
     });
     box.querySelectorAll("[data-decor-key]").forEach((b) => {
       b.addEventListener("click", () => applyDecorPatch({ [b.dataset.decorKey]: b.dataset.decorId }));
+    });
+    box.querySelectorAll("[data-color-wheel]").forEach((b) => {
+      b.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const key = b.dataset.colorWheel;
+        const start = decorColorHex(key, currentDecor()[key]) || state.customDecorColors?.[key] || "#e0b068";
+        openColorWheel({
+          anchor: b,
+          color: start,
+          avoid: colorAvoidRects(),
+          within: document.querySelector(".room-view") || document.body,
+          onLive(hex) {
+            rememberCustom(key, hex, "decor");
+            b.classList.add("has-custom", "selected");
+            b.style.setProperty("--custom-color", hex);
+            box.querySelectorAll(`[data-decor-key="${key}"]`).forEach((s) => s.classList.remove("selected"));
+            previewDecorPatch({ [key]: hex }, { persist: false, repaint: false });
+            scheduleDecorPersist();
+          },
+          onClose() {
+            flushDecorPersist();
+            paintEditInventory();
+          },
+        });
+      });
     });
   }
   function paintUpgradeTab(box) {
@@ -1967,11 +2178,13 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
   function hideFurnActions() {
     HIDE($("#furn-actions"));
     HIDE($("#item-rotate"));
+    syncPutAwayBtn();
   }
 
   function showFurnActions(id) {
     state.selectedFurnId = id;
     state.room3d?.highlightFurniture(id);
+    syncPutAwayBtn();
     HIDE($("#furn-actions"));
     HIDE($("#place-actions"));
     const rot = $("#item-rotate");
@@ -1981,6 +2194,46 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     }
   }
 
+  function selectFurniture(f) {
+    if (!f) return;
+    hidePetActions();
+    state.selectedPet = null;
+    state.selectedFurnId = f.id;
+    state.movingId = null;
+    state.movingWallId = null;
+    state.pendingPlace = null;
+    state.pendingPet = null;
+    if (state.editMode) state.room3d?.setPlacing("edit");
+    showFurnActions(f.id);
+    syncPutAwayBtn();
+  }
+  function selectWallArt(art) {
+    if (!art) return;
+    hidePetActions();
+    state.selectedPet = null;
+    state.selectedFurnId = art.id;
+    state.movingId = null;
+    state.movingWallId = null;
+    state.pendingPlace = null;
+    state.pendingPet = null;
+    if (state.editMode) state.room3d?.setPlacing("edit");
+    state.room3d?.highlightFurniture(art.id);
+    showFurnActions(art.id);
+    syncPutAwayBtn();
+  }
+  function selectPet(pet) {
+    if (!pet || !pet.item) return;
+    hideFurnActions();
+    state.selectedFurnId = null;
+    state.movingId = null;
+    state.movingWallId = null;
+    state.pendingPlace = null;
+    state.pendingPet = null;
+    state.selectedPet = pet;
+    if (state.editMode) state.room3d?.setPlacing("edit");
+    showPetActions(pet);
+    syncPutAwayBtn();
+  }
   function beginMoveFurniture(f) {
     if (!f) return;
     hidePetActions();
@@ -2042,17 +2295,29 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     if (state.pendingPet && hit?.kind !== "pet") return;
     if (hit?.kind === "furn" || hit?.kind === "npc") {
       const f = (state.room?.furniture || []).find((x) => x.id === hit.id);
-      if (f) beginMoveFurniture(f);
+      if (f) selectFurniture(f);
     } else if (hit?.kind === "pet" && hit.pet && !hit.pet.following) {
-      beginMovePet(hit.pet);
+      selectPet(hit.pet);
     } else if (hit?.kind === "wall" && hit.art) {
-      beginMoveWall(hit.art);
+      selectWallArt(hit.art);
     }
   }
   function handleGrabMove(cx, cy, hit) {
     state._grabbing = true;
     if (state._grabStartX == null) { state._grabStartX = cx; state._grabStartY = cy; }
-    if (Math.hypot(cx - state._grabStartX, cy - state._grabStartY) > 8) state._grabMoved = true;
+    const dragged = Math.hypot(cx - state._grabStartX, cy - state._grabStartY) > 8;
+    if (dragged && !state._grabMoved) {
+      state._grabMoved = true;
+      if (hit?.kind === "furn" || hit?.kind === "npc") {
+        const f = (state.room?.furniture || []).find((x) => x.id === hit.id);
+        if (f) beginMoveFurniture(f);
+      } else if (hit?.kind === "pet" && hit.pet && !hit.pet.following) {
+        beginMovePet(hit.pet);
+      } else if (hit?.kind === "wall" && hit.art) {
+        beginMoveWall(hit.art);
+      }
+    }
+    if (dragged) state._grabMoved = true;
     const invHover = state.editMode && (function () {
       const inv = $("#edit-inventory");
       if (!inv || inv.classList.contains("hidden")) return false;
@@ -2077,20 +2342,66 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     const r = inv.getBoundingClientRect();
     return cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom;
   }
+  const PUTAWAY_DOUBLE_MS = 300;
+  let lastEditTap = null;
+  function isEditDoubleTap(key) {
+    const now = Date.now();
+    const hit = Boolean(lastEditTap && lastEditTap.key === key && now - lastEditTap.at <= PUTAWAY_DOUBLE_MS);
+    lastEditTap = hit ? null : { key, at: now };
+    return hit;
+  }
+  function hasEditSelection() {
+    return Boolean(state.selectedPet?.item || state.selectedFurnId || state.movingId || state.movingWallId);
+  }
+  function syncPutAwayBtn() {
+    const btn = $("#edit-putaway");
+    if (!btn) return;
+    const on = state.editMode && hasEditSelection();
+    btn.disabled = !on;
+    btn.setAttribute("aria-disabled", on ? "false" : "true");
+    btn.classList.toggle("is-dim", !on);
+  }
+  function poofAtSelection(id, kind) {
+    const layer = document.getElementById("bubble-layer");
+    if (!layer || !id) return;
+    const pos = kind === "pet"
+      ? state.room3d?.projectPet?.(id)
+      : state.room3d?.projectFurniture?.(id);
+    if (!pos) return;
+    const poof = document.createElement("div");
+    poof.className = "poof-float";
+    poof.dataset.testid = "putaway-poof";
+    poof.style.left = (pos.x || 0) + "px";
+    poof.style.top = (pos.y || 0) + "px";
+    layer.appendChild(poof);
+    setTimeout(() => poof.remove(), 450);
+  }
   function putAwaySelected() {
-    if (state.selectedPet?.item) {
-      socket.emit("putAwayPet", { item: state.selectedPet.item, id: state.selectedPet.id });
+    const pet = state.selectedPet;
+    const wallId = state.movingWallId || ((state.room?.wallArt || []).some((a) => a.id === state.selectedFurnId) ? state.selectedFurnId : null);
+    const furnId = state.movingId || state.selectedFurnId;
+    if (pet?.item) poofAtSelection(pet.id, "pet");
+    else if (wallId) poofAtSelection(wallId, "wall");
+    else if (furnId) poofAtSelection(furnId, "furn");
+    if (pet?.item) {
+      socket.emit("putAwayPet", { item: pet.item, id: pet.id });
       state.selectedPet = null;
-    } else if (state.movingWallId || (state.selectedFurnId && (state.room?.wallArt || []).some((a) => a.id === state.selectedFurnId))) {
-      socket.emit("pickupWallArt", { id: state.movingWallId || state.selectedFurnId });
-    } else if (state.movingId || state.selectedFurnId) {
-      socket.emit("pickupFurniture", { id: state.movingId || state.selectedFurnId });
+    } else if (wallId) {
+      socket.emit("pickupWallArt", { id: wallId });
+    } else if (furnId) {
+      socket.emit("pickupFurniture", { id: furnId });
+    } else {
+      syncPutAwayBtn();
+      return;
     }
+    lastEditTap = null;
     cancelPlace();
     state.selectedFurnId = null;
     hideFurnActions();
     state.room3d?.highlightFurniture(null);
+    if (state.editMode) state.room3d?.setPlacing("edit");
     $("#edit-inventory")?.classList.remove("putaway-hover");
+    syncPutAwayBtn();
   }
   function handleGrabEnd(cx, cy, hit) {
     handleGrabMove(cx, cy, hit);
@@ -2594,7 +2905,13 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
       if (!state.editMode) return;
       if (state.pendingPlace && !state.movingWallId) return;
       const art = (state.room?.wallArt || []).find((x) => x.id === id);
-      if (art) beginMoveWall(art);
+      if (!art) return;
+      if (isEditDoubleTap("wall:" + art.id)) {
+        state.selectedFurnId = art.id;
+        putAwaySelected();
+        return;
+      }
+      selectWallArt(art);
       return;
     }
     if (state.editMode || state.pendingPlace || state.movingId) {
@@ -2602,7 +2919,12 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
       if (state.pendingPlace && !state.movingId) return;
       const f = (state.room?.furniture || []).find((x) => x.id === id);
       if (!f) return;
-      beginMoveFurniture(f);
+      if (isEditDoubleTap("furn:" + id)) {
+        state.selectedFurnId = id;
+        putAwaySelected();
+        return;
+      }
+      selectFurniture(f);
       return;
     }
     const furn = (state.room?.furniture || []).find((x) => x.id === id);
@@ -2950,10 +3272,10 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     const el = $("#chat-input");
     if (!el) return;
     updateChatCount();
-    el.style.height = "44px";
     const val = el.value.trim();
     if (val) emitTyping(true);
     else emitTyping(false);
+    if (isChatOpen()) paintOverlays();
   }
 
 
@@ -3219,8 +3541,13 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     }
     if (state.editMode) {
       if (state.pendingPlace && !state.pendingPet) return;
-      if (pet.following) { showPetActions(pet); return; }
-      beginMovePet(pet);
+      if (pet.following) { showPetActions(pet); syncPutAwayBtn(); return; }
+      if (isEditDoubleTap("pet:" + (pet.id || pet.item))) {
+        state.selectedPet = pet;
+        putAwaySelected();
+        return;
+      }
+      selectPet(pet);
       return;
     }
     showPetActions(pet);
@@ -4136,11 +4463,11 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     updateChatCount();
     ignorePhoneTaps(300);
     lockPageScroll();
-    requestAnimationFrame(() => {
-      input?.focus?.({ preventScroll: true });
-      lockPageScroll();
-      syncKeyboardInset();
-    });
+    // Focus must happen synchronously in the user-gesture handler so iOS shows the keyboard.
+    input?.focus?.({ preventScroll: true });
+    paintOverlays();
+    lockPageScroll();
+    syncKeyboardInset();
   }
   function closeChatComposer() {
     const composer = document.getElementById("chat-composer");
@@ -4309,6 +4636,12 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     showPhoneHome();
   });
 
+  $("#edit-putaway")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!hasEditSelection()) return;
+    putAwaySelected();
+  });
   $("#edit-done")?.addEventListener("click", exitEditMode);
   $("#edit-room-btn")?.addEventListener("click", (e) => { e.stopPropagation(); toggleEditMode(); });
   $("#edit-inv-tabs")?.addEventListener("click", (e) => {
@@ -4320,6 +4653,10 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     if (!chip) return;
     state.decorSection = chip.dataset.decor;
     paintEditInventory();
+    requestAnimationFrame(() => {
+      document.querySelector(`[data-testid="decor-section-${state.decorSection}"]`)
+        ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    });
   });
   $("#item-rotate")?.addEventListener("click", (e) => { e.stopPropagation(); rotatePending(1); });
   $("#edit-inv-toggle")?.addEventListener("click", () => {
@@ -4901,9 +5238,22 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
 
   window.__inventory = () => [...(state.me?.inventory || [])];
   window.__clickFurniture = (id, type, extra) => handleFurnitureClick(id, type, extra || {});
+  window.__updateAvatar = (raw) => socket.emit("updateAvatar", raw);
+  window.__peopleAvatars = () => {
+    const out = {};
+    for (const [name, person] of state.people) out[name] = person.avatar || null;
+    if (state.me) out[state.me.username] = state.me.avatar;
+    return out;
+  };
+  window.__decor = () => normalizeDecor(state.room || {});
   window.__enterEdit = enterEditMode;
   window.__setEditTab = setEditTab;
   window.__putAwaySelected = putAwaySelected;
+  window.__clickPet = (pet) => handlePetClick(pet);
+  window.__clickWallArt = (id) => {
+    const art = (state.room?.wallArt || []).find((a) => a.id === id);
+    if (art) handleWallClick(art.wall, art.slot, art);
+  };
   window.__moveFurnitureTo = (id, x, y) => {
     const f = (state.room?.furniture || []).find((p) => p.id === id);
     if (!f) return;

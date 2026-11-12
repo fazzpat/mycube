@@ -1,5 +1,6 @@
 /* Room decor catalogs, normalization, and thumbnail / window helpers.
    Shared by the Edit Room "Room" tab and the isometric room renderer. */
+import { canonHex, colorOrHex } from "./hexColor.js";
 
 export const FLOOR_COLORS = [
   { id: "honey", name: "Honey", hex: "#e0b068" },
@@ -98,11 +99,13 @@ const LEGACY_FLOOR = {
 };
 
 export function floorColorHex(id) {
+  const custom = canonHex(id);
+  if (custom) return custom;
   return (FLOOR_COLORS.find((c) => c.id === id) || FLOOR_COLORS[0]).hex;
 }
 
 export function wallColorPal(id) {
-  const hex = (WALL_COLORS.find((c) => c.id === id) || WALL_COLORS[0]).hex;
+  const hex = canonHex(id) || (WALL_COLORS.find((c) => c.id === id) || WALL_COLORS[0]).hex;
   return {
     base: hex,
     grout: shadeHex(hex, -28),
@@ -128,10 +131,11 @@ export function normalizeDecor(input = {}, room = {}) {
   const floorFromLegacy = LEGACY_FLOOR[input.floorStyle || room.floorStyle];
   const src = { ...DEFAULT_DECOR, ...legacy, ...(floorFromLegacy ? { floorPattern: floorFromLegacy } : {}), ...room, ...input };
   const pick = (list, v, fb) => (list.includes(v) ? v : fb);
+  const pickColor = (list, v, prev, fb) => colorOrHex(list, v, colorOrHex(list, prev, fb));
   return {
-    floorColor: pick(FLOOR_COLOR_IDS, src.floorColor, DEFAULT_DECOR.floorColor),
+    floorColor: pickColor(FLOOR_COLOR_IDS, src.floorColor, room.floorColor, DEFAULT_DECOR.floorColor),
     floorPattern: pick(FLOOR_PATTERN_IDS, src.floorPattern, DEFAULT_DECOR.floorPattern),
-    wallColor: pick(WALL_COLOR_IDS, src.wallColor, DEFAULT_DECOR.wallColor),
+    wallColor: pickColor(WALL_COLOR_IDS, src.wallColor, room.wallColor, DEFAULT_DECOR.wallColor),
     wallPattern: pick(WALL_PATTERN_IDS, src.wallPattern, DEFAULT_DECOR.wallPattern),
     windowView: pick(WINDOW_VIEW_IDS, src.windowView, DEFAULT_DECOR.windowView),
     doorStyle: pick(DOOR_STYLE_IDS, src.doorStyle, DEFAULT_DECOR.doorStyle),

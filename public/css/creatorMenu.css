@@ -1635,3 +1635,103 @@ body[data-view="creator"]:has(#view-creator.is-keyboard) #toasts {
   }
   .creator-window.is-rail-layout .creator-preview-wrap { min-height: 130px; }
 }
+
+
+/* RAIL_LAYOUT_V3: 3 option columns fully visible, color swatches fit the
+   pane, selected badge does not overlap a neighbor. */
+.creator-window.is-rail-layout .creator-left {
+  flex: 1 1 62% !important;
+  min-width: 0 !important;
+}
+.creator-window.is-rail-layout .creator-right {
+  flex: 1 1 38% !important;
+  min-width: 108px !important;
+  max-width: 46% !important;
+}
+.creator-window.is-rail-layout .creator-tab-panels,
+.edit-char-overlay .creator-tab-panels {
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  padding: 0 4px 8px 0 !important;
+}
+.creator-window.is-rail-layout .swatch-row,
+.edit-char-overlay .swatch-row {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  justify-content: stretch !important;
+  gap: 6px !important;
+  padding: 4px 2px 10px !important;
+  box-sizing: border-box !important;
+  width: 100% !important;
+  max-width: 100% !important;
+}
+.creator-window.is-rail-layout .swatch-row .choice,
+.edit-char-overlay .swatch-row .choice {
+  width: 100% !important;
+  max-width: 56px !important;
+  min-width: 0 !important;
+  height: auto !important;
+  min-height: 0 !important;
+  aspect-ratio: 1 / 1 !important;
+  box-sizing: border-box !important;
+  justify-self: center;
+  padding: 2px !important;
+}
+.creator-window.is-rail-layout .swatch-row .choice.selected,
+.edit-char-overlay .swatch-row .choice.selected {
+  box-shadow: 0 0 0 2px #efe6d4, 0 0 0 4px #8a5a32 !important;
+}
+.creator-window.is-rail-layout .swatch-row .choice.selected::after,
+.edit-char-overlay .swatch-row .choice.selected::after {
+  /* Keep the check inside the tile so it cannot cover a neighbor or clip. */
+  top: 2px !important;
+  right: 2px !important;
+  width: 12px !important;
+  height: 12px !important;
+  font-size: 8px !important;
+  line-height: 12px !important;
+}
+.creator-window.is-rail-layout .swatch-row.swatch-colors,
+.edit-char-overlay .swatch-row.swatch-colors {
+  grid-template-columns: repeat(auto-fill, minmax(22px, 1fr)) !important;
+  gap: 8px 8px !important;
+  padding: 6px 4px 14px !important;
+  justify-items: center;
+}
+.creator-window.is-rail-layout .swatch-row.swatch-colors .swatch,
+.edit-char-overlay .swatch-row.swatch-colors .swatch {
+  width: 22px !important;
+  height: 22px !important;
+  min-width: 22px !important;
+  min-height: 22px !important;
+  max-width: 26px !important;
+  max-height: 26px !important;
+  border-radius: 50% !important;
+  box-sizing: border-box !important;
+  position: relative;
+  justify-self: center;
+}
+.creator-window.is-rail-layout .swatch-row.swatch-colors .swatch.selected,
+.edit-char-overlay .swatch-row.swatch-colors .swatch.selected {
+  box-shadow: 0 0 0 2px #efe6d4, 0 0 0 4px #8a5a32 !important;
+  z-index: 1;
+}
+.creator-window.is-rail-layout .swatch-row.swatch-colors .swatch.selected::after,
+.edit-char-overlay .swatch-row.swatch-colors .swatch.selected::after {
+  content: "" !important;
+  display: none !important;
+}
+@media (max-height: 700px) and (max-width: 430px) {
+  .creator-window.is-rail-layout .swatch-row {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 5px !important;
+  }
+  .creator-window.is-rail-layout .swatch-row .choice,
+  .edit-char-overlay .swatch-row .choice {
+    width: 100% !important;
+    max-width: 52px !important;
+    min-width: 0 !important;
+    height: auto !important;
+    min-height: 0 !important;
+  }
+}

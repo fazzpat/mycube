@@ -81,18 +81,29 @@ function normalizeAvatar(raw = {}) {
   if (a.hair === "pigtails") a.hair = "ponytail";
   if (a.hair === "slickback" || a.hair === "slick") a.hair = "cornrows";
   if (a.hair === "curls" || a.hair === "ringlets") a.hair = "bobclips";
+  const hat = a.hat && a.hat !== "none" ? a.hat
+    : (["cap", "beanie", "trucker", "bucket", "fitted"].includes(a.accessory) ? a.accessory : "none");
+  const glassesStyle = a.glassesStyle
+    || (typeof a.glasses === "string" && a.glasses !== "true" && a.glasses !== "false" ? a.glasses : "")
+    || (a.accessory === "shades" ? "shades" : (a.glasses ? "round" : "none"));
   return {
     skin: a.skin || "#f1c27d",
     hair: a.hair || "short",
     hairColor: a.hairColor || "#2b1d16",
     shirt: a.shirt || "#ff7a59",
-    glasses: Boolean(a.glasses),
+    glasses: Boolean(glassesStyle && glassesStyle !== "none"),
+    glassesStyle: glassesStyle || "none",
+    glassesColor: a.glassesColor || (glassesStyle === "shades" ? "#2a1c30" : "#2a2422"),
+    hat,
+    hatColor: a.hatColor || a.headphoneColor || "#2a2a2e",
+    necklace: a.necklace || (a.accessory === "chain" ? "chain" : "none"),
+    shoeColor: a.shoeColor || "",
     top: a.top || "tshirt",
     bottom: a.bottom || "jeans",
     bottomColor: a.bottomColor || "#3d4f7c",
     shoes: a.shoes || "white",
     accessory: a.accessory || "none",
-    headphoneColor: a.headphoneColor || "#2a2a2e",
+    headphoneColor: a.headphoneColor || a.hatColor || "#2a2a2e",
     outer: a.outer || "none",
   };
 }

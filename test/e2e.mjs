@@ -20,20 +20,23 @@ async function login(page, username) {
 }
 
 async function openChat(page) {
-  const open = await page.evaluate(() => {
-    const c = document.getElementById("chat-composer");
-    return Boolean(c && !c.classList.contains("hidden") && (c.classList.contains("is-open") || document.body.classList.contains("chat-open") || (c.getBoundingClientRect().height > 8 && getComputedStyle(c).display !== "none")));
-  });
-  if (open) return;
+  const open = await page.evaluate(() => document.body.classList.contains("chat-open") && document.getElementById("chat-input"));
+  if (open) {
+    await page.evaluate(() => document.getElementById("chat-input")?.focus?.({ preventScroll: true }));
+    return;
+  }
   const btn = page.locator('[data-testid="chat-bubble-btn"]');
   if (await btn.isVisible().catch(() => false)) await btn.click();
   else await page.evaluate(() => window.__openChat?.());
-  await page.waitForFunction(() => {
-    const c = document.getElementById("chat-composer");
-    if (!c || c.classList.contains("hidden")) return false;
-    const r = c.getBoundingClientRect();
-    return r.height > 8 && getComputedStyle(c).display !== "none";
-  }, null, { timeout: 8000 });
+  await page.waitForFunction(() => document.body.classList.contains("chat-open") && document.activeElement?.id === "chat-input", null, { timeout: 8000 });
+}
+
+async function sendChatMsg(page) {
+  await page.evaluate(() => {
+    const el = document.querySelector("[data-testid=chat-input]");
+    if (!el) return;
+    el.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+  });
 }
 
 async function customize(page, { displayName, hair, shirt, skin, glasses, hairColor, top, accessory } = {}) {
@@ -938,7 +941,91 @@ async function runCreatorPhoneAndBoot(browser) {
     hairTiles.count >= 10 && hairTiles.canvases === hairTiles.count && hairTiles.named === 0 && hairTiles.labels === hairTiles.count,
     JSON.stringify(hairTiles)
   );
-  await page.click('[data-testid="save-avatar"]');
+  async function measureEditorGrids(page) {
+    return page.evaluate(async () => {
+      const measure = (rowSel) => {
+        const panel = document.querySelector("[data-testid=edit-char-overlay] .creator-tab-panels")
+          || document.querySelector(".creator-tab-panels");
+        const pr = panel?.getBoundingClientRect();
+        const tiles = [...document.querySelectorAll(`${rowSel} .choice, ${rowSel} .swatch`)]
+          .filter((el) => el.offsetParent && getComputedStyle(el).display !== "none");
+        const boxes = tiles.map((el) => {
+          const r = el.getBoundingClientRect();
+          return { x: r.x, r: r.right, y: r.y, b: r.bottom, w: r.width, h: r.height };
+        });
+        const clipped = boxes.some((b) => pr && (b.x < pr.left - 1 || b.r > pr.right + 1));
+        const cols = new Set(boxes.map((b) => Math.round(b.x * 2) / 2)).size;
+        return { count: boxes.length, clipped, cols, paneW: pr ? +pr.width.toFixed(1) : 0, tileW: boxes[0] ? +boxes[0].w.toFixed(1) : 0, lastR: boxes[2] ? +boxes[2].r.toFixed(1) : 0, paneR: pr ? +pr.right.toFixed(1) : 0 };
+      };
+      const hashCanvas = (sel, index) => {
+        const c = document.querySelectorAll(`${sel} canvas`)[index];
+        if (!c) return "";
+        const ctx = c.getContext("2d");
+        const { data } = ctx.getImageData(0, 0, c.width, c.height);
+        let h = 0;
+        for (let i = 0; i < data.length; i += 17) h = (h * 33 + data[i] + data[i + 1] * 3 + data[i + 2] * 7) | 0;
+        return String(h);
+      };
+      const unique = (arr) => new Set(arr.filter(Boolean)).size;
+      document.querySelector('[data-testid="creator-tab-hair"]')?.click();
+      await new Promise((r) => setTimeout(r, 80));
+      const hair = measure("#hair-choices");
+      document.querySelector('[data-testid="creator-tab-head"]')?.click();
+      await new Promise((r) => setTimeout(r, 80));
+      const hats = measure("#hat-choices");
+      const hatHashes = [0, 1, 2].map((i) => hashCanvas("#hat-choices", i));
+      const glasses = measure("#glasses-choices");
+      const glassHashes = [0, 1, 2, 3].map((i) => hashCanvas("#glasses-choices", i));
+      const hatColors = measure("#hat-color-choices");
+      document.querySelector('[data-testid="creator-tab-shoes"]')?.click();
+      await new Promise((r) => setTimeout(r, 80));
+      const shoes = measure("#shoes-choices");
+      const shoeHashes = [0, 1, 2].map((i) => hashCanvas("#shoes-choices", i));
+      document.querySelector('[data-testid="creator-tab-extras"]')?.click();
+      await new Promise((r) => setTimeout(r, 80));
+      const neck = measure("#necklace-choices");
+      const neckHashes = [0, 1, 2].map((i) => hashCanvas("#necklace-choices", i));
+      document.querySelector('[data-testid="creator-tab-pants"]')?.click();
+      await new Promise((r) => setTimeout(r, 80));
+      const pants = measure("#bottom-choices");
+      return {
+        vw: window.innerWidth, vh: window.innerHeight,
+        hair, hats, glasses, hatColors, shoes, neck, pants,
+        hatDistinct: unique(hatHashes) >= 3,
+        glassesDistinct: unique(glassHashes) >= 3,
+        shoeDistinct: unique(shoeHashes) >= 2,
+        neckDistinct: unique(neckHashes) >= 3,
+        hatHashes, glassHashes, shoeHashes, neckHashes,
+      };
+    });
+  }
+  const prevVp = page.viewportSize();
+  const gridReports = {};
+  for (const size of [{ width: 390, height: 844 }, { width: 375, height: 667 }]) {
+    await page.setViewportSize(size);
+    await page.waitForTimeout(200);
+    gridReports[`${size.width}x${size.height}`] = await measureEditorGrids(page);
+  }
+  if (prevVp) await page.setViewportSize(prevVp);
+  const gridOk = Object.values(gridReports).every((g) => !g.hair.clipped && !g.hats.clipped && !g.glasses.clipped && !g.shoes.clipped && !g.neck.clipped && !g.pants.clipped && !g.hatColors.clipped && g.hair.cols >= 3 && g.hair.tileW >= 36);
+  check(
+    "The options grid keeps all three tile columns fully visible at 390 and 375",
+    gridOk,
+    JSON.stringify(gridReports)
+  );
+  const thumbsOk = Object.values(gridReports).every((g) => g.hatDistinct && g.glassesDistinct && g.shoeDistinct && g.neckDistinct && g.pants.count >= 2);
+  check(
+    "Hat, glasses, shoe, pants, and necklace tiles show distinct real items",
+    thumbsOk,
+    JSON.stringify({ reports: Object.fromEntries(Object.entries(gridReports).map(([k, g]) => [k, { hatDistinct: g.hatDistinct, glassesDistinct: g.glassesDistinct, shoeDistinct: g.shoeDistinct, neckDistinct: g.neckDistinct, hashes: { hat: g.hatHashes, glasses: g.glassHashes, shoes: g.shoeHashes, neck: g.neckHashes } }])) })
+  );
+  check(
+    "Color swatches fit the options column without clipping",
+    Object.values(gridReports).every((g) => !g.hatColors.clipped && g.hatColors.count >= 6),
+    JSON.stringify(Object.fromEntries(Object.entries(gridReports).map(([k, g]) => [k, g.hatColors])))
+  );
+  await page.waitForTimeout(200);
+  await page.evaluate(() => document.querySelector("[data-testid=save-avatar]")?.click());
   await page.waitForFunction(() => !window.__creatorMenu?.isPhoneEdit?.(), null, { timeout: 8000 });
   await page.waitForTimeout(320);
   await page.waitForSelector('body[data-view="room"]');
@@ -1849,10 +1936,10 @@ async function runStoresAndCyberShots(browser) {
   await pages[0].pg.waitForTimeout(800);
   await openChat(pages[0].pg);
   await pages[0].pg.fill('[data-testid="chat-input"]', "welcome to the grid");
-  await pages[0].pg.click('[data-testid="chat-send"]');
+  await sendChatMsg(pages[0].pg);
   await openChat(pages[1].pg);
   await pages[1].pg.fill('[data-testid="chat-input"]', "Cube Cola hits different");
-  await pages[1].pg.click('[data-testid="chat-send"]');
+  await sendChatMsg(pages[1].pg);
   await pages[0].pg.waitForTimeout(500);
   await pages[0].pg.setViewportSize({ width: 1280, height: 800 });
   await pages[0].pg.evaluate(() => window.HouseRoom3D?.resize?.());
@@ -2697,7 +2784,7 @@ try {
   await alice.waitForTimeout(1400);
   await openChat(alice);
   await alice.fill('[data-testid="chat-input"]', "hey there friend!");
-  await alice.click('[data-testid="chat-send"]');
+  await sendChatMsg(alice);
   await bob.waitForSelector('[data-testid="bubble-alice"]');
   await bob.waitForTimeout(350);
   const bubbleText = await bob.locator('[data-testid="bubble-alice"]').innerText();
@@ -2712,12 +2799,12 @@ try {
   });
   await openChat(bob);
   await bob.fill('[data-testid="chat-input"]', "right back at you");
-  await bob.click('[data-testid="chat-send"]');
+  await sendChatMsg(bob);
   await alice.waitForSelector('[data-testid="bubble-bob"]');
   await alice.waitForTimeout(250);
   await openChat(alice);
   await alice.fill('[data-testid="chat-input"]', "stack us up");
-  await alice.click('[data-testid="chat-send"]');
+  await sendChatMsg(alice);
   await bob.waitForTimeout(400);
   const stacked = await bob.evaluate(() => {
     const rows = window.__chatBubbles();
@@ -2752,13 +2839,13 @@ try {
   const longC = "A third long message from Alice so we can prove a tall bubble pushes every older line up by its real height plus a gap.";
   await openChat(alice);
   await alice.fill('[data-testid="chat-input"]', longA.slice(0, 120));
-  await alice.click('[data-testid="chat-send"]');
+  await sendChatMsg(alice);
   await openChat(bob);
   await bob.fill('[data-testid="chat-input"]', longB.slice(0, 120));
-  await bob.click('[data-testid="chat-send"]');
+  await sendChatMsg(bob);
   await openChat(alice);
   await alice.fill('[data-testid="chat-input"]', longC.slice(0, 120));
-  await alice.click('[data-testid="chat-send"]');
+  await sendChatMsg(alice);
   await bob.waitForTimeout(450);
   const stackedLong = await bob.evaluate(() => {
     const els = [...document.querySelectorAll(".speech-stack")].filter((el) => el.dataset.testid && el.dataset.testid.startsWith("bubble-"));
@@ -2824,7 +2911,7 @@ try {
   const before = await bob.evaluate(() => window.__lastSays.map((s) => s.text));
   await openChat(alice);
   await alice.fill('[data-testid="chat-input"]', "secret whisper");
-  await alice.click('[data-testid="chat-send"]');
+  await sendChatMsg(alice);
   await alice.waitForTimeout(800);
   const after = await bob.evaluate(() => window.__lastSays.map((s) => s.text));
   check(
@@ -3030,7 +3117,7 @@ try {
   await alice.evaluate(() => document.querySelector('[data-testid="phone-overlay"]')?.classList.add("hidden"));
   await openChat(alice);
   await alice.fill('[data-testid="chat-input"]', "do not open the phone");
-  await alice.click('[data-testid="chat-send"]');
+  await sendChatMsg(alice);
   await alice.waitForTimeout(250);
   const phoneStayedShut = await alice.evaluate(() => document.querySelector('[data-testid="phone-overlay"]')?.classList.contains("hidden"));
   check("Sending a chat with Say does not open the phone menu", phoneStayedShut);
@@ -3219,15 +3306,28 @@ try {
   await alice.setViewportSize({ width: 390, height: 450 });
   await alice.waitForTimeout(200);
   await openChat(alice);
-  await alice.locator('[data-testid="chat-input"]').click();
   await alice.waitForTimeout(200);
-  const kbBox = await alice.locator('[data-testid="chat-input"]').boundingBox();
-  const dockBox = await alice.locator('[data-testid="chat-dock"]').boundingBox();
+  const shortChat = await alice.evaluate(() => {
+    const input = document.querySelector("[data-testid=chat-input]");
+    const composer = document.querySelector("[data-testid=chat-composer]");
+    const dock = document.querySelector("[data-testid=chat-dock]");
+    const cr = composer?.getBoundingClientRect();
+    const dr = dock?.getBoundingClientRect();
+    const cs = composer ? getComputedStyle(composer) : null;
+    const hiddenBar = Boolean(cs && (Number(cs.opacity) < 0.05 || (cr && cr.height <= 2)));
+    return {
+      focused: document.activeElement === input && document.body.classList.contains("chat-open"),
+      hiddenBar,
+      composerH: cr ? Math.round(cr.height) : 0,
+      dockBottom: dr ? Math.round(dr.bottom) : 0,
+      visH: window.innerHeight,
+    };
+  });
   const visH = 450;
   check(
-    "Chat input stays visible in a short viewport (keyboard-sized)",
-    Boolean(kbBox && dockBox && kbBox.y >= 0 && kbBox.y + kbBox.height <= visH + 1 && dockBox.y + dockBox.height <= visH + 1),
-    `input=${kbBox && `${Math.round(kbBox.y)}+${Math.round(kbBox.height)}`} dockBottom=${dockBox && Math.round(dockBox.y + dockBox.height)}`
+    "Opening chat in a short viewport focuses a hidden input with no visible composer",
+    Boolean(shortChat.focused && shortChat.hiddenBar && shortChat.dockBottom <= visH + 1),
+    JSON.stringify(shortChat)
   );
   const fontSize = await alice.locator('[data-testid="chat-input"]').evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
   check("Chat input font is at least 16px", fontSize >= 16, `font=${fontSize}`);
@@ -3255,7 +3355,7 @@ try {
   check("The other player sees the Enter-sent message", bobSawEnter);
   await openChat(alice);
   await alice.fill('[data-testid="chat-input"]', "say keeps the keyboard");
-  await alice.click('[data-testid="chat-send"]');
+  await sendChatMsg(alice);
   await alice.waitForTimeout(200);
   const afterSay = await alice.evaluate(() => {
     const input = document.querySelector('[data-testid="chat-input"]');
@@ -3268,7 +3368,49 @@ try {
   await alice.fill('[data-testid="chat-input"]', "thinking about it");
   const bobSeesTyping = await bob.waitForFunction(() => Boolean(document.querySelector('[data-testid="typing-alice"]')), null, { timeout: 4000 }).then(() => true).catch(() => false);
   check("Friends in the cube see a thinking bubble while you type", bobSeesTyping);
-  await alice.click('[data-testid="chat-send"]');
+  const typyingViews = {
+    alice: await alice.evaluate(() => {
+      const el = document.querySelector("[data-testid=typing-alice]");
+      return {
+        draft: document.querySelector("[data-testid=typying-draft]")?.textContent || "",
+        count: document.querySelector("[data-testid=typying-count]")?.textContent || "",
+        text: el?.innerText || "",
+        hasDots: Boolean(el?.querySelector(".think-dots")),
+      };
+    }),
+    bob: await bob.evaluate(() => {
+      const el = document.querySelector("[data-testid=typing-alice]");
+      return {
+        text: el?.innerText || "",
+        hasDots: Boolean(el?.querySelector(".think-dots")),
+        hasDraft: (el?.innerText || "").includes("thinking about it"),
+        hasCount: (el?.innerText || "").includes("/120"),
+      };
+    }),
+  };
+  check(
+    "The typying player sees their draft and 120 counter in the thought bubble",
+    typyingViews.alice.draft === "thinking about it" && typyingViews.alice.count === "17/120" && !typyingViews.alice.hasDots,
+    JSON.stringify(typyingViews.alice)
+  );
+  check(
+    "The other player sees typying dots, not the draft text",
+    Boolean(typyingViews.bob.hasDots && !typyingViews.bob.hasDraft && !typyingViews.bob.hasCount),
+    JSON.stringify(typyingViews.bob)
+  );
+  await alice.locator('[data-testid="chat-input"]').fill("x".repeat(120), { force: true });
+  await alice.waitForTimeout(80);
+  const typyingWrap = await alice.evaluate(() => {
+    const el = document.querySelector("[data-testid=typing-alice]");
+    const r = el?.getBoundingClientRect();
+    return r ? { top: r.top, bottom: r.bottom, left: r.left, right: r.right, w: r.width, h: r.height, vw: window.innerWidth, vh: window.innerHeight, text: (el.innerText || "").length } : null;
+  });
+  check(
+    "Long typying text wraps and stays on screen",
+    Boolean(typyingWrap && typyingWrap.top >= 0 && typyingWrap.left >= -1 && typyingWrap.right <= typyingWrap.vw + 1 && typyingWrap.bottom <= typyingWrap.vh + 1 && typyingWrap.w <= 260 && typyingWrap.h >= 28),
+    JSON.stringify(typyingWrap)
+  );
+  await sendChatMsg(alice);
   const typingGone = await bob.waitForFunction(() => !document.querySelector('[data-testid="typing-alice"]'), null, { timeout: 4000 }).then(() => true).catch(() => false);
   check("The thinking bubble hides when the message is sent", typingGone);
 
@@ -3308,7 +3450,7 @@ try {
       JSON.stringify(before)
     );
     await openChat(page);
-    await page.locator('[data-testid="chat-input"]').click();
+    await page.evaluate(() => document.getElementById("chat-input")?.focus?.({ preventScroll: true }));
     await page.waitForTimeout(80);
     const afterFocus = await page.evaluate(() => {
       const canvas = document.querySelector("#floor canvas, .room3d-root canvas, #floor");
@@ -3350,14 +3492,19 @@ try {
     );
     const composer = await page.evaluate(() => {
       const el = document.querySelector("[data-testid=chat-composer]");
+      const input = document.querySelector("[data-testid=chat-input]");
       const r = el?.getBoundingClientRect();
-      return r ? { y: Math.round(r.y), h: Math.round(r.height), bottom: Math.round(r.bottom), visible: r.height > 8 } : null;
+      const cs = el ? getComputedStyle(el) : null;
+      return {
+        y: r ? Math.round(r.y) : null,
+        h: r ? Math.round(r.height) : null,
+        hiddenBar: Boolean(cs && (Number(cs.opacity) < 0.05 || (r && r.height <= 2))),
+        focused: document.activeElement === input && document.body.classList.contains("chat-open"),
+      };
     });
     check(
-      `${label}: the slim chat bar sits just above the keyboard`,
-      Boolean(composer && composer.visible
-        && composer.bottom <= before.innerH - kb + 8
-        && composer.bottom >= before.innerH - kb - 24
+      `${label}: the chat composer is not visible while the keyboard is up`,
+      Boolean(composer && composer.hiddenBar && composer.focused
         && (afterKb.inset === `${kb}px` || afterKb.inset === String(kb))),
       JSON.stringify({ composer, inset: afterKb.inset, kb, innerH: before.innerH, dock: afterKb.dock })
     );
@@ -3391,6 +3538,62 @@ try {
     };
   });
   check("Edit Room button sits next to Leave Cube and opens Furniture/Room/Upgrade tabs", Boolean(editRowLayout.phoneHidden && !editRowLayout.inPhone && editRowLayout.nextToLeave && (editRowLayout.tabs || []).join() === "furniture,room,upgrade" && editRowLayout.height >= 48), JSON.stringify(editRowLayout));
+
+  async function measureEditSheet(page, size) {
+    await page.setViewportSize(size);
+    await page.waitForTimeout(220);
+    return page.evaluate((size) => {
+      const inv = document.querySelector("[data-testid=edit-inventory]");
+      const head = inv?.querySelector(".edit-inv-head");
+      const tabs = inv?.querySelector("[data-testid=edit-inv-tabs]");
+      const close = inv?.querySelector("[data-testid=edit-done]");
+      const items = inv?.querySelector("[data-testid=edit-inv-items]");
+      const box = (el) => {
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return { t: Math.round(r.top), b: Math.round(r.bottom), l: Math.round(r.left), r: Math.round(r.right), w: Math.round(r.width), h: Math.round(r.height) };
+      };
+      const inside = (outer, inner) => Boolean(outer && inner && inner.t >= outer.t - 1 && inner.b <= outer.b + 1 && inner.l >= outer.l - 1 && inner.r <= outer.r + 1);
+      const vw = window.innerWidth, vh = window.innerHeight;
+      const ir = box(inv);
+      const cs = items ? getComputedStyle(items) : null;
+      return {
+        size,
+        ir,
+        fullyInView: Boolean(ir && ir.t >= 0 && ir.l >= -1 && ir.r <= vw + 1 && ir.b <= vh + 1),
+        roomVisible: Boolean(ir && ir.t >= 90),
+        headIn: inside(ir, box(head)),
+        tabsIn: inside(ir, box(tabs)),
+        closeIn: inside(ir, box(close)),
+        itemsIn: inside(ir, box(items)),
+        overflowX: cs?.overflowX || "",
+        overflowY: cs?.overflowY || "",
+        webkit: cs?.webkitOverflowScrolling || "",
+        touchAction: cs?.touchAction || "",
+        tab: document.querySelector("#edit-inv-tabs .is-on")?.dataset.tab || "",
+        sections: [...document.querySelectorAll("[data-testid^=decor-section-]")].map((el) => el.dataset.testid),
+      };
+    }, size);
+  }
+  const sheetReports = {};
+  for (const size of [{ width: 390, height: 844 }, { width: 375, height: 667 }]) {
+    await alice.evaluate(() => window.__setEditTab?.("furniture"));
+    sheetReports[`furniture-${size.width}`] = await measureEditSheet(alice, size);
+    await alice.evaluate(() => window.__setEditTab?.("room"));
+    await alice.waitForTimeout(80);
+    sheetReports[`room-${size.width}`] = await measureEditSheet(alice, size);
+    await alice.evaluate(() => window.__setEditTab?.("upgrade"));
+    await alice.waitForTimeout(80);
+    sheetReports[`upgrade-${size.width}`] = await measureEditSheet(alice, size);
+  }
+  await alice.evaluate(() => window.__setEditTab?.("furniture"));
+  await alice.setViewportSize({ width: 390, height: 844 });
+  await alice.waitForTimeout(200);
+  const sheetOk = Object.values(sheetReports).every((r) => r.fullyInView && r.roomVisible && r.headIn && r.tabsIn && r.closeIn && r.itemsIn);
+  const furnitureScroll = ["furniture-390", "furniture-375"].every((k) => /auto|scroll/.test(sheetReports[k].overflowX) && /pan-x/.test(sheetReports[k].touchAction));
+  const decorScroll = ["room-390", "room-375"].every((k) => /auto|scroll/.test(sheetReports[k].overflowY) && (sheetReports[k].sections || []).length >= 4);
+  check("The Edit Room panel stays fully visible in the safe area at 390 and 375", sheetOk, JSON.stringify(sheetReports));
+  check("Furniture and upgrade rows scroll horizontally and decor sections scroll vertically", furnitureScroll && decorScroll, JSON.stringify({ furnitureScroll, decorScroll, reports: sheetReports }));
 
   const pan = await alice.evaluate(() => {
     const before = window.HouseRoom3D.camState().target;
@@ -3469,6 +3672,51 @@ try {
   await alice.waitForFunction(() => !window.HouseRoom3D.getFurniture().some((f) => f.type === "plant"));
   check("Put-away returns an item to inventory and frees its tiles", await alice.locator('[data-testid="edit-item-plant"]').count() === 1);
 
+  const putAwayBtn = alice.locator('[data-testid="edit-putaway"]');
+  check("The Put away button sits in the inventory header and is dimmed when nothing is selected", await putAwayBtn.count() === 1 && await putAwayBtn.isDisabled());
+  const putAwayFit = await alice.evaluate(() => {
+    const btn = document.querySelector("[data-testid=edit-putaway]");
+    const tabs = document.querySelector("[data-testid=edit-inv-tabs]");
+    const items = document.querySelector("[data-testid=edit-inv-items]");
+    const head = document.querySelector(".edit-inv-head");
+    const box = (el) => { const r = el.getBoundingClientRect(); return { t: r.top, b: r.bottom, l: r.left, r: r.right }; };
+    const br = box(btn), tr = box(tabs), ir = box(items), hr = box(head);
+    const overlap = (a, b) => a.l < b.r - 1 && a.r > b.l + 1 && a.t < b.b - 1 && a.b > b.t + 1;
+    return {
+      inHead: br.t >= hr.t - 1 && br.b <= hr.b + 1,
+      coversTabs: overlap(br, tr),
+      coversItems: overlap(br, ir),
+      touchAction: getComputedStyle(document.querySelector(".room3d-root canvas, #floor canvas, #floor")).touchAction,
+    };
+  });
+  check("The Put away button does not cover the item row or tabs", Boolean(putAwayFit.inHead && !putAwayFit.coversTabs && !putAwayFit.coversItems), JSON.stringify(putAwayFit));
+  check("The room canvas uses touch-action: manipulation to disable double-tap zoom", putAwayFit.touchAction === "manipulation", JSON.stringify(putAwayFit));
+
+  await alice.click('[data-testid="edit-item-plant"]');
+  await alice.waitForFunction(() => window.HouseRoom3D.getFurniture().some((f) => f.type === "plant"));
+  check("The Put away button is enabled when a piece is selected", await putAwayBtn.isEnabled());
+  await putAwayBtn.click();
+  await alice.waitForFunction(() => !window.HouseRoom3D.getFurniture().some((f) => f.type === "plant"), null, { timeout: 8000 });
+  check("Tapping Put away stores the selected furniture in the inventory", await alice.locator('[data-testid="edit-item-plant"]').count() === 1 && await putAwayBtn.isDisabled());
+
+  await alice.click('[data-testid="edit-item-plant"]');
+  const plantId = await alice.waitForFunction(() => window.HouseRoom3D.getFurniture().find((f) => f.type === "plant")?.id, null, { timeout: 8000 }).then((h) => h.jsonValue());
+  await alice.evaluate((id) => { window.__clickFurniture(id, "plant"); window.__clickFurniture(id, "plant"); }, plantId);
+  const plantGone = await alice.waitForFunction(() => !window.HouseRoom3D.getFurniture().some((f) => f.type === "plant"), null, { timeout: 8000 }).then(() => true).catch(() => false);
+  check("Double-tapping a placed furniture piece stores it in the inventory", plantGone && await alice.locator('[data-testid="edit-item-plant"]').count() === 1);
+
+  await alice.evaluate(() => window.__debugKit?.({ furniture: ["art_neon"] }));
+  await alice.waitForFunction(() => document.querySelector('[data-testid="edit-item-art_neon"]'), null, { timeout: 8000 });
+  await alice.evaluate(() => { window.__startPlace("art_neon"); window.__clickWall?.("left", 0); });
+  const wallId = await alice.waitForFunction(() => (window.HouseRoom3D.getWallArt?.() || []).find((a) => a.type === "art_neon")?.id, null, { timeout: 8000 }).then((h) => h.jsonValue()).catch(() => null);
+  if (wallId) {
+    await alice.evaluate((id) => { window.__clickWallArt?.(id); window.__clickWallArt?.(id); }, wallId);
+    const wallGone = await alice.waitForFunction(() => !(window.HouseRoom3D.getWallArt?.() || []).some((a) => a.type === "art_neon"), null, { timeout: 8000 }).then(() => true).catch(() => false);
+    check("Double-tapping a placed wall piece stores it in the inventory", wallGone);
+  } else {
+    check("Double-tapping a placed wall piece stores it in the inventory", false, "art_neon did not place");
+  }
+
   // Room decor apply + sync
   await alice.click('[data-testid="edit-tab-room"]');
   await alice.waitForSelector('[data-testid="decor-chip-floor"]');
@@ -3493,7 +3741,90 @@ try {
   });
   check("Upgrade tab lists cube sizes with the current size marked and a buy control", Boolean(upgradeUi.current && upgradeUi.buy && /8/.test(upgradeUi.text)), JSON.stringify(upgradeUi));
 
+  await alice.evaluate(() => window.__setEditTab?.("room"));
+  await alice.waitForSelector('[data-testid="decor-floorColor-wheel"]');
+  await alice.click('[data-testid="decor-floorColor-wheel"]');
+  await alice.waitForSelector('[data-testid="color-wheel"]:not(.hidden)');
+  const roomWheelFit = await alice.evaluate(() => {
+    const pop = document.querySelector("[data-testid=color-wheel]");
+    const preview = document.querySelector(".room3d-root, #floor");
+    const pr = pop?.getBoundingClientRect();
+    const av = preview?.getBoundingClientRect();
+    const overlap = pr && av && pr.left < av.right && pr.right > av.left && pr.top < av.top + 80;
+    return {
+      open: Boolean(pop && !pop.classList.contains("hidden")),
+      inView: Boolean(pr && pr.top >= 0 && pr.left >= 0 && pr.right <= window.innerWidth + 1 && pr.bottom <= window.innerHeight + 1),
+      w: pr ? Math.round(pr.width) : 0,
+      h: pr ? Math.round(pr.height) : 0,
+      hidesTopRoom: Boolean(overlap),
+    };
+  });
+  check("The Edit Room color wheel is a small popover that stays on screen", Boolean(roomWheelFit.open && roomWheelFit.inView && roomWheelFit.w <= 220 && roomWheelFit.h <= 260), JSON.stringify(roomWheelFit));
+  const floorHex = await alice.evaluate(() => window.__setColorWheel?.("#3344cc"));
+  await alice.waitForTimeout(200);
+  await alice.click('[data-testid="color-wheel-ok"]');
+  const floorSaved = await alice.waitForFunction(() => window.__decor?.().floorColor === "#3344cc", null, { timeout: 6000 }).then(() => true).catch(() => false);
+  const floorBob = await bob.waitForFunction(() => window.__decor?.().floorColor === "#3344cc" || window.HouseRoom3D?.getDecor?.().floorColor === "#3344cc", null, { timeout: 6000 }).then(() => true).catch(() => false);
+  const floorSwatch = await alice.evaluate(() => {
+    const b = document.querySelector("[data-testid=decor-floorColor-wheel]");
+    return { custom: b?.classList.contains("has-custom"), color: getComputedStyle(b).getPropertyValue("--custom-color").trim() };
+  });
+  check("A custom floor color previews live, saves as hex, and syncs to visitors", Boolean(floorHex === "#3344cc" && floorSaved && floorBob && floorSwatch.custom), JSON.stringify({ floorHex, floorSaved, floorBob, floorSwatch }));
+
   await alice.evaluate(() => window.__exitEdit());
+
+  await openCharacterEditor(alice);
+  await openCreatorTab(alice, "hair");
+  await alice.waitForSelector('[data-testid="hairColor-wheel"]');
+  const colorRows = await alice.evaluate(() => {
+    const ids = ["skin-wheel", "hairColor-wheel", "shirt-wheel", "bottomColor-wheel", "shoeColor-wheel", "hatColor-wheel", "glassesColor-wheel"];
+    return Object.fromEntries(ids.map((id) => [id, Boolean(document.querySelector(`[data-testid="${id}"]`))]));
+  });
+  check("Every Edit Character color row ends with a rainbow color-wheel swatch", Object.values(colorRows).every(Boolean), JSON.stringify(colorRows));
+  await alice.click('[data-testid="hairColor-wheel"]');
+  await alice.waitForSelector('[data-testid="color-wheel"]:not(.hidden)');
+  const charWheelFit = await alice.evaluate(() => {
+    const pop = document.querySelector("[data-testid=color-wheel]");
+    const avatar = document.querySelector(".edit-char-preview-wrap, #creator-preview");
+    const pr = pop?.getBoundingClientRect();
+    const ar = avatar?.getBoundingClientRect();
+    const overlap = pr && ar && pr.left < ar.right - 8 && pr.right > ar.left + 8 && pr.top < ar.bottom - 8 && pr.bottom > ar.top + 8;
+    return {
+      open: Boolean(pop && !pop.classList.contains("hidden")),
+      inView: Boolean(pr && pr.top >= 0 && pr.left >= 0 && pr.right <= window.innerWidth + 1 && pr.bottom <= window.innerHeight + 1),
+      overlapAvatar: Boolean(overlap),
+      w: pr ? Math.round(pr.width) : 0,
+      h: pr ? Math.round(pr.height) : 0,
+    };
+  });
+  check("The Edit Character color wheel is small and does not cover the avatar preview", Boolean(charWheelFit.open && charWheelFit.inView && !charWheelFit.overlapAvatar && charWheelFit.w <= 220 && charWheelFit.h <= 260), JSON.stringify(charWheelFit));
+  const hairHex = await alice.evaluate(() => window.__setColorWheel?.("#22aa88"));
+  await alice.waitForTimeout(120);
+  await alice.click('[data-testid="color-wheel-ok"]');
+  const hairSwatch = await alice.evaluate(() => {
+    const b = document.querySelector("[data-testid=hairColor-wheel]");
+    return { custom: b?.classList.contains("has-custom"), selected: b?.classList.contains("selected"), color: getComputedStyle(b).getPropertyValue("--custom-color").trim() };
+  });
+  check("The chosen custom color shows in the wheel swatch", Boolean(hairHex === "#22aa88" && hairSwatch.custom && hairSwatch.selected && hairSwatch.color.includes("#22aa88")), JSON.stringify({ hairHex, hairSwatch }));
+  await alice.evaluate(() => document.querySelector("[data-testid=save-avatar]")?.click());
+  await alice.waitForFunction(() => !window.__creatorMenu?.isPhoneEdit?.(), null, { timeout: 8000 }).catch(() => {});
+  await alice.waitForTimeout(400);
+  const hairBob = await bob.waitForFunction(() => (window.__peopleAvatars?.().alice || {}).hairColor === "#22aa88", null, { timeout: 8000 }).then(() => true).catch(() => false);
+  check("A custom avatar color saves as hex and renders for other players", hairBob, JSON.stringify({ hairHex, hairBob }));
+
+
+  const invalidHex = await alice.evaluate(() => {
+    const before = window.__peopleAvatars?.().alice?.hairColor;
+    window.__updateAvatar?.({ ...(window.__peopleAvatars?.().alice || {}), hairColor: "red", shirt: "#fff", glassesColor: "#GG0000" });
+    return before;
+  });
+  await alice.waitForTimeout(300);
+  const afterInvalid = await alice.evaluate(() => window.__peopleAvatars?.().alice || {});
+  check(
+    "The server rejects colors that are not #rrggbb or a palette swatch",
+    afterInvalid.hairColor !== "red" && afterInvalid.shirt !== "#fff" && afterInvalid.glassesColor !== "#GG0000" && (afterInvalid.hairColor === "#22aa88" || afterInvalid.hairColor === invalidHex),
+    JSON.stringify({ invalidHex, afterInvalid: { hairColor: afterInvalid.hairColor, shirt: afterInvalid.shirt, glassesColor: afterInvalid.glassesColor } })
+  );
 
   log("Pet sits by the owner's right foot when they stop");
   await alice.setViewportSize({ width: 390, height: 844 });
@@ -3640,6 +3971,17 @@ try {
     return (window.HouseRoom3D.getPlacedPets?.() || []).some((p) => p.item === "cat" && p.x === s.x && p.y === s.y);
   }, petSpot, { timeout: 6000 }).then(() => true).catch(() => false);
   check("A placed pet lands on the chosen free tile", Boolean(petSpot && petDown), JSON.stringify(petSpot));
+
+  if (petSpot && petDown) {
+    await alice.evaluate(() => window.__enterEdit?.());
+    const pet = await alice.evaluate(() => (window.HouseRoom3D.getPlacedPets?.() || []).find((p) => p.item === "cat"));
+    await alice.evaluate((p) => { window.__clickPet?.(p); window.__clickPet?.(p); }, pet);
+    const petAway = await alice.waitForFunction(() => !(window.HouseRoom3D.getPlacedPets?.() || []).some((p) => p.item === "cat"), null, { timeout: 8000 }).then(() => true).catch(() => false);
+    check("Double-tapping a placed pet stores it in the inventory", petAway);
+    await alice.evaluate((s) => window.__placePet("cat", s.x, s.y), petSpot);
+    await alice.waitForFunction((s) => (window.HouseRoom3D.getPlacedPets?.() || []).some((p) => p.item === "cat" && p.x === s.x && p.y === s.y), petSpot, { timeout: 8000 });
+    await alice.evaluate(() => window.__exitEdit?.());
+  }
 
   await alice.evaluate(() => window.__enterEdit?.());
   await alice.evaluate((s) => { window.__startPlace("plant"); window.__clickTile(s.x, s.y); }, petSpot);

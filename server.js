@@ -30,6 +30,7 @@ import {
   clothingById,
   petById,
 } from "./public/js/storeCatalog.js";
+import { colorOrHex } from "./public/js/hexColor.js";
 import { ART_PIECES, artCatalogEntry, PAINTING_CATALOG } from "./public/js/artPieces.js";
 import { reservedWallSlots as layoutReservedWallSlots } from "./public/js/wallLayout.js";
 import { chessSeatTiles, chessSeatPose, migrateChessTable } from "./public/js/chessTable.js";
@@ -134,10 +135,11 @@ function normalizeDecor(input = {}, room = {}) {
   const floorFromLegacy = LEGACY_FLOOR[input.floorStyle || room.floorStyle];
   const src = { ...DEFAULT_DECOR, ...legacy, ...(floorFromLegacy ? { floorPattern: floorFromLegacy } : {}), ...room, ...input };
   const pick = (list, v, fb) => (list.includes(v) ? v : fb);
+  const pickColor = (list, v, prev, fb) => colorOrHex(list, v, colorOrHex(list, prev, fb));
   return {
-    floorColor: pick(FLOOR_COLORS, src.floorColor, DEFAULT_DECOR.floorColor),
+    floorColor: pickColor(FLOOR_COLORS, src.floorColor, room.floorColor, DEFAULT_DECOR.floorColor),
     floorPattern: pick(FLOOR_PATTERNS, src.floorPattern, DEFAULT_DECOR.floorPattern),
-    wallColor: pick(WALL_COLOR_IDS, src.wallColor, DEFAULT_DECOR.wallColor),
+    wallColor: pickColor(WALL_COLOR_IDS, src.wallColor, room.wallColor, DEFAULT_DECOR.wallColor),
     wallPattern: pick(WALL_PATTERNS, src.wallPattern, DEFAULT_DECOR.wallPattern),
     windowView: pick(WINDOW_VIEWS, src.windowView, DEFAULT_DECOR.windowView),
     doorStyle: pick(DOOR_STYLES, src.doorStyle, DEFAULT_DECOR.doorStyle),
@@ -470,30 +472,31 @@ function clamp(n, min, max) {
   return Math.max(min, Math.min(max, n));
 }
 
-function sanitizeAvatar(raw = {}) {
+function sanitizeAvatar(raw = {}, previous = {}) {
   const m = migrateAvatar(raw || {});
+  const prev = previous && typeof previous === "object" ? previous : {};
   const displayName = String(m.displayName || "")
     .trim()
     .slice(0, 16);
   const hat = HATS.includes(m.hat) ? m.hat : "none";
   const glassesStyle = GLASSES_STYLES.includes(m.glassesStyle) ? m.glassesStyle : "none";
   const necklace = NECKLACES.includes(m.necklace) ? m.necklace : "none";
-  const hatColor = HAT_COLORS.includes(m.hatColor) ? m.hatColor : (HEADPHONE_COLORS.includes(m.headphoneColor) ? m.headphoneColor : HEADPHONE_COLORS[0]);
+  const hatColor = colorOrHex(HAT_COLORS, m.hatColor, colorOrHex(HAT_COLORS, prev.hatColor, colorOrHex(HEADPHONE_COLORS, m.headphoneColor, HEADPHONE_COLORS[0])));
   const accessory = hat !== "none" ? hat : (ACCESSORIES.includes(m.accessory) && m.accessory !== "chain" && m.accessory !== "shades" ? m.accessory : "none");
   return {
     displayName: displayName || "",
-    skin: SKINS.includes(m.skin) ? m.skin : SKINS[1],
-    hair: HAIR_STYLES.includes(m.hair) ? m.hair : "short",
-    hairColor: HAIR_COLORS.includes(m.hairColor) ? m.hairColor : HAIR_COLORS[0],
-    shirt: SHIRTS.includes(m.shirt) ? m.shirt : SHIRTS[0],
+    skin: colorOrHex(SKINS, m.skin, colorOrHex(SKINS, prev.skin, SKINS[1])),
+    hair: HAIR_STYLES.includes(m.hair) ? m.hair : (HAIR_STYLES.includes(prev.hair) ? prev.hair : "short"),
+    hairColor: colorOrHex(HAIR_COLORS, m.hairColor, colorOrHex(HAIR_COLORS, prev.hairColor, HAIR_COLORS[0])),
+    shirt: colorOrHex(SHIRTS, m.shirt, colorOrHex(SHIRTS, prev.shirt, SHIRTS[0])),
     glasses: glassesStyle !== "none",
     glassesStyle,
-    glassesColor: GLASSES_COLORS.includes(m.glassesColor) ? m.glassesColor : GLASSES_COLORS[0],
+    glassesColor: colorOrHex(GLASSES_COLORS, m.glassesColor, colorOrHex(GLASSES_COLORS, prev.glassesColor, GLASSES_COLORS[0])),
     top: TOPS.includes(m.top) ? m.top : "tshirt",
     bottom: BOTTOMS.includes(m.bottom) ? m.bottom : "jeans",
-    bottomColor: BOTTOM_COLORS.includes(m.bottomColor) ? m.bottomColor : BOTTOM_COLORS[0],
+    bottomColor: colorOrHex(BOTTOM_COLORS, m.bottomColor, colorOrHex(BOTTOM_COLORS, prev.bottomColor, BOTTOM_COLORS[0])),
     shoes: SHOES.includes(m.shoes) ? m.shoes : "white",
-    shoeColor: SHOE_COLORS.includes(m.shoeColor) ? m.shoeColor : undefined,
+    shoeColor: colorOrHex(SHOE_COLORS, m.shoeColor, colorOrHex(SHOE_COLORS, prev.shoeColor, undefined)),
     accessory,
     hat,
     hatColor,
@@ -1419,7 +1422,7 @@ io.on("connection", (socket) => {
   socket.on("updateAvatar", (raw) => {
     const user = getUser(socket);
     if (!user) return;
-    const next = sanitizeAvatar(raw);
+    const next = sanitizeAvatar(raw, user.avatar);
     for (const field of Object.keys(STORE_LOCKED)) {
       if (!userOwnsStyle(user, field, next[field]) && user.avatar) {
         next[field] = user.avatar[field];
@@ -2032,7 +2035,7 @@ io.on("connection", (socket) => {
     if (!user?.avatar) return;
     const item = (user.collection?.clothes || []).find((c) => c.id === id);
     if (!item) return;
-    user.avatar = sanitizeAvatar({ ...user.avatar, ...(item.item || {}) });
+    user.avatar = sanitizeAvatar({ ...user.avatar, ...(item.item || {}) }, user.avatar);
     emitProfile(user);
     if (user.roomId) io.to(user.roomId).emit("userUpdated", snapshotPerson(user));
   });
