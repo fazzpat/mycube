@@ -191,3 +191,43 @@ export function clothingById(id) {
 export function petById(id) {
   return PET_STOCK.find((p) => p.id === id) || null;
 }
+
+export const OUTERWEAR_SLOTS = ["head", "torso", "legs", "prop"];
+
+export const OUTERWEAR_STOCK = [
+  { id: "ow-beanie", slot: "head", label: "Beanie", price: 10, item: { hat: "beanie", hatColor: "#3d4f7c" } },
+  { id: "ow-cap", slot: "head", label: "Cap", price: 10, item: { hat: "cap", hatColor: "#c43a3a" } },
+  { id: "ow-crown", slot: "head", label: "Crown", price: 18, item: { hat: "crown", hatColor: "#f0c63a" } },
+  { id: "ow-hoodie", slot: "torso", label: "Hoodie", price: 14, item: { top: "hoodie", shirt: "#6c7bff" } },
+  { id: "ow-jacket", slot: "torso", label: "Jacket", price: 16, item: { top: "jacket", shirt: "#2a2a2e" } },
+  { id: "ow-vest", slot: "torso", label: "Vest", price: 14, item: { top: "vest", vestColor: "#6a8a3a" } },
+  { id: "ow-cargo", slot: "legs", label: "Cargo pants", price: 12, item: { bottom: "cargo", bottomColor: "#6b7280" } },
+  { id: "ow-shorts", slot: "legs", label: "Shorts", price: 10, item: { bottom: "shorts", bottomColor: "#3d4f7c" } },
+  { id: "ow-balloon", slot: "prop", label: "Balloon", price: 8, item: { prop: "balloon" } },
+  { id: "ow-skate", slot: "prop", label: "Skateboard", price: 12, item: { prop: "skateboard" } },
+];
+
+export const PROP_ITEMS = ["balloon", "skateboard", "guitar", "coffee"];
+
+export function outerwearById(id) {
+  return OUTERWEAR_STOCK.find((c) => c.id === id) || null;
+}
+
+export function emptyGear() {
+  return { head: null, torso: null, legs: null };
+}
+
+export function normalizeGear(raw = {}) {
+  const ok = (v) => (typeof v === "string" && v && outerwearById(v)?.slot && outerwearById(v).slot !== "prop") ? v : null;
+  return { head: ok(raw.head), torso: ok(raw.torso), legs: ok(raw.legs) };
+}
+
+export function applyEquippedGear(avatar = {}, gear = {}) {
+  const out = { ...(avatar || {}) };
+  const g = normalizeGear(gear);
+  for (const slot of ["head", "torso", "legs"]) {
+    const stock = outerwearById(g[slot]);
+    if (stock?.item) Object.assign(out, stock.item);
+  }
+  return out;
+}

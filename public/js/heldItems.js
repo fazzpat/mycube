@@ -1,6 +1,7 @@
 /* Held snack and drink sprites, drawn as an overlay on the avatar's hand.
    Avatar body / face / walk-cycle drawing stays in avatar3d.js. */
 export const HELD_KINDS = ["pizza", "soda", "chicken", "water", "coffee"];
+export const PROP_KINDS = ["balloon", "skateboard", "guitar"];
 export const FRIDGE_ITEMS = [
   { id: "pizza", name: "Pizza", sub: "slice" },
   { id: "soda", name: "Soda", sub: "can" },
@@ -31,7 +32,13 @@ export function heldKindOf(held) {
   if (k === "mug") return "coffee";
   if (k === "drink") return "soda";
   if (HELD_KINDS.includes(k)) return k;
+  if (PROP_KINDS.includes(k)) return k;
   return null;
+}
+
+export function isHeldPropKind(kind) {
+  const k = typeof kind === "string" ? kind : kind?.kind;
+  return PROP_KINDS.includes(k);
 }
 
 export function isDrink(kind) {
@@ -548,6 +555,62 @@ function applyBites(grid, kind, eaten) {
   return grid;
 }
 
+
+function drawBalloon(grid) {
+  const red = "#e24a4a", hi = "#f07070", dk = "#a03030", str = "#d8d0c4";
+  const cx = 12, cy = 9;
+  for (let y = -6; y <= 6; y++) {
+    for (let x = -5; x <= 5; x++) {
+      const d = (x / 5) * (x / 5) + (y / 6.2) * (y / 6.2);
+      if (d <= 1) plot(grid, cx + x, cy + y, d < 0.35 && x < 0 && y < 0 ? hi : (d > 0.82 ? dk : red));
+    }
+  }
+  plot(grid, cx, cy + 7, dk);
+  plot(grid, cx - 1, cy + 8, dk);
+  plot(grid, cx + 1, cy + 8, dk);
+  for (let i = 0; i < 10; i++) {
+    const x = cx + ((i % 3) - 1);
+    plot(grid, x, cy + 9 + i, str);
+  }
+}
+
+function drawSkateboard(grid) {
+  const deck = "#6b3a2a", grip = "#2a2422", mid = "#8a5a32", truck = "#c0c4c8", wheel = "#1a1a22", stripe = "#f0c63a";
+  for (let x = 3; x <= 20; x++) {
+    plot(grid, x, 16, deck);
+    plot(grid, x, 17, grip);
+    plot(grid, x, 18, deck);
+  }
+  plot(grid, 2, 17, deck);
+  plot(grid, 21, 17, deck);
+  for (const x of [5, 6, 7, 16, 17, 18]) plot(grid, x, 17, mid);
+  for (let x = 6; x <= 17; x++) plot(grid, x, 17, stripe);
+  for (const tx of [6, 17]) {
+    plot(grid, tx, 19, truck);
+    plot(grid, tx - 1, 20, wheel);
+    plot(grid, tx + 1, 20, wheel);
+  }
+}
+
+function drawGuitar(grid) {
+  const body = "#c48432", dk = "#8a4a1c", neck = "#6b3a2a", fret = "#d9a04a", head = "#5a3a20";
+  for (let y = 12; y <= 20; y++) {
+    for (let x = 5; x <= 15; x++) {
+      const cx = 10, cy = 16, rx = 5.2, ry = 4.2;
+      if (((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2 <= 1) plot(grid, x, y, y < 14 || x < 7 ? fret : body);
+    }
+  }
+  for (let y = 3; y <= 12; y++) {
+    plot(grid, 10, y, neck);
+    plot(grid, 11, y, neck);
+  }
+  plot(grid, 9, 3, head);
+  plot(grid, 10, 2, head);
+  plot(grid, 11, 2, head);
+  plot(grid, 12, 3, head);
+  plot(grid, 10, 16, dk);
+}
+
 function paintItem(kind, steamFrame, lights, eaten = 0) {
   const grid = new Array(ITEM_W * ITEM_H).fill(null);
   if (kind === "pizza") drawPizza(grid);
@@ -555,6 +618,9 @@ function paintItem(kind, steamFrame, lights, eaten = 0) {
   else if (kind === "chicken") drawChicken(grid);
   else if (kind === "water") drawWater(grid);
   else if (kind === "coffee") drawCoffee(grid, steamFrame, lights);
+  else if (kind === "balloon") drawBalloon(grid);
+  else if (kind === "skateboard") drawSkateboard(grid);
+  else if (kind === "guitar") drawGuitar(grid);
   if (eaten) applyBites(grid, kind, eaten);
   return outline(grid, "#2a1c14");
 }
@@ -565,6 +631,9 @@ const GRIP = {
   chicken: { x: 16, y: 8 },
   water: { x: 12, y: 16 },
   coffee: { x: 11, y: 18 },
+  balloon: { x: 12, y: 20 },
+  skateboard: { x: 12, y: 17 },
+  guitar: { x: 10, y: 18 },
 };
 // Rim / lip of drinks, so a sip lifts the opening to the mouth instead of the grip.
 const LIP = {
@@ -680,7 +749,7 @@ export function heldItemContentBox(kind, opts = {}) {
 
 export function drawHeldItemSprite(kind, opts = {}) {
   const k = heldKindOf(kind) || kind;
-  if (!HELD_KINDS.includes(k)) return null;
+  if (!HELD_KINDS.includes(k) && !PROP_KINDS.includes(k)) return null;
   const flip = Boolean(opts.flip);
   const lights = opts.lights !== false;
   const withHand = opts.hand !== false;

@@ -105,6 +105,7 @@ function normalizeAvatar(raw = {}) {
     accessory: a.accessory || "none",
     headphoneColor: a.headphoneColor || a.hatColor || "#2a2a2e",
     outer: a.outer || "none",
+    vestColor: a.vestColor || "",
   };
 }
 
@@ -1984,6 +1985,17 @@ function drawHat(buf, av, key, pal, upper) {
     ellipse(buf, g.cx, crown + 4.4, g.rx * 0.98, 5.2, acc, "hat", 55);
     ellipse(buf, g.cx, crown + 8.6, g.rx * 1.30, 2.5, acc, "hat-brim", 56);
     ellipse(buf, g.cx, crown + 7.6, g.rx * 1.00, 1.2, acc.sh || acc, "hat-brim-in", 56, { shade: "flat" });
+  } else if (kind === "crown") {
+    const gold = pal.gold || acc;
+    const jewel = { hi: { r: 255, g: 110, b: 120 }, mid: { r: 200, g: 40, b: 60 }, sh: { r: 130, g: 20, b: 30 } };
+    ellipse(buf, g.cx, crown + 7.0, g.rx * 1.02, 2.4, gold, "hat", 55);
+    const peaks = key === "e" ? [-1.5, 3.5, 8.0] : [-6.2, 0, 6.2];
+    for (const dx of peaks) {
+      const px = g.cx + dx;
+      ellipse(buf, px, crown + 3.2, 2.4, 4.4, gold, "hat", 56);
+      plotInside(buf, Math.round(px), Math.round(crown + 1.0), (gold.hi || gold.mid || gold), "hat-tip", 58);
+    }
+    circle(buf, g.cx + (key === "e" ? 2 : 0), crown + 6.2, 1.35, jewel, "hat-jewel", 58);
   }
 }
 
@@ -2127,6 +2139,21 @@ function drawTorso(buf, av, key, pal, upper, sit, squash = 0) {
         const p = buf[Math.round(qy) * AV_W + x];
         if (p && p.kind === "top") plot(buf, x, Math.round(qy), topPal.sh || topPal.mid, "quilt", 26);
       }
+    }
+  }
+  if (av.top === "vest") {
+    const vest = av.vestColor ? tones(av.vestColor, true) : topPal;
+    // Recolor the torso to the vest and open a shirt/skin placket down the front.
+    for (let y = Math.round(y0 + 1); y <= Math.round(y0 + h * hemT - 1); y++) {
+      for (let x = Math.round(t.cx - rx); x <= Math.round(t.cx + rx); x++) {
+        const p = buf[y * AV_W + x];
+        if (p && p.kind === "top") plot(buf, x, y, vest.mid || vest, "top", 22);
+      }
+    }
+    if (key !== "n") {
+      rect(buf, t.cx - 1.6, y0 + 3, t.cx + 1.6, y0 + h * hemT - 1, pal.shirt, "placket", 26);
+      circle(buf, t.cx, y0 + 6, 0.9, pal.gold, "vest-btn", 27);
+      circle(buf, t.cx, y0 + 9, 0.9, pal.gold, "vest-btn", 27);
     }
   }
   if (av.top === "polo" && key !== "n") {

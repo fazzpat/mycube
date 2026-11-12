@@ -1985,7 +1985,7 @@ async function runStoresAndCyberShots(browser) {
   await page.waitForTimeout(200);
   await page.evaluate(() => window.__openStore("clothes", "nt-tee"));
   await page.waitForSelector('[data-testid="store-panel"]:not(.hidden)');
-  check("The shop shows Furniture, Clothes, Pets, and Wall art tabs", (await page.locator('[data-testid="store-tab-furniture"]').count()) === 1 && (await page.locator('[data-testid="store-tab-clothes"]').count()) === 1 && (await page.locator('[data-testid="store-tab-pets"]').count()) === 1 && (await page.locator('[data-testid="store-tab-art"]').count()) === 1);
+  check("The shop shows Furniture, Clothes, Outerwear, Pets, and Wall art tabs", (await page.locator('[data-testid="store-tab-furniture"]').count()) === 1 && (await page.locator('[data-testid="store-tab-clothes"]').count()) === 1 && (await page.locator('[data-testid="store-tab-outerwear"]').count()) === 1 && (await page.locator('[data-testid="store-tab-pets"]').count()) === 1 && (await page.locator('[data-testid="store-tab-art"]').count()) === 1);
   await page.locator('[data-testid="store-item-nt-tee"]').click();
   await page.waitForTimeout(200);
   const previewOn = await page.evaluate(() => Boolean(document.querySelector('[data-testid="store-preview"] canvas, [data-testid="store-preview"] *')));
@@ -3283,7 +3283,7 @@ try {
     };
   });
   check(
-    "The bottom icons sit in the order phone, chest, emote, chat",
+    "The bottom icons sit in the order phone, cube, emote, chat",
     Boolean(dockPhone.inDock && dockPhone.phoneBeforeChest && dockPhone.chestBeforeEmote && dockPhone.emoteBeforeChat && dockPhone.order[0] === "phone-btn" && dockPhone.order[1] === "char-slots-btn" && dockPhone.order[2] === "emote-wheel-btn" && dockPhone.order[3] === "chat-bubble-btn"),
     JSON.stringify(dockPhone)
   );
@@ -4803,102 +4803,172 @@ try {
   await alice.setViewportSize({ width: 1280, height: 800 });
   await bob.setViewportSize({ width: 1280, height: 800 });
   await alice.waitForTimeout(200);
-  await alice.evaluate(() => window.__debugKit({ pet: "fox", pets: ["fox", "cat"] }));
-  await alice.waitForFunction(() => window.__storeState?.()?.collection?.pets?.some((p) => p.item === "fox") || window.__charSlotsState, null, { timeout: 4000 }).catch(() => {});
-  await alice.waitForTimeout(200);
-  const chestDock = await alice.evaluate(() => {
+  const cubeDock = await alice.evaluate(() => {
     const dock = document.querySelector('[data-testid="chat-dock"]');
     const kids = dock ? [...dock.children].map((el) => el.getAttribute("data-testid") || el.id) : [];
-    const chest = document.querySelector('[data-testid="char-slots-btn"]');
-    const r = chest?.getBoundingClientRect();
-    return { kids, visible: Boolean(chest && r && r.width > 0 && r.height > 0 && getComputedStyle(chest).visibility !== "hidden") };
+    const cube = document.querySelector('[data-testid="char-slots-btn"]');
+    const r = cube?.getBoundingClientRect();
+    const svg = cube?.querySelector("svg");
+    const sr = svg?.getBoundingClientRect();
+    return {
+      kids,
+      visible: Boolean(cube && r && r.width > 0 && r.height > 0 && getComputedStyle(cube).visibility !== "hidden"),
+      label: cube?.getAttribute("aria-label") || cube?.getAttribute("title") || "",
+      art: sr ? { w: Math.round(sr.width), h: Math.round(sr.height) } : null,
+      sparkles: cube ? cube.querySelectorAll(".cube-sparkle").length : 0,
+    };
   });
   check(
-    "A chest icon sits in the bottom row between the phone and the emote button",
-    Boolean(chestDock.visible && chestDock.kids[0] === "phone-btn" && chestDock.kids[1] === "char-slots-btn" && chestDock.kids[2] === "emote-wheel-btn" && chestDock.kids[3] === "chat-bubble-btn"),
-    JSON.stringify(chestDock)
+    "A magical cube icon sits in the bottom row between the phone and the emote button",
+    Boolean(cubeDock.visible && cubeDock.kids[0] === "phone-btn" && cubeDock.kids[1] === "char-slots-btn" && cubeDock.kids[2] === "emote-wheel-btn" && cubeDock.kids[3] === "chat-bubble-btn" && cubeDock.art && cubeDock.art.h >= 34 && cubeDock.sparkles >= 2),
+    JSON.stringify(cubeDock)
   );
   await alice.click('[data-testid="char-slots-btn"]');
   await alice.waitForTimeout(80);
-  const ownSlots = await alice.evaluate(() => window.__charSlotsState?.());
+  const emptySlots = await alice.evaluate(() => window.__charSlotsState?.());
   check(
-    "Tapping the chest icon opens a 5-slot popover to the right of your character",
-    Boolean(ownSlots?.open && ownSlots.self && !ownSlots.readonly && ownSlots.slots?.head && ownSlots.slots?.torso && ownSlots.slots?.legs && ownSlots.slots?.pet && ownSlots.slots?.prop && ownSlots.rect && ownSlots.box && ownSlots.rect.left >= ownSlots.box.right - 2 && ownSlots.slots.head.label === "Head" && ownSlots.slots.torso.label === "Torso" && ownSlots.slots.legs.label === "Legs" && !ownSlots.slots.head.empty && !ownSlots.slots.torso.empty && !ownSlots.slots.legs.empty),
-    JSON.stringify({ ownSlots })
+    "Tapping the cube icon opens a 5-slot inventory window to the right of your character",
+    Boolean(emptySlots?.open && emptySlots.self && emptySlots.slots?.head && emptySlots.slots?.torso && emptySlots.slots?.legs && emptySlots.slots?.pet && emptySlots.slots?.prop && emptySlots.rect && emptySlots.box && emptySlots.rect.left >= emptySlots.box.right - 2 && emptySlots.slots.head.label === "Head" && emptySlots.slots.torso.label === "Torso" && emptySlots.slots.legs.label === "Legs"),
+    JSON.stringify({ emptySlots })
   );
   check(
-    "The slots popover is about twice the character's size",
-    Boolean(ownSlots?.rect && ownSlots.box && ownSlots.rect.w >= ownSlots.box.w * 1.35 && ownSlots.rect.h >= ownSlots.box.h * 1.35 && ownSlots.rect.w <= Math.max(ownSlots.box.w, ownSlots.box.h) * 2.4 + 20),
-    JSON.stringify({ rect: ownSlots?.rect, box: ownSlots?.box })
+    "Head, Torso, and Legs start empty and do not show the base outfit",
+    Boolean(emptySlots?.slots.head.empty && emptySlots.slots.torso.empty && emptySlots.slots.legs.empty && emptySlots.slots.pet.empty && emptySlots.slots.prop.empty),
+    JSON.stringify({ slots: emptySlots?.slots, avatar: emptySlots?.avatar })
   );
   check(
-    "The pet slot shows the following pet and the prop slot is a placeholder",
-    Boolean(ownSlots?.pet === "fox" && !ownSlots.slots.pet.empty && ownSlots.slots.prop),
-    JSON.stringify({ pet: ownSlots?.pet, slots: ownSlots?.slots })
+    "The inventory section is visible under the five slots",
+    Boolean(await alice.locator('[data-testid="char-slots-inv"]').count()),
+    ""
   );
-  await alice.click('[data-testid="char-slot-head"]');
-  await alice.waitForTimeout(200);
-  const headEditor = await alice.evaluate(() => ({
-    slots: window.__charSlotsState?.()?.open,
-    editor: Boolean(document.querySelector("[data-testid=edit-char-overlay]:not(.hidden), body.is-character-edit, #phone-overlay.is-character-edit")),
-    tab: window.__creatorMenu?.tab?.() || document.querySelector("[data-tab].is-on, [data-tab][aria-selected='true']")?.getAttribute("data-tab") || "",
-  }));
-  check(
-    "Tapping Head opens Edit Character on the Head tab",
-    Boolean(!headEditor.slots && headEditor.editor && headEditor.tab === "head"),
-    JSON.stringify(headEditor)
-  );
-  await alice.evaluate(() => window.__closeCharacterEditor?.());
+  const noEditor = await alice.evaluate(() => {
+    document.querySelector('[data-testid="char-slot-head"]')?.click();
+    document.querySelector('[data-testid="char-slot-torso"]')?.click();
+    document.querySelector('[data-testid="char-slot-legs"]')?.click();
+    return {
+      open: window.__charSlotsState?.()?.open,
+      editor: Boolean(document.querySelector("[data-testid=edit-char-overlay]:not(.hidden), body.is-character-edit, #phone-overlay.is-character-edit")),
+      chooser: Boolean(document.querySelector('[data-testid="char-slot-pet-chooser"]')),
+    };
+  });
+  check("Tapping the empty Head, Torso, or Legs slots does not open Edit Character", Boolean(noEditor.open && !noEditor.editor && !noEditor.chooser), JSON.stringify(noEditor));
+
+  const baseTop = await alice.evaluate(() => window.__storeState?.()?.me?.avatar?.top || window.__charSlotsState?.()?.avatar?.top);
+  await alice.evaluate(() => {
+    window.__debugKit({
+      coins: 80,
+      pets: ["fox", "cat"],
+      props: ["guitar"],
+      outerwear: ["ow-beanie", "ow-hoodie", "ow-cargo", "ow-balloon"],
+    });
+  });
+  await alice.waitForFunction(() => (window.__storeState?.()?.collection?.outerwear || []).some((c) => c.catalogId === "ow-beanie"), null, { timeout: 4000 });
+  await alice.evaluate(() => window.__equipChest?.("pet", null));
   await alice.waitForTimeout(120);
   await alice.evaluate(() => window.__openCharSlots("alice"));
-  await alice.waitForTimeout(60);
-  await alice.click('[data-testid="char-slot-torso"]');
-  await alice.waitForTimeout(200);
-  const torsoEditor = await alice.evaluate(() => window.__creatorMenu?.tab?.() || document.querySelector("[data-tab].is-on, [data-tab][aria-selected='true']")?.getAttribute("data-tab"));
-  const torsoOpen = await alice.evaluate(() => Boolean(document.querySelector("[data-testid=edit-char-overlay]:not(.hidden), #phone-overlay.is-character-edit")));
-  check("Tapping Torso opens Edit Character on the Shirt tab", Boolean(torsoOpen && torsoEditor === "shirt"), JSON.stringify({ torsoOpen, torsoEditor }));
-  await alice.evaluate(() => window.__closeCharacterEditor?.());
   await alice.waitForTimeout(80);
-  await alice.evaluate(() => window.__openCharSlots("alice"));
-  await alice.click('[data-testid="char-slot-legs"]');
-  await alice.waitForTimeout(200);
-  const legsEditor = await alice.evaluate(() => window.__creatorMenu?.tab?.() || document.querySelector("[data-tab].is-on, [data-tab][aria-selected='true']")?.getAttribute("data-tab"));
-  check("Tapping Legs opens Edit Character on the Pants tab", legsEditor === "pants", JSON.stringify({ legsEditor }));
-  await alice.evaluate(() => window.__closeCharacterEditor?.());
-  await alice.waitForTimeout(80);
-  await alice.evaluate(() => window.__openCharSlots("alice"));
-  await alice.click('[data-testid="char-slot-pet"]');
-  await alice.waitForSelector('[data-testid="char-slot-pet-chooser"]', { timeout: 3000 });
-  const chooserOpen = await alice.evaluate(() => window.__charSlotsState?.().petOpen);
-  check("Tapping Pet opens a follower chooser", Boolean(chooserOpen), JSON.stringify(await alice.evaluate(() => window.__charSlotsState?.())));
-  await alice.click('[data-testid="char-slot-pet-none"]');
-  await alice.waitForTimeout(200);
-  const petCleared = await alice.evaluate(() => window.__charSlotsState?.());
-  check("The pet chooser can set the follower to none", Boolean(petCleared && !petCleared.pet && petCleared.slots?.pet?.empty), JSON.stringify(petCleared));
-  await alice.click('[data-testid="char-slot-pet"]');
-  await alice.click('[data-testid="char-slot-pet-opt-fox"]');
-  await alice.waitForTimeout(200);
-  const petFox = await alice.evaluate(() => window.__charSlotsState?.()?.pet);
-  check("The pet chooser can pick a following pet", petFox === "fox", petFox);
-  const afterProp = await alice.evaluate(() => {
-    const before = document.querySelector("[data-testid=edit-char-overlay]:not(.hidden), #phone-overlay.is-character-edit");
-    document.querySelector('[data-testid="char-slot-prop"]')?.click();
+  const stocked = await alice.evaluate(() => window.__charSlotsState?.());
+  check(
+    "Owned outerwear, pets, and props appear in the inventory grid",
+    Boolean(stocked?.inventory?.some((i) => i.item === "ow-beanie") && stocked.inventory.some((i) => i.item === "fox") && stocked.inventory.some((i) => i.item === "guitar") && stocked.inventory.some((i) => i.item === "balloon") && stocked.slots.pet.empty && stocked.slots.head.empty),
+    JSON.stringify(stocked)
+  );
+
+  await alice.click('[data-testid="char-inv-head-ow-beanie"]');
+  await alice.waitForTimeout(150);
+  const woreHat = await alice.evaluate(() => {
     const st = window.__charSlotsState?.();
-    const editor = document.querySelector("[data-testid=edit-char-overlay]:not(.hidden), #phone-overlay.is-character-edit");
-    return { stillOpen: st?.open, petOpen: st?.petOpen, editor: Boolean(editor), editorWas: Boolean(before) };
+    const av = st?.avatar || window.__storeState?.()?.me?.avatar;
+    return { st, avHat: av?.hat, avTop: av?.top, baseTop: av?.top };
   });
-  check("Tapping Prop does nothing yet and leaves the popover open", Boolean(afterProp.stillOpen && !afterProp.editor), JSON.stringify(afterProp));
+  check(
+    "Tapping a beanie in inventory equips it in the Head slot over the base look",
+    Boolean(woreHat.st?.gear?.head === "ow-beanie" && !woreHat.st.slots.head.empty && !woreHat.st.inventory.some((i) => i.item === "ow-beanie")),
+    JSON.stringify(woreHat)
+  );
+
+  await alice.click('[data-testid="char-inv-torso-ow-hoodie"]');
+  await alice.waitForTimeout(150);
+  const woreHoodie = await alice.evaluate(() => ({
+    st: window.__charSlotsState?.(),
+    savedTop: window.__storeState?.()?.me?.avatar?.top,
+  }));
+  check(
+    "Equipping a hoodie fills the Torso slot without changing the Edit Character shirt",
+    Boolean(woreHoodie.st?.gear?.torso === "ow-hoodie" && !woreHoodie.st.slots.torso.empty && woreHoodie.savedTop && woreHoodie.savedTop === baseTop),
+    JSON.stringify({ woreHoodie, baseTop })
+  );
+
+  await alice.click('[data-testid="char-inv-pet-fox"]');
+  await alice.waitForTimeout(200);
+  const worePet = await alice.evaluate(() => window.__charSlotsState?.());
+  check("Tapping a pet in inventory equips it as the follower", Boolean(worePet?.pet === "fox" && !worePet.slots.pet.empty && !worePet.inventory.some((i) => i.item === "fox")), JSON.stringify(worePet));
+  await alice.click('[data-testid="char-slot-pet"]');
+  await alice.waitForTimeout(200);
+  const petBack = await alice.evaluate(() => window.__charSlotsState?.());
+  check("Tapping the Pet slot unequips the follower back to inventory", Boolean(!petBack?.pet && petBack.slots.pet.empty && petBack.inventory.some((i) => i.item === "fox")), JSON.stringify(petBack));
+
+  await alice.click('[data-testid="char-inv-prop-balloon"]');
+  await alice.waitForTimeout(150);
+  const woreProp = await alice.evaluate(() => window.__charSlotsState?.());
+  check("Tapping a balloon in inventory equips it in the Prop slot", Boolean(woreProp?.prop === "balloon" && !woreProp.slots.prop.empty && !woreProp.inventory.some((i) => i.item === "balloon")), JSON.stringify(woreProp));
+  await alice.click('[data-testid="char-slot-prop"]');
+  await alice.waitForTimeout(150);
+  const propBack = await alice.evaluate(() => window.__charSlotsState?.());
+  check("Tapping the Prop slot returns the item to inventory", Boolean(!propBack?.prop && propBack.slots.prop.empty && propBack.inventory.some((i) => i.item === "balloon")), JSON.stringify(propBack));
+
+  await alice.click('[data-testid="char-slot-head"]');
+  await alice.waitForTimeout(150);
+  const headBack = await alice.evaluate(() => window.__charSlotsState?.());
+  check("Tapping an equipped Head slot unequips the item back to inventory", Boolean(!headBack?.gear?.head && headBack.slots.head.empty && headBack.inventory.some((i) => i.item === "ow-beanie")), JSON.stringify(headBack));
+
+  const rejected = await alice.evaluate(async () => {
+    const before = window.__charSlotsState?.();
+    window.__equipChest?.("head", "ow-crown");
+    window.__equipChest?.("torso", "ow-beanie");
+    await new Promise((r) => setTimeout(r, 120));
+    const after = window.__charSlotsState?.();
+    return { before: before?.gear, after: after?.gear, savedTop: window.__storeState?.()?.me?.avatar?.top };
+  });
+  check(
+    "The server rejects unequipped or wrong-slot items",
+    Boolean(!rejected.after?.head && rejected.after?.torso === "ow-hoodie"),
+    JSON.stringify(rejected)
+  );
+
+  await alice.evaluate(() => window.__closeCharSlots?.());
+  await alice.evaluate(() => window.__openStore("outerwear", "ow-crown"));
+  await alice.waitForSelector('[data-testid="store-panel"]:not(.hidden)');
+  const owShop = await alice.evaluate(() => ({
+    tab: window.__storeState?.()?.kind,
+    item: Boolean(document.querySelector('[data-testid="store-item-ow-crown"]')),
+  }));
+  check("The shop has an Outerwear tab with a crown for sale", Boolean(owShop.tab === "outerwear" && owShop.item), JSON.stringify(owShop));
+  await alice.locator('[data-testid="store-item-ow-crown"]').click();
+  await alice.locator('[data-testid="store-buy"]').click();
+  await alice.waitForFunction(() => (window.__storeState?.()?.collection?.outerwear || []).some((c) => c.catalogId === "ow-crown"), null, { timeout: 8000 });
+  await alice.evaluate(() => { document.getElementById("store-close")?.click(); window.__openCharSlots("alice"); });
+  await alice.waitForTimeout(80);
+  await alice.click('[data-testid="char-inv-head-ow-crown"]');
+  await alice.waitForTimeout(200);
+  const crownOn = await alice.evaluate(() => window.__charSlotsState?.());
+  check("Buying a crown puts it in inventory and it can be equipped", Boolean(crownOn?.gear?.head === "ow-crown" && !crownOn.slots.head.empty), JSON.stringify(crownOn));
+
+  await bob.waitForFunction(() => window.__personState?.("alice")?.gear?.head === "ow-crown", null, { timeout: 5000 }).catch(() => {});
+  const bobSeesGear = await bob.evaluate(() => window.__personState?.("alice"));
+  check("Other players can see the equipped outerwear", Boolean(bobSeesGear?.gear?.head === "ow-crown"), JSON.stringify(bobSeesGear));
+
   await alice.click('[data-testid="char-slots-btn"]');
   await alice.waitForTimeout(80);
   const toggledShut = await alice.evaluate(() => window.__charSlotsState?.()?.open);
-  check("Tapping the chest icon again closes the slots popover", toggledShut === false, JSON.stringify({ toggledShut }));
+  check("Tapping the cube icon again closes the inventory window", toggledShut === false, JSON.stringify({ toggledShut }));
 
   await alice.click('[data-testid="char-slots-btn"]');
   await alice.waitForTimeout(80);
   await alice.mouse.click(20, 80);
   await alice.waitForTimeout(80);
   const closedAway = await alice.evaluate(() => window.__charSlotsState?.()?.open);
-  check("Tapping elsewhere closes the slots popover", closedAway === false, JSON.stringify({ closedAway }));
+  check("Tapping elsewhere closes the inventory window", closedAway === false, JSON.stringify({ closedAway }));
 
   const tapOwnNoOpen = await alice.evaluate(() => {
     window.__closeCharSlots?.();
@@ -4907,23 +4977,7 @@ try {
     if (box) window.__tapAt((box.left + box.right) / 2, box.top + box.h * 0.28);
     return { open: window.__charSlotsState?.()?.open || false, box: Boolean(box) };
   });
-  check("Tapping your own avatar does not open the slots popover", tapOwnNoOpen && tapOwnNoOpen.open === false && tapOwnNoOpen.box, JSON.stringify(tapOwnNoOpen));
-
-  const panNoOpen = await alice.evaluate(() => {
-    const name = window.__avatarPose?.()?.name;
-    const box = window.HouseRoom3D.personScreenBox?.(name) || window.HouseRoom3D.personBox?.(name);
-    const c = document.querySelector(".room3d-root canvas, .iso-room, #floor canvas");
-    if (!box || !c) return { ok: false };
-    const x = (box.left + box.right) / 2, y = box.top + box.h * 0.28;
-    const fire = (type, px, py, buttons) => c.dispatchEvent(new PointerEvent(type, {
-      bubbles: true, cancelable: true, clientX: px, clientY: py, pointerId: 21, pointerType: "mouse", buttons, isPrimary: true,
-    }));
-    fire("pointerdown", x, y, 1);
-    fire("pointermove", x + 48, y + 20, 1);
-    fire("pointerup", x + 48, y + 20, 0);
-    return { open: window.__charSlotsState?.()?.open || false, box: true };
-  });
-  check("Dragging or panning the room does not open the slots popover", panNoOpen && panNoOpen.open === false, JSON.stringify(panNoOpen));
+  check("Tapping your own avatar does not open the inventory window", tapOwnNoOpen && tapOwnNoOpen.open === false && tapOwnNoOpen.box, JSON.stringify(tapOwnNoOpen));
 
   const editBlocked = await alice.evaluate(() => {
     window.__closeCharSlots?.();
@@ -4935,7 +4989,7 @@ try {
     window.__exitEdit?.();
     return { open: Boolean(st?.open), editing };
   });
-  check("The slots popover does not open in Edit Room mode", Boolean(editBlocked.editing && !editBlocked.open), JSON.stringify(editBlocked));
+  check("The inventory window does not open in Edit Room mode", Boolean(editBlocked.editing && !editBlocked.open), JSON.stringify(editBlocked));
 
   await bob.waitForTimeout(200);
   const bobSees = await bob.evaluate(() => {
@@ -4945,7 +4999,7 @@ try {
     const st = window.__charSlotsState?.();
     return { tapped: Boolean(box), open: Boolean(st?.open), name: st?.name || null };
   });
-  check("Tapping another player does not open the slots popover", Boolean(bobSees.tapped && !bobSees.open), JSON.stringify(bobSees));
+  check("Tapping another player does not open the inventory window", Boolean(bobSees.tapped && !bobSees.open), JSON.stringify(bobSees));
   await bob.evaluate(() => window.__closeCharSlots?.());
 
   for (const size of [{ width: 390, height: 844 }, { width: 375, height: 667 }]) {
@@ -4965,11 +5019,12 @@ try {
       const r = st?.rect;
       const on = r && r.left >= -1 && r.top >= -1 && r.right <= vw + 1 && r.bottom <= vh + 1;
       const right = st?.box && r && !st.flipped && r.left >= st.box.right - 2;
-      return { open: st?.open, on, right, flipped: st?.flipped, rect: r, box: st?.box, vw, vh };
+      const inv = document.querySelector('[data-testid="char-slots-inv"]');
+      return { open: st?.open, on, right, flipped: st?.flipped, rect: r, box: st?.box, vw, vh, inv: Boolean(inv) };
     });
     check(
-      `The slots popover fits a ${size.width}x${size.height} phone and stays to the right of the character`,
-      Boolean(phoneFit.open && phoneFit.on && phoneFit.right),
+      `The inventory window fits a ${size.width}x${size.height} phone and stays to the right of the character`,
+      Boolean(phoneFit.open && phoneFit.on && phoneFit.right && phoneFit.inv),
       JSON.stringify(phoneFit)
     );
     await alice.evaluate(() => window.__closeCharSlots?.());

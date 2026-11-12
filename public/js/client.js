@@ -4,7 +4,8 @@ import { drawAvatarSprite, AV_W, AV_H, AV_HEAD_TOP, AV_GROUND_Y } from "./avatar
 import { paintPetThumb } from "./petSprites.js";
 import { initStartMenu } from "./startMenu.js";
 import { initCreatorMenu, openFromPhone, closeFromPhone, isPhoneEditOpen } from "./creatorMenu.js";
-import { CLOTHING_STOCK, PET_STOCK, PUBLIC_PLACES, clothingSlot, CLOTHING_SLOTS, HAIR_STYLES as CAT_HAIR_STYLES, HAIR_LABELS, TOP_LABELS, BOTTOM_LABELS, ACC_LABELS, BASE_TOPS, BASE_BOTTOMS, BASE_ACCESSORIES, TOPS as CAT_TOPS, BOTTOMS as CAT_BOTTOMS, ACCESSORIES as CAT_ACCESSORIES, HAT_ACCESSORIES, HATS, HAT_LABELS, HAT_COLORS, GLASSES_STYLES, GLASSES_LABELS, GLASSES_COLORS, NECKLACES, NECKLACE_LABELS, SHOE_COLORS, migrateAvatar } from "./storeCatalog.js";
+import { CLOTHING_STOCK, PET_STOCK, PUBLIC_PLACES, clothingSlot, CLOTHING_SLOTS, HAIR_STYLES as CAT_HAIR_STYLES, HAIR_LABELS, TOP_LABELS, BOTTOM_LABELS, ACC_LABELS, BASE_TOPS, BASE_BOTTOMS, BASE_ACCESSORIES, TOPS as CAT_TOPS, BOTTOMS as CAT_BOTTOMS, ACCESSORIES as CAT_ACCESSORIES, HAT_ACCESSORIES, HATS, HAT_LABELS, HAT_COLORS, GLASSES_STYLES, GLASSES_LABELS, GLASSES_COLORS, NECKLACES, NECKLACE_LABELS, SHOE_COLORS, migrateAvatar, OUTERWEAR_STOCK, outerwearById, applyEquippedGear, emptyGear, normalizeGear } from "./storeCatalog.js";
+import { drawHeldItemSprite } from "./heldItems.js";
 import { DECOR_GROUPS, paintDecorThumb, normalizeDecor, DEFAULT_DECOR } from "./roomDecor.js";
 import { canonHex } from "./hexColor.js";
 import { openColorWheel, closeColorWheel, isColorWheelOpen } from "./colorWheel.js";
@@ -744,6 +745,7 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
       talkUntil: existing.talkUntil || 0,
       heldProp: p.heldProp ?? existing.heldProp ?? null,
       activePet: p.activePet ?? existing.activePet ?? null,
+      gear: p.gear ?? existing.gear ?? emptyGear(),
       heldItem: p.heldItem ?? existing.heldItem ?? null,
       boxing: p.boxing ?? existing.boxing ?? null,
       gym: p.gym ?? existing.gym ?? null,
@@ -1285,8 +1287,9 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
         avatar: state.me.avatar || mine?.avatar || {},
         activePet: state.me.activePet ?? mine?.activePet ?? null,
         heldProp: state.me.heldProp ?? mine?.heldProp ?? null,
+        gear: normalizeGear(state.me.gear || mine?.gear || emptyGear()),
         heldItem: mine?.heldItem || null,
-        collection: state.me.collection || { pets: [], props: [] },
+        collection: state.me.collection || { pets: [], props: [], outerwear: [] },
         self: true,
       };
     }
@@ -1297,8 +1300,9 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
       avatar: p.avatar || {},
       activePet: p.activePet || null,
       heldProp: p.heldProp || null,
+      gear: normalizeGear(p.gear || emptyGear()),
       heldItem: p.heldItem || null,
-      collection: { pets: [], props: [] },
+      collection: { pets: [], props: [], outerwear: [] },
       self: false,
     };
   }
@@ -1331,6 +1335,15 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     ctx.clearRect(0, 0, w, h);
     ctx.fillStyle = "#efe6d4";
     ctx.fillRect(0, 0, w, h);
+    const held = drawHeldItemSprite(prop, { hand: false, lights: true });
+    if (held?.c) {
+      const pad = 4;
+      const sc = Math.min((w - pad) / held.w, (h - pad) / held.h);
+      const dw = Math.max(1, Math.round(held.w * sc));
+      const dh = Math.max(1, Math.round(held.h * sc));
+      ctx.drawImage(held.c, 0, 0, held.w, held.h, Math.floor((w - dw) / 2), Math.floor((h - dh) / 2), dw, dh);
+      return true;
+    }
     const av = migrateAvatar(state.charSlots && charSlotsPerson(state.charSlots.name)?.avatar || {});
     const spr = drawAvatarSprite(av, { facing: { x: 1, z: 1 }, heldProp: prop }, 0);
     if (!spr?.c) return false;
@@ -1344,41 +1357,40 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     return true;
   }
 
+  function equippedChestItem(person, slot) {
+    if (slot === "pet") return person.activePet || null;
+    if (slot === "prop") return person.heldProp || null;
+    return normalizeGear(person.gear)[slot] || null;
+  }
+
+  function paintOuterwearThumb(canvas, catalogId, person) {
+    const stock = outerwearById(catalogId);
+    if (!stock) return false;
+    if (stock.slot === "prop") return paintPropThumb(canvas, stock.item?.prop);
+    const base = migrateAvatar(person?.avatar || {});
+    const av = migrateAvatar({ ...base, ...stock.item });
+    if (stock.slot === "head") paintOptionThumb(canvas, "hat", av.hat, av);
+    else if (stock.slot === "torso") paintOptionThumb(canvas, "top", av.top || "tshirt", av);
+    else if (stock.slot === "legs") paintLegsThumb(canvas, av);
+    else return false;
+    return true;
+  }
+
   function paintCharSlotIcon(slotId, canvas, person) {
-    const av = migrateAvatar(person.avatar || {});
     canvas.width = 72;
     canvas.height = 72;
     const ctx = canvas.getContext("2d");
     ctx.imageSmoothingEnabled = false;
     ctx.fillStyle = "#efe6d4";
     ctx.fillRect(0, 0, 72, 72);
-    if (slotId === "head") {
-      if (av.hat && av.hat !== "none") paintOptionThumb(canvas, "hat", av.hat, av);
-      else if ((av.glassesStyle && av.glassesStyle !== "none") || av.glasses) {
-        paintOptionThumb(canvas, "glasses", av.glassesStyle && av.glassesStyle !== "none" ? av.glassesStyle : "round", av);
-      } else if (av.hair) paintOptionThumb(canvas, "hair", av.hair, av);
-      else return false;
-      return true;
-    }
-    if (slotId === "torso") {
-      paintOptionThumb(canvas, "top", av.top || "tshirt", av);
-      return true;
-    }
-    if (slotId === "legs") {
-      paintLegsThumb(canvas, av);
-      return true;
-    }
+    const equipped = equippedChestItem(person, slotId);
+    if (!equipped) return false;
     if (slotId === "pet") {
-      if (!person.activePet) return false;
-      paintPetThumb(canvas, person.activePet);
+      paintPetThumb(canvas, equipped);
       return true;
     }
-    if (slotId === "prop") {
-      const prop = person.heldProp || (typeof person.heldItem === "string" ? person.heldItem : person.heldItem?.kind);
-      if (!prop) return false;
-      return paintPropThumb(canvas, prop);
-    }
-    return false;
+    if (slotId === "prop") return paintPropThumb(canvas, equipped);
+    return paintOuterwearThumb(canvas, equipped, person);
   }
 
   function ensureCharSlots() {
@@ -1417,18 +1429,56 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
       });
       grid.append(btn);
     }
-    const pets = document.createElement("div");
-    pets.className = "char-slots-pets";
-    pets.dataset.testid = "char-slot-pet-chooser";
-    el.append(grid, pets);
+    const inv = document.createElement("div");
+    inv.className = "char-slots-inv";
+    inv.dataset.testid = "char-slots-inv";
+    const invTitle = document.createElement("p");
+    invTitle.className = "char-slots-inv-title";
+    invTitle.textContent = "Inventory";
+    const invGrid = document.createElement("div");
+    invGrid.className = "char-slots-inv-grid";
+    invGrid.dataset.testid = "char-slots-inv-grid";
+    inv.append(invTitle, invGrid);
+    el.append(grid, inv);
+    el.setAttribute("aria-label", "Inventory");
     el.addEventListener("pointerdown", (e) => e.stopPropagation());
     document.body.append(el);
     return el;
   }
 
   function charSlotSig(person) {
-    const av = person.avatar || {};
-    return [person.username, person.activePet || "", person.heldProp || "", person.heldItem?.kind || person.heldItem || "", av.hat, av.glassesStyle, av.glasses, av.hair, av.hairColor, av.top, av.shirt, av.bottom, av.bottomColor, av.shoes, av.shoeColor].join("|");
+    const g = normalizeGear(person.gear);
+    return [person.username, person.activePet || "", person.heldProp || "", g.head || "", g.torso || "", g.legs || ""].join("|");
+  }
+
+  function chestInventoryItems(person) {
+    const col = person.collection || {};
+    const items = [];
+    const seenProp = new Set();
+    for (const o of col.outerwear || []) {
+      const stock = outerwearById(o.catalogId);
+      const slot = stock?.slot || o.slot;
+      if (!slot) continue;
+      const equipped = slot === "prop"
+        ? person.heldProp && (stock?.item?.prop === person.heldProp)
+        : equippedChestItem(person, slot) === o.catalogId;
+      if (equipped) {
+        if (slot === "prop" && stock?.item?.prop) seenProp.add(stock.item.prop);
+        continue;
+      }
+      const itemKey = slot === "prop" ? (stock?.item?.prop || o.item?.prop) : o.catalogId;
+      if (slot === "prop" && itemKey) seenProp.add(itemKey);
+      items.push({ id: o.id || o.catalogId, catalogId: o.catalogId, kind: slot === "prop" ? "prop" : "outerwear", slot, item: itemKey, label: o.label || stock?.label || o.catalogId });
+    }
+    for (const pet of col.pets || []) {
+      if (person.activePet === pet.item) continue;
+      items.push({ id: pet.id || pet.item, kind: "pet", slot: "pet", item: pet.item, label: pet.label || pet.item });
+    }
+    for (const prop of col.props || []) {
+      if (!prop.item || person.heldProp === prop.item || seenProp.has(prop.item)) continue;
+      items.push({ id: prop.id || prop.item, kind: "prop", slot: "prop", item: prop.item, label: prop.label || prop.item });
+    }
+    return items;
   }
 
   function paintCharSlotIcons(el, person) {
@@ -1446,68 +1496,90 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
         ctx.imageSmoothingEnabled = false;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
       }
-      if (def.id === "prop") btn.classList.add("is-placeholder");
     }
   }
 
-  function paintPetChooser(el, person) {
-    const box = el.querySelector(".char-slots-pets");
-    if (!box) return;
-    const open = Boolean(state.charSlots?.petOpen && person.self);
-    box.classList.toggle("is-open", open);
-    const pets = (person.collection?.pets || []).slice();
-    const sig = [open ? "1" : "0", person.activePet || "", pets.map((p) => p.item).join(",")].join("|");
+  function ownsChestItem(slot, item) {
+    if (item == null || item === "") return true;
+    const col = state.me?.collection || {};
+    if (slot === "pet") return (col.pets || []).some((p) => p.item === item);
+    if (slot === "prop") {
+      if ((col.props || []).some((p) => p.item === item)) return true;
+      return (col.outerwear || []).some((o) => outerwearById(o.catalogId)?.item?.prop === item);
+    }
+    const stock = outerwearById(item);
+    if (!stock || stock.slot !== slot) return false;
+    return (col.outerwear || []).some((o) => o.catalogId === item);
+  }
+
+  function emitEquipChest(slot, item) {
+    socket.emit("equipChest", { slot, item: item || null });
+    if (!state.me) return;
+    if (!ownsChestItem(slot, item)) return;
+    if (slot === "pet") state.me.activePet = item || null;
+    else if (slot === "prop") state.me.heldProp = item || null;
+    else state.me.gear = normalizeGear({ ...(state.me.gear || emptyGear()), [slot]: item || null });
+    const self = state.people.get(state.me.username);
+    if (self) {
+      self.activePet = state.me.activePet;
+      self.heldProp = state.me.heldProp;
+      self.gear = state.me.gear;
+    }
+    renderPeople();
+    const el = charSlotsEl();
+    const fresh = charSlotsPerson(state.me.username);
+    if (el && fresh) {
+      paintCharSlotIcons(el, fresh);
+      paintChestInventory(el, fresh);
+      layoutCharSlots();
+    }
+  }
+
+  function paintChestInventory(el, person) {
+    const box = el.querySelector(".char-slots-inv");
+    const grid = el.querySelector(".char-slots-inv-grid");
+    if (!box || !grid) return;
+    const items = person.self ? chestInventoryItems(person) : [];
+    const sig = items.map((it) => it.kind + ":" + it.item).join(",") + "|" + (person.self ? "1" : "0");
     if (box.dataset.sig === sig) return;
     box.dataset.sig = sig;
-    if (!open) {
-      box.replaceChildren();
-      return;
-    }
-    const title = document.createElement("p");
-    title.className = "char-slots-pets-title";
-    title.textContent = "Follower";
-    box.replaceChildren(title);
-    const list = document.createElement("div");
-    list.className = "char-slots-pets-list";
-    const addOpt = (item, label, on, testid) => {
-      const b = document.createElement("button");
-      b.type = "button";
-      b.className = "char-slots-pet-opt" + (on ? " is-on" : "");
-      b.dataset.testid = testid;
-      b.dataset.pet = item || "";
-      if (item) {
+    grid.replaceChildren();
+    box.querySelector(".char-slots-inv-empty")?.remove();
+    const cells = Math.max(items.length, 6);
+    for (let i = 0; i < cells; i++) {
+      const rec = items[i];
+      const b = document.createElement(rec ? "button" : "div");
+      if (rec) b.type = "button";
+      b.className = "char-inv-cell" + (rec ? "" : " is-empty");
+      if (rec) {
+        b.dataset.testid = "char-inv-" + rec.slot + "-" + rec.item;
+        b.dataset.slot = rec.slot;
+        b.dataset.item = rec.item;
+        b.title = rec.label || rec.item;
         const c = document.createElement("canvas");
-        c.width = 22;
-        c.height = 22;
-        paintPetThumb(c, item);
+        c.width = 56;
+        c.height = 56;
+        c.setAttribute("aria-hidden", "true");
+        if (rec.slot === "pet") paintPetThumb(c, rec.item);
+        else if (rec.slot === "prop") paintPropThumb(c, rec.item);
+        else paintOuterwearThumb(c, rec.catalogId || rec.item, person);
         b.append(c);
+        b.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (!person.self) return;
+          emitEquipChest(rec.slot, rec.item);
+        });
+      } else {
+        b.dataset.testid = "char-inv-empty-" + i;
       }
-      const span = document.createElement("span");
-      span.textContent = label;
-      b.append(span);
-      b.addEventListener("click", (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        socket.emit("equipPet", { item: item || null });
-        if (state.me) state.me.activePet = item || null;
-        if (state.charSlots) state.charSlots.petOpen = false;
-        const fresh = charSlotsPerson(person.username);
-        if (fresh) {
-          paintCharSlotIcons(el, fresh);
-          paintPetChooser(el, fresh);
-        }
-      });
-      list.append(b);
-    };
-    addOpt(null, "None", !person.activePet, "char-slot-pet-none");
-    for (const c of pets) {
-      addOpt(c.item, c.label || c.item, person.activePet === c.item, "char-slot-pet-opt-" + c.item);
+      grid.append(b);
     }
-    box.append(list);
-    if (!pets.length) {
+    if (person.self && !items.length) {
       const empty = document.createElement("p");
-      empty.className = "char-slots-pets-empty";
-      empty.textContent = "No pets yet. Adopt one in the shop.";
+      empty.className = "char-slots-inv-empty";
+      empty.dataset.testid = "char-slots-inv-empty";
+      empty.textContent = "Buy outerwear, pets, and props in the shop.";
       box.append(empty);
     }
   }
@@ -1525,7 +1597,7 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     el.classList.add("is-open");
     el.hidden = false;
     paintCharSlotIcons(el, person);
-    paintPetChooser(el, person);
+    paintChestInventory(el, person);
 
     const pad = 8;
     const gap = 8;
@@ -1557,22 +1629,25 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
       side = Math.max(shrinkMin, Math.min(side, Math.max(0, rightRoom)));
     }
     if (side < 80) side = Math.max(minSide, Math.min(target, maxSide));
-    const petOpen = Boolean(info.petOpen && person.self);
     const panelW = side;
     let left = flipped ? (box.left - gap - panelW) : (box.right + gap);
     left = Math.min(Math.max(left, pad), vw - pad - panelW);
     el.classList.toggle("is-flipped", flipped);
     info.flipped = flipped;
+    const maxH = Math.max(120, vh - pad * 2);
+    const slotH = Math.max(88, Math.min(side, Math.round(maxH * 0.55)));
     el.style.width = Math.round(panelW) + "px";
-    el.style.height = petOpen ? "auto" : Math.round(side) + "px";
-    el.style.minHeight = petOpen ? "0px" : Math.round(side) + "px";
-    el.style.maxHeight = Math.max(side, vh - pad * 2) + "px";
+    el.style.height = "auto";
+    el.style.minHeight = "0px";
+    el.style.maxHeight = Math.round(maxH) + "px";
     const grid = el.querySelector(".char-slots-grid");
-    if (grid) grid.style.height = Math.max(80, side - 16) + "px";
+    if (grid) grid.style.height = slotH + "px";
+    const inv = el.querySelector(".char-slots-inv");
+    if (inv) inv.style.maxHeight = Math.max(64, maxH - slotH - 20) + "px";
     el.style.left = Math.round(left) + "px";
-    let top = box.top + (box.h - side) / 2;
-    el.style.top = Math.round(Math.max(pad, top)) + "px";
-    const rh = el.getBoundingClientRect().height || side;
+    el.style.top = pad + "px";
+    const rh = el.getBoundingClientRect().height || (slotH + 80);
+    let top = box.top + (box.h - rh) / 2;
     top = Math.min(Math.max(top, pad), vh - pad - rh);
     el.style.top = Math.round(top) + "px";
   }
@@ -1584,7 +1659,7 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     if (name && name !== who) return;
     const person = charSlotsPerson(who);
     if (!person) return;
-    state.charSlots = { name: who, petOpen: false, flipped: false };
+    state.charSlots = { name: who, flipped: false };
     ensureCharSlots();
     layoutCharSlots();
     syncCharSlotsBtn();
@@ -1600,25 +1675,10 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     const info = state.charSlots;
     if (!info) return;
     const person = charSlotsPerson(info.name);
-    if (!person) return;
-    if (!person.self) return;
-    if (slotId === "head") return openEditorFromSlot("head");
-    if (slotId === "torso") return openEditorFromSlot("shirt");
-    if (slotId === "legs") return openEditorFromSlot("pants");
-    if (slotId === "pet") {
-      info.petOpen = !info.petOpen;
-      layoutCharSlots();
-      return;
-    }
-    // Prop is a placeholder for now.
-  }
-
-  function openEditorFromSlot(tab) {
-    closeCharSlots();
-    openCharacterEditor("room");
-    requestAnimationFrame(() => {
-      window.__creatorMenu?.setTab?.(tab);
-    });
+    if (!person || !person.self) return;
+    const equipped = equippedChestItem(person, slotId);
+    if (!equipped) return;
+    emitEquipChest(slotId, null);
   }
 
   function cssEscape(s) {
@@ -1709,7 +1769,7 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
         const label = s.label || s.name || s.type;
         const owned = ownsStoreItem(kind, s);
         const sel = state.shopSel === id ? " selected" : "";
-        const thumb = (kind === "clothes" || kind === "pets" || kind === "art")
+        const thumb = (kind === "clothes" || kind === "pets" || kind === "art" || kind === "outerwear")
           ? `<canvas class="store-thumb" width="28" height="28" data-thumb-id="${id}" style="image-rendering:pixelated"></canvas>`
           : "";
         return `<button type="button" class="store-item${sel}" data-testid="store-item-${id}" data-shop-id="${id}">${thumb}<span class="meta">${escapeHtml(label)}${owned ? " · owned" : ""}</span><span class="price">${owned ? "✓" : s.price + "c"}</span></button>`;
@@ -1735,6 +1795,10 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
         prev.innerHTML = `<canvas width="72" height="66" style="image-rendering:pixelated"></canvas>`;
         const c = prev.querySelector("canvas");
         if (c && window.__paintPetThumb) { c.width = 72; c.height = 66; window.__paintPetThumb(c, stock.item); }
+      } else if (kind === "outerwear" && stock) {
+        prev.innerHTML = `<canvas width="56" height="56" style="image-rendering:pixelated"></canvas>`;
+        const c = prev.querySelector("canvas");
+        if (c) paintStoreCardThumb(c, "outerwear", stock, state.me?.avatar || {});
       } else if (kind === "clothes" && stock && window.__paintStoreThumb) {
         prev.innerHTML = `<canvas width="56" height="56" style="image-rendering:pixelated"></canvas>`;
         const c = prev.querySelector("canvas");
@@ -3049,6 +3113,7 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
 
   function storeStock(kind, slot) {
     if (kind === "pets") return PET_STOCK;
+    if (kind === "outerwear") return OUTERWEAR_STOCK;
     if (kind === "clothes") {
       const s = slot || (kind === state.storeKind ? state.storeSlot : state.shopSlot) || "all";
       if (!s || s === "all") return CLOTHING_STOCK;
@@ -3073,6 +3138,13 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     const col = state.me?.collection;
     if (!col) return false;
     if (kind === "pets") return (col.pets || []).some((p) => p.item === stock.item);
+    if (kind === "outerwear") {
+      if ((col.outerwear || []).some((c) => c.catalogId === stock.id)) return true;
+      if (stock.slot === "prop" && stock.item?.prop) {
+        return (col.props || []).some((p) => p.item === stock.item.prop);
+      }
+      return false;
+    }
     return (col.clothes || []).some((c) => c.catalogId === stock.id);
   }
 
@@ -3085,6 +3157,7 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
       return "clothes:" + id + ":" + (avatar?.skin || "") + ":" + (avatar?.hair || "") + ":" + JSON.stringify(item);
     }
     if (kind === "pets") return "pets:" + (stock?.item || id);
+    if (kind === "outerwear") return "outerwear:" + id + ":" + JSON.stringify(stock?.item || {});
     if (kind === "art") return "art:" + id;
     return "furn:" + id;
   }
@@ -3127,6 +3200,16 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
         }
       } else if (kind === "pets") {
         if (typeof window.__paintPetThumb === "function") window.__paintPetThumb(src, stock.item);
+      } else if (kind === "outerwear") {
+        if (stock.slot === "prop") {
+          const held = drawHeldItemSprite(stock.item?.prop, { hand: false, lights: true });
+          if (held?.c) blitSpriteToThumb(sctx, held, size);
+        } else {
+          const av = migrateAvatar({ ...(avatar || {}), ...(stock.item || {}) });
+          if (stock.slot === "head") paintOptionThumb(src, "hat", av.hat, av);
+          else if (stock.slot === "torso") paintOptionThumb(src, "top", av.top || "tshirt", av);
+          else paintLegsThumb(src, av);
+        }
       } else if (kind === "art") {
         paintArtThumb(src, stock.type || stock.id);
       } else if (kind === "clothes") {
@@ -3268,7 +3351,7 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
   }
 
   function openStorePanel(kind, sku) {
-    const k = kind === "pets" ? "pets" : kind === "art" ? "art" : kind === "furniture" ? "furniture" : "clothes";
+    const k = kind === "pets" ? "pets" : kind === "art" ? "art" : kind === "furniture" ? "furniture" : kind === "outerwear" ? "outerwear" : "clothes";
     state.storeKind = k;
     if (k === "clothes") state.storeSlot = "all";
     const stock = storeStock(k);
@@ -5194,6 +5277,7 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     if (self) {
       self.heldProp = user.heldProp;
       self.activePet = user.activePet;
+      self.gear = user.gear || emptyGear();
       self.avatar = user.avatar;
       self.heldItem = user.heldItem;
       self.boxing = user.boxing;
@@ -5293,6 +5377,7 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
       cur.avatar = person.avatar;
       cur.heldProp = person.heldProp;
       cur.activePet = person.activePet;
+      cur.gear = person.gear || emptyGear();
       cur.heldItem = person.heldItem;
       cur.boxing = person.boxing;
       cur.gym = person.gym;
@@ -5304,7 +5389,21 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
       if (person.usingPhone != null) cur.usingPhone = person.usingPhone;
       renderPeople();
     }
-    if (person.username === state.me?.username) refreshActivityUI();
+    if (person.username === state.me?.username) {
+      state.me.gear = person.gear || emptyGear();
+      if ("heldProp" in person) state.me.heldProp = person.heldProp;
+      if ("activePet" in person) state.me.activePet = person.activePet;
+      if (state.charSlots?.name === person.username) {
+        const el = charSlotsEl();
+        const fresh = charSlotsPerson(person.username);
+        if (el && fresh) {
+          paintCharSlotIcons(el, fresh);
+          paintChestInventory(el, fresh);
+          layoutCharSlots();
+        }
+      }
+      refreshActivityUI();
+    }
   });
 
   socket.on("userMoved", ({ username, x, y, sitting, lying, facing, usingPhone }) => {
@@ -5342,7 +5441,8 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     if (payload.collection) state.me.collection = payload.collection;
     updateCoins();
     if (state.storeKind) paintStorePanel();
-    toast(payload.kind === "pets" ? "New pet added to your collection." : "Added to your wardrobe.");
+    toast(payload.kind === "pets" ? "New pet added to your collection." : payload.kind === "outerwear" ? "Added to your inventory." : "Added to your wardrobe.");
+    if (state.charSlots) layoutCharSlots();
   });
 
   socket.on("userTyping", ({ username, on, at }) => {
@@ -5725,7 +5825,7 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
   window.__leaveRoom = () => socket.emit("leaveRoom");
   window.__openStore = (kind, sku) => openStorePanel(kind, sku);
   window.__closeStore = () => closeStorePanel();
-  window.__storeState = () => ({ kind: state.storeKind, sel: state.storeSel, slot: state.storeSlot, coins: state.me?.coins, collection: state.me?.collection, me: { inventory: state.me?.inventory || [], coins: state.me?.coins, avatar: state.me?.avatar } });
+  window.__storeState = () => ({ kind: state.storeKind, sel: state.storeSel, slot: state.storeSlot, coins: state.me?.coins, collection: state.me?.collection, me: { inventory: state.me?.inventory || [], coins: state.me?.coins, avatar: state.me?.avatar, gear: state.me?.gear, heldProp: state.me?.heldProp, activePet: state.me?.activePet } });
   window.__buyStoreSel = () => socket.emit("buyStoreItem", { kind: state.storeKind, id: state.storeSel });
 
   window.__closePhone = () => closePhone();
@@ -5796,6 +5896,12 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
   window.__openCharacterEditor = () => openCharacterEditor("phone");
   window.__openCharSlots = (name) => openCharSlots(name || state.me?.username);
   window.__closeCharSlots = () => closeCharSlots();
+  window.__equipChest = (slot, item) => emitEquipChest(slot, item);
+  window.__personState = (name) => {
+    const p = state.people.get(name);
+    if (!p) return null;
+    return { username: p.username, gear: p.gear || null, heldProp: p.heldProp || null, activePet: p.activePet || null, avatar: p.avatar || null };
+  };
   window.__charSlotsState = () => {
     const el = charSlotsEl();
     const r = el && !el.hidden ? el.getBoundingClientRect() : null;
@@ -5811,17 +5917,24 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
         };
       });
     }
+    const inventory = person ? chestInventoryItems(person) : [];
+    const gear = person ? normalizeGear(person.gear) : emptyGear();
     return {
       open: Boolean(info && el && el.classList.contains("is-open")),
       name: info?.name || null,
       self: Boolean(person?.self),
       readonly: Boolean(el?.classList.contains("is-readonly")),
       flipped: Boolean(el?.classList.contains("is-flipped")),
-      petOpen: Boolean(info?.petOpen),
+      petOpen: false,
       pet: person?.activePet || null,
+      prop: person?.heldProp || null,
+      gear,
+      inventory: inventory.map((it) => ({ slot: it.slot, item: it.item, label: it.label, kind: it.kind })),
+      avatar: person?.avatar || null,
       rect: r ? { left: r.left, right: r.right, top: r.top, bottom: r.bottom, w: r.width, h: r.height } : null,
       box: box ? { left: box.left, right: box.right, top: box.top, bottom: box.bottom, w: box.w, h: box.h } : null,
       slots,
+      onScreen: Boolean(r && r.left >= -1 && r.top >= -1 && r.right <= window.innerWidth + 1 && r.bottom <= window.innerHeight + 1),
     };
   };
   document.addEventListener("pointerdown", (e) => {

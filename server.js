@@ -29,6 +29,10 @@ import {
   PUBLIC_PLACES,
   clothingById,
   petById,
+  OUTERWEAR_STOCK,
+  outerwearById,
+  emptyGear,
+  normalizeGear,
 } from "./public/js/storeCatalog.js";
 import { colorOrHex } from "./public/js/hexColor.js";
 import { ART_PIECES, artCatalogEntry, PAINTING_CATALOG } from "./public/js/artPieces.js";
@@ -213,7 +217,18 @@ function ensureDay(user) {
 }
 
 function emptyCollection() {
-  return { clothes: [], props: [], pets: [] };
+  return { clothes: [], props: [], pets: [], outerwear: [] };
+}
+function ensureCollection(user) {
+  if (!user) return user;
+  user.collection = user.collection || emptyCollection();
+  const c = user.collection;
+  if (!Array.isArray(c.clothes)) c.clothes = [];
+  if (!Array.isArray(c.props)) c.props = [];
+  if (!Array.isArray(c.pets)) c.pets = [];
+  if (!Array.isArray(c.outerwear)) c.outerwear = [];
+  user.gear = normalizeGear(user.gear || emptyGear());
+  return user;
 }
 function roomSize(room) {
   return room?.size || START_SIZE;
@@ -507,7 +522,8 @@ function sanitizeAvatar(raw = {}, previous = {}) {
 }
 
 function getUser(socket) {
-  return socket.data.userKey ? users.get(socket.data.userKey) : null;
+  const user = socket.data.userKey ? users.get(socket.data.userKey) : null;
+  return user ? ensureCollection(user) : null;
 }
 
 function publicRooms() {
@@ -555,6 +571,7 @@ function snapshotPerson(u) {
     usingPhone: Boolean(u.usingPhone),
     heldProp: u.heldProp || null,
     activePet: u.activePet || null,
+    gear: normalizeGear(u.gear || emptyGear()),
     heldItem: u.heldItem || null,
     boxing: u.boxing || null,
     gym: u.gym || null,
@@ -655,9 +672,10 @@ function publicUser(user) {
     friends: friendList(user),
     roomId: user.roomId,
     invites: invitesFor(user.username),
-    collection: user.collection || emptyCollection(),
+    collection: (ensureCollection(user), user.collection),
     heldProp: user.heldProp || null,
     activePet: user.activePet || null,
+    gear: normalizeGear(user.gear || emptyGear()),
     extraSpins: user.extraSpins || 0,
     rewards: {
       freeSpinAvailable: !user.freeSpinUsed,
@@ -1334,6 +1352,7 @@ io.on("connection", (socket) => {
       collection: emptyCollection(),
       heldProp: null,
       activePet: null,
+      gear: emptyGear(),
       extraSpins: 0,
       freeSpinUsed: false,
       hangoutEarnedToday: 0,
@@ -2040,10 +2059,94 @@ io.on("connection", (socket) => {
     if (user.roomId) io.to(user.roomId).emit("userUpdated", snapshotPerson(user));
   });
 
+  function ownsOuterwear(user, catalogId) {
+    return (user.collection?.outerwear || []).some((c) => c.catalogId === catalogId);
+  }
+  function ownsPropItem(user, item) {
+    if (!item) return false;
+    if ((user.collection?.props || []).some((p) => p.item === item)) return true;
+    return (user.collection?.outerwear || []).some((c) => {
+      const st = outerwearById(c.catalogId);
+      return st?.slot === "prop" && st.item?.prop === item;
+    });
+  }
+
+  socket.on("equipChest", ({ slot, item } = {}) => {
+    const user = getUser(socket);
+    if (!user) return;
+    const allowed = ["head", "torso", "legs", "pet", "prop"];
+    if (!allowed.includes(slot)) {
+      socket.emit("errorMsg", { message: "That slot isn't valid." });
+      emitPerson(user);
+      return;
+    }
+    if (item == null || item === "") {
+      if (slot === "pet") {
+        socket.emit("equipPet", { item: null });
+        // fall through via direct clear so we don't rely on re-entry
+        const room = user.roomId ? rooms.get(user.roomId) : null;
+        if (room) ensureRoomExtras(room);
+        const prev = user.activePet;
+        if (prev && room) placeFollowerWhereStanding(user, room, prev);
+        user.activePet = null;
+        emitPerson(user);
+        if (room) emitRoomPets(room);
+        return;
+      }
+      if (slot === "prop") {
+        user.heldProp = null;
+        emitPerson(user);
+        return;
+      }
+      user.gear = normalizeGear({ ...(user.gear || emptyGear()), [slot]: null });
+      emitPerson(user);
+      return;
+    }
+    if (slot === "pet") {
+      if (!(user.collection?.pets || []).some((p) => p.item === item)) {
+        socket.emit("errorMsg", { message: "You don't own that pet." });
+        emitPerson(user);
+        return;
+      }
+      const room = user.roomId ? rooms.get(user.roomId) : null;
+      if (room) ensureRoomExtras(room);
+      const prev = user.activePet;
+      if (prev && prev !== item && room) placeFollowerWhereStanding(user, room, prev);
+      if (room) removeOwnedPetFromRoom(room, user, item);
+      user.activePet = item;
+      emitPerson(user);
+      if (room) emitRoomPets(room);
+      return;
+    }
+    if (slot === "prop") {
+      if (!ownsPropItem(user, item)) {
+        socket.emit("errorMsg", { message: "You don't own that prop." });
+        emitPerson(user);
+        return;
+      }
+      user.heldProp = item;
+      emitPerson(user);
+      return;
+    }
+    const stock = outerwearById(item);
+    if (!stock || stock.slot !== slot) {
+      socket.emit("errorMsg", { message: "That item doesn't fit this slot." });
+      emitPerson(user);
+      return;
+    }
+    if (!ownsOuterwear(user, item)) {
+      socket.emit("errorMsg", { message: "You don't own that." });
+      emitPerson(user);
+      return;
+    }
+    user.gear = normalizeGear({ ...(user.gear || emptyGear()), [slot]: item });
+    emitPerson(user);
+  });
+
   socket.on("buyStoreItem", ({ kind, id } = {}) => {
     const user = getUser(socket);
     if (!user) return;
-    if (!user.collection) user.collection = { clothes: [], props: [], pets: [] };
+    ensureCollection(user);
     if (kind === "clothes") {
       const stock = clothingById(id);
       if (!stock) {
@@ -2082,6 +2185,34 @@ io.on("connection", (socket) => {
       user.coins -= stock.price;
       user.collection.pets.push({ item: stock.item, label: stock.label });
       socket.emit("storeBought", { kind: "pets", id: stock.id, item: stock.item, coins: user.coins, collection: user.collection });
+      emitProfile(user);
+      return;
+    }
+    if (kind === "outerwear") {
+      const stock = outerwearById(id);
+      if (!stock) {
+        socket.emit("errorMsg", { message: "That item isn't in stock." });
+        return;
+      }
+      const already = (user.collection.outerwear || []).some((c) => c.catalogId === stock.id)
+        || (stock.slot === "prop" && (user.collection.props || []).some((p) => p.item === stock.item.prop));
+      if (already) {
+        socket.emit("errorMsg", { message: "You already own that." });
+        return;
+      }
+      if (user.coins < stock.price) {
+        socket.emit("errorMsg", { message: "Not enough coins." });
+        return;
+      }
+      user.coins -= stock.price;
+      const cid = "ow" + Date.now() + Math.floor(Math.random() * 1000);
+      user.collection.outerwear.push({ id: cid, catalogId: stock.id, slot: stock.slot, item: { ...stock.item }, label: stock.label });
+      if (stock.slot === "prop" && stock.item?.prop) {
+        if (!(user.collection.props || []).some((p) => p.item === stock.item.prop)) {
+          user.collection.props.push({ id: cid, item: stock.item.prop, label: stock.label });
+        }
+      }
+      socket.emit("storeBought", { kind: "outerwear", id: stock.id, collectionId: cid, coins: user.coins, collection: user.collection });
       emitProfile(user);
     }
   });
@@ -2672,6 +2803,39 @@ io.on("connection", (socket) => {
     };
     if (Array.isArray(kit.pets)) kit.pets.forEach((name, i) => grantPet(name, i === 0 && !kit.pet));
     if (kit.pet) grantPet(kit.pet, true);
+    if (Array.isArray(kit.props)) {
+      for (const name of kit.props) {
+        if (!name) continue;
+        if (!user.collection.props.some((p) => p.item === name)) {
+          user.collection.props.push({ id: "debug-prop-" + name, item: name, label: name[0].toUpperCase() + name.slice(1) });
+        }
+      }
+    }
+    if (kit.prop) {
+      if (!user.collection.props.some((p) => p.item === kit.prop)) {
+        user.collection.props.push({ id: "debug-prop-" + kit.prop, item: kit.prop, label: String(kit.prop) });
+      }
+      if (kit.equipProp !== false) user.heldProp = kit.prop;
+    }
+    const grantOw = (id, equip) => {
+      const stock = outerwearById(id);
+      if (!stock) return;
+      if (!user.collection.outerwear.some((c) => c.catalogId === stock.id)) {
+        user.collection.outerwear.push({ id: "debug-" + stock.id, catalogId: stock.id, slot: stock.slot, item: { ...stock.item }, label: stock.label });
+      }
+      if (stock.slot === "prop" && stock.item?.prop && !user.collection.props.some((p) => p.item === stock.item.prop)) {
+        user.collection.props.push({ id: "debug-prop-" + stock.item.prop, item: stock.item.prop, label: stock.label });
+      }
+      if (equip) {
+        if (stock.slot === "prop") user.heldProp = stock.item.prop;
+        else user.gear = normalizeGear({ ...(user.gear || emptyGear()), [stock.slot]: stock.id });
+      }
+    };
+    if (Array.isArray(kit.outerwear)) kit.outerwear.forEach((id) => grantOw(id, false));
+    if (kit.equipOuterwear) {
+      const ids = Array.isArray(kit.equipOuterwear) ? kit.equipOuterwear : [kit.equipOuterwear];
+      ids.forEach((id) => grantOw(id, true));
+    }
     if (Array.isArray(kit.furniture)) {
       for (const typ of kit.furniture) {
         if (FURNITURE_CATALOG[typ]) user.inventory.push(typ);

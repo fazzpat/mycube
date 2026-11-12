@@ -1,5 +1,6 @@
 import { drawAvatarSprite, paintAvatarSheet, paintStoreThumb, AVATAR_SHEET_LOOKS, AV_W, AV_H, AV_GROUND_Y, AV_HEAD_TOP, AV_PAD_X, AV_PAD_TOP, facingIndex8, tickChibiAnim, setChibiAnimOverride, getChibiAnim, mouthPhase, heldItemHandAnchor, heldItemFaceAnchor } from "./avatar3d.js";
 import { heldKindOf, drawHeldItemSprite, sipAnim, steamFrameAt as heldSteamFrameAt, drawSipFaceOverlay, BITE_COUNT } from "./heldItems.js";
+import { applyEquippedGear } from "./storeCatalog.js";
 import { drawPetSprite as drawPetPixel, paintPetSheet, paintPetThumb, PET_W, PET_H, PET_GROUND_Y } from "./petSprites.js";
 import { programAt } from "./cubechannel.js";
 import { getTvScreen, tvChannelName } from "./tvChannels.js";
@@ -1157,11 +1158,12 @@ export function createRoom3D(container, opts = {}) {
         shoePop: shoePopAt(p.username, (p.avatar || {}).shoes, now),
         mouth: mouthPhase(p.talkText, p.talkAt, Date.now()),
       };
-      const heldKind = heldKindOf(lying ? null : p.heldItem);
+      const av = applyEquippedGear(p.avatar || {}, p.gear);
+      const heldKind = heldKindOf(lying ? null : p.heldItem) || heldKindOf(lying ? null : p.heldProp);
       let heldPreview = null;
       if (heldKind && !flags.usingPhone) {
-        const pre = heldItemHandAnchor(p.avatar || {}, flags, frame);
-        const face = heldItemFaceAnchor(p.avatar || {}, flags, frame);
+        const pre = heldItemHandAnchor(av, flags, frame);
+        const face = heldItemFaceAnchor(av, flags, frame);
         const sip = sipAnim(p.heldItem, p.username, Date.now(), { walking: walking && !lying });
         const steam = heldKind === "coffee" ? heldSteamFrameAt(Date.now()) : 0;
         const item = drawHeldItemSprite(heldKind, {
@@ -1179,7 +1181,7 @@ export function createRoom3D(container, opts = {}) {
         flags.sipKey = pre.key || face?.key;
         heldPreview = { item, face, sip };
       }
-      const spr = drawAvatarSprite(p.avatar || {}, flags, frame);
+      const spr = drawAvatarSprite(av, flags, frame);
       st.figTop = spr.top;
       const foot = tileToScreen(x + 0.5, y + 0.5);
       let depth = x + y + 0.45;
@@ -1218,7 +1220,7 @@ export function createRoom3D(container, opts = {}) {
         personItem.sy = draw.headSy - AV_HEAD_TOP;
       }
       if (heldPreview) {
-        const anchor = heldItemHandAnchor(p.avatar || {}, flags, frame);
+        const anchor = heldItemHandAnchor(av, flags, frame);
         personItem.held = { item: heldPreview.item, anchor, face: heldPreview.face, sip: heldPreview.sip };
       }
       list.push(personItem);
@@ -2073,7 +2075,7 @@ export function createRoom3D(container, opts = {}) {
         st.sitFromY = st.y ?? p.y;
       }
       if (!p.sitting) st.sitEaseAt = null;
-      Object.assign(st, { sitting: p.sitting, lying: p.lying, lyingAt: p.lyingAt, usingPhone: p.usingPhone, boxing: p.boxing, actionEmote: p.actionEmote, heldItem: p.heldItem, heldProp: p.heldProp, activePet: p.activePet, avatar: p.avatar, username: p.username, stationId: p.stationId });
+      Object.assign(st, { sitting: p.sitting, lying: p.lying, lyingAt: p.lyingAt, usingPhone: p.usingPhone, boxing: p.boxing, actionEmote: p.actionEmote, heldItem: p.heldItem, heldProp: p.heldProp, gear: p.gear, activePet: p.activePet, avatar: p.avatar, username: p.username, stationId: p.stationId });
     }
     for (const k of [...personState.keys()]) if (!seen.has(k)) personState.delete(k);
     people = list.map((p) => {
