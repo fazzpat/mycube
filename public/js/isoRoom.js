@@ -671,6 +671,7 @@ export function createRoom3D(container, opts = {}) {
   let onTileClick = null, onTileHover = null, onFurnitureClick = null, onPetClick = null;
   let onSwitchClick = null, onSwitchTap = null, onWallClick = null, onWallHover = null;
   const personState = new Map();
+  const lastHeldDrawn = new Map();
 
   function nowServer() {
     return serverTime0 + (performance.now() - serverAt);
@@ -1151,17 +1152,18 @@ export function createRoom3D(container, opts = {}) {
       const lying = Boolean(p.lying || st.lying);
       const flags = {
         sitting: p.sitting && !lying, walking: walking && !lying, facing: face, dirX: st.dirX, dirY: st.dirY,
-        usingPhone: p.usingPhone && !lying, boxing: p.boxing, actionEmote: p.actionEmote,
+        usingPhone: p.usingPhone && !lying, solvingCube: p.solvingCube && !lying, boxing: p.boxing, actionEmote: p.actionEmote,
         heldItem: lying ? null : p.heldItem, heldProp: p.heldProp, gym: p.gym,
         blink: lying ? "closed" : anim.blink, lookX: anim.lookX, lookY: anim.lookY,
         bodyDir: anim.bodyDir, headDir: anim.headDir,
         shoePop: shoePopAt(p.username, (p.avatar || {}).shoes, now),
         mouth: mouthPhase(p.talkText, p.talkAt, Date.now()),
+        cubeT: (p.solvingCube && !lying) ? Math.floor(now / 160) % 24 : 0,
       };
       const av = applyEquippedGear(p.avatar || {}, p.gear);
       const heldKind = heldKindOf(lying ? null : p.heldItem) || heldKindOf(lying ? null : p.heldProp);
       let heldPreview = null;
-      if (heldKind && !flags.usingPhone) {
+      if (heldKind && !flags.usingPhone && !flags.solvingCube) {
         const pre = heldItemHandAnchor(av, flags, frame);
         const face = heldItemFaceAnchor(av, flags, frame);
         const sip = sipAnim(p.heldItem, p.username, Date.now(), { walking: walking && !lying });
@@ -1181,6 +1183,7 @@ export function createRoom3D(container, opts = {}) {
         flags.sipKey = pre.key || face?.key;
         heldPreview = { item, face, sip };
       }
+      lastHeldDrawn.set(p.username, heldPreview ? heldKind : null);
       const spr = drawAvatarSprite(av, flags, frame);
       st.figTop = spr.top;
       const foot = tileToScreen(x + 0.5, y + 0.5);
@@ -2075,7 +2078,7 @@ export function createRoom3D(container, opts = {}) {
         st.sitFromY = st.y ?? p.y;
       }
       if (!p.sitting) st.sitEaseAt = null;
-      Object.assign(st, { sitting: p.sitting, lying: p.lying, lyingAt: p.lyingAt, usingPhone: p.usingPhone, boxing: p.boxing, actionEmote: p.actionEmote, heldItem: p.heldItem, heldProp: p.heldProp, gear: p.gear, activePet: p.activePet, avatar: p.avatar, username: p.username, stationId: p.stationId });
+      Object.assign(st, { sitting: p.sitting, lying: p.lying, lyingAt: p.lyingAt, usingPhone: p.usingPhone, solvingCube: p.solvingCube, boxing: p.boxing, actionEmote: p.actionEmote, heldItem: p.heldItem, heldProp: p.heldProp, gear: p.gear, activePet: p.activePet, avatar: p.avatar, username: p.username, stationId: p.stationId });
     }
     for (const k of [...personState.keys()]) if (!seen.has(k)) personState.delete(k);
     people = list.map((p) => {
@@ -2215,7 +2218,8 @@ export function createRoom3D(container, opts = {}) {
       const st = personState.get(name) || {};
       return {
         boxing: p.boxing || st.boxing || Object.values(uses || {}).some((u) => u && u.type === "punchbag" && u.user === name), sitting: p.sitting, lying: p.lying, heldItem: p.heldItem, gym: p.gym, facing: p.sitting ? snapFacingToAxis(p.facing) : p.facing,
-        actionEmote: p.actionEmote, walking: Boolean(st.walking || p.walking), usingPhone: p.usingPhone,
+        actionEmote: p.actionEmote, walking: Boolean(st.walking || p.walking), usingPhone: p.usingPhone, solvingCube: Boolean(p.solvingCube),
+        heldDrawn: lastHeldDrawn.get(name) || null,
         sculpted: false, paperDoll: true, pixel: true,
         eyes: getChibiAnim(name),
       };

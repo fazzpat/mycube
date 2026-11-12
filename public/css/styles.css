@@ -5142,13 +5142,17 @@ select {
 .char-slots-inv-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
+  grid-auto-rows: 1fr;
   gap: 5px;
+  overflow-x: hidden;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   touch-action: pan-y;
   min-height: 0;
-  flex: 1 1 auto;
-  padding-bottom: 2px;
+  flex: 0 0 auto;
+  padding-bottom: 0;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(90, 58, 40, 0.35) transparent;
 }
 .char-inv-cell {
   appearance: none;

@@ -569,6 +569,7 @@ function snapshotPerson(u) {
     actionEmote: u.actionEmote || null,
     actionEmoteAt: u.actionEmoteAt || null,
     usingPhone: Boolean(u.usingPhone),
+    solvingCube: Boolean(u.solvingCube),
     heldProp: u.heldProp || null,
     activePet: u.activePet || null,
     gear: normalizeGear(u.gear || emptyGear()),
@@ -1164,6 +1165,7 @@ function leaveRoom(user) {
   user.emote = null;
   user.heldItem = null;
   clearHeldTimer(user);
+  user.solvingCube = false;
   if (room) {
     room.occupants = room.occupants.filter(
       (n) => n.toLowerCase() !== user.username.toLowerCase()
@@ -1647,6 +1649,15 @@ io.on("connection", (socket) => {
     user.usingPhone = next;
     if (next && ACTION_EMOTES.has(user.actionEmote)) clearActionEmote(user, true);
     io.to(user.roomId).emit("userPhone", { username: user.username, on: next });
+  });
+
+  socket.on("useCube", ({ on } = {}) => {
+    const user = getUser(socket);
+    if (!user?.roomId) return;
+    const next = Boolean(on);
+    if (Boolean(user.solvingCube) === next) return;
+    user.solvingCube = next;
+    io.to(user.roomId).emit("userCube", { username: user.username, on: next });
   });
 
   socket.on("emote", ({ type } = {}) => {

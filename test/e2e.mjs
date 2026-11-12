@@ -4841,6 +4841,26 @@ try {
     Boolean(await alice.locator('[data-testid="char-slots-inv"]').count()),
     ""
   );
+  check(
+    "The inventory grid is a 3x3 of square cells with faint empty placeholders",
+    Boolean(emptySlots?.invCells === 9 && (emptySlots.invEmpty + (emptySlots.inventory?.length || 0)) === 9 && emptySlots.invEmpty >= 1 && emptySlots.invScroll && emptySlots.invScroll.cols === 3 && emptySlots.invScroll.rows === 3 && emptySlots.invScroll.clientH > 0 && Math.abs((emptySlots.invScroll.w / 3) - (emptySlots.invScroll.h / 3)) < 12),
+    JSON.stringify({ cells: emptySlots?.invCells, empty: emptySlots?.invEmpty, items: emptySlots?.inventory?.length, scroll: emptySlots?.invScroll })
+  );
+  const poseOpen = await alice.waitForFunction(() => window.HouseRoom3D.personFlags("alice")?.solvingCube, null, { timeout: 5000 }).then(() => true).catch(() => false);
+  const bobSeesCube = await bob.waitForFunction(() => window.HouseRoom3D.personFlags("alice")?.solvingCube, null, { timeout: 5000 }).then(() => true).catch(() => false);
+  const cubePose = await alice.evaluate(async () => {
+    const mod = await import("/js/avatar3d.js?cubepose=1");
+    const av = window.__storeState?.()?.me?.avatar || {};
+    const views = [0, 1, 2, 3, 4, 5, 6, 7];
+    return views.map((dir) => ({ dir, ...mod.inspectCubePose(av, { bodyDir: dir, headDir: dir, solvingCube: true, cubeT: 4 }, 4) }));
+  });
+  check("Opening the inventory window starts a cube-solving pose", Boolean(poseOpen && emptySlots?.solvingCube), JSON.stringify({ poseOpen, flag: emptySlots?.solvingCube }));
+  check(
+    "The solving pose holds a floating cube between both hands, with a soft glow, in every facing",
+    Array.isArray(cubePose) && cubePose.length === 8 && cubePose.every((p) => p.hasCube && p.betweenHands && !p.overlapsFace && (p.hasGlow || p.hasFx)),
+    JSON.stringify(cubePose.map((p) => ({ dir: p.dir, hasCube: p.hasCube, betweenHands: p.betweenHands, overlapsFace: p.overlapsFace, hasGlow: p.hasGlow, hasFx: p.hasFx, cube: p.cube, hand: p.hand, face: p.face })))
+  );
+  check("Other people in the cube see the solving pose", bobSeesCube);
   const noEditor = await alice.evaluate(() => {
     document.querySelector('[data-testid="char-slot-head"]')?.click();
     document.querySelector('[data-testid="char-slot-torso"]')?.click();
@@ -4957,11 +4977,51 @@ try {
   await bob.waitForFunction(() => window.__personState?.("alice")?.gear?.head === "ow-crown", null, { timeout: 5000 }).catch(() => {});
   const bobSeesGear = await bob.evaluate(() => window.__personState?.("alice"));
   check("Other players can see the equipped outerwear", Boolean(bobSeesGear?.gear?.head === "ow-crown"), JSON.stringify(bobSeesGear));
+  const bobSeesPoseWithGear = await bob.evaluate(() => window.HouseRoom3D.personFlags("alice")?.solvingCube);
+  check("The solving pose still shows for other players while gear is equipped", Boolean(bobSeesPoseWithGear), JSON.stringify({ bobSeesPoseWithGear, gear: bobSeesGear?.gear }));
+
+  await alice.evaluate(() => window.__emote?.("drink"));
+  await alice.waitForFunction(() => window.HouseRoom3D.personFlags("alice")?.heldItem?.kind === "soda", null, { timeout: 4000 }).catch(() => {});
+  await alice.waitForTimeout(120);
+  const hiddenDrink = await alice.evaluate(() => {
+    const f = window.HouseRoom3D.personFlags("alice");
+    return { held: f?.heldItem?.kind || null, drawn: f?.heldDrawn || null, solving: Boolean(f?.solvingCube) };
+  });
+  check(
+    "Food and drinks are hidden during the cube-solving pose",
+    Boolean(hiddenDrink.solving && hiddenDrink.held === "soda" && !hiddenDrink.drawn),
+    JSON.stringify(hiddenDrink)
+  );
+
+  await alice.evaluate(() => {
+    window.__equipChest?.("head", null);
+    window.__equipChest?.("torso", null);
+    window.__equipChest?.("legs", null);
+    window.__equipChest?.("pet", null);
+    window.__equipChest?.("prop", null);
+    window.__debugKit({
+      pets: ["fox", "cat", "dog"],
+      props: ["guitar"],
+      outerwear: ["ow-beanie", "ow-cap", "ow-crown", "ow-hoodie", "ow-jacket", "ow-vest", "ow-cargo", "ow-shorts", "ow-balloon", "ow-skate"],
+    });
+  });
+  await alice.waitForTimeout(200);
+  await alice.evaluate(() => window.__openCharSlots("alice"));
+  await alice.waitForTimeout(80);
+  const overflow = await alice.evaluate(() => window.__charSlotsState?.());
+  check(
+    "More than nine inventory items keep a 3-column grid that scrolls inside the window",
+    Boolean(overflow?.inventory?.length > 9 && overflow.invCells >= 12 && overflow.invCells % 3 === 0 && overflow.invScroll && overflow.invScroll.scrollH > overflow.invScroll.clientH + 8 && overflow.onScreen),
+    JSON.stringify(overflow)
+  );
 
   await alice.click('[data-testid="char-slots-btn"]');
   await alice.waitForTimeout(80);
   const toggledShut = await alice.evaluate(() => window.__charSlotsState?.()?.open);
   check("Tapping the cube icon again closes the inventory window", toggledShut === false, JSON.stringify({ toggledShut }));
+  const poseOff = await alice.waitForFunction(() => !window.HouseRoom3D.personFlags("alice")?.solvingCube, null, { timeout: 5000 }).then(() => true).catch(() => false);
+  const bobPoseOff = await bob.waitForFunction(() => !window.HouseRoom3D.personFlags("alice")?.solvingCube, null, { timeout: 5000 }).then(() => true).catch(() => false);
+  check("Closing the inventory window ends the solving pose for everyone", Boolean(poseOff && bobPoseOff), JSON.stringify({ poseOff, bobPoseOff }));
 
   await alice.click('[data-testid="char-slots-btn"]');
   await alice.waitForTimeout(80);
@@ -5020,11 +5080,11 @@ try {
       const on = r && r.left >= -1 && r.top >= -1 && r.right <= vw + 1 && r.bottom <= vh + 1;
       const right = st?.box && r && !st.flipped && r.left >= st.box.right - 2;
       const inv = document.querySelector('[data-testid="char-slots-inv"]');
-      return { open: st?.open, on, right, flipped: st?.flipped, rect: r, box: st?.box, vw, vh, inv: Boolean(inv) };
+      return { open: st?.open, on, right, flipped: st?.flipped, rect: r, box: st?.box, vw, vh, inv: Boolean(inv), cells: st?.invCells, scroll: st?.invScroll, solving: st?.solvingCube };
     });
     check(
-      `The inventory window fits a ${size.width}x${size.height} phone and stays to the right of the character`,
-      Boolean(phoneFit.open && phoneFit.on && phoneFit.right && phoneFit.inv),
+      `The inventory window fits a ${size.width}x${size.height} phone, keeps a 3x3 inventory, and stays to the right of the character`,
+      Boolean(phoneFit.open && phoneFit.on && phoneFit.right && phoneFit.inv && phoneFit.cells >= 9 && phoneFit.scroll && phoneFit.scroll.clientH > 0),
       JSON.stringify(phoneFit)
     );
     await alice.evaluate(() => window.__closeCharSlots?.());

@@ -735,6 +735,7 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
       actionEmote: p.actionEmote ?? existing.actionEmote ?? null,
       actionEmoteAt: p.actionEmoteAt ?? existing.actionEmoteAt ?? null,
       usingPhone: p.usingPhone ?? existing.usingPhone ?? false,
+      solvingCube: p.solvingCube ?? existing.solvingCube ?? false,
       bubble: existing.bubble || null,
       bubbleUntil: existing.bubbleUntil || 0,
       bubbles: existing.bubbles || [],
@@ -1266,6 +1267,17 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     $("#char-slots-btn")?.setAttribute("aria-expanded", on ? "true" : "false");
   }
 
+  function setSolvingCube(on) {
+    const next = Boolean(on);
+    if (state.solvingCube === next) return;
+    state.solvingCube = next;
+    if (state.me) state.me.solvingCube = next;
+    const self = state.people.get(state.me?.username);
+    if (self) self.solvingCube = next;
+    socket.emit("useCube", { on: next });
+    renderPeople();
+  }
+
   function closeCharSlots() {
     const el = charSlotsEl();
     if (el) {
@@ -1275,6 +1287,7 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
       if (pets) pets.classList.remove("is-open");
     }
     state.charSlots = null;
+    setSolvingCube(false);
     syncCharSlotsBtn();
   }
 
@@ -1545,7 +1558,7 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     box.dataset.sig = sig;
     grid.replaceChildren();
     box.querySelector(".char-slots-inv-empty")?.remove();
-    const cells = Math.max(items.length, 6);
+    const cells = Math.max(9, Math.ceil(items.length / 3) * 3);
     for (let i = 0; i < cells; i++) {
       const rec = items[i];
       const b = document.createElement(rec ? "button" : "div");
@@ -1574,13 +1587,6 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
         b.dataset.testid = "char-inv-empty-" + i;
       }
       grid.append(b);
-    }
-    if (person.self && !items.length) {
-      const empty = document.createElement("p");
-      empty.className = "char-slots-inv-empty";
-      empty.dataset.testid = "char-slots-inv-empty";
-      empty.textContent = "Buy outerwear, pets, and props in the shop.";
-      box.append(empty);
     }
   }
 
@@ -1635,18 +1641,36 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     el.classList.toggle("is-flipped", flipped);
     info.flipped = flipped;
     const maxH = Math.max(120, vh - pad * 2);
-    const slotH = Math.max(88, Math.min(side, Math.round(maxH * 0.55)));
+    let slotH = Math.max(88, Math.min(side, Math.round(maxH * 0.55)));
     el.style.width = Math.round(panelW) + "px";
     el.style.height = "auto";
     el.style.minHeight = "0px";
     el.style.maxHeight = Math.round(maxH) + "px";
+    const inv = el.querySelector(".char-slots-inv");
+    const invGrid = el.querySelector(".char-slots-inv-grid");
+    const invTitle = el.querySelector(".char-slots-inv-title");
+    const innerW = Math.max(72, panelW - 16);
+    const invGap = 5;
+    const cell = Math.max(22, Math.floor((innerW - invGap * 2) / 3));
+    const invGridH = cell * 3 + invGap * 2;
+    const invTitleH = 16;
+    const invBlock = invGridH + invTitleH + 8;
+    // Keep the 3x3 inventory fully visible and shrink the slot row if needed.
+    const slotBudget = Math.max(88, maxH - invBlock - 12);
+    if (slotH > slotBudget) slotH = slotBudget;
     const grid = el.querySelector(".char-slots-grid");
     if (grid) grid.style.height = slotH + "px";
-    const inv = el.querySelector(".char-slots-inv");
-    if (inv) inv.style.maxHeight = Math.max(64, maxH - slotH - 20) + "px";
+    if (inv) {
+      inv.style.maxHeight = invBlock + "px";
+      inv.style.flex = "0 0 auto";
+    }
+    if (invGrid) {
+      invGrid.style.height = invGridH + "px";
+      invGrid.style.gridAutoRows = cell + "px";
+    }
     el.style.left = Math.round(left) + "px";
     el.style.top = pad + "px";
-    const rh = el.getBoundingClientRect().height || (slotH + 80);
+    const rh = el.getBoundingClientRect().height || (slotH + invBlock + 8);
     let top = box.top + (box.h - rh) / 2;
     top = Math.min(Math.max(top, pad), vh - pad - rh);
     el.style.top = Math.round(top) + "px";
@@ -1662,6 +1686,7 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     state.charSlots = { name: who, flipped: false };
     ensureCharSlots();
     layoutCharSlots();
+    setSolvingCube(true);
     syncCharSlotsBtn();
   }
 
@@ -5332,6 +5357,7 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     stopRecordAudio();
     if (isRecordPickerOpen()) closeRecordPicker();
     closePhone();
+    closeCharSlots();
     state.room = null;
     state.people.clear();
     state.room3d?.clear();
@@ -5387,12 +5413,14 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
       if (person.lying != null) cur.lying = person.lying;
       if (person.lyingAt != null) cur.lyingAt = person.lyingAt;
       if (person.usingPhone != null) cur.usingPhone = person.usingPhone;
+      if (person.solvingCube != null) cur.solvingCube = person.solvingCube;
       renderPeople();
     }
     if (person.username === state.me?.username) {
       state.me.gear = person.gear || emptyGear();
       if ("heldProp" in person) state.me.heldProp = person.heldProp;
       if ("activePet" in person) state.me.activePet = person.activePet;
+      if ("solvingCube" in person) state.me.solvingCube = person.solvingCube;
       if (state.charSlots?.name === person.username) {
         const el = charSlotsEl();
         const fresh = charSlotsPerson(person.username);
@@ -5432,6 +5460,16 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     const p = state.people.get(username);
     if (!p) return;
     p.usingPhone = Boolean(on);
+    renderPeople();
+  });
+
+  socket.on("userCube", ({ username, on }) => {
+    const p = state.people.get(username);
+    if (p) p.solvingCube = Boolean(on);
+    if (username === state.me?.username) {
+      state.solvingCube = Boolean(on);
+      if (state.me) state.me.solvingCube = Boolean(on);
+    }
     renderPeople();
   });
 
@@ -5900,7 +5938,7 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
   window.__personState = (name) => {
     const p = state.people.get(name);
     if (!p) return null;
-    return { username: p.username, gear: p.gear || null, heldProp: p.heldProp || null, activePet: p.activePet || null, avatar: p.avatar || null };
+    return { username: p.username, gear: p.gear || null, heldProp: p.heldProp || null, activePet: p.activePet || null, avatar: p.avatar || null, solvingCube: Boolean(p.solvingCube) };
   };
   window.__charSlotsState = () => {
     const el = charSlotsEl();
@@ -5935,6 +5973,15 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
       box: box ? { left: box.left, right: box.right, top: box.top, bottom: box.bottom, w: box.w, h: box.h } : null,
       slots,
       onScreen: Boolean(r && r.left >= -1 && r.top >= -1 && r.right <= window.innerWidth + 1 && r.bottom <= window.innerHeight + 1),
+      invCells: el ? el.querySelectorAll(".char-inv-cell").length : 0,
+      invEmpty: el ? el.querySelectorAll(".char-inv-cell.is-empty").length : 0,
+      invScroll: (() => {
+        const g = el?.querySelector(".char-slots-inv-grid");
+        if (!g) return null;
+        const r = g.getBoundingClientRect();
+        return { w: r.width, h: r.height, scrollH: g.scrollHeight, clientH: g.clientHeight, rows: 3, cols: 3 };
+      })(),
+      solvingCube: Boolean(state.me?.solvingCube || state.solvingCube),
     };
   };
   document.addEventListener("pointerdown", (e) => {
