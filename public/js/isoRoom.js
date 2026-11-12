@@ -14,6 +14,7 @@ import { steamFrameAt } from "./coffeeMaker.js";
 import { steamFrameAt as stoveSteamFrameAt, flameFrameAt } from "./stove.js";
 import { CUE_RACK_TYPE, drawCueRackOnWall, cueRackQuad } from "./billiards.js";
 import { lieDrawPose, bedZeds, drawBedZeds } from "./bed.js";
+import { isSeatType, seatCushionLift, sitEaseT, sitBob, seatBackDepth } from "./seats.js";
 import {
   TYPE as RECORD_TYPE, spinFrameAt, notesAt, drawNotes, platterOffset, paintListenHint,
   isRecordListening,
@@ -1025,7 +1026,15 @@ export function createRoom3D(container, opts = {}) {
       });
       const recNotes = isRec && recOn ? notesAt(f.id, rec, nowServer()) : null;
       const screenQuad = (isTv && tvOn && glow) ? tvScreenQuadSprite(type, rot) : null;
-      list.push({ kind: "furn", id: f.id, type, depth: f.x + f.y + (m.tw + m.th) / 2 + 0.2, sx: pos.sx, sy: pos.sy, w: pos.w, h: pos.h, spr, raw: f, glow: Boolean(screenQuad), screenQuad, recNotes, recOn });
+      const baseDepth = f.x + f.y + (m.tw + m.th) / 2 + 0.2;
+      if (isSeatType(type) && type !== "chesstable" && type !== "hoverchair") {
+        const baseSpr = drawFurnitureSprite(type, { lights: lightsOn, rot, on: false, open: false, sku: f.sku, part: "base" });
+        const frontSpr = drawFurnitureSprite(type, { lights: lightsOn, rot, on: false, open: false, sku: f.sku, part: "back" });
+        list.push({ kind: "furn", id: f.id, type, depth: baseDepth - 0.05, sx: pos.sx, sy: pos.sy, w: pos.w, h: pos.h, spr: baseSpr, raw: f, part: "base" });
+        list.push({ kind: "furn", id: f.id, type, depth: seatBackDepth(f, m.tw, m.th), sx: pos.sx, sy: pos.sy, w: pos.w, h: pos.h, spr: frontSpr, raw: f, part: "back" });
+      } else {
+        list.push({ kind: "furn", id: f.id, type, depth: baseDepth, sx: pos.sx, sy: pos.sy, w: pos.w, h: pos.h, spr, raw: f, glow: Boolean(screenQuad), screenQuad, recNotes, recOn });
+      }
       if (type === "chesstable") {
         for (const seat of [0, 1]) {
           const pose = chessSeatPose(f, seat);
@@ -1042,7 +1051,23 @@ export function createRoom3D(container, opts = {}) {
     }
     for (const p of people) {
       const st = personState.get(p.username) || p;
-      const x = st.x ?? p.x, y = st.y ?? p.y;
+      const sittingNow = Boolean(p.sitting || st.sitting);
+      let x = st.x ?? p.x, y = st.y ?? p.y;
+      if (st.sitEaseAt != null) {
+        const te = sitEaseT(st.sitEaseAt, now);
+        const fromX = st.sitFromX ?? x, fromY = st.sitFromY ?? y;
+        const toX = st.targetX ?? p.x, toY = st.targetY ?? p.y;
+        x = fromX + (toX - fromX) * te;
+        y = fromY + (toY - fromY) * te;
+        if (te >= 1) {
+          st.sitEaseAt = null;
+          st.x = toX;
+          st.y = toY;
+        } else {
+          st.x = x;
+          st.y = y;
+        }
+      }
       const walking = Boolean(st.walking || p.walking);
       const frame = Math.floor(now / 96) % 8;
       const rawFacing = p.facing || st.facing;
@@ -1087,6 +1112,19 @@ export function createRoom3D(container, opts = {}) {
         }
       }
       const personItem = { kind: "person", id: p.username, type: "person", depth, sx: foot.sx - AV_W / 2, sy: foot.sy - AV_GROUND_Y, w: AV_W, h: AV_H, spr, raw: p, tileX: x, tileY: y };
+      if (sittingNow && !lying) {
+        const seat = furniture.find((f) => f.id === (p.stationId || st.stationId) && isSeatType(f.type))
+          || furniture.find((f) => {
+            if (!isSeatType(f.type)) return false;
+            const fr = normalizeFurnRot(f.rot);
+            const dims = furnTileDims(f.type, fr);
+            return x >= f.x - 0.75 && y >= f.y - 0.75 && x < f.x + dims.w + 0.25 && y < f.y + dims.h + 0.25;
+          });
+        const lift = seat ? seatCushionLift(seat.type) : 0;
+        const te = sitEaseT(st.sitEaseAt, now);
+        personItem.sy -= lift * te;
+        if (te >= 1) personItem.sy += sitBob(now);
+      }
       if (lying) {
         const bed = furniture.find((f) => f.id === (p.stationId || st.stationId) && f.type === "bed");
         const draw = lieDrawPose(bed || { x, y, rot: 0 }, tileToScreen, { headTop: AV_HEAD_TOP, groundY: AV_GROUND_Y, avatar: spr.c, avW: AV_W, avH: AV_H });
@@ -1952,14 +1990,22 @@ export function createRoom3D(container, opts = {}) {
       st.targetX = p.x;
       st.targetY = p.y;
       st.facing = p.facing;
+      if (p.sitting && !st.sitting) {
+        st.sitEaseAt = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+        st.sitFromX = st.x ?? p.x;
+        st.sitFromY = st.y ?? p.y;
+      }
+      if (!p.sitting) st.sitEaseAt = null;
       Object.assign(st, { sitting: p.sitting, lying: p.lying, lyingAt: p.lyingAt, usingPhone: p.usingPhone, boxing: p.boxing, actionEmote: p.actionEmote, heldItem: p.heldItem, heldProp: p.heldProp, activePet: p.activePet, avatar: p.avatar, username: p.username, stationId: p.stationId });
     }
     for (const k of [...personState.keys()]) if (!seen.has(k)) personState.delete(k);
     people = list.map((p) => {
       const st = personState.get(p.username);
       if (!st) return p;
-      st.x = p.x;
-      st.y = p.y;
+      if (st.sitEaseAt == null) {
+        st.x = p.x;
+        st.y = p.y;
+      }
       st.walking = Boolean(p.walking);
       st.dirX = p.dirX || 0;
       st.dirY = (p.dirZ ?? p.dirY) || 0;

@@ -725,7 +725,7 @@ function seatPoseOf(furn, seatNum) {
   const t = n === 1 ? 0 : (seatNum / (n - 1) - 0.5);
   const along = (r % 2 === 0 ? w : h) * 0.42;
   const localX = t * along;
-  const localY = 0.08;
+  const localY = furn.type === "hoverchair" ? 0 : 0.02;
   if (r === 0) return { x: cx + localX, y: cy + localY, facing: { x: 0, z: 1 } };
   if (r === 1) return { x: cx + localY, y: cy - localX, facing: { x: 1, z: 0 } };
   if (r === 2) return { x: cx - localX, y: cy - localY, facing: { x: 0, z: -1 } };

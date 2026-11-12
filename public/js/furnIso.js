@@ -7,6 +7,7 @@ import { drawChessTableSmall, drawChessStool, CHESS_STOOL_TYPE } from "./chessTa
 import { drawStove } from "./stove.js";
 import { drawPoolTable } from "./billiards.js";
 import { blanketLocal, pillowLocal, foldLocal, BLANKET_LIFT, BLANKET_THICK, PILLOW_THICK } from "./bed.js";
+import { isSeatType } from "./seats.js";
 
 const TW = 64;
 const TH = 32;
@@ -344,17 +345,19 @@ const ISO_DRAW = {
   frontRect, backRect, visibleFront, faceCorners, faceRect, normalizeFurnRot,
 };
 
-function drawSeat(ctx, tw, th, rot, lights, kind) {
+function couchPal(kind, lights) {
   const studio = kind === "capsulecouch";
   const base = studio ? "#b41828" : "#9a1420";
-  const p = pal(base, lights, { cushion: studio ? "#e83848" : "#d42838", pip: "#ffd0d4" });
+  return pal(base, lights, { cushion: studio ? "#e83848" : "#d42838", pip: "#ffd0d4" });
+}
+
+function drawSeatBase(ctx, tw, th, rot, lights, kind) {
+  const p = couchPal(kind, lights);
   const legs = pal("#5a3a28", lights);
   const seatH = 10;
-  const backH = 22;
   const backD = 0.28;
   const full = insetBox(tw, th);
   shadow(ctx, full.x, full.y, full.w, full.h, 0.34);
-  // short legs at the four corners
   const leg = 0.12;
   const spots = [
     [full.x + 0.04, full.y + 0.04],
@@ -364,17 +367,22 @@ function drawSeat(ctx, tw, th, rot, lights, kind) {
   ];
   for (const [lx, ly] of spots) box(ctx, lx, ly, leg, leg, 0, 4, legs);
   const seat = seatRect(tw, th, rot, backD);
-  const back = backRect(tw, th, rot, backD);
   box(ctx, seat.x, seat.y, seat.w, seat.h, 4, seatH, {
     top: p.cushion, left: p.left, right: p.right, outline: p.outline,
   });
-  // two cushions along the width
   const halves = midSplit(seat, rot);
   for (const c of halves) {
     box(ctx, c.x + 0.03, c.y + 0.03, Math.max(0.1, c.w - 0.06), Math.max(0.1, c.h - 0.06), 4 + seatH, 2, {
       top: lights ? p.pip : shade(p.pip, -30), left: p.left, right: p.right, outline: p.outline,
     });
   }
+}
+
+function drawSeatBack(ctx, tw, th, rot, lights, kind) {
+  const p = couchPal(kind, lights);
+  const backH = 22;
+  const backD = 0.28;
+  const back = backRect(tw, th, rot, backD);
   box(ctx, back.x, back.y, back.w, back.h, 4, backH, p);
   const front = visibleFront(rot);
   if (front) {
@@ -383,45 +391,61 @@ function drawSeat(ctx, tw, th, rot, lights, kind) {
   }
 }
 
-function drawChair(ctx, tw, th, rot, lights, hover) {
+function drawSeat(ctx, tw, th, rot, lights, kind, part = "all") {
+  if (part !== "back") drawSeatBase(ctx, tw, th, rot, lights, kind);
+  if (part !== "base") drawSeatBack(ctx, tw, th, rot, lights, kind);
+}
+
+function drawEggRings(ctx, tw, th, lights) {
+  const cx = tw / 2, cy = th / 2;
+  for (let z = 6; z <= 28; z += 2) {
+    const t = (z - 6) / 22;
+    const egg = 1 - Math.abs(t - 0.42) * 1.35;
+    const rw = Math.max(0.18, 0.38 * egg);
+    const rh = Math.max(0.18, 0.38 * egg);
+    const col = t < 0.55
+      ? (lights ? shade("#fff8ec", -Math.round(t * 20)) : shade("#c8c0b4", -20))
+      : (lights ? shade("#e8e0d0", -10) : shade("#a8a090", -20));
+    const d = diamond(cx - rw, cy - rh, rw * 2, rh * 2, z);
+    fillPts(ctx, [d.N, d.E, d.S, d.W], col, shade("#5a5048", lights ? 0 : -30));
+  }
+}
+
+function drawChair(ctx, tw, th, rot, lights, hover, part = "all") {
   const full = insetBox(tw, th);
-  shadow(ctx, full.x, full.y, full.w, full.h, 0.3);
   if (hover) {
-    const p = pal("#efe6d4", lights, { seat: "#3a3040" });
+    // Symmetric shell: draw the whole egg in the base layer. A clipped front
+    // lip read as a flat lid, so the sitter is raised onto the cushion instead.
+    if (part === "front") return;
+    shadow(ctx, full.x, full.y, full.w, full.h, 0.3);
     const base = pal("#8a8e92", lights);
     box(ctx, full.x + 0.18, full.y + 0.18, full.w - 0.36, full.h - 0.36, 0, 4, base);
-    // stacked diamonds for the egg, edges stay on the grid axes
-    const cx = tw / 2, cy = th / 2;
-    for (let z = 6; z <= 28; z += 2) {
-      const t = (z - 6) / 22;
-      const egg = 1 - Math.abs(t - 0.42) * 1.35;
-      const rw = Math.max(0.18, 0.38 * egg);
-      const rh = Math.max(0.18, 0.38 * egg);
-      const col = t < 0.55
-        ? (lights ? shade("#fff8ec", -Math.round(t * 20)) : shade("#c8c0b4", -20))
-        : (lights ? shade("#e8e0d0", -10) : shade("#a8a090", -20));
-      const d = diamond(cx - rw, cy - rh, rw * 2, rh * 2, z);
-      fillPts(ctx, [d.N, d.E, d.S, d.W], col, shade("#5a5048", lights ? 0 : -30));
-    }
+    drawEggRings(ctx, tw, th, lights);
     const seat = pal("#3a3040", lights);
     box(ctx, full.x + 0.22, full.y + 0.22, full.w - 0.44, full.h - 0.44, 8, 6, seat);
     return;
   }
   const p = pal("#c48850", lights, { seat: "#d4a060" });
   const legs = pal("#5a3a22", lights);
-  const leg = 0.12;
-  const spots = [
-    [full.x + 0.06, full.y + 0.06],
-    [full.x + full.w - leg - 0.06, full.y + 0.06],
-    [full.x + 0.06, full.y + full.h - leg - 0.06],
-    [full.x + full.w - leg - 0.06, full.y + full.h - leg - 0.06],
-  ];
-  for (const [lx, ly] of spots) box(ctx, lx, ly, leg, leg, 0, 6, legs);
-  const backD = 0.26;
-  const seat = seatRect(tw, th, rot, backD);
-  const back = backRect(tw, th, rot, backD);
-  box(ctx, seat.x, seat.y, seat.w, seat.h, 6, 8, p);
-  box(ctx, back.x, back.y, back.w, back.h, 6, 20, p);
+  if (part !== "back") {
+    shadow(ctx, full.x, full.y, full.w, full.h, 0.3);
+    const leg = 0.12;
+    const spots = [
+      [full.x + 0.06, full.y + 0.06],
+      [full.x + full.w - leg - 0.06, full.y + 0.06],
+      [full.x + 0.06, full.y + full.h - leg - 0.06],
+      [full.x + full.w - leg - 0.06, full.y + full.h - leg - 0.06],
+    ];
+    for (const [lx, ly] of spots) box(ctx, lx, ly, leg, leg, 0, 6, legs);
+    const backD = 0.26;
+    const seat = seatRect(tw, th, rot, backD);
+    box(ctx, seat.x, seat.y, seat.w, seat.h, 6, 8, p);
+  }
+  if (part !== "base") {
+    const backD = 0.26;
+    const back = backRect(tw, th, rot, backD);
+    box(ctx, back.x, back.y, back.w, back.h, 6, 20, p);
+  }
 }
 
 function drawTable(ctx, tw, th, rot, lights, kind) {
@@ -1458,9 +1482,9 @@ function paintPiece(ctx, type, rot, lights, on, open, opts = {}) {
     case "lamp": drawLamp(ctx, tw, th, lights, false); break;
     case "neonsign": drawLamp(ctx, tw, th, lights, true); break;
     case "couch":
-    case "capsulecouch": drawSeat(ctx, tw, th, r, lights, type); break;
+    case "capsulecouch": drawSeat(ctx, tw, th, r, lights, type, opts.part || "all"); break;
     case "chair":
-    case "hoverchair": drawChair(ctx, tw, th, r, lights, type === "hoverchair"); break;
+    case "hoverchair": drawChair(ctx, tw, th, r, lights, type === "hoverchair", opts.part || "all"); break;
     case "table":
     case "coffeetable":
     case "counter":
@@ -1510,13 +1534,14 @@ export function drawFurnitureSprite(type, opts = {}) {
   const spinFrame = type === "recordplayer" ? (opts.spinFrame ?? 0) : 0;
   const vinyl = type === "recordplayer" ? (opts.vinyl || "") : "";
   const flicker = type === "cubics" ? (opts.flicker ?? 0) : 0;
+  const part = opts.part || "all";
   const screen = opts.screen || null;
-  const key = "iso-furn:" + type + ":" + rot + ":" + lights + ":" + on + ":" + open + ":" + (opts.sku || "") + (type === "coffeemachine" ? (":brew" + brewing + ":st" + steamFrame) : "") + (type === "stove" ? (":on" + on + ":st" + steamFrame + ":fl" + flameFrame) : "") + (type === "recordplayer" ? (":v" + vinyl + ":sp" + spinFrame + ":on" + on) : "") + (type === "cubics" ? (":fk" + flicker) : "");
+  const key = "iso-furn:" + type + ":" + rot + ":" + lights + ":" + on + ":" + open + ":" + (opts.sku || "") + ":" + part + (type === "coffeemachine" ? (":brew" + brewing + ":st" + steamFrame) : "") + (type === "stove" ? (":on" + on + ":st" + steamFrame + ":fl" + flameFrame) : "") + (type === "recordplayer" ? (":v" + vinyl + ":sp" + spinFrame + ":on" + on) : "") + (type === "cubics" ? (":fk" + flicker) : "");
   const m = furnSpriteMetrics(type, rot, { open });
   const body = sprite(key, m.w, m.h, (ctx) => {
     ctx.save();
     ctx.translate(m.ox, m.oy);
-    paintPiece(ctx, type, rot, lights, on, open, { brewing, steamFrame, flameFrame, sku: opts.sku, spinFrame, vinyl, flicker, on });
+    paintPiece(ctx, type, rot, lights, on, open, { brewing, steamFrame, flameFrame, sku: opts.sku, spinFrame, vinyl, flicker, on, part });
     ctx.restore();
   });
   if (!screen || !on || (type !== "tv" && type !== "holotv")) return body;
