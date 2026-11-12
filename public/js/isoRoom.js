@@ -861,8 +861,9 @@ export function createRoom3D(container, opts = {}) {
     for (const f of furniture) {
       const type = f.type;
       const rot = normalizeFurnRot(f.rot);
-      const m = furnSpriteMetrics(type, rot);
-      const pos = furnBlitPos(f.x, f.y, type, rot, tileToScreen);
+      const fridgeOpen = type === "fridge" && Boolean(uses[f.id]?.open);
+      const m = furnSpriteMetrics(type, rot, { open: fridgeOpen });
+      const pos = furnBlitPos(f.x, f.y, type, rot, tileToScreen, { open: fridgeOpen });
       const tv = tvs[f.id] || {};
       const rec = recordPlayers[f.id] || {};
       const isTv = type === "tv" || type === "holotv";
@@ -976,7 +977,7 @@ export function createRoom3D(container, opts = {}) {
         const face = heldItemFaceAnchor(p.avatar || {}, flags, frame);
         const sip = sipAnim(p.heldItem, p.username, Date.now(), { walking });
         const steam = heldKind === "coffee" ? heldSteamFrameAt(Date.now()) : 0;
-        const item = drawHeldItemSprite(heldKind, { steamFrame: steam, flip: anchor.flip, lights: lightsOn });
+        const item = drawHeldItemSprite(heldKind, { steamFrame: steam, flip: anchor.flip, lights: lightsOn, skin: face?.skin || (p.avatar || {}).skin });
         personItem.held = { item, anchor, face, sip };
       }
       list.push(personItem);

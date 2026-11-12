@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import {
   HELD_KINDS, FRIDGE_ITEMS, heldKindOf, isDrink, heldItemLabel, sipAnim, sipLift,
-  steamFrameAt, hash32, SIP_MS,
+  steamFrameAt, hash32, SIP_MS, heldItemContentBox, drawHeldItemSprite,
 } from "../public/js/heldItems.js";
 
 let passed = 0;
@@ -57,6 +57,31 @@ check("Sip ends after about one second", end.active === false && end.face === fa
 check("sipLift eases up, holds, then eases down", sipLift(0) === 0 && sipLift(0.22) === 1 && sipLift(0.5) === 1 && sipLift(1) === 0);
 check("Steam frames loop 0–5", steamFrameAt(0) === 0 && steamFrameAt(160) === 1 && steamFrameAt(160 * 6) === 0);
 check("hash32 is stable", hash32("abc") === hash32("abc") && hash32("abc") !== hash32("abd"));
+
+const sodaBox = heldItemContentBox("soda");
+const waterBox = heldItemContentBox("water");
+const coffeeBox = heldItemContentBox("coffee");
+const pizzaBox = heldItemContentBox("pizza");
+check("Soda can is compact but wide enough for a CUBE SODA label", sodaBox.w >= 10 && sodaBox.w <= 16 && sodaBox.h <= 26, JSON.stringify(sodaBox));
+check("Water bottle is shorter than the old tall bottle", waterBox.w <= 8 && waterBox.h <= 16, JSON.stringify(waterBox));
+check("Coffee mug is smaller than the head width", coffeeBox.w <= 13 && coffeeBox.h <= 18, JSON.stringify(coffeeBox));
+check("Pizza slice stays a readable triangle", pizzaBox.w >= 10 && pizzaBox.h >= 10, JSON.stringify(pizzaBox));
+const pizzaSpr = drawHeldItemSprite("pizza", { hand: false, flip: false });
+check("Floppy pizza hangs down from the grip, not up into the face", pizzaSpr && pizzaSpr.box.y + pizzaSpr.box.h - 1 >= pizzaSpr.gy + 5, JSON.stringify(pizzaSpr && { box: pizzaSpr.box, gy: pizzaSpr.gy }));
+check("Floppy pizza droops to the side of the hand", pizzaSpr && pizzaSpr.box.x + pizzaSpr.box.w - 1 >= pizzaSpr.gx + 3, JSON.stringify(pizzaSpr && { box: pizzaSpr.box, gx: pizzaSpr.gx }));
+
+
+const pale = drawHeldItemSprite("soda", { skin: "#f0c9a8", hand: true });
+const deep = drawHeldItemSprite("soda", { skin: "#6a3a1c", hand: true });
+const noHand = drawHeldItemSprite("soda", { hand: false });
+check("Cupping hand uses the given skin tone", pale.skin === "#f0c9a8" && deep.skin === "#6a3a1c");
+check("A sprite without a hand is distinct from one with a wrap", pale.sig !== noHand.sig, JSON.stringify({ pale: pale.sig, noHand: noHand.sig }));
+const flipped = drawHeldItemSprite("soda", { skin: "#f0c9a8", flip: true });
+check("Flip mirrors the grip to the other side of the sprite", flipped.gx === 24 - 1 - 12, JSON.stringify({ gx: flipped.gx, unflip: pale.gx }));
+for (const kind of HELD_KINDS) {
+  const spr = drawHeldItemSprite(kind, { skin: "#f0c9a8" });
+  check("Grip exists for " + kind, spr && spr.gx > 0 && spr.gy > 0, JSON.stringify(spr && { gx: spr.gx, gy: spr.gy, box: spr.box }));
+}
 
 if (process.exitCode) {
   console.error(`held-items: ${passed} passed, then failed`);

@@ -1,6 +1,7 @@
 /* Isometric furniture sprites — edges stay parallel to the floor-tile grid.
    Rotation is only the 4 axis directions: 0 = +Y (SW), 1 = +X (SE), 2 = -Y (NE), 3 = -X (NW). */
 import { drawCoffeeMaker } from "./coffeeMaker.js";
+import { heldItemStamp } from "./heldItems.js";
 import { drawRecordPlayer, TYPE as RECORD_PLAYER } from "./recordPlayer.js";
 import { drawChessTableSmall, drawChessStool, CHESS_STOOL_TYPE } from "./chessTable.js";
 
@@ -68,19 +69,21 @@ export function furnBodyHeight(type) {
   return BODY_H[type] || 24;
 }
 
-export function furnSpriteMetrics(type, rot = 0) {
+export function furnSpriteMetrics(type, rot = 0, opts = {}) {
   const { w, h } = furnTileDims(type, rot);
   const bodyH = furnBodyHeight(type);
   const pad = 2;
-  const ox = pad + h * (TW / 2);
+  // Extra left pad so an open fridge door isn't clipped, without shifting the body.
+  const doorPad = (type === "fridge" && opts && opts.open) ? 30 : 0;
+  const ox = pad + h * (TW / 2) + doorPad;
   const oy = pad + bodyH;
-  const width = pad * 2 + (w + h) * (TW / 2);
+  const width = pad * 2 + (w + h) * (TW / 2) + doorPad;
   const height = pad * 2 + (w + h) * (TH / 2) + bodyH;
-  return { w: width, h: height, ox, oy, tw: w, th: h, bodyH, pad };
+  return { w: width, h: height, ox, oy, tw: w, th: h, bodyH, pad, doorPad };
 }
 
-export function furnBlitPos(tx, ty, type, rot, toScreen) {
-  const m = furnSpriteMetrics(type, rot);
+export function furnBlitPos(tx, ty, type, rot, toScreen, opts) {
+  const m = furnSpriteMetrics(type, rot, opts);
   const top = toScreen(tx, ty);
   const sx = (top.sx ?? top.x) - m.ox;
   const sy = (top.sy ?? top.y) - m.oy;
@@ -627,15 +630,114 @@ export function tvGlowColor() {
 }
 
 function drawFridge(ctx, tw, th, rot, lights, open) {
-  drawCabinet(ctx, tw, th, rot, lights, 40, "#e8e4dc", (c, fc, p) => {
-    if (open) {
-      faceRect(c, fc, 0.08, 0.08, 0.92, 0.92, "#2a2a28", p.outline);
-      return;
-    }
-    faceRect(c, fc, 0.1, 0.52, 0.9, 0.94, lights ? "#f4f0e8" : "#a8a49c", p.outline);
-    faceRect(c, fc, 0.1, 0.08, 0.9, 0.46, lights ? "#f4f0e8" : "#a8a49c", p.outline);
-    faceRect(c, fc, 0.78, 0.28, 0.86, 0.4, lights ? "#c4a35a" : "#888", p.outline);
-  });
+  const full = insetBox(tw, th);
+  const height = 40;
+  const p = pal("#e8e4dc", lights);
+  shadow(ctx, full.x, full.y, full.w, full.h, 0.3);
+  box(ctx, full.x, full.y, full.w, full.h, 0, height, p);
+  const front = visibleFront(rot);
+  if (!front) return;
+  const fc = faceCorners(full.x, full.y, full.w, full.h, 0, height, front);
+  if (!open) {
+    faceRect(ctx, fc, 0.1, 0.52, 0.9, 0.94, lights ? "#f4f0e8" : "#a8a49c", p.outline);
+    faceRect(ctx, fc, 0.1, 0.08, 0.9, 0.46, lights ? "#f4f0e8" : "#a8a49c", p.outline);
+    faceRect(ctx, fc, 0.78, 0.28, 0.86, 0.4, lights ? "#c4a35a" : "#888", p.outline);
+    return;
+  }
+  // Open: lit interior, shelves of snacks, door swung to the screen-left (hinged left).
+  // Interior stays warm even when the room lights are off.
+  const wall = lights ? "#f3e6c4" : "#e8d6a0";
+  const inner = lights ? "#fff6d8" : "#ffe9b0";
+  const shelf = lights ? "#d8c49a" : "#c4b078";
+  const lamp = lights ? "#fffceb" : "#fff4c8";
+  faceRect(ctx, fc, 0.08, 0.06, 0.92, 0.94, wall, p.outline);
+  faceRect(ctx, fc, 0.14, 0.10, 0.86, 0.90, inner, null);
+  faceRect(ctx, fc, 0.22, 0.09, 0.78, 0.15, lamp, null);
+  for (const v of [0.34, 0.58, 0.82]) {
+    faceRect(ctx, fc, 0.14, v, 0.86, v + 0.045, shelf, p.outline);
+  }
+  paintFridgeGoods(ctx, fc, lights);
+  paintFridgeDoor(ctx, fc, p, lights);
+}
+
+
+function stampHeldOnFace(ctx, fc, kind, u, vShelf, lights) {
+  const stamp = heldItemStamp(kind, { lights });
+  if (!stamp?.c) return;
+  const [bl, br, tr, tl] = fc;
+  const at = (uu, vv) => lerp2(lerp2(bl, br, uu), lerp2(tl, tr, uu), vv);
+  const p = at(u, vShelf);
+  const w = stamp.w, h = stamp.h;
+  const targetH = 9;
+  const s = Math.min(1, targetH / h);
+  const dw = Math.max(1, Math.round(w * s)), dh = Math.max(1, Math.round(h * s));
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(stamp.c, 0, 0, w, h, Math.round(p.x - dw / 2), Math.round(p.y - dh + 1), dw, dh);
+}
+
+function paintFridgeGoods(ctx, fc, lights) {
+  const ink = "#2a1c14";
+  // Top shelf: milk, pizza box, egg carton
+  faceRect(ctx, fc, 0.18, 0.18, 0.32, 0.34, lights ? "#f4f0e8" : "#e8e0d0", ink);
+  faceRect(ctx, fc, 0.18, 0.18, 0.32, 0.22, lights ? "#3a7ab8" : "#2a5a88", ink);
+  faceRect(ctx, fc, 0.36, 0.22, 0.58, 0.34, lights ? "#e8c878" : "#c4a050", ink);
+  faceRect(ctx, fc, 0.40, 0.24, 0.54, 0.30, lights ? "#c43a32" : "#8a2018", null);
+  faceRect(ctx, fc, 0.62, 0.26, 0.82, 0.34, lights ? "#f8f4e8" : "#d8d0c0", ink);
+  faceRect(ctx, fc, 0.65, 0.28, 0.70, 0.32, lights ? "#f0e0b0" : "#d0c090", ink);
+  faceRect(ctx, fc, 0.72, 0.28, 0.78, 0.32, lights ? "#f0e0b0" : "#d0c090", ink);
+  // Mid shelf: CUBE SODA cans (same art as the held can) and water bottles
+  stampHeldOnFace(ctx, fc, "soda", 0.26, 0.58, lights);
+  stampHeldOnFace(ctx, fc, "soda", 0.44, 0.58, lights);
+  faceRect(ctx, fc, 0.50, 0.40, 0.60, 0.58, lights ? "#7ec8e8" : "#3a8ab0", ink);
+  faceRect(ctx, fc, 0.52, 0.38, 0.58, 0.42, lights ? "#2a6aa8" : "#1a4a88", ink);
+  faceRect(ctx, fc, 0.64, 0.40, 0.74, 0.58, lights ? "#7ec8e8" : "#3a8ab0", ink);
+  faceRect(ctx, fc, 0.66, 0.38, 0.72, 0.42, lights ? "#2a6aa8" : "#1a4a88", ink);
+  // Bottom shelf: drumstick on a plate, leftover carton
+  faceRect(ctx, fc, 0.20, 0.74, 0.48, 0.82, lights ? "#e8e0d0" : "#c4b8a8", ink);
+  faceRect(ctx, fc, 0.28, 0.66, 0.42, 0.78, lights ? "#c47832" : "#8a4a1c", ink);
+  faceRect(ctx, fc, 0.36, 0.64, 0.46, 0.70, lights ? "#f0e0c0" : "#c4b090", ink);
+  faceRect(ctx, fc, 0.58, 0.68, 0.80, 0.82, lights ? "#d8e8f0" : "#88a0b0", ink);
+}
+
+function paintFridgeDoor(ctx, fc, p, lights) {
+  const [bl, br, tr, tl] = fc;
+  const leftIsU0 = (bl.x + tl.x) <= (br.x + tr.x);
+  const hingeB = leftIsU0 ? bl : br;
+  const hingeT = leftIsU0 ? tl : tr;
+  const faceW = Math.hypot(br.x - bl.x, br.y - bl.y) || 28;
+  const doorW = faceW * 0.92;
+  // Swing further left (and a little toward the camera) so the inner face is visible.
+  let dx = -1, dy = 0.28;
+  const len = Math.hypot(dx, dy) || 1;
+  dx = (dx / len) * doorW;
+  dy = (dy / len) * doorW;
+  const outB = { x: hingeB.x + dx, y: hingeB.y + dy };
+  const outT = { x: hingeT.x + dx, y: hingeT.y + dy };
+  const inner = lights ? "#f6efe2" : "#e8dcc8";
+  const innerDk = lights ? "#d8ccb4" : "#b8a890";
+  const gasket = lights ? "#c4d8e0" : "#88a0a8";
+  fillPts(ctx, [hingeB, outB, outT, hingeT], inner, p.outline);
+  // Inner door shelf / gasket lines
+  const uLerp = (a, b, t) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+  const row = (v) => {
+    const L = uLerp(hingeB, hingeT, v);
+    const R = uLerp(outB, outT, v);
+    fillPts(ctx, [
+      uLerp(L, R, 0.12), uLerp(L, R, 0.88),
+      { x: uLerp(L, R, 0.88).x, y: uLerp(L, R, 0.88).y + 1.2 },
+      { x: uLerp(L, R, 0.12).x, y: uLerp(L, R, 0.12).y + 1.2 },
+    ], gasket, p.outline);
+  };
+  row(0.28);
+  row(0.55);
+  row(0.78);
+  // Door edge thickness on the free side
+  const thick = 3;
+  const nx = dx / doorW * thick, ny = dy / doorW * thick;
+  fillPts(ctx, [
+    outB, { x: outB.x + nx, y: outB.y + ny },
+    { x: outT.x + nx, y: outT.y + ny }, outT,
+  ], innerDk, p.outline);
 }
 
 function drawChessTable(ctx, tw, th, rot, lights) {
@@ -1403,7 +1505,7 @@ export function drawFurnitureSprite(type, opts = {}) {
   const flicker = type === "cubics" ? (opts.flicker ?? 0) : 0;
   const screen = opts.screen || null;
   const key = "iso-furn:" + type + ":" + rot + ":" + lights + ":" + on + ":" + open + ":" + (opts.sku || "") + (type === "coffeemachine" ? (":brew" + brewing + ":st" + steamFrame) : "") + (type === "recordplayer" ? (":v" + vinyl + ":sp" + spinFrame + ":on" + on) : "") + (type === "cubics" ? (":fk" + flicker) : "");
-  const m = furnSpriteMetrics(type, rot);
+  const m = furnSpriteMetrics(type, rot, { open });
   const body = sprite(key, m.w, m.h, (ctx) => {
     ctx.save();
     ctx.translate(m.ox, m.oy);
