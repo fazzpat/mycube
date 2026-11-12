@@ -1690,6 +1690,139 @@ async function runAppShellFit(browser) {
   const rec = await page.evaluate(() => ({ cam: window.__camState(), fit: window.HouseRoom3D.roomFitsView() }));
   check("The recenter button fits the cube on screen", Boolean(rec.cam?.mode === "room" && rec.fit?.ok && rec.cam.zoom <= 1.05), JSON.stringify(rec));
 
+  async function zoomOutReport(page, size, grid) {
+    await page.setViewportSize(size);
+    await page.evaluate((n) => {
+      window.HouseRoom3D.setGridSize(n);
+      window.HouseRoom3D.resize?.();
+      window.__setCamMode?.("follow");
+      window.HouseRoom3D.setZoom(0.01);
+    }, grid);
+    await page.waitForTimeout(80);
+    return page.evaluate(() => {
+      const range = window.HouseRoom3D.zoomRange?.() || {};
+      const inView = window.HouseRoom3D.roomInView?.(1);
+      const name = document.querySelector(".person-name");
+      const nr = name?.getBoundingClientRect();
+      const dock = document.querySelector("[data-testid=chat-dock]")?.getBoundingClientRect();
+      const phone = document.querySelector("[data-testid=phone-btn]")?.getBoundingClientRect();
+      const bubble = document.querySelector(".speech-stack, .speech-bubble, .thinking-stack");
+      const br = bubble?.getBoundingClientRect();
+      const vw = window.innerWidth, vh = window.innerHeight;
+      const onScreen = (r) => Boolean(r && r.width > 0 && r.top >= -8 && r.left >= -8 && r.right <= vw + 8 && r.bottom <= vh + 8);
+      return {
+        zoom: window.HouseRoom3D.visualZoom?.(),
+        min: range.min,
+        max: range.max,
+        inView,
+        name: nr ? { w: Math.round(nr.width), h: Math.round(nr.height), fs: name ? getComputedStyle(name).fontSize : "", on: onScreen(nr) } : null,
+        hud: { dock: onScreen(dock), phone: onScreen(phone) },
+        bubble: br ? { w: Math.round(br.width), h: Math.round(br.height), on: onScreen(br) } : null,
+      };
+    });
+  }
+  const z375_6 = await zoomOutReport(page, { width: 375, height: 667 }, 6);
+  check(
+    "You can pinch-zoom out to about half the previous minimum on a 375px phone",
+    Boolean(z375_6.min <= 0.5 && z375_6.min >= 0.34 && Math.abs((z375_6.zoom || 99) - z375_6.min) < 0.04),
+    JSON.stringify(z375_6)
+  );
+  check(
+    "A 6x6 room stays fully on a 375px phone at min zoom",
+    Boolean(z375_6.inView?.ok && (z375_6.inView.margin?.l ?? -1) >= 8 && (z375_6.inView.margin?.r ?? -1) >= 8),
+    JSON.stringify(z375_6.inView)
+  );
+  const z375_10 = await zoomOutReport(page, { width: 375, height: 667 }, 10);
+  check(
+    "A 10x10 room fits with margin on a 375px phone at min zoom",
+    Boolean(z375_10.inView?.ok && (z375_10.inView.margin?.l ?? -1) >= 8 && (z375_10.inView.margin?.r ?? -1) >= 8 && z375_10.zoom <= 0.52),
+    JSON.stringify(z375_10)
+  );
+  const z390_10 = await zoomOutReport(page, { width: 390, height: 844 }, 10);
+  check(
+    "A 10x10 room fits with margin on a 390px phone at min zoom",
+    Boolean(z390_10.inView?.ok && (z390_10.inView.margin?.l ?? -1) >= 8 && (z390_10.inView.margin?.r ?? -1) >= 8),
+    JSON.stringify(z390_10)
+  );
+  check(
+    "Names and the HUD still render at min zoom",
+    Boolean((!z375_10.name || (z375_10.name.on && z375_10.name.h >= 8)) && z375_10.hud.dock && z375_10.hud.phone),
+    JSON.stringify({ name: z375_10.name, hud: z375_10.hud, bubble: z375_10.bubble })
+  );
+
+  const panAtMin = await page.evaluate(() => {
+    const before = window.HouseRoom3D.roomInView?.(1);
+    const c = document.querySelector(".room3d-root canvas");
+    const r = c.getBoundingClientRect();
+    const x = r.left + r.width * 0.5, y = r.top + r.height * 0.4;
+    const fire = (type, px, py, buttons) => c.dispatchEvent(new PointerEvent(type, {
+      bubbles: true, cancelable: true, clientX: px, clientY: py, pointerId: 11, pointerType: "mouse", buttons,
+    }));
+    fire("pointerdown", x, y, 1);
+    fire("pointermove", x + 220, y + 160, 1);
+    fire("pointerup", x + 220, y + 160, 0);
+    const after = window.HouseRoom3D.roomInView?.(1);
+    return { before, after };
+  });
+  check(
+    "Panning at min zoom cannot throw the room offscreen",
+    Boolean(panAtMin.after?.ok),
+    JSON.stringify(panAtMin)
+  );
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.evaluate(() => {
+    window.HouseRoom3D.setGridSize(6);
+    window.HouseRoom3D.resize?.();
+    window.__setCamMode?.("follow");
+    window.HouseRoom3D.setZoom(2);
+  });
+  await page.waitForTimeout(40);
+  const wheelMin = await page.evaluate(() => {
+    const c = document.querySelector(".room3d-root canvas");
+    const r = c.getBoundingClientRect();
+    for (let i = 0; i < 24; i++) {
+      c.dispatchEvent(new WheelEvent("wheel", { bubbles: true, cancelable: true, deltaY: 400, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 }));
+    }
+    const range = window.HouseRoom3D.zoomRange?.() || {};
+    return { zoom: window.HouseRoom3D.visualZoom?.(), min: range.min, target: range.userZoom };
+  });
+  check(
+    "Desktop wheel and trackpad zoom can reach the new minimum",
+    Boolean(wheelMin.min <= 0.5 && Math.abs((wheelMin.target || wheelMin.zoom) - wheelMin.min) < 0.05),
+    JSON.stringify(wheelMin)
+  );
+
+  await page.evaluate(() => window.__enterEdit?.());
+  await page.waitForSelector("[data-testid=edit-inventory]:not(.hidden)");
+  await page.evaluate(() => window.HouseRoom3D.setZoom(0.01));
+  await page.waitForTimeout(80);
+  const editMin = await page.evaluate(() => {
+    const inv = document.querySelector("[data-testid=edit-inventory]")?.getBoundingClientRect();
+    const tabs = document.querySelector("[data-testid=edit-inv-tabs]")?.getBoundingClientRect();
+    const inView = window.HouseRoom3D.roomInView?.(1);
+    const range = window.HouseRoom3D.zoomRange?.() || {};
+    return {
+      zoom: window.HouseRoom3D.visualZoom?.(),
+      min: range.min,
+      inView,
+      invOn: Boolean(inv && inv.width > 0 && inv.bottom <= window.innerHeight + 1),
+      tabsOn: Boolean(tabs && tabs.width > 0),
+    };
+  });
+  check(
+    "Edit Room can zoom out to the same minimum and keeps the inventory on screen",
+    Boolean(editMin.min <= 0.5 && Math.abs((editMin.zoom || 99) - editMin.min) < 0.05 && editMin.invOn && editMin.tabsOn && editMin.inView?.ok),
+    JSON.stringify(editMin)
+  );
+  await page.evaluate(() => window.__exitEdit?.());
+  await page.evaluate(() => {
+    window.__setCamMode?.("follow");
+    window.HouseRoom3D.setZoom(2);
+    window.HouseRoom3D.setGridSize(6);
+    window.HouseRoom3D.resize?.();
+  });
+
   const sizes = [
     { name: "iPhone SE", width: 375, height: 667 },
     { name: "iPhone 14", width: 390, height: 844 },

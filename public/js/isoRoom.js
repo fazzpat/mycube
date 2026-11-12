@@ -26,8 +26,9 @@ const TW = 64;
 const TH = 32;
 const WALL_H = 88;
 const FOLLOW_ZOOM_DEFAULT = 2;
-const USER_ZOOM_MIN = 1;
+const USER_ZOOM_MIN = 0.5; // half the previous 1x floor, so a 10x10 cube fits on a 375px phone
 const USER_ZOOM_MAX = 4;
+const USER_ZOOM_ABS_MIN = 0.35;
 const TAP_SLOP = 8;
 
 function isPhoneView() {
@@ -35,14 +36,15 @@ function isPhoneView() {
   return window.innerWidth <= 820;
 }
 
-function clampUserZoom(z) {
+function clampUserZoom(z, minZ = USER_ZOOM_MIN) {
   const n = Number(z);
   if (!Number.isFinite(n)) return FOLLOW_ZOOM_DEFAULT;
-  return Math.max(USER_ZOOM_MIN, Math.min(USER_ZOOM_MAX, n));
+  const lo = Number.isFinite(minZ) ? minZ : USER_ZOOM_MIN;
+  return Math.max(lo, Math.min(USER_ZOOM_MAX, n));
 }
 
 function snapZoom(z) {
-  // Kept for older callers; new camera uses continuous 1x–4x zoom.
+  // Kept for older callers; camera uses continuous zoom from ~0.5x–4x.
   return clampUserZoom(z);
 }
 
@@ -725,6 +727,20 @@ export function createRoom3D(container, opts = {}) {
     }
     return { minX, maxX, minY, maxY, w: maxX - minX, h: maxY - minY };
   }
+  function minUserZoom() {
+    const b = roomWorldBounds();
+    const gutter = 80;
+    const fit = Math.min(
+      viewW / Math.max(1, b.w + gutter),
+      viewH / Math.max(1, b.h + gutter)
+    );
+    const floor = Number.isFinite(fit) ? fit : USER_ZOOM_MIN;
+    // About half the old 1x minimum, or lower if a large room still cannot fit with margin.
+    return Math.min(USER_ZOOM_MIN, Math.max(USER_ZOOM_ABS_MIN, floor));
+  }
+  function clampZoom(z) {
+    return clampUserZoom(z, minUserZoom());
+  }
   function originAt(now) {
     return {
       ox: viewW / (2 * zoom) - camX + (editViewShiftX || 0) / zoom,
@@ -756,20 +772,52 @@ export function createRoom3D(container, opts = {}) {
     camX += (t.sx - camX) * 0.18;
     camY += (t.sy - AV_H / 2 - camY) * 0.18;
   }
-  function clampCamSoft() {
+  function camLimits() {
     const b = roomWorldBounds();
-    const halfW = viewW / (2 * Math.max(0.2, zoom));
-    const halfH = viewH / (2 * Math.max(0.2, zoom));
-    const slackX = Math.min(80, Math.max(24, b.w * 0.2));
-    const slackY = Math.min(80, Math.max(24, b.h * 0.2));
-    const minX = b.minX - halfW + slackX;
-    const maxX = b.maxX + halfW - slackX;
-    const minY = b.minY - halfH + slackY;
-    const maxY = b.maxY + halfH - slackY;
-    const cx = camX < minX ? minX : camX > maxX ? maxX : camX;
-    const cy = camY < minY ? minY : camY > maxY ? maxY : camY;
-    camX += (cx - camX) * 0.22;
-    camY += (cy - camY) * 0.22;
+    const z = Math.max(0.2, zoom);
+    const halfW = viewW / (2 * z);
+    const halfH = viewH / (2 * z);
+    const axis = (min, max, half) => {
+      const room = max - min;
+      const view = half * 2;
+      const mid = (min + max) / 2;
+      if (room <= view) {
+        // Zoomed out: keep the whole room on screen with a small gutter, and only
+        // pan within the leftover space so it cannot be lost off an edge.
+        const leftover = (view - room) / 2;
+        const gutter = Math.min(leftover, 12 / z);
+        const slack = Math.max(0, leftover - gutter);
+        return [mid - slack, mid + slack];
+      }
+      // Zoomed in: allow a little peek past an edge, but never lose the room.
+      const edge = Math.min(80, Math.max(24, room * 0.2));
+      return [min + half - edge, max - half + edge];
+    };
+    const [minX, maxX] = axis(b.minX, b.maxX, halfW);
+    const [minY, maxY] = axis(b.minY, b.maxY, halfH);
+    return { minX, maxX, minY, maxY };
+  }
+  function clampCamTo(x, y) {
+    const L = camLimits();
+    return {
+      x: Math.min(L.maxX, Math.max(L.minX, x)),
+      y: Math.min(L.maxY, Math.max(L.minY, y)),
+    };
+  }
+  function clampCamSoft() {
+    const c = clampCamTo(camX, camY);
+    camX += (c.x - camX) * 0.22;
+    camY += (c.y - camY) * 0.22;
+  }
+  function clampCamHard() {
+    const c = clampCamTo(camX, camY);
+    camX = c.x;
+    camY = c.y;
+  }
+  function roomFitsInView() {
+    const b = roomWorldBounds();
+    const z = Math.max(0.2, zoom);
+    return b.w <= viewW / z + 0.5 && b.h <= viewH / z + 0.5;
   }
   function zoomAtClient(clientX, clientY, nextZoom, now = performance.now()) {
     const world = worldFromClient(clientX, clientY, now);
@@ -779,9 +827,10 @@ export function createRoom3D(container, opts = {}) {
     const oy = (clientY - rect.top) / zoom - world.sy;
     camX = viewW / (2 * zoom) - ox;
     camY = viewH / (2 * zoom) - oy + bobY(now);
+    clampCamHard();
   }
   function setUserZoomAt(z, clientX, clientY, immediate = false) {
-    const next = clampUserZoom(z);
+    const next = clampZoom(z);
     autoFit = false;
     if (camMode === "room" && isPhoneView()) {
       camMode = "follow";
@@ -811,9 +860,13 @@ export function createRoom3D(container, opts = {}) {
         velY *= 0.88;
         if (Math.hypot(velX, velY) < 0.04) { velX = 0; velY = 0; }
         clampCamSoft();
+      } else if (roomFitsInView()) {
+        // Follow the player, but never let a zoomed-out room slide offscreen.
+        clampCamHard();
       }
     }
-    if (overlay && overlay.style) overlay.style.setProperty("--iso-zoom", String(zoom));
+    // Keep names/bubbles readable at min zoom; they still grow with a close-up.
+    if (overlay && overlay.style) overlay.style.setProperty("--iso-zoom", String(Math.max(0.85, zoom)));
   }
   function clientFromWorld(sx, sy, now) {
     const { ox, oy } = originAt(now);
@@ -1875,6 +1928,7 @@ export function createRoom3D(container, opts = {}) {
         if (isPhoneView() && camMode === "room") camMode = "follow";
         camX = panStart.camX - dx / Math.max(0.2, zoom);
         camY = panStart.camY - dy / Math.max(0.2, zoom);
+        clampCamHard();
       }
     }
     if (!didPinch) handleHover(e);
@@ -1963,7 +2017,7 @@ export function createRoom3D(container, opts = {}) {
         zoomTarget = FOLLOW_ZOOM_DEFAULT;
         zoom = FOLLOW_ZOOM_DEFAULT;
       } else {
-        zoomTarget = clampUserZoom(userZoom || zoom || FOLLOW_ZOOM_DEFAULT);
+        zoomTarget = clampZoom(userZoom || zoom || FOLLOW_ZOOM_DEFAULT);
         userZoom = zoomTarget;
       }
     }
@@ -2197,6 +2251,31 @@ export function createRoom3D(container, opts = {}) {
     },
     getEditViewShift() { return { x: editViewShiftX, y: editViewShiftY }; },
     visualZoom() { return zoom; },
+    zoomRange() { return { min: minUserZoom(), max: USER_ZOOM_MAX, zoom, userZoom }; },
+    roomInView(pad = 4) {
+      const now = performance.now();
+      const rect = canvas.getBoundingClientRect();
+      const b = roomWorldBounds();
+      const corners = [[b.minX, b.minY], [b.maxX, b.minY], [b.minX, b.maxY], [b.maxX, b.maxY]];
+      const pts = corners.map(([sx, sy]) => clientFromWorld(sx, sy, now));
+      const left = Math.min(...pts.map((p) => p.x));
+      const right = Math.max(...pts.map((p) => p.x));
+      const top = Math.min(...pts.map((p) => p.y));
+      const bottom = Math.max(...pts.map((p) => p.y));
+      const margin = {
+        l: left - rect.left,
+        r: rect.right - right,
+        t: top - rect.top,
+        b: rect.bottom - bottom,
+      };
+      return {
+        ok: margin.l >= -pad && margin.r >= -pad && margin.t >= -pad && margin.b >= -pad,
+        margin,
+        zoom,
+        size: gridSize,
+        view: { w: viewW, h: viewH },
+      };
+    },
     syncPeople(list) { interpolatePeople(list || []); },
     setNpcs(list) { npcs = list || []; },
     onTileClick(fn) { onTileClick = fn; },
@@ -2246,7 +2325,7 @@ export function createRoom3D(container, opts = {}) {
       return chessBoardMetrics();
     },
     setZoom(z) {
-      const next = clampUserZoom(z);
+      const next = clampZoom(z);
       userZoom = next;
       zoomTarget = next;
       if (isPhoneView() && camMode === "follow") zoom = next;
