@@ -4937,7 +4937,7 @@ try {
   check("Opening the inventory window starts a cube-solving pose", Boolean(poseOpen && emptySlots?.solvingCube), JSON.stringify({ poseOpen, flag: emptySlots?.solvingCube }));
   check(
     "The solving pose holds a floating cube between both hands, with a soft glow, in every facing",
-    Array.isArray(cubePose) && cubePose.length === 8 && cubePose.every((p) => p.hasCube && p.betweenHands && !p.overlapsFace && (p.hasGlow || p.hasFx)),
+    Array.isArray(cubePose) && cubePose.length === 8 && cubePose.every((p) => p.hasCube && p.betweenHands && !p.overlapsFace && p.hasGlow && p.hasFx && p.cubeW >= 11),
     JSON.stringify(cubePose.map((p) => ({ dir: p.dir, hasCube: p.hasCube, betweenHands: p.betweenHands, overlapsFace: p.overlapsFace, hasGlow: p.hasGlow, hasFx: p.hasFx, cube: p.cube, hand: p.hand, face: p.face })))
   );
   check("Other people in the cube see the solving pose", bobSeesCube);

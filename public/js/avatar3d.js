@@ -1994,16 +1994,32 @@ function drawHat(buf, av, key, pal, upper) {
     ellipse(buf, g.cx, crown + 8.6, g.rx * 1.30, 2.5, acc, "hat-brim", 56);
     ellipse(buf, g.cx, crown + 7.6, g.rx * 1.00, 1.2, acc.sh || acc, "hat-brim-in", 56, { shade: "flat" });
   } else if (kind === "crown") {
-    const gold = pal.gold || acc;
+    const hex = (av.hatColor && av.hatColor !== "#2a2a2e") ? av.hatColor : "#f0c63a";
+    const gold = {
+      hi: rgb(255, 244, 160),
+      mid: (tones(hex, true).mid || rgb(240, 196, 48)),
+      sh: rgb(176, 112, 16),
+    };
     const jewel = { hi: { r: 255, g: 110, b: 120 }, mid: { r: 200, g: 40, b: 60 }, sh: { r: 130, g: 20, b: 30 } };
-    ellipse(buf, g.cx, crown + 7.0, g.rx * 1.02, 2.4, gold, "hat", 55);
-    const peaks = key === "e" ? [-1.5, 3.5, 8.0] : [-6.2, 0, 6.2];
+    // Thin bright band on the brow — not a helmet cap over the skull.
+    ellipse(buf, g.cx, crown + 6.6, g.rx * 0.92, 1.7, gold, "hat", 56);
+    rect(buf, g.cx - g.rx * 0.78, crown + 6.0, g.cx + g.rx * 0.78, crown + 7.6, gold, "hat", 56);
+    const peaks = key === "e" ? [0.5, 6.2, 10.2] : [-7.0, 0, 7.0];
     for (const dx of peaks) {
       const px = g.cx + dx;
-      ellipse(buf, px, crown + 3.2, 2.4, 4.4, gold, "hat", 56);
-      plotInside(buf, Math.round(px), Math.round(crown + 1.0), (gold.hi || gold.mid || gold), "hat-tip", 58);
+      const tip = crown - 1.6;
+      const base = crown + 6.4;
+      for (let y = tip; y <= base; y++) {
+        const t = (y - tip) / Math.max(1, base - tip);
+        const w = 0.3 + 1.7 * t;
+        for (let x = -w; x <= w; x++) {
+          plot(buf, Math.round(px + x), Math.round(y), (y < tip + 2 ? gold.hi : gold.mid), "hat", 58);
+        }
+      }
+      plot(buf, Math.round(px), Math.round(tip), gold.hi, "hat-tip", 60);
+      plot(buf, Math.round(px), Math.round(tip + 1), gold.hi, "hat-tip", 60);
     }
-    circle(buf, g.cx + (key === "e" ? 2 : 0), crown + 6.2, 1.35, jewel, "hat-jewel", 58);
+    circle(buf, g.cx + (key === "e" ? 2 : 0), crown + 6.4, 1.45, jewel, "hat-jewel", 60);
   }
 }
 
@@ -2474,13 +2490,20 @@ function shoePal(id, color) {
 const HAND_R = 3.15;
 const HAND_PAD = 1.05;
 
-function drawMitten(buf, cx, cy, pal, side = 1) {
+function drawMitten(buf, cx, cy, pal, side = 1, mode = "") {
   // Smaller, rounder hanging mitten. Thumb is a little bump on top, not a sideways flipper.
   ellipse(buf, cx, cy, HAND_R, HAND_R, pal.skin, "hand", 32);
-  ellipse(buf, cx + (side >= 0 ? 0.8 : -0.8), cy - 1.5, 1.4, 1.5, pal.skin, "thumb", 33);
   const hi = pal.skin.hi || pal.skin.mid || pal.skin;
-  plot(buf, Math.round(cx), Math.round(cy - 1.6), hi, "hand-hi", 34);
-  plot(buf, Math.round(cx - 1), Math.round(cy - 1.2), hi, "hand-hi", 34);
+  if (mode === "palmIn") {
+    const inn = side >= 0 ? -1 : 1;
+    ellipse(buf, cx + inn * 2.1, cy - 0.2, 1.55, 1.55, pal.skin, "thumb", 34);
+    plot(buf, Math.round(cx + inn * 0.8), Math.round(cy - 0.6), hi, "hand-hi", 35);
+    plot(buf, Math.round(cx + inn * 0.8), Math.round(cy), hi, "hand-hi", 35);
+  } else {
+    ellipse(buf, cx + (side >= 0 ? 0.8 : -0.8), cy - 1.5, 1.4, 1.5, pal.skin, "thumb", 33);
+    plot(buf, Math.round(cx), Math.round(cy - 1.6), hi, "hand-hi", 34);
+    plot(buf, Math.round(cx - 1), Math.round(cy - 1.2), hi, "hand-hi", 34);
+  }
 }
 
 function plotCheck(buf, x, y, on, pal) {
@@ -2660,14 +2683,14 @@ function handPose(kind, side, pose, t, upper, key, frame) {
       hy = t.y0 + upper + 8;
     }
   } else if (kind === "cube" || (kind && String(kind).startsWith("cube"))) {
-    // Both hands up in front of the chest, a little gap for the floating cube.
+    // Hands out to either side of the floating cube, slightly below its center.
     const tw = kind === "cube1" ? 1 : 0;
     if (key === "e") {
-      hx = t.cx + t.hw + (side > 0 ? 6 : 2);
-      hy = t.y0 + upper + 7 + (side > 0 ? -1 - tw : 2 + tw);
+      hx = t.cx + t.hw + (side > 0 ? 13 : 3);
+      hy = t.y0 + upper + (side > 0 ? 12 + tw : 5 - tw);
     } else {
-      hx = t.cx + side * (5.6 + tw * 0.4);
-      hy = t.y0 + upper + 7.2 + (side > 0 ? -tw : tw);
+      hx = t.cx + side * (10.6 + tw * 0.3);
+      hy = t.y0 + upper + 7.4 + (side > 0 ? -tw : tw);
     }
   } else if (kind === "clap") {
     hx = t.cx + side * 3;
@@ -2822,9 +2845,11 @@ function composeAvatar(av, flagsIn, frame) {
   }
   if (glassesStyleOf(av) !== "none") drawGlasses(head, av, hk, headUpper);
   // Outfit hats (wizard) are drawn by the outfits.js hook, not drawHat.
-  if (hatOn && hatOf(av) !== "wizard") drawHat(head, av, hk, pal, headUpper);
+  // Crown is drawn after hair peeks so the gold points stay visible.
+  if (hatOn && hatOf(av) !== "wizard" && hatOf(av) !== "crown") drawHat(head, av, hk, pal, headUpper);
   outfitDraw?.drawHat?.(head, av, hk, headUpper);
   if (hatOn) drawHairPeeks(head, av, hk, pal, headUpper, bob, frame, walk);
+  if (hatOn && hatOf(av) === "crown") drawHat(head, av, hk, pal, headUpper);
   if (av.accessory === "headphones") drawHeadphones(head, av, hk, pal, headUpper);
   if (emote === "heart") {
     const g = headGeom(hk);
@@ -2902,9 +2927,9 @@ function composeAvatar(av, flagsIn, frame) {
   const fHand = handSpr(farHand, false, false);
   const nHand = handSpr(nearHand, holdingPhone, tappingPhone);
   if (cubeIdle) {
-    // Both hands stay in front of the body so the floating cube sits between them.
-    if (sit) layers.push(body, head, fFoot, nFoot, fHand, nHand);
-    else layers.push(fFoot, body, head, nFoot, fHand, nHand);
+    // Body first; the cube and framing hands are painted after so they float in front.
+    if (sit) layers.push(body, head, fFoot, nFoot);
+    else layers.push(fFoot, body, head, nFoot);
   } else if (sit && sipOcclude) layers.push(fHand, nHand, body, head, fFoot, nFoot);
   else if (sit) layers.push(fHand, body, head, nHand, fFoot, nFoot);
   else if (sipOcclude) layers.push(fFoot, nHand, body, head, nFoot, fHand);
@@ -2932,9 +2957,22 @@ function composeAvatar(av, flagsIn, frame) {
   }
 
   if (cubeIdle) {
-    const cx = (farHand.x + nearHand.x) / 2;
-    const cy = (farHand.y + nearHand.y) / 2 + 1.0;
-    drawMagicCube(cleaned, cx, cy, flags.cubeT ?? frame, bk);
+    const cx = (bk === "e")
+      ? flipX(t.cx + t.hw + 8)
+      : (farHand.x + nearHand.x) / 2;
+    const cy = t.y0 + upper + 8;
+    const hands = {
+      left: farHand.x <= nearHand.x ? farHand : nearHand,
+      right: farHand.x <= nearHand.x ? nearHand : farHand,
+    };
+    drawMagicCube(cleaned, cx, cy, flags.cubeT ?? frame, bk, hands);
+    // Hands last, palms toward the cube, so they clearly frame it.
+    const lBuf = makeBuf();
+    drawMitten(lBuf, hands.left.x, hands.left.y, pal, hands.left.side, "palmIn");
+    const rBuf = makeBuf();
+    drawMitten(rBuf, hands.right.x, hands.right.y, pal, hands.right.side, "palmIn");
+    blitBuf(cleaned, lBuf);
+    blitBuf(cleaned, rBuf);
   }
 
   const planted = [farFoot, nearFoot].filter((f) => (f.lift || 0) <= 1);
@@ -3685,88 +3723,181 @@ function plotCubePx(buf, x, y, color, kind, depth) {
   plot(buf, Math.round(x), Math.round(y), color, kind, depth);
 }
 
-function fillIsoDiamond(buf, cx, cy, hw, hh, color, kind, depth, ink) {
+function drawSparkleStar(buf, x, y, color, kind, depth, size = 1) {
+  const cx = Math.round(x), cy = Math.round(y);
+  plotCubePx(buf, cx, cy, color, kind, depth);
+  const arms = size >= 2 ? 2 : 1;
+  for (let i = 1; i <= arms; i++) {
+    plotCubePx(buf, cx + i, cy, color, kind, depth);
+    plotCubePx(buf, cx - i, cy, color, kind, depth);
+    plotCubePx(buf, cx, cy + i, color, kind, depth);
+    plotCubePx(buf, cx, cy - i, color, kind, depth);
+  }
+}
+
+function outlineCubeKinds(buf) {
+  const ink = rgb(20, 14, 18);
+  const isBody = (p) => p && (p.kind === "cube-top" || p.kind === "cube-side");
+  const next = [];
+  for (let y = 0; y < AV_H; y++) {
+    for (let x = 0; x < AV_W; x++) {
+      const i = y * AV_W + x;
+      if (buf[i]) continue;
+      const n = (buf[i - 1] && isBody(buf[i - 1]))
+        || (buf[i + 1] && isBody(buf[i + 1]))
+        || (y > 0 && isBody(buf[i - AV_W]))
+        || (y < AV_H - 1 && isBody(buf[i + AV_W]));
+      if (n) next.push([x, y]);
+    }
+  }
+  for (const [x, y] of next) plotCubePx(buf, x, y, ink, "cube-ink", 81);
+}
+
+function fillIsoDiamond(buf, cx, cy, hw, hh, color, kind, depth) {
   const x0 = Math.round(cx), y0 = Math.round(cy);
   for (let y = -hh; y <= hh; y++) {
     const t = 1 - Math.abs(y) / Math.max(1, hh);
     const run = Math.max(0, Math.round(hw * t));
     for (let x = -run; x <= run; x++) {
-      const edge = Math.abs(x) === run || Math.abs(y) === hh;
-      plotCubePx(buf, x0 + x, y0 + y, edge ? ink : color, edge ? "cube-ink" : kind, depth);
+      plotCubePx(buf, x0 + x, y0 + y, color, kind, depth);
     }
   }
 }
 
-function fillIsoPanel(buf, x0, y0, x1, y1, shear, color, kind, depth, ink, twist = 0) {
+function fillIsoPanel(buf, x0, y0, x1, y1, shear, color, kind, depth, twistY0, twistY1, twist) {
   const miny = Math.round(Math.min(y0, y1));
   const maxy = Math.round(Math.max(y0, y1));
   const h = Math.max(1, maxy - miny);
   for (let y = miny; y <= maxy; y++) {
-    const sh = Math.round(shear * ((y - miny) / h)) + ((twist && y >= miny + 2 && y <= miny + 3) ? twist : 0);
+    const sh = Math.round(shear * ((y - miny) / h)) + ((twist && y >= twistY0 && y <= twistY1) ? twist : 0);
     const xa = Math.round(Math.min(x0, x1) + sh);
     const xb = Math.round(Math.max(x0, x1) + sh);
-    for (let x = xa; x <= xb; x++) {
-      const edge = x === xa || x === xb || y === miny || y === maxy;
-      plotCubePx(buf, x, y, edge ? ink : color, edge ? "cube-ink" : kind, depth);
-    }
+    for (let x = xa; x <= xb; x++) plotCubePx(buf, x, y, color, kind, depth);
   }
 }
 
-function drawMagicCube(buf, cx, cy, t = 0, key = "s") {
-  const tick = Math.max(0, Math.round(Number(t) || 0));
-  const yaw = Math.floor(tick / 6) % 4;
-  const twist = (Math.floor(tick / 3) % 6) === 2 ? 1 : ((Math.floor(tick / 3) % 6) === 3 ? -1 : 0);
-  const twinkle = tick % 6;
-  const faces = [
-    { top: rgb(248, 248, 244), left: rgb(62, 110, 210), right: rgb(214, 62, 62) },
-    { top: rgb(248, 248, 244), left: rgb(214, 62, 62), right: rgb(56, 176, 86) },
-    { top: rgb(248, 248, 244), left: rgb(56, 176, 86), right: rgb(236, 196, 54) },
-    { top: rgb(248, 248, 244), left: rgb(236, 196, 54), right: rgb(62, 110, 210) },
-  ][yaw];
-  const ink = rgb(48, 32, 28);
-  const glow = rgb(255, 236, 170);
-  const spark = twinkle % 2 === 0 ? rgb(255, 252, 220) : rgb(255, 214, 120);
-  const wisp = rgb(255, 230, 180);
-  const x = Math.round(cx);
-  const y = Math.round(cy);
-  const side = key === "e";
-  // Soft halo, kept small so the hands stay readable.
-  for (const [dx, dy] of [[-5, 0], [5, 0], [0, 5], [-4, -3], [4, -3], [-4, 3], [4, 3]]) {
-    plotCubePx(buf, x + dx, y + dy, glow, "cube-glow", 74);
+function inkGridPanel(buf, x0, y0, x1, y1, shear, ink, twistY0, twistY1, twist) {
+  const miny = Math.round(Math.min(y0, y1));
+  const maxy = Math.round(Math.max(y0, y1));
+  const minx = Math.round(Math.min(x0, x1));
+  const maxx = Math.round(Math.max(x0, x1));
+  const h = Math.max(1, maxy - miny);
+  const w = Math.max(1, maxx - minx);
+  const rows = [miny + Math.round(h / 3), miny + Math.round((2 * h) / 3)];
+  const cols = [minx + Math.round(w / 3), minx + Math.round((2 * w) / 3)];
+  for (let y = miny; y <= maxy; y++) {
+    const sh = Math.round(shear * ((y - miny) / h)) + ((twist && y >= twistY0 && y <= twistY1) ? twist : 0);
+    for (const cx of cols) plotCubePx(buf, cx + sh, y, ink, "cube-ink", 80);
   }
-  if (side) {
-    // Profile: a thin two-face cube hovering just ahead of the chest.
-    fillIsoDiamond(buf, x + 1, y - 2, 3, 2, faces.top, "cube-top", 76, ink);
-    fillIsoPanel(buf, x - 1, y - 1, x + 3, y + 4, 0, faces.right, "cube-side", 75, ink, twist);
+  for (const ry of rows) {
+    const sh = Math.round(shear * ((ry - miny) / h)) + ((twist && ry >= twistY0 && ry <= twistY1) ? twist : 0);
+    for (let x = minx; x <= maxx; x++) plotCubePx(buf, x + sh, ry, ink, "cube-ink", 80);
+  }
+}
+
+function drawIsoCube(buf, cx, cy, faces, twist, profile) {
+  const ink = rgb(20, 14, 18);
+  const topY = cy - 4;
+  if (profile) {
+    fillIsoDiamond(buf, cx + 1, topY, 5, 3, faces.top, "cube-top", 76);
+    const y0 = cy - 1, y1 = cy + 6;
+    const mid0 = y0 + 3, mid1 = y0 + 5;
+    fillIsoPanel(buf, cx - 2, y0, cx + 5, y1, 0, faces.right, "cube-side", 75, mid0, mid1, twist);
+    inkGridPanel(buf, cx - 2, y0, cx + 5, y1, 0, ink, mid0, mid1, twist);
   } else {
-    fillIsoDiamond(buf, x, y - 3, 4, 2, faces.top, "cube-top", 76, ink);
-    fillIsoPanel(buf, x - 4, y - 1, x - 1, y + 4, 0.5, faces.left, "cube-side", 75, ink, -twist);
-    fillIsoPanel(buf, x, y - 1, x + 3, y + 4, -0.5, faces.right, "cube-side", 75, ink, twist);
-    // Tiny 3x3 sticker ticks so it reads as a puzzle cube.
-    for (const [sx, sy, face] of [[-3, 1, "cube-side"], [-3, 3, "cube-side"], [1, 1, "cube-side"], [1, 3, "cube-side"], [-1, -3, "cube-top"], [1, -3, "cube-top"]]) {
-      plotCubePx(buf, x + sx, y + sy, ink, "cube-ink", 77);
+    fillIsoDiamond(buf, cx, topY + 1, 6, 3, faces.top, "cube-top", 76);
+    // 3x3 ticks on the white top so it reads as a puzzle face.
+    for (const [dx, dy] of [[-2, -4], [2, -4], [0, -6], [0, -2], [-3, -3], [3, -3]]) {
+      plotCubePx(buf, cx + dx, topY + dy + 4, ink, "cube-ink", 80);
+    }
+    const y0 = cy - 1, y1 = cy + 6;
+    const mid0 = y0 + 3, mid1 = y0 + 5;
+    fillIsoPanel(buf, cx - 7, y0, cx - 1, y1, 0.6, faces.left, "cube-side", 75, mid0, mid1, -twist);
+    fillIsoPanel(buf, cx, y0, cx + 6, y1, -0.6, faces.right, "cube-side", 75, mid0, mid1, twist);
+    inkGridPanel(buf, cx - 7, y0, cx - 1, y1, 0.6, ink, mid0, mid1, -twist);
+    inkGridPanel(buf, cx, y0, cx + 6, y1, -0.6, ink, mid0, mid1, twist);
+  }
+  outlineCubeKinds(buf);
+}
+
+function drawMagicCube(buf, cx, cy, t = 0, key = "s", hands = null) {
+  const tick = Math.max(0, Math.round(Number(t) || 0));
+  const bobY = (Math.floor(tick / 2) % 4 === 1 || Math.floor(tick / 2) % 4 === 2) ? -1 : 0;
+  const x = Math.round(cx);
+  const y = Math.round(cy) + bobY;
+  const twistPhase = Math.floor(tick / 3) % 4;
+  const twist = [0, 3, 4, 2][twistPhase];
+  const yaw = Math.floor(tick / 6) % 4;
+  const W = rgb(255, 252, 245);
+  const R = rgb(235, 32, 48);
+  const B = rgb(40, 92, 235);
+  const G = rgb(36, 200, 70);
+  const Y = rgb(255, 220, 36);
+  const O = rgb(255, 128, 24);
+  const sides = [
+    { left: B, right: R },
+    { left: R, right: G },
+    { left: G, right: Y },
+    { left: Y, right: O },
+  ][yaw];
+  const cyan = rgb(130, 235, 255);
+  const purple = rgb(200, 145, 255);
+  const sparkA = rgb(255, 252, 230);
+  const sparkB = rgb(190, 255, 255);
+  const sideView = key === "e";
+
+  const rx = sideView ? 9 : 12;
+  const ry = 9;
+  for (let dy = -ry; dy <= ry; dy++) {
+    if (dy < -4) continue; // keep the halo off the face
+    for (let dx = -rx; dx <= rx; dx++) {
+      const e = (dx * dx) / (rx * rx) + (dy * dy) / (ry * ry);
+      if (e < 0.40 || e > 1.10) continue;
+      const col = ((dx + dy + tick) & 1) ? cyan : purple;
+      plotCubePx(buf, x + dx, y + dy, col, "cube-glow", 68);
     }
   }
-  // Rising wisps between the hands.
-  const wisps = [[-5, 3], [5, 2], [0, 5], [-3, 4], [4, 5]];
-  for (let i = 0; i < wisps.length; i++) {
-    if ((twinkle + i) % 3 === 2) continue;
-    const [dx, dy] = wisps[i];
-    plotCubePx(buf, x + dx, y + dy - (twinkle % 3), wisp, "cube-wisp", 78);
+
+  drawIsoCube(buf, x, y, { top: W, left: sides.left, right: sides.right }, twist, sideView);
+
+  const lx = hands?.left?.x ?? (x - 12);
+  const ly = hands?.left?.y ?? (y + 5);
+  const hx = hands?.right?.x ?? (x + 12);
+  const hy = hands?.right?.y ?? (y + 5);
+  const wispCols = [cyan, purple, rgb(255, 230, 255)];
+  for (let i = 0; i < 8; i++) {
+    if ((tick + i) % 5 === 4) continue;
+    const u = (i + (tick % 3) * 0.12) / 7;
+    const wx = lx + (hx - lx) * u;
+    const wy = ly + (hy - ly) * u - Math.sin(u * Math.PI) * 3;
+    plotCubePx(buf, wx, wy, wispCols[i % 3], "cube-wisp", 82);
+    plotCubePx(buf, wx, wy - 1, wispCols[i % 3], "cube-wisp", 82);
   }
-  // Gentle sparkles around the cube.
-  const sparks = [[-6, -3], [6, -2], [-5, 2], [7, 1], [0, -6], [5, -5]];
-  for (let i = 0; i < sparks.length; i++) {
-    if ((twinkle + i) % 3 !== 0) continue;
-    const [dx, dy] = sparks[i];
-    plotCubePx(buf, x + dx, y + dy, spark, "cube-sparkle", 79);
+
+  const stars = [
+    [x - 13, y - 3, 2],
+    [x + 13, y - 2, 2],
+    [x - 12, y + 7, 2],
+    [x + 13, y + 6, 2],
+    [x - 8, y + 10, 1],
+    [x + 8, y + 10, 1],
+  ];
+  for (let i = 0; i < stars.length; i++) {
+    if ((tick + i) % 6 === 0) continue; // hide one, keep 5 twinkling
+    const [sx, sy, sz] = stars[i];
+    const col = (tick + i) % 2 === 0 ? sparkA : sparkB;
+    drawSparkleStar(buf, sx, sy, col, "cube-sparkle", 84, sz);
   }
+}
+
+export function debugAvatarFrame(avatar = {}, flags = {}, frame = 0) {
+  return composeAvatar(normalizeAvatar(avatar), flags, frame);
 }
 
 export function inspectCubePose(avatar = {}, flags = {}, frame = 0) {
   const av = normalizeAvatar(avatar);
   const { buf } = composeAvatar(av, { ...flags, solvingCube: true, walking: false, cubeT: flags.cubeT ?? frame }, frame);
-  let cube = null, glow = null, fx = null, face = null, hand = null;
+  let cube = null, glow = null, fx = null, face = null, hand = null, eyes = null;
   const grow = (b, x, y) => b
     ? { x0: Math.min(b.x0, x), y0: Math.min(b.y0, y), x1: Math.max(b.x1, x), y1: Math.max(b.y1, y) }
     : { x0: x, y0: y, x1: x, y1: y };
@@ -3777,6 +3908,7 @@ export function inspectCubePose(avatar = {}, flags = {}, frame = 0) {
       if (p.kind === "cube-top" || p.kind === "cube-side" || p.kind === "cube-ink") cube = grow(cube, x, y);
       if (p.kind === "cube-glow") glow = grow(glow, x, y);
       if (p.kind === "cube-sparkle" || p.kind === "cube-wisp") fx = grow(fx, x, y);
+      if (p.kind === "eye" || p.kind === "eye-hi") eyes = grow(eyes, x, y);
       if (p.kind === "eye" || p.kind === "eye-hi" || p.kind === "head" || p.kind === "face" || p.kind === "skin-head" || p.kind === "mouth") face = grow(face, x, y);
       if (p.kind === "hand" || p.kind === "thumb" || p.kind === "hand-hi") hand = grow(hand, x, y);
     }
@@ -3784,11 +3916,13 @@ export function inspectCubePose(avatar = {}, flags = {}, frame = 0) {
   const cubeCx = cube ? (cube.x0 + cube.x1) / 2 : null;
   const cubeCy = cube ? (cube.y0 + cube.y1) / 2 : null;
   const handCx = hand ? (hand.x0 + hand.x1) / 2 : null;
-  const betweenHands = Boolean(cube && hand && cubeCx >= hand.x0 - 1 && cubeCx <= hand.x1 + 1 && cubeCy <= hand.y1 + 2);
-  const overlapsFace = Boolean(cube && face && cube.x0 <= face.x1 && cube.x1 >= face.x0 && cube.y0 < face.y1 - 1 && cube.y1 > face.y0 + 1);
+  const cubeW = cube ? (cube.x1 - cube.x0 + 1) : 0;
+  const betweenHands = Boolean(cube && hand && cubeCx >= hand.x0 - 1 && cubeCx <= hand.x1 + 1 && cubeCy <= hand.y1 + 3);
+  // Only treat covering the eyes as a face overlap; the cube may sit just under the chin.
+  const overlapsFace = Boolean(cube && eyes && cube.x0 <= eyes.x1 && cube.x1 >= eyes.x0 && cube.y0 <= eyes.y1 && cube.y1 >= eyes.y0);
   return {
     cube, glow, fx, face, hand, hasCube: Boolean(cube), hasGlow: Boolean(glow), hasFx: Boolean(fx),
-    betweenHands, overlapsFace, cubeCx, cubeCy, handCx,
+    betweenHands, overlapsFace, cubeCx, cubeCy, handCx, cubeW,
   };
 }
 
