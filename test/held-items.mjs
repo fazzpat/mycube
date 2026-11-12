@@ -20,7 +20,7 @@ check("Five held kinds: pizza, soda, chicken, water, coffee", HELD_KINDS.join(",
 check("Fridge picker has exactly those four snacks", FRIDGE_ITEMS.length === 4 && FRIDGE_ITEMS.map((i) => i.id).join(",") === "pizza,soda,chicken,water");
 check("sandwich aliases to pizza", heldKindOf("sandwich") === "pizza" && heldKindOf({ kind: "sandwich" }) === "pizza");
 check("mug aliases to coffee", heldKindOf("mug") === "coffee");
-check("unknown kinds are rejected", heldKindOf("guitar") === null && heldKindOf(null) === null);
+check("unknown kinds are rejected", heldKindOf("umbrella") === null && heldKindOf(null) === null);
 check("soda, water, and coffee are drinks; pizza and chicken are not",
   isDrink("soda") && isDrink("water") && isDrink("coffee") && isDrink("mug") && !isDrink("pizza") && !isDrink("chicken"));
 check("Labels are readable", heldItemLabel("pizza") === "pizza slice" && heldItemLabel("chicken") === "chicken leg" && heldItemLabel({ kind: "coffee" }) === "coffee");
