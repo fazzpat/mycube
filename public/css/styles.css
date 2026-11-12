@@ -3747,6 +3747,7 @@ body.shop-open #toasts {
   box-shadow: 0 0 0 1px #8a6a44, 0 2px 0 #3a2a18;
 }
 #emote-wheel-btn,
+#char-slots-btn,
 #chat-bubble-btn {
   width: 42px !important;
   height: 42px !important;
@@ -3769,6 +3770,7 @@ body.chat-open #chat-bubble-btn {
   box-shadow: 0 0 0 1px #c4a060, 0 1px 0 #3a2a18;
 }
 #phone-btn.phone-dock-btn::after,
+#char-slots-btn::after,
 #emote-wheel-btn::after,
 #chat-bubble-btn::after {
   content: "";
@@ -3779,6 +3781,7 @@ body.chat-open #chat-bubble-btn {
   bottom: -6px;
   left: -8px;
 }
+#char-slots-btn,
 #emote-wheel-btn,
 #chat-bubble-btn,
 #phone-btn { position: relative; }
@@ -4421,6 +4424,7 @@ body.edit-char-open .edit-char-overlay {
 #chat-dock > *,
 #phone-btn,
 #emote-wheel-btn,
+#char-slots-btn,
 #chat-bubble-btn {
   pointer-events: auto !important;
 }
@@ -4527,16 +4531,20 @@ body.edit-mode #chat-dock,
 #chat-dock > *,
 #phone-btn,
 #emote-wheel-btn,
+#char-slots-btn,
 #chat-bubble-btn {
   pointer-events: auto !important;
 }
 #phone-btn.phone-dock-btn,
 #phone-btn,
+#char-slots-btn,
 #emote-wheel-btn,
 #chat-bubble-btn,
 #chat-bubble-btn[aria-expanded="true"],
 body.chat-open #chat-bubble-btn,
-body.phone-open #phone-btn {
+body.phone-open #phone-btn,
+#char-slots-btn[aria-expanded="true"],
+body.char-slots-open #char-slots-btn {
   background: transparent !important;
   border: 0 !important;
   box-shadow: none !important;
@@ -4554,6 +4562,7 @@ body.phone-open #phone-btn {
   border-radius: 0 !important;
 }
 #emote-wheel-btn,
+#char-slots-btn,
 #chat-bubble-btn {
   width: 42px !important;
   height: 42px !important;
@@ -4570,11 +4579,24 @@ body.phone-open #phone-btn {
   height: 40px !important;
   display: block;
 }
+#char-slots-btn svg {
+  width: 36px !important;
+  height: 36px !important;
+  display: block;
+  overflow: visible;
+}
 #chat-bubble-btn svg {
   width: 36px !important;
   height: 36px !important;
   display: block;
   filter: none;
+}
+#char-slots-btn[aria-expanded="true"],
+body.char-slots-open #char-slots-btn {
+  background: transparent !important;
+  box-shadow: none !important;
+  color: #f4c15d !important;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,.85)) drop-shadow(0 0 5px rgba(244,193,93,.35));
 }
 #chat-bubble-btn[aria-expanded="true"],
 body.chat-open #chat-bubble-btn {
@@ -4584,6 +4606,7 @@ body.chat-open #chat-bubble-btn {
 }
 #phone-btn.phone-dock-btn:active,
 #phone-btn.phone-dock-btn.is-pressed,
+#char-slots-btn:active,
 #emote-wheel-btn:active,
 #chat-bubble-btn:active {
   transform: translateY(1px);
@@ -4980,4 +5003,152 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="
 textarea,
 select {
   font-size: 16px !important;
+}
+
+/* Character equipment slots popover, anchored beside the avatar. */
+#char-slots.char-slots {
+  position: fixed;
+  z-index: 26;
+  box-sizing: border-box;
+  display: none;
+  padding: 8px 8px 6px;
+  background: #f4efe4;
+  color: #2a1c16;
+  border-radius: 14px;
+  box-shadow: 0 0 0 2px #5a3a28, 0 4px 0 rgba(42, 24, 16, 0.35);
+  pointer-events: auto;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+}
+#char-slots.char-slots.is-open { display: flex; flex-direction: column; }
+.char-slots-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 6px 6px;
+  flex: 1 1 auto;
+  min-height: 0;
+  align-content: stretch;
+}
+.char-slot[data-slot="head"] { grid-column: 1 / 3; }
+.char-slot[data-slot="torso"] { grid-column: 3 / 5; }
+.char-slot[data-slot="legs"] { grid-column: 5 / 7; }
+.char-slot[data-slot="pet"] { grid-column: 2 / 4; }
+.char-slot[data-slot="prop"] { grid-column: 4 / 6; }
+.char-slot {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  color: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.char-slots.is-readonly .char-slot,
+.char-slot.is-placeholder {
+  cursor: default;
+}
+.char-slot-icon {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 8px;
+  background: #efe6d4;
+  box-shadow: inset 0 0 0 1.5px #c9b49a;
+  overflow: hidden;
+  image-rendering: pixelated;
+}
+.char-slot-icon canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+.char-slot.is-empty .char-slot-icon {
+  background:
+    repeating-linear-gradient(45deg, transparent, transparent 4px, rgba(90, 58, 40, 0.05) 4px, rgba(90, 58, 40, 0.05) 8px),
+    #efe6d4;
+}
+.char-slot.is-empty .char-slot-icon::after {
+  content: "";
+  position: absolute;
+  inset: 22%;
+  border-radius: 4px;
+  border: 1.5px dashed rgba(90, 58, 40, 0.35);
+  pointer-events: none;
+}
+.char-slot-label {
+  font-family: Verdana, Geneva, sans-serif;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #5a3a28;
+  line-height: 1;
+}
+.char-slots-pets {
+  display: none;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1.5px solid rgba(90, 58, 40, 0.25);
+  max-height: 112px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+}
+.char-slots-pets.is-open { display: block; }
+.char-slots-pets-title {
+  font-family: Verdana, Geneva, sans-serif;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #8a5a32;
+  margin: 0 0 4px;
+}
+.char-slots-pets-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.char-slots-pet-opt {
+  appearance: none;
+  border: 0;
+  background: #efe6d4;
+  box-shadow: inset 0 0 0 1.5px #c9b49a;
+  border-radius: 8px;
+  padding: 3px 5px 3px 3px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  color: #2a1c16;
+  font-family: Verdana, Geneva, sans-serif;
+  font-size: 9px;
+  font-weight: 700;
+  touch-action: manipulation;
+}
+.char-slots-pet-opt.is-on {
+  box-shadow: inset 0 0 0 2px #5a3a28;
+  background: #f7efe0;
+}
+.char-slots-pet-opt canvas {
+  width: 22px;
+  height: 22px;
+  image-rendering: pixelated;
+  flex: 0 0 22px;
+}
+.char-slots-pets-empty {
+  font-family: Verdana, Geneva, sans-serif;
+  font-size: 9px;
+  color: #8a5a32;
+  margin: 0;
 }

@@ -356,7 +356,7 @@ canvas.save(out)
   await execFileAsync("python3", ["-c", script, ...args]);
 }
 
-const PHONE_HUD = ['[data-testid="leave-cube"]', '[data-testid="room-title"]', '#room-meta', '[data-testid="room-coins"]', '[data-testid="shop-toggle"]', '[data-testid="cam-toggle"]', '[data-testid="phone-btn"]', '[data-testid="emote-wheel-btn"]', '[data-testid="chat-bubble-btn"]', '[data-testid="chat-dock"]'];
+const PHONE_HUD = ['[data-testid="leave-cube"]', '[data-testid="room-title"]', '#room-meta', '[data-testid="room-coins"]', '[data-testid="shop-toggle"]', '[data-testid="cam-toggle"]', '[data-testid="phone-btn"]', '[data-testid="char-slots-btn"]', '[data-testid="emote-wheel-btn"]', '[data-testid="chat-bubble-btn"]', '[data-testid="chat-dock"]'];
 const TOP_HUD = ['[data-testid="leave-cube"]', '[data-testid="room-coins"]', '[data-testid="shop-toggle"]'];
 
 async function checkShellOverflow(page, label) {
@@ -1609,7 +1609,7 @@ async function runAppShellFit(browser) {
   await page.waitForFunction(() => window.HouseRoom3D && window.HouseRoom3D.ready);
   await page.evaluate(() => window.HouseRoom3D?.resize?.());
   await page.waitForTimeout(300);
-  await assertInsideViewport(page, ['[data-testid="room-title"]', '[data-testid="chat-dock"]', '[data-testid="chat-bubble-btn"]', '[data-testid="phone-btn"]', '[data-testid="emote-wheel-btn"]', '[data-testid="cam-toggle"]', '[data-testid="room-coins"]'], "In-room chrome fits the iPhone 14 viewport");
+  await assertInsideViewport(page, ['[data-testid="room-title"]', '[data-testid="chat-dock"]', '[data-testid="chat-bubble-btn"]', '[data-testid="phone-btn"]', '[data-testid="char-slots-btn"]', '[data-testid="emote-wheel-btn"]', '[data-testid="cam-toggle"]', '[data-testid="room-coins"]'], "In-room chrome fits the iPhone 14 viewport");
   await assertNoHudOverlap(page, PHONE_HUD, "In-room HUD does not overlap on iPhone 14");
   const camDefault = await page.evaluate(() => window.__camState());
   check("Portrait phones default to a closer follow camera", Boolean(camDefault?.phone && camDefault.mode === "follow" && camDefault.zoom >= 1.3), JSON.stringify(camDefault));
@@ -3260,21 +3260,31 @@ try {
   const dockPhone = await alice.evaluate(() => {
     const dock = document.querySelector('[data-testid="chat-dock"]');
     const phone = document.querySelector('[data-testid="phone-btn"]');
+    const chest = document.querySelector('[data-testid="char-slots-btn"]');
     const emote = document.querySelector('[data-testid="emote-wheel-btn"]');
-    if (!dock || !phone || !emote) return { missing: true };
+    const chat = document.querySelector('[data-testid="chat-bubble-btn"]');
+    if (!dock || !phone || !chest || !emote || !chat) return { missing: true };
     const kids = [...dock.children].map((el) => el.getAttribute("data-testid") || el.id);
     const pr = phone.getBoundingClientRect();
+    const cr = chest.getBoundingClientRect();
     const er = emote.getBoundingClientRect();
+    const tr = chat.getBoundingClientRect();
     return {
-      inDock: dock.contains(phone) && dock.contains(emote),
+      inDock: dock.contains(phone) && dock.contains(chest) && dock.contains(emote) && dock.contains(chat),
       order: kids,
-      phoneBeforeEmote: pr.right <= er.left + 1,
-      gap: Math.round(er.left - pr.right),
+      phoneBeforeChest: pr.right <= cr.left + 1,
+      chestBeforeEmote: cr.right <= er.left + 1,
+      emoteBeforeChat: er.right <= tr.left + 1,
+      gaps: {
+        phoneChest: Math.round(cr.left - pr.right),
+        chestEmote: Math.round(er.left - cr.right),
+        emoteChat: Math.round(tr.left - er.right),
+      },
     };
   });
   check(
-    "The phone button sits in the chat dock next to the emote button",
-    Boolean(dockPhone.inDock && dockPhone.phoneBeforeEmote && dockPhone.order[0] === "phone-btn" && dockPhone.order[1] === "emote-wheel-btn"),
+    "The bottom icons sit in the order phone, chest, emote, chat",
+    Boolean(dockPhone.inDock && dockPhone.phoneBeforeChest && dockPhone.chestBeforeEmote && dockPhone.emoteBeforeChat && dockPhone.order[0] === "phone-btn" && dockPhone.order[1] === "char-slots-btn" && dockPhone.order[2] === "emote-wheel-btn" && dockPhone.order[3] === "chat-bubble-btn"),
     JSON.stringify(dockPhone)
   );
   await alice.setViewportSize({ width: 360, height: 640 });
@@ -4774,6 +4784,196 @@ try {
   log("Record table picker and synced lofi beats");
   await runRecordPlayerTests(browser);
   await runRecordPlayerTouchTests(browser);
+
+  log("Character equipment slots popover");
+  await alice.evaluate(() => {
+    window.__exitEdit?.();
+    window.__closePhone?.();
+    window.__closeCharacterEditor?.();
+    window.__closeCharSlots?.();
+    window.__setCamMode?.("follow");
+    window.HouseRoom3D?.setZoom?.(2);
+  });
+  await bob.evaluate(() => {
+    window.__closePhone?.();
+    window.__closeCharSlots?.();
+    window.__setCamMode?.("follow");
+    window.HouseRoom3D?.setZoom?.(2);
+  });
+  await alice.setViewportSize({ width: 1280, height: 800 });
+  await bob.setViewportSize({ width: 1280, height: 800 });
+  await alice.waitForTimeout(200);
+  await alice.evaluate(() => window.__debugKit({ pet: "fox", pets: ["fox", "cat"] }));
+  await alice.waitForFunction(() => window.__storeState?.()?.collection?.pets?.some((p) => p.item === "fox") || window.__charSlotsState, null, { timeout: 4000 }).catch(() => {});
+  await alice.waitForTimeout(200);
+  const chestDock = await alice.evaluate(() => {
+    const dock = document.querySelector('[data-testid="chat-dock"]');
+    const kids = dock ? [...dock.children].map((el) => el.getAttribute("data-testid") || el.id) : [];
+    const chest = document.querySelector('[data-testid="char-slots-btn"]');
+    const r = chest?.getBoundingClientRect();
+    return { kids, visible: Boolean(chest && r && r.width > 0 && r.height > 0 && getComputedStyle(chest).visibility !== "hidden") };
+  });
+  check(
+    "A chest icon sits in the bottom row between the phone and the emote button",
+    Boolean(chestDock.visible && chestDock.kids[0] === "phone-btn" && chestDock.kids[1] === "char-slots-btn" && chestDock.kids[2] === "emote-wheel-btn" && chestDock.kids[3] === "chat-bubble-btn"),
+    JSON.stringify(chestDock)
+  );
+  await alice.click('[data-testid="char-slots-btn"]');
+  await alice.waitForTimeout(80);
+  const ownSlots = await alice.evaluate(() => window.__charSlotsState?.());
+  check(
+    "Tapping the chest icon opens a 5-slot popover to the right of your character",
+    Boolean(ownSlots?.open && ownSlots.self && !ownSlots.readonly && ownSlots.slots?.head && ownSlots.slots?.torso && ownSlots.slots?.legs && ownSlots.slots?.pet && ownSlots.slots?.prop && ownSlots.rect && ownSlots.box && ownSlots.rect.left >= ownSlots.box.right - 2 && ownSlots.slots.head.label === "Head" && ownSlots.slots.torso.label === "Torso" && ownSlots.slots.legs.label === "Legs" && !ownSlots.slots.head.empty && !ownSlots.slots.torso.empty && !ownSlots.slots.legs.empty),
+    JSON.stringify({ ownSlots })
+  );
+  check(
+    "The slots popover is about twice the character's size",
+    Boolean(ownSlots?.rect && ownSlots.box && ownSlots.rect.w >= ownSlots.box.w * 1.35 && ownSlots.rect.h >= ownSlots.box.h * 1.35 && ownSlots.rect.w <= Math.max(ownSlots.box.w, ownSlots.box.h) * 2.4 + 20),
+    JSON.stringify({ rect: ownSlots?.rect, box: ownSlots?.box })
+  );
+  check(
+    "The pet slot shows the following pet and the prop slot is a placeholder",
+    Boolean(ownSlots?.pet === "fox" && !ownSlots.slots.pet.empty && ownSlots.slots.prop),
+    JSON.stringify({ pet: ownSlots?.pet, slots: ownSlots?.slots })
+  );
+  await alice.click('[data-testid="char-slot-head"]');
+  await alice.waitForTimeout(200);
+  const headEditor = await alice.evaluate(() => ({
+    slots: window.__charSlotsState?.()?.open,
+    editor: Boolean(document.querySelector("[data-testid=edit-char-overlay]:not(.hidden), body.is-character-edit, #phone-overlay.is-character-edit")),
+    tab: window.__creatorMenu?.tab?.() || document.querySelector("[data-tab].is-on, [data-tab][aria-selected='true']")?.getAttribute("data-tab") || "",
+  }));
+  check(
+    "Tapping Head opens Edit Character on the Head tab",
+    Boolean(!headEditor.slots && headEditor.editor && headEditor.tab === "head"),
+    JSON.stringify(headEditor)
+  );
+  await alice.evaluate(() => window.__closeCharacterEditor?.());
+  await alice.waitForTimeout(120);
+  await alice.evaluate(() => window.__openCharSlots("alice"));
+  await alice.waitForTimeout(60);
+  await alice.click('[data-testid="char-slot-torso"]');
+  await alice.waitForTimeout(200);
+  const torsoEditor = await alice.evaluate(() => window.__creatorMenu?.tab?.() || document.querySelector("[data-tab].is-on, [data-tab][aria-selected='true']")?.getAttribute("data-tab"));
+  const torsoOpen = await alice.evaluate(() => Boolean(document.querySelector("[data-testid=edit-char-overlay]:not(.hidden), #phone-overlay.is-character-edit")));
+  check("Tapping Torso opens Edit Character on the Shirt tab", Boolean(torsoOpen && torsoEditor === "shirt"), JSON.stringify({ torsoOpen, torsoEditor }));
+  await alice.evaluate(() => window.__closeCharacterEditor?.());
+  await alice.waitForTimeout(80);
+  await alice.evaluate(() => window.__openCharSlots("alice"));
+  await alice.click('[data-testid="char-slot-legs"]');
+  await alice.waitForTimeout(200);
+  const legsEditor = await alice.evaluate(() => window.__creatorMenu?.tab?.() || document.querySelector("[data-tab].is-on, [data-tab][aria-selected='true']")?.getAttribute("data-tab"));
+  check("Tapping Legs opens Edit Character on the Pants tab", legsEditor === "pants", JSON.stringify({ legsEditor }));
+  await alice.evaluate(() => window.__closeCharacterEditor?.());
+  await alice.waitForTimeout(80);
+  await alice.evaluate(() => window.__openCharSlots("alice"));
+  await alice.click('[data-testid="char-slot-pet"]');
+  await alice.waitForSelector('[data-testid="char-slot-pet-chooser"]', { timeout: 3000 });
+  const chooserOpen = await alice.evaluate(() => window.__charSlotsState?.().petOpen);
+  check("Tapping Pet opens a follower chooser", Boolean(chooserOpen), JSON.stringify(await alice.evaluate(() => window.__charSlotsState?.())));
+  await alice.click('[data-testid="char-slot-pet-none"]');
+  await alice.waitForTimeout(200);
+  const petCleared = await alice.evaluate(() => window.__charSlotsState?.());
+  check("The pet chooser can set the follower to none", Boolean(petCleared && !petCleared.pet && petCleared.slots?.pet?.empty), JSON.stringify(petCleared));
+  await alice.click('[data-testid="char-slot-pet"]');
+  await alice.click('[data-testid="char-slot-pet-opt-fox"]');
+  await alice.waitForTimeout(200);
+  const petFox = await alice.evaluate(() => window.__charSlotsState?.()?.pet);
+  check("The pet chooser can pick a following pet", petFox === "fox", petFox);
+  const afterProp = await alice.evaluate(() => {
+    const before = document.querySelector("[data-testid=edit-char-overlay]:not(.hidden), #phone-overlay.is-character-edit");
+    document.querySelector('[data-testid="char-slot-prop"]')?.click();
+    const st = window.__charSlotsState?.();
+    const editor = document.querySelector("[data-testid=edit-char-overlay]:not(.hidden), #phone-overlay.is-character-edit");
+    return { stillOpen: st?.open, petOpen: st?.petOpen, editor: Boolean(editor), editorWas: Boolean(before) };
+  });
+  check("Tapping Prop does nothing yet and leaves the popover open", Boolean(afterProp.stillOpen && !afterProp.editor), JSON.stringify(afterProp));
+  await alice.click('[data-testid="char-slots-btn"]');
+  await alice.waitForTimeout(80);
+  const toggledShut = await alice.evaluate(() => window.__charSlotsState?.()?.open);
+  check("Tapping the chest icon again closes the slots popover", toggledShut === false, JSON.stringify({ toggledShut }));
+
+  await alice.click('[data-testid="char-slots-btn"]');
+  await alice.waitForTimeout(80);
+  await alice.mouse.click(20, 80);
+  await alice.waitForTimeout(80);
+  const closedAway = await alice.evaluate(() => window.__charSlotsState?.()?.open);
+  check("Tapping elsewhere closes the slots popover", closedAway === false, JSON.stringify({ closedAway }));
+
+  const tapOwnNoOpen = await alice.evaluate(() => {
+    window.__closeCharSlots?.();
+    const name = window.__avatarPose?.()?.name;
+    const box = window.HouseRoom3D.personScreenBox?.(name) || window.HouseRoom3D.personBox?.(name);
+    if (box) window.__tapAt((box.left + box.right) / 2, box.top + box.h * 0.28);
+    return { open: window.__charSlotsState?.()?.open || false, box: Boolean(box) };
+  });
+  check("Tapping your own avatar does not open the slots popover", tapOwnNoOpen && tapOwnNoOpen.open === false && tapOwnNoOpen.box, JSON.stringify(tapOwnNoOpen));
+
+  const panNoOpen = await alice.evaluate(() => {
+    const name = window.__avatarPose?.()?.name;
+    const box = window.HouseRoom3D.personScreenBox?.(name) || window.HouseRoom3D.personBox?.(name);
+    const c = document.querySelector(".room3d-root canvas, .iso-room, #floor canvas");
+    if (!box || !c) return { ok: false };
+    const x = (box.left + box.right) / 2, y = box.top + box.h * 0.28;
+    const fire = (type, px, py, buttons) => c.dispatchEvent(new PointerEvent(type, {
+      bubbles: true, cancelable: true, clientX: px, clientY: py, pointerId: 21, pointerType: "mouse", buttons, isPrimary: true,
+    }));
+    fire("pointerdown", x, y, 1);
+    fire("pointermove", x + 48, y + 20, 1);
+    fire("pointerup", x + 48, y + 20, 0);
+    return { open: window.__charSlotsState?.()?.open || false, box: true };
+  });
+  check("Dragging or panning the room does not open the slots popover", panNoOpen && panNoOpen.open === false, JSON.stringify(panNoOpen));
+
+  const editBlocked = await alice.evaluate(() => {
+    window.__closeCharSlots?.();
+    window.__enterEdit?.();
+    document.querySelector('[data-testid="char-slots-btn"]')?.click();
+    window.__openCharSlots?.("alice");
+    const st = window.__charSlotsState?.();
+    const editing = Boolean(document.body.classList.contains("edit-mode"));
+    window.__exitEdit?.();
+    return { open: Boolean(st?.open), editing };
+  });
+  check("The slots popover does not open in Edit Room mode", Boolean(editBlocked.editing && !editBlocked.open), JSON.stringify(editBlocked));
+
+  await bob.waitForTimeout(200);
+  const bobSees = await bob.evaluate(() => {
+    window.__closeCharSlots?.();
+    const box = window.HouseRoom3D.personScreenBox?.("alice") || window.HouseRoom3D.personBox?.("alice");
+    if (box) window.__tapAt((box.left + box.right) / 2, box.top + box.h * 0.28);
+    const st = window.__charSlotsState?.();
+    return { tapped: Boolean(box), open: Boolean(st?.open), name: st?.name || null };
+  });
+  check("Tapping another player does not open the slots popover", Boolean(bobSees.tapped && !bobSees.open), JSON.stringify(bobSees));
+  await bob.evaluate(() => window.__closeCharSlots?.());
+
+  for (const size of [{ width: 390, height: 844 }, { width: 375, height: 667 }]) {
+    await alice.setViewportSize(size);
+    await alice.evaluate(() => {
+      window.__exitEdit?.();
+      window.__closeCharSlots?.();
+      window.__setCamMode?.("follow");
+      window.HouseRoom3D?.setZoom?.(2);
+    });
+    await alice.waitForTimeout(80);
+    await alice.evaluate(() => window.__openCharSlots("alice"));
+    await alice.waitForTimeout(80);
+    const phoneFit = await alice.evaluate(() => {
+      const st = window.__charSlotsState?.();
+      const vw = window.innerWidth, vh = window.innerHeight;
+      const r = st?.rect;
+      const on = r && r.left >= -1 && r.top >= -1 && r.right <= vw + 1 && r.bottom <= vh + 1;
+      const right = st?.box && r && !st.flipped && r.left >= st.box.right - 2;
+      return { open: st?.open, on, right, flipped: st?.flipped, rect: r, box: st?.box, vw, vh };
+    });
+    check(
+      `The slots popover fits a ${size.width}x${size.height} phone and stays to the right of the character`,
+      Boolean(phoneFit.open && phoneFit.on && phoneFit.right),
+      JSON.stringify(phoneFit)
+    );
+    await alice.evaluate(() => window.__closeCharSlots?.());
+  }
 
   log("New avatar looks together in a cube");
   await ctxA.close();

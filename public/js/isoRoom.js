@@ -1,4 +1,4 @@
-import { drawAvatarSprite, paintAvatarSheet, paintStoreThumb, AVATAR_SHEET_LOOKS, AV_W, AV_H, AV_GROUND_Y, AV_HEAD_TOP, facingIndex8, tickChibiAnim, setChibiAnimOverride, getChibiAnim, mouthPhase, heldItemHandAnchor, heldItemFaceAnchor } from "./avatar3d.js";
+import { drawAvatarSprite, paintAvatarSheet, paintStoreThumb, AVATAR_SHEET_LOOKS, AV_W, AV_H, AV_GROUND_Y, AV_HEAD_TOP, AV_PAD_X, AV_PAD_TOP, facingIndex8, tickChibiAnim, setChibiAnimOverride, getChibiAnim, mouthPhase, heldItemHandAnchor, heldItemFaceAnchor } from "./avatar3d.js";
 import { heldKindOf, drawHeldItemSprite, sipAnim, steamFrameAt as heldSteamFrameAt, drawSipFaceOverlay, BITE_COUNT } from "./heldItems.js";
 import { drawPetSprite as drawPetPixel, paintPetSheet, paintPetThumb, PET_W, PET_H, PET_GROUND_Y } from "./petSprites.js";
 import { programAt } from "./cubechannel.js";
@@ -1888,7 +1888,7 @@ export function createRoom3D(container, opts = {}) {
 
   canvas.addEventListener("pointerdown", (e) => {
     const over = document.elementFromPoint(e.clientX, e.clientY);
-    if (over && over.closest && over.closest("#chat-dock, .chat-frame, #phone-btn, #emote-wheel-btn, #chat-send, #chat-input, #edit-inventory, #shop-toggle, .shop-toggle, #item-rotate, #edit-room-btn, #edit-char-overlay")) {
+    if (over && over.closest && over.closest("#chat-dock, .chat-frame, #phone-btn, #char-slots-btn, #emote-wheel-btn, #chat-send, #chat-input, #edit-inventory, #shop-toggle, .shop-toggle, #item-rotate, #edit-room-btn, #edit-char-overlay, #char-slots")) {
       return;
     }
     try { canvas.setPointerCapture?.(e.pointerId); } catch {}
@@ -2263,6 +2263,33 @@ export function createRoom3D(container, opts = {}) {
       const namePad = 16;
       const tl = clientFromWorld(foot.sx - AV_W / 2, foot.sy - AV_GROUND_Y + top - namePad);
       const br = clientFromWorld(foot.sx + AV_W / 2, foot.sy + 4);
+      const left = Math.min(tl.x, br.x), right = Math.max(tl.x, br.x);
+      const topY = Math.min(tl.y, br.y), botY = Math.max(tl.y, br.y);
+      return { x: left, y: topY, w: right - left, h: botY - topY, left, top: topY, right, bottom: botY };
+    },
+    /* Visible figure only (no name tag, no sprite pad), in viewport coordinates. */
+    personScreenBox(name) {
+      const st = personState.get(name);
+      const p = people.find((x) => x.username === name);
+      if (!st && !p) return null;
+      const lying = Boolean(st?.lying || p?.lying);
+      const rect = container.getBoundingClientRect();
+      if (lying) {
+        const bed = furniture.find((f) => f.id === (p?.stationId || st?.stationId) && f.type === "bed");
+        const draw = lieDrawPose(bed || { x: st?.x ?? p.x, y: st?.y ?? p.y, rot: 0 }, tileToScreen, { headTop: AV_HEAD_TOP, groundY: AV_GROUND_Y, avW: AV_W, avH: AV_H });
+        const half = (AV_W / 2) - (AV_PAD_X || 12);
+        const tl = clientFromWorld(draw.headSx - half, draw.headSy - 8);
+        const br = clientFromWorld(draw.headSx + half, draw.headSy + 16);
+        const left = Math.min(tl.x, br.x), right = Math.max(tl.x, br.x);
+        const topY = Math.min(tl.y, br.y), botY = Math.max(tl.y, br.y);
+        return { x: left, y: topY, w: right - left, h: botY - topY, left, top: topY, right, bottom: botY };
+      }
+      const x = (st?.x ?? p.x) + 0.5, y = (st?.y ?? p.y) + 0.5;
+      const foot = tileToScreen(x, y);
+      const top = (st?.figTop != null) ? st.figTop : (AV_HEAD_TOP || 2);
+      const half = (AV_W / 2) - (AV_PAD_X || 12);
+      const tl = clientFromWorld(foot.sx - half, foot.sy - AV_GROUND_Y + top);
+      const br = clientFromWorld(foot.sx + half, foot.sy);
       const left = Math.min(tl.x, br.x), right = Math.max(tl.x, br.x);
       const topY = Math.min(tl.y, br.y), botY = Math.max(tl.y, br.y);
       return { x: left, y: topY, w: right - left, h: botY - topY, left, top: topY, right, bottom: botY };

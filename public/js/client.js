@@ -1,6 +1,7 @@
 import { createRoom3D, createAvatarPreview } from "./isoRoom.js";
 import { drawFurnitureSprite } from "./furnIso.js";
 import { drawAvatarSprite, AV_W, AV_H, AV_HEAD_TOP, AV_GROUND_Y } from "./avatar3d.js";
+import { paintPetThumb } from "./petSprites.js";
 import { initStartMenu } from "./startMenu.js";
 import { initCreatorMenu, openFromPhone, closeFromPhone, isPhoneEditOpen } from "./creatorMenu.js";
 import { CLOTHING_STOCK, PET_STOCK, PUBLIC_PLACES, clothingSlot, CLOTHING_SLOTS, HAIR_STYLES as CAT_HAIR_STYLES, HAIR_LABELS, TOP_LABELS, BOTTOM_LABELS, ACC_LABELS, BASE_TOPS, BASE_BOTTOMS, BASE_ACCESSORIES, TOPS as CAT_TOPS, BOTTOMS as CAT_BOTTOMS, ACCESSORIES as CAT_ACCESSORIES, HAT_ACCESSORIES, HATS, HAT_LABELS, HAT_COLORS, GLASSES_STYLES, GLASSES_LABELS, GLASSES_COLORS, NECKLACES, NECKLACE_LABELS, SHOE_COLORS, migrateAvatar } from "./storeCatalog.js";
@@ -1241,6 +1242,383 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
       const name = el.dataset.testid.replace("typing-", "");
       if (!seen.has("t:" + name)) el.remove();
     });
+    layoutCharSlots();
+  }
+
+
+  const CHAR_SLOT_DEFS = [
+    { id: "head", label: "Head" },
+    { id: "torso", label: "Torso" },
+    { id: "legs", label: "Legs" },
+    { id: "pet", label: "Pet" },
+    { id: "prop", label: "Prop" },
+  ];
+
+  function charSlotsEl() {
+    return document.getElementById("char-slots");
+  }
+
+  function syncCharSlotsBtn() {
+    const on = Boolean(state.charSlots);
+    document.body.classList.toggle("char-slots-open", on);
+    $("#char-slots-btn")?.setAttribute("aria-expanded", on ? "true" : "false");
+  }
+
+  function closeCharSlots() {
+    const el = charSlotsEl();
+    if (el) {
+      el.classList.remove("is-open", "is-readonly", "is-flipped");
+      el.hidden = true;
+      const pets = el.querySelector(".char-slots-pets");
+      if (pets) pets.classList.remove("is-open");
+    }
+    state.charSlots = null;
+    syncCharSlotsBtn();
+  }
+
+  function charSlotsPerson(name) {
+    if (!name) return null;
+    if (state.me?.username === name) {
+      const mine = state.people.get(name);
+      return {
+        username: name,
+        avatar: state.me.avatar || mine?.avatar || {},
+        activePet: state.me.activePet ?? mine?.activePet ?? null,
+        heldProp: state.me.heldProp ?? mine?.heldProp ?? null,
+        heldItem: mine?.heldItem || null,
+        collection: state.me.collection || { pets: [], props: [] },
+        self: true,
+      };
+    }
+    const p = state.people.get(name);
+    if (!p) return null;
+    return {
+      username: name,
+      avatar: p.avatar || {},
+      activePet: p.activePet || null,
+      heldProp: p.heldProp || null,
+      heldItem: p.heldItem || null,
+      collection: { pets: [], props: [] },
+      self: false,
+    };
+  }
+
+  function paintLegsThumb(canvas, draft) {
+    if (!canvas) return;
+    const av = migrateAvatar(draft || {});
+    const ctx = canvas.getContext("2d");
+    const w = canvas.width || 72, h = canvas.height || 72;
+    ctx.imageSmoothingEnabled = false;
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = "#efe6d4";
+    ctx.fillRect(0, 0, w, h);
+    const spr = drawAvatarSprite(av, { facing: { x: 0, z: 1 } }, 0);
+    if (!spr?.c) return;
+    const sx = Math.max(0, (spr.w - 48) / 2);
+    const sw = Math.min(48, spr.w - sx);
+    const sy = Math.max(0, AV_HEAD_TOP + 28);
+    const sh = Math.max(8, Math.min(spr.h - sy, (AV_GROUND_Y || spr.h) - sy + 2));
+    const scale = Math.max(1, Math.floor(Math.min((w - 2) / sw, (h - 2) / sh)));
+    const dw = sw * scale, dh = sh * scale;
+    ctx.drawImage(spr.c, sx, sy, sw, sh, Math.floor((w - dw) / 2), Math.floor((h - dh) / 2), dw, dh);
+  }
+
+  function paintPropThumb(canvas, prop) {
+    if (!canvas || !prop) return false;
+    const ctx = canvas.getContext("2d");
+    const w = canvas.width || 72, h = canvas.height || 72;
+    ctx.imageSmoothingEnabled = false;
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = "#efe6d4";
+    ctx.fillRect(0, 0, w, h);
+    const av = migrateAvatar(state.charSlots && charSlotsPerson(state.charSlots.name)?.avatar || {});
+    const spr = drawAvatarSprite(av, { facing: { x: 1, z: 1 }, heldProp: prop }, 0);
+    if (!spr?.c) return false;
+    const sx = Math.max(0, spr.w / 2 - 4);
+    const sw = Math.min(36, spr.w - sx);
+    const sy = Math.max(0, AV_HEAD_TOP + 18);
+    const sh = Math.min(40, spr.h - sy);
+    const scale = Math.max(1, Math.floor(Math.min((w - 2) / sw, (h - 2) / sh)));
+    const dw = sw * scale, dh = sh * scale;
+    ctx.drawImage(spr.c, sx, sy, sw, sh, Math.floor((w - dw) / 2), Math.floor((h - dh) / 2), dw, dh);
+    return true;
+  }
+
+  function paintCharSlotIcon(slotId, canvas, person) {
+    const av = migrateAvatar(person.avatar || {});
+    canvas.width = 72;
+    canvas.height = 72;
+    const ctx = canvas.getContext("2d");
+    ctx.imageSmoothingEnabled = false;
+    ctx.fillStyle = "#efe6d4";
+    ctx.fillRect(0, 0, 72, 72);
+    if (slotId === "head") {
+      if (av.hat && av.hat !== "none") paintOptionThumb(canvas, "hat", av.hat, av);
+      else if ((av.glassesStyle && av.glassesStyle !== "none") || av.glasses) {
+        paintOptionThumb(canvas, "glasses", av.glassesStyle && av.glassesStyle !== "none" ? av.glassesStyle : "round", av);
+      } else if (av.hair) paintOptionThumb(canvas, "hair", av.hair, av);
+      else return false;
+      return true;
+    }
+    if (slotId === "torso") {
+      paintOptionThumb(canvas, "top", av.top || "tshirt", av);
+      return true;
+    }
+    if (slotId === "legs") {
+      paintLegsThumb(canvas, av);
+      return true;
+    }
+    if (slotId === "pet") {
+      if (!person.activePet) return false;
+      paintPetThumb(canvas, person.activePet);
+      return true;
+    }
+    if (slotId === "prop") {
+      const prop = person.heldProp || (typeof person.heldItem === "string" ? person.heldItem : person.heldItem?.kind);
+      if (!prop) return false;
+      return paintPropThumb(canvas, prop);
+    }
+    return false;
+  }
+
+  function ensureCharSlots() {
+    let el = charSlotsEl();
+    if (el) return el;
+    el = document.createElement("div");
+    el.id = "char-slots";
+    el.className = "char-slots";
+    el.dataset.testid = "char-slots";
+    el.hidden = true;
+    el.setAttribute("role", "dialog");
+    el.setAttribute("aria-label", "Character slots");
+    const grid = document.createElement("div");
+    grid.className = "char-slots-grid";
+    for (const def of CHAR_SLOT_DEFS) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "char-slot is-empty";
+      btn.dataset.slot = def.id;
+      btn.dataset.testid = "char-slot-" + def.id;
+      const icon = document.createElement("div");
+      icon.className = "char-slot-icon";
+      const canvas = document.createElement("canvas");
+      canvas.width = 72;
+      canvas.height = 72;
+      canvas.setAttribute("aria-hidden", "true");
+      icon.append(canvas);
+      const lab = document.createElement("span");
+      lab.className = "char-slot-label";
+      lab.textContent = def.label;
+      btn.append(icon, lab);
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onCharSlotTap(def.id);
+      });
+      grid.append(btn);
+    }
+    const pets = document.createElement("div");
+    pets.className = "char-slots-pets";
+    pets.dataset.testid = "char-slot-pet-chooser";
+    el.append(grid, pets);
+    el.addEventListener("pointerdown", (e) => e.stopPropagation());
+    document.body.append(el);
+    return el;
+  }
+
+  function charSlotSig(person) {
+    const av = person.avatar || {};
+    return [person.username, person.activePet || "", person.heldProp || "", person.heldItem?.kind || person.heldItem || "", av.hat, av.glassesStyle, av.glasses, av.hair, av.hairColor, av.top, av.shirt, av.bottom, av.bottomColor, av.shoes, av.shoeColor].join("|");
+  }
+
+  function paintCharSlotIcons(el, person) {
+    const sig = charSlotSig(person);
+    if (el.dataset.sig === sig) return;
+    el.dataset.sig = sig;
+    for (const def of CHAR_SLOT_DEFS) {
+      const btn = el.querySelector(`[data-slot="${def.id}"]`);
+      const canvas = btn?.querySelector("canvas");
+      if (!btn || !canvas) continue;
+      const filled = paintCharSlotIcon(def.id, canvas, person);
+      btn.classList.toggle("is-empty", !filled);
+      if (!filled) {
+        const ctx = canvas.getContext("2d");
+        ctx.imageSmoothingEnabled = false;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+      }
+      if (def.id === "prop") btn.classList.add("is-placeholder");
+    }
+  }
+
+  function paintPetChooser(el, person) {
+    const box = el.querySelector(".char-slots-pets");
+    if (!box) return;
+    const open = Boolean(state.charSlots?.petOpen && person.self);
+    box.classList.toggle("is-open", open);
+    const pets = (person.collection?.pets || []).slice();
+    const sig = [open ? "1" : "0", person.activePet || "", pets.map((p) => p.item).join(",")].join("|");
+    if (box.dataset.sig === sig) return;
+    box.dataset.sig = sig;
+    if (!open) {
+      box.replaceChildren();
+      return;
+    }
+    const title = document.createElement("p");
+    title.className = "char-slots-pets-title";
+    title.textContent = "Follower";
+    box.replaceChildren(title);
+    const list = document.createElement("div");
+    list.className = "char-slots-pets-list";
+    const addOpt = (item, label, on, testid) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "char-slots-pet-opt" + (on ? " is-on" : "");
+      b.dataset.testid = testid;
+      b.dataset.pet = item || "";
+      if (item) {
+        const c = document.createElement("canvas");
+        c.width = 22;
+        c.height = 22;
+        paintPetThumb(c, item);
+        b.append(c);
+      }
+      const span = document.createElement("span");
+      span.textContent = label;
+      b.append(span);
+      b.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        socket.emit("equipPet", { item: item || null });
+        if (state.me) state.me.activePet = item || null;
+        if (state.charSlots) state.charSlots.petOpen = false;
+        const fresh = charSlotsPerson(person.username);
+        if (fresh) {
+          paintCharSlotIcons(el, fresh);
+          paintPetChooser(el, fresh);
+        }
+      });
+      list.append(b);
+    };
+    addOpt(null, "None", !person.activePet, "char-slot-pet-none");
+    for (const c of pets) {
+      addOpt(c.item, c.label || c.item, person.activePet === c.item, "char-slot-pet-opt-" + c.item);
+    }
+    box.append(list);
+    if (!pets.length) {
+      const empty = document.createElement("p");
+      empty.className = "char-slots-pets-empty";
+      empty.textContent = "No pets yet. Adopt one in the shop.";
+      box.append(empty);
+    }
+  }
+
+  function layoutCharSlots() {
+    const info = state.charSlots;
+    if (!info?.name) return;
+    const person = charSlotsPerson(info.name);
+    if (!person) { closeCharSlots(); return; }
+    const box = state.room3d?.personScreenBox?.(info.name) || state.room3d?.personBox?.(info.name);
+    if (!box || !(box.w > 0) || !(box.h > 0)) return;
+    const el = ensureCharSlots();
+    const readonly = !person.self;
+    el.classList.toggle("is-readonly", readonly);
+    el.classList.add("is-open");
+    el.hidden = false;
+    paintCharSlotIcons(el, person);
+    paintPetChooser(el, person);
+
+    const pad = 8;
+    const gap = 8;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const target = Math.max(box.w, box.h) * 2;
+    const maxSide = Math.min(vw - pad * 2, vh - pad * 2, 260);
+    const minSide = 120;
+    const rightRoom = vw - pad - (box.right + gap);
+    const leftRoom = box.left - gap - pad;
+    let flipped = false;
+    let side = Math.max(minSide, Math.min(target, maxSide));
+    // Prefer the right. Flip left only when the right side cannot hold
+    // even a shrunk panel (~80px) and the left side can.
+    const shrinkMin = 80;
+    if (side <= rightRoom) {
+      flipped = false;
+    } else if (rightRoom >= shrinkMin) {
+      flipped = false;
+      side = Math.min(side, rightRoom);
+    } else if (leftRoom >= shrinkMin) {
+      flipped = true;
+      side = Math.min(side, leftRoom);
+    } else if (leftRoom > rightRoom) {
+      flipped = true;
+      side = Math.max(shrinkMin, leftRoom);
+    } else {
+      flipped = false;
+      side = Math.max(shrinkMin, Math.min(side, Math.max(0, rightRoom)));
+    }
+    if (side < 80) side = Math.max(minSide, Math.min(target, maxSide));
+    const petOpen = Boolean(info.petOpen && person.self);
+    const panelW = side;
+    let left = flipped ? (box.left - gap - panelW) : (box.right + gap);
+    left = Math.min(Math.max(left, pad), vw - pad - panelW);
+    el.classList.toggle("is-flipped", flipped);
+    info.flipped = flipped;
+    el.style.width = Math.round(panelW) + "px";
+    el.style.height = petOpen ? "auto" : Math.round(side) + "px";
+    el.style.minHeight = petOpen ? "0px" : Math.round(side) + "px";
+    el.style.maxHeight = Math.max(side, vh - pad * 2) + "px";
+    const grid = el.querySelector(".char-slots-grid");
+    if (grid) grid.style.height = Math.max(80, side - 16) + "px";
+    el.style.left = Math.round(left) + "px";
+    let top = box.top + (box.h - side) / 2;
+    el.style.top = Math.round(Math.max(pad, top)) + "px";
+    const rh = el.getBoundingClientRect().height || side;
+    top = Math.min(Math.max(top, pad), vh - pad - rh);
+    el.style.top = Math.round(top) + "px";
+  }
+
+  function openCharSlots(name) {
+    const who = state.me?.username;
+    if (!who || state.editMode || state.view !== "room") return;
+    if (isEditCharOpen?.() || isPhoneEditOpen?.()) return;
+    if (name && name !== who) return;
+    const person = charSlotsPerson(who);
+    if (!person) return;
+    state.charSlots = { name: who, petOpen: false, flipped: false };
+    ensureCharSlots();
+    layoutCharSlots();
+    syncCharSlotsBtn();
+  }
+
+  function toggleCharSlots() {
+    if (state.editMode || state.pendingPlace || state.movingId || state.pendingPet) return;
+    if (state.charSlots?.name === state.me?.username) closeCharSlots();
+    else openCharSlots();
+  }
+
+  function onCharSlotTap(slotId) {
+    const info = state.charSlots;
+    if (!info) return;
+    const person = charSlotsPerson(info.name);
+    if (!person) return;
+    if (!person.self) return;
+    if (slotId === "head") return openEditorFromSlot("head");
+    if (slotId === "torso") return openEditorFromSlot("shirt");
+    if (slotId === "legs") return openEditorFromSlot("pants");
+    if (slotId === "pet") {
+      info.petOpen = !info.petOpen;
+      layoutCharSlots();
+      return;
+    }
+    // Prop is a placeholder for now.
+  }
+
+  function openEditorFromSlot(tab) {
+    closeCharSlots();
+    openCharacterEditor("room");
+    requestAnimationFrame(() => {
+      window.__creatorMenu?.setTab?.(tab);
+    });
   }
 
   function cssEscape(s) {
@@ -1624,6 +2002,7 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
   }
 
   function handleWallClick(wall, slot, art) {
+    closeCharSlots();
     const type = pendingWallType();
     if (type) {
       updateWallHighlight(wall, slot);
@@ -1812,6 +2191,7 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
       toast("Only the cube owner can decorate.");
       return;
     }
+    closeCharSlots();
     if (phoneOpen()) hidePhoneUI();
     endPhoneHoldIfIdle();
     if (isChatOpen?.()) closeChatComposer?.();
@@ -2937,6 +3317,7 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
   });
 
   function handleFurnitureClick(id, type, extra = {}) {
+    closeCharSlots();
     if (state.room?.shop && (isShopProp(type) || extra?.avatar)) {
       openStorePanel(state.room.shop);
       return;
@@ -3574,6 +3955,7 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     }
   }
   function handlePetClick(pet) {
+    closeCharSlots();
     if (!pet || !pet.item) return;
     if (pet.owner && state.me?.username && pet.owner !== state.me.username) {
       toast("That's not your pal.");
@@ -3603,6 +3985,7 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
   };
 
   function openPhone(app) {
+    closeCharSlots();
     if (app === "coins") {
       openCoinsPanel();
       return;
@@ -4399,6 +4782,7 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
   }
 
   function openEmoteWheel() {
+    closeCharSlots();
     const { wheel, backdrop, btn } = emoteWheelEls();
     if (!wheel) return;
     if (!wheel.childElementCount) paintEmoteWheel();
@@ -4491,6 +4875,7 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     return document.body.classList.contains("chat-open");
   }
   function openChatComposer() {
+    closeCharSlots();
     const composer = document.getElementById("chat-composer");
     const btn = document.getElementById("chat-bubble-btn");
     const input = document.getElementById("chat-input");
@@ -4592,6 +4977,11 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     e.stopPropagation();
     toggleChatComposer();
   });
+  $("#char-slots-btn")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    toggleCharSlots();
+  });
   // Tap outside the composer (on the room) closes chat.
   document.addEventListener("pointerdown", (e) => {
     if (!isChatOpen()) return;
@@ -4638,6 +5028,7 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
   window.__syncVisualTop = syncVisualTop;
 
   function handleTileClick(tx, ty) {
+    closeCharSlots();
     if (state.pendingPet) {
       updatePetPlaceHighlight(tx, ty);
       return;
@@ -5403,6 +5794,43 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
   paintLoginPreview();
 
   window.__openCharacterEditor = () => openCharacterEditor("phone");
+  window.__openCharSlots = (name) => openCharSlots(name || state.me?.username);
+  window.__closeCharSlots = () => closeCharSlots();
+  window.__charSlotsState = () => {
+    const el = charSlotsEl();
+    const r = el && !el.hidden ? el.getBoundingClientRect() : null;
+    const info = state.charSlots;
+    const person = info ? charSlotsPerson(info.name) : null;
+    const box = info ? (state.room3d?.personScreenBox?.(info.name) || state.room3d?.personBox?.(info.name)) : null;
+    const slots = {};
+    if (el) {
+      el.querySelectorAll(".char-slot").forEach((b) => {
+        slots[b.dataset.slot] = {
+          empty: b.classList.contains("is-empty"),
+          label: b.querySelector(".char-slot-label")?.textContent || "",
+        };
+      });
+    }
+    return {
+      open: Boolean(info && el && el.classList.contains("is-open")),
+      name: info?.name || null,
+      self: Boolean(person?.self),
+      readonly: Boolean(el?.classList.contains("is-readonly")),
+      flipped: Boolean(el?.classList.contains("is-flipped")),
+      petOpen: Boolean(info?.petOpen),
+      pet: person?.activePet || null,
+      rect: r ? { left: r.left, right: r.right, top: r.top, bottom: r.bottom, w: r.width, h: r.height } : null,
+      box: box ? { left: box.left, right: box.right, top: box.top, bottom: box.bottom, w: box.w, h: box.h } : null,
+      slots,
+    };
+  };
+  document.addEventListener("pointerdown", (e) => {
+    if (!state.charSlots) return;
+    if (e.target?.closest?.("#char-slots, #char-slots-btn, #edit-char-overlay, .creator-window")) return;
+    if (e.target?.closest?.("#floor, .iso-room, .room3d-root, canvas")) return;
+    closeCharSlots();
+  }, true);
+
   window.__closeCharacterEditor = () => {
     if (isPhoneEditOpen()) closePhoneEditor();
   };
