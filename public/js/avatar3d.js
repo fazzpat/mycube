@@ -2447,13 +2447,15 @@ function plotCheck(buf, x, y, on, pal) {
   plot(buf, x, y, col, "shoe", 14);
 }
 
-function drawShoe(buf, cx, cy, key, style, pal, side) {
+function drawShoe(buf, cx, cy, key, style, pal, side, sit = false) {
   // cy is the sole line. Chunky showcase shoes: thick sole, toe cap, shine.
+  // Sitting: compact front shoes (toes toward the camera) and a single
+  // profile direction so both feet face forward, not splayed sideways.
   const profile = key === "e";
   const back = key === "n" || key === "ne";
   const high = style === "hightop" || style === "boots";
-  const ankle = high ? 9 : 7.5;
-  const len = profile ? 13 : (back ? 10 : 11);
+  const ankle = sit ? (high ? 7.5 : 6.2) : (high ? 9 : 7.5);
+  const len = profile ? (sit ? 12 : 13) : (back ? (sit ? 8 : 10) : (sit ? 7.2 : 11));
   const dir = profile ? (side >= 0 ? 1 : -1) : 0;
   const toeX = cx + (profile ? dir * (len * 0.28) : 0);
   const midY = cy - ankle * 0.48;
@@ -2512,6 +2514,21 @@ function stickerSprite(draw) {
   const buf = makeBuf();
   draw(buf);
   return addInkOutline(buf);
+}
+
+/** Seated feet: planted close together, both pointing in the facing direction. */
+export function sitFootLayout(key, flip, cx) {
+  const profile = key === "e";
+  const spread = profile ? 2.2 : 3.4;
+  const ahead = profile ? 5.5 : (key === "se" ? 1.2 : 0);
+  const flipX = (x) => (flip ? AV_W - 1 - x : x);
+  const profileDir = flip ? -1 : 1;
+  return [-1, 1].map((side) => ({
+    x: flipX(cx + ahead + side * spread),
+    y: AV_GROUND_Y,
+    lift: 0,
+    side: profile ? profileDir : (flip ? -side : side),
+  }));
 }
 
 function walkPose(frame, walking, sit) {
@@ -2747,19 +2764,22 @@ function composeAvatar(av, flagsIn, frame) {
   const footGap = 2;
   const cuffBottom = (av.bottom === "shorts" ? t.y0 + upper + t.h + 1 : (50 + AV_PAD_TOP) + (sit ? 2 : 0));
   function footPos(side, foot) {
+    if (sit) return null;
     const baseX = bk === "e"
       ? t.cx + (side > 0 ? 6.0 : -4.4) + (foot.dx || 0) * 0.6
       : t.cx + side * 5.2 + (foot.dx || 0);
     const soleY = AV_GROUND_Y - (foot.lift || 0);
     return { x: flipX(baseX), y: soleY, lift: foot.lift || 0, side };
   }
-  const farFoot = footPos(-1, pose.left);
-  const nearFoot = footPos(1, pose.right);
+  const sitFeet = sit ? sitFootLayout(bk, bodyView.flip, t.cx) : null;
+  const farFoot = sitFeet ? sitFeet[0] : footPos(-1, pose.left);
+  const nearFoot = sitFeet ? sitFeet[1] : footPos(1, pose.right);
   const farHand = { x: flipX(leftHand.x), y: leftHand.y, side: -1 };
   const nearHand = { x: flipX(rightHand.x), y: rightHand.y, side: 1 };
 
   function footSpr(fp) {
-    return stickerSprite((buf) => drawShoe(buf, fp.x, fp.y, bk, shoeStyleOf(av.shoes), shoes, bodyView.flip ? -fp.side : fp.side));
+    const shoeSide = sit ? fp.side : (bodyView.flip ? -fp.side : fp.side);
+    return stickerSprite((buf) => drawShoe(buf, fp.x, fp.y, bk, shoeStyleOf(av.shoes), shoes, shoeSide, sit));
   }
   function handSpr(hp, holdPhone, tapPhone) {
     return stickerSprite((buf) => {
@@ -2784,7 +2804,8 @@ function composeAvatar(av, flagsIn, frame) {
   const nFoot = footSpr(nearFoot);
   const fHand = handSpr(farHand, false, false);
   const nHand = handSpr(nearHand, holdingPhone, tappingPhone);
-  if (backView) layers.push(fFoot, body, head, nFoot, fHand, nHand);
+  if (sit) layers.push(fHand, body, head, nHand, fFoot, nFoot);
+  else if (backView) layers.push(fFoot, body, head, nFoot, fHand, nHand);
   else layers.push(fFoot, fHand, body, head, nFoot, nHand);
 
   const out = makeBuf();
@@ -3670,4 +3691,4 @@ if (typeof window !== "undefined") {
   window.__paintClothesCatalog = paintClothesCatalog;
 }
 
-export default { drawAvatarSprite, paintAvatarSheet, paintStoreThumb, facingIndex8, tickChibiAnim, setChibiAnimOverride, getChibiAnim, AV_W, AV_H, AV_GROUND_Y, AV_HEAD_TOP, AVATAR_SHEET_LOOKS };
+export default { drawAvatarSprite, paintAvatarSheet, paintStoreThumb, facingIndex8, sitFootLayout, tickChibiAnim, setChibiAnimOverride, getChibiAnim, AV_W, AV_H, AV_GROUND_Y, AV_HEAD_TOP, AVATAR_SHEET_LOOKS };
