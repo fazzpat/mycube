@@ -15,7 +15,14 @@ export const HELD_LABELS = {
   coffee: "coffee",
 };
 export const DRINK_KINDS = ["soda", "water", "coffee", "drink", "mug"];
+export const FOOD_KINDS = ["pizza", "chicken"];
 export const SIP_MS = 1000;
+export const SIP_COUNT = 6;
+export const BITE_COUNT = 4;
+export const BITE_MS = 2000;
+export const BITE_GAP_MS = 850;
+export const BITE_FIRST_MS = 1300;
+export const BITE_TAIL_MS = 400;
 
 export function heldKindOf(held) {
   if (!held) return null;
@@ -30,6 +37,20 @@ export function heldKindOf(held) {
 export function isDrink(kind) {
   const k = heldKindOf(kind) || (typeof kind === "string" ? kind : kind?.kind);
   return DRINK_KINDS.includes(k) || DRINK_KINDS.includes(heldKindOf(k));
+}
+
+export function isFood(kind) {
+  const k = heldKindOf(kind);
+  return FOOD_KINDS.includes(k);
+}
+
+/** Lifetime of a held item on the server and client, kept in sync. */
+export function heldEatDurationMs(kind) {
+  const k = heldKindOf(kind);
+  if (isFood(k)) return BITE_FIRST_MS + BITE_COUNT * BITE_MS + (BITE_COUNT - 1) * BITE_GAP_MS + BITE_TAIL_MS;
+  if (k === "coffee") return 50000;
+  if (k === "soda" || k === "water") return 45000;
+  return 6000;
 }
 
 export function heldItemLabel(kind) {
@@ -48,34 +69,72 @@ function nextRand(s) {
   return Math.imul(s ^ (s >>> 16), 0x7feb352d) >>> 0;
 }
 
-/** Deterministic sip windows: first sip 6–10s after grab, then every 6–10s, each ~1s. */
+const IDLE_ANIM = { active: false, t: 0, lift: 0, face: false, action: null, index: 0, eaten: 0, done: false };
+
+/** Deterministic drink sips (6–10s gaps, ~1s each) and four slow food bites. */
 export function sipAnim(held, username, now, { walking = false } = {}) {
   const kind = heldKindOf(held);
-  if (!kind || !isDrink(kind) || walking) return { active: false, t: 0, lift: 0, face: false };
+  if (!kind) return { ...IDLE_ANIM };
   const startedAt = typeof held === "object" ? Number(held.startedAt) || 0 : 0;
-  if (!startedAt) return { active: false, t: 0, lift: 0, face: false };
+  if (!startedAt) return { ...IDLE_ANIM };
   const elapsed = now - startedAt;
-  if (elapsed < 0) return { active: false, t: 0, lift: 0, face: false };
+  if (elapsed < 0) return { ...IDLE_ANIM };
+
+  if (isFood(kind)) {
+    let t0 = BITE_FIRST_MS;
+    for (let i = 0; i < BITE_COUNT; i++) {
+      if (elapsed >= t0 && elapsed < t0 + BITE_MS) {
+        const t = (elapsed - t0) / BITE_MS;
+        const lift = walking ? 0 : biteLift(t);
+        const eaten = i + (t >= 0.40 ? 1 : 0);
+        return {
+          active: !walking && lift > 0,
+          t, lift,
+          face: !walking && lift >= 0.55,
+          action: "bite",
+          index: i,
+          eaten,
+          done: false,
+        };
+      }
+      if (elapsed < t0) {
+        return { ...IDLE_ANIM, action: "bite", index: i, eaten: i };
+      }
+      t0 += BITE_MS + BITE_GAP_MS;
+    }
+    return { ...IDLE_ANIM, action: "bite", index: BITE_COUNT, eaten: BITE_COUNT, done: true };
+  }
+
+  if (!isDrink(kind) || walking) return { ...IDLE_ANIM };
   let s = hash32(startedAt + "|" + (username || "") + "|" + kind);
   let t0 = 0;
   const limit = Math.min(elapsed + 1, 180000);
+  let index = -1;
   while (t0 <= limit) {
     s = nextRand(s);
     t0 += 6000 + (s % 4001);
+    index += 1;
     if (elapsed >= t0 && elapsed < t0 + SIP_MS) {
       const t = (elapsed - t0) / SIP_MS;
       const lift = sipLift(t);
-      return { active: true, t, lift, face: lift >= 0.55 };
+      return { active: true, t, lift, face: lift >= 0.55, action: "sip", index, eaten: 0, done: false };
     }
     if (t0 > elapsed) break;
   }
-  return { active: false, t: 0, lift: 0, face: false };
+  return { ...IDLE_ANIM, action: "sip" };
 }
 
 export function sipLift(t) {
   if (t < 0.22) return t / 0.22;
   if (t < 0.78) return 1;
   return Math.max(0, (1 - t) / 0.22);
+}
+
+/** Slower raise, a clear pause at the mouth, then a slower lower. */
+export function biteLift(t) {
+  if (t < 0.30) return t / 0.30;
+  if (t < 0.75) return 1;
+  return Math.max(0, (1 - t) / 0.25);
 }
 
 export function steamFrameAt(now = Date.now()) {
@@ -454,13 +513,49 @@ function drawCoffee(grid, steamFrame, lights) {
   }
 }
 
-function paintItem(kind, steamFrame, lights) {
+function applyBites(grid, kind, eaten) {
+  const n = Math.max(0, Math.min(BITE_COUNT, Number(eaten) || 0));
+  if (!n) return grid;
+  if (n >= BITE_COUNT) {
+    for (let i = 0; i < grid.length; i++) grid[i] = null;
+    return grid;
+  }
+  if (kind === "pizza") {
+    // Each bite takes more of the drooping tip; the crust handle stays in the hand.
+    const cutY = [22, 18, 15, 12][Math.min(3, n)];
+    for (let y = 0; y < ITEM_H; y++) {
+      for (let x = 0; x < ITEM_W; x++) {
+        if (!grid[y * ITEM_W + x]) continue;
+        const along = (y - 8) / 13;
+        const side = x - (12 + Math.round(Math.max(0, along) * Math.max(0, along) * 8));
+        if (y >= cutY || (along > 1 - n * 0.24 && side > 2 - n)) grid[y * ITEM_W + x] = null;
+      }
+    }
+    return grid;
+  }
+  if (kind === "chicken") {
+    // Meat shrinks away from the bone handle, leaving a smaller drumstick.
+    const cutY = [20, 17, 14, 11][Math.min(3, n)];
+    for (let y = 0; y < ITEM_H; y++) {
+      for (let x = 0; x < ITEM_W; x++) {
+        if (!grid[y * ITEM_W + x]) continue;
+        const bone = y <= 8 && x >= 14;
+        if (bone) continue;
+        if (y >= cutY || (n >= 2 && x <= 5 + n && y >= 12)) grid[y * ITEM_W + x] = null;
+      }
+    }
+  }
+  return grid;
+}
+
+function paintItem(kind, steamFrame, lights, eaten = 0) {
   const grid = new Array(ITEM_W * ITEM_H).fill(null);
   if (kind === "pizza") drawPizza(grid);
   else if (kind === "soda") drawSoda(grid);
   else if (kind === "chicken") drawChicken(grid);
   else if (kind === "water") drawWater(grid);
   else if (kind === "coffee") drawCoffee(grid, steamFrame, lights);
+  if (eaten) applyBites(grid, kind, eaten);
   return outline(grid, "#2a1c14");
 }
 
@@ -476,6 +571,8 @@ const LIP = {
   soda: { x: 11, y: 15 },
   water: { x: 12, y: 7 },
   coffee: { x: 11, y: 11 },
+  pizza: { x: 17, y: 16 },
+  chicken: { x: 10, y: 16 },
 };
 
 const DEFAULT_SKIN = "#f0c9a8";
@@ -558,25 +655,26 @@ function drawCuppingHand(grid, kind, skin) {
 }
 
 function gridBBox(grid) {
-  let x0 = ITEM_W, y0 = ITEM_H, x1 = -1, y1 = -1;
+  let x0 = ITEM_W, y0 = ITEM_H, x1 = -1, y1 = -1, filled = 0;
   for (let y = 0; y < ITEM_H; y++) {
     for (let x = 0; x < ITEM_W; x++) {
       if (!grid[y * ITEM_W + x]) continue;
+      filled += 1;
       if (x < x0) x0 = x;
       if (y < y0) y0 = y;
       if (x > x1) x1 = x;
       if (y > y1) y1 = y;
     }
   }
-  if (x1 < 0) return { x: 0, y: 0, w: 0, h: 0 };
-  return { x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1 };
+  if (x1 < 0) return { x: 0, y: 0, w: 0, h: 0, filled: 0 };
+  return { x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1, filled };
 }
 
 /** Content box of the item itself (no cupping hand). Useful for tests and thumbs. */
 export function heldItemContentBox(kind, opts = {}) {
   const k = heldKindOf(kind) || kind;
   if (!HELD_KINDS.includes(k)) return { x: 0, y: 0, w: 0, h: 0 };
-  const grid = paintItem(k, opts.steamFrame ?? 0, opts.lights !== false);
+  const grid = paintItem(k, opts.steamFrame ?? 0, opts.lights !== false, opts.eaten || 0);
   return gridBBox(grid);
 }
 
@@ -588,13 +686,14 @@ export function drawHeldItemSprite(kind, opts = {}) {
   const withHand = opts.hand !== false;
   const skin = toHex(opts.skin);
   const steamFrame = k === "coffee" ? ((opts.steamFrame ?? 0) % 6) : 0;
-  const key = k + ":" + (flip ? 1 : 0) + ":" + steamFrame + ":" + (lights ? 1 : 0) + ":" + (withHand ? skin : "nohand");
+  const eaten = Math.max(0, Math.min(BITE_COUNT, Number(opts.eaten) || 0));
+  const key = k + ":" + (flip ? 1 : 0) + ":" + steamFrame + ":" + (lights ? 1 : 0) + ":" + (withHand ? skin : "nohand") + ":b" + eaten;
   const hit = cache.get(key);
   if (hit) return hit;
   const c = makeCanvas(ITEM_W, ITEM_H);
   const grip = { ...GRIP[k] };
   const lip = { ...(LIP[k] || GRIP[k]) };
-  const grid = paintItem(k, steamFrame, lights);
+  const grid = paintItem(k, steamFrame, lights, eaten);
   if (withHand) drawCuppingHand(grid, k, skin);
   let out = grid;
   if (flip) {
@@ -717,6 +816,7 @@ if (typeof window !== "undefined") {
 }
 
 export default {
-  HELD_KINDS, FRIDGE_ITEMS, heldKindOf, isDrink, heldItemLabel, sipAnim, sipLift,
+  HELD_KINDS, FRIDGE_ITEMS, FOOD_KINDS, heldKindOf, isDrink, isFood, heldItemLabel, sipAnim, sipLift, biteLift,
+  heldEatDurationMs, BITE_COUNT, BITE_MS, BITE_FIRST_MS, BITE_GAP_MS, SIP_COUNT,
   steamFrameAt, drawHeldItemSprite, heldItemContentBox, heldItemStamp, sodaLabelStamp, drawSipFaceOverlay, paintFridgeThumbs,
 };

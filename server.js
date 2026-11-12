@@ -35,6 +35,7 @@ import { ART_PIECES, artCatalogEntry, PAINTING_CATALOG } from "./public/js/artPi
 import { reservedWallSlots as layoutReservedWallSlots } from "./public/js/wallLayout.js";
 import { chessSeatTiles, chessSeatPose, migrateChessTable } from "./public/js/chessTable.js";
 import { liePose, migrateBed, bedTiles } from "./public/js/bed.js";
+import { heldEatDurationMs } from "./public/js/heldItems.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT) || 3000;
@@ -1101,7 +1102,6 @@ function seatWorld(furn, seatNum) {
 }
 
 function startHeldItem(user, kind) {
-  const durations = { sandwich: 20000, pizza: 20000, soda: 45000, chicken: 20000, water: 45000, coffee: 50000 };
   clearHeldTimer(user);
   if (user.heldProp) {
     user.stowedProp = user.heldProp;
@@ -1120,7 +1120,7 @@ function startHeldItem(user, kind) {
     if (was === "coffee" && user.roomId) {
       io.to(user.roomId).emit("userSaid", { username: user.username, text: "ahh", at: Date.now() });
     }
-  }, durations[kind] || 6000);
+  }, heldEatDurationMs(kind));
 }
 
 function clearBrewTimer(user) {

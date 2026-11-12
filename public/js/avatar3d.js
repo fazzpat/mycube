@@ -2693,6 +2693,29 @@ function headMotion(frame, walk, sit, bodyUpper = 0) {
   return { y: bodyUpper || 0, x: 0 };
 }
 
+/** Move the holding hand with a sip/bite so the gripped item stays in the palm. */
+export function sipAdjustedHand(rest, flags) {
+  const lift = Number(flags?.sipLift) || 0;
+  if (lift <= 0 || !rest) return rest;
+  const m = flags.sipMouth;
+  if (!m) return rest;
+  const lip = flags.sipLip || { x: 0, y: 0 };
+  let tx = m.x - (lip.x || 0);
+  let ty = m.y - (lip.y || 0);
+  const key = flags.sipKey || "";
+  if (key === "n" || key === "ne") {
+    // Raise to mouth height beside the hidden face. Only a slight inward
+    // move, so the hand + item peek at the side of the head instead of
+    // vanishing under the hair.
+    tx = rest.x + (tx - rest.x) * 0.45;
+  }
+  return {
+    ...rest,
+    x: rest.x + (tx - rest.x) * lift,
+    y: rest.y + (ty - rest.y) * lift,
+  };
+}
+
 function composeAvatar(av, flagsIn, frame) {
   const { bodyDir, headDir, walk } = resolvedDirs(flagsIn);
   const bodyView = viewOfDir(bodyDir);
@@ -2775,7 +2798,8 @@ function composeAvatar(av, flagsIn, frame) {
   const farFoot = sitFeet ? sitFeet[0] : footPos(-1, pose.left);
   const nearFoot = sitFeet ? sitFeet[1] : footPos(1, pose.right);
   const farHand = { x: flipX(leftHand.x), y: leftHand.y, side: -1 };
-  const nearHand = { x: flipX(rightHand.x), y: rightHand.y, side: 1 };
+  let nearHand = { x: flipX(rightHand.x), y: rightHand.y, side: 1 };
+  if ((Number(flags.sipLift) || 0) > 0) nearHand = sipAdjustedHand(nearHand, flags);
 
   function footSpr(fp) {
     const shoeSide = sit ? fp.side : (bodyView.flip ? -fp.side : fp.side);
@@ -2873,7 +2897,8 @@ export function drawAvatarSprite(avatar = {}, flags = {}, frame = 0) {
   const lookY = flags.lookY || 0;
   const pop = flags.shoePop == null || flags.shoePop < 0 ? -1 : Math.floor(flags.shoePop / 80);
   const mouth = flags.mouth || "line";
-  const key = "chibi:" + JSON.stringify(av) + ":" + bodyDir + ":" + headDir + ":" + Boolean(flags.sitting) + ":" + walk + ":" + phase + ":" + Boolean(flags.usingPhone) + ":" + Boolean(flags.boxing) + ":" + (flags.actionEmote || "") + ":" + held + ":" + Boolean(flags.gym) + ":" + blink + ":" + lookX + ":" + lookY + ":" + pop + ":" + mouth;
+  const sipKey = Math.round((Number(flags.sipLift) || 0) * 8);
+  const key = "chibi:" + JSON.stringify(av) + ":" + bodyDir + ":" + headDir + ":" + Boolean(flags.sitting) + ":" + walk + ":" + phase + ":" + Boolean(flags.usingPhone) + ":" + Boolean(flags.boxing) + ":" + (flags.actionEmote || "") + ":" + held + ":" + Boolean(flags.gym) + ":" + blink + ":" + lookX + ":" + lookY + ":" + pop + ":" + mouth + ":sip" + sipKey;
   const hit = cache.get(key);
   if (hit) return hit;
   const composed = composeAvatar(av, flags, frame);
@@ -3608,14 +3633,18 @@ export function heldItemHandAnchor(avatar = {}, flags = {}, frame = 0) {
   // Use the same holding-hand pose the avatar is drawn with (not a fixed chest offset).
   const rightHand = handPose(aKind, 1, pose, t, upper, bk, frame);
   function flipX(x) { return bodyView.flip ? AV_W - 1 - x : x; }
-  const x = flipX(rightHand.x);
-  const y = rightHand.y;
-  // Back views: draw the item first so the body/arm can hide part of it; it peeks out at the side.
+  const rest = {
+    x: flipX(rightHand.x),
+    y: rightHand.y,
+    side: bodyView.flip ? -1 : 1,
+  };
+  const hand = sipAdjustedHand(rest, flags);
+  // Back views: item stays behind the sprite so the head can occlude a raise-to-mouth.
   const behind = bk === "n" || bk === "ne";
   return {
-    x, y,
+    x: hand.x, y: hand.y,
     behind,
-    side: bodyView.flip ? -1 : 1,
+    side: rest.side,
     flip: Boolean(bodyView.flip),
     key: bk,
   };
@@ -3686,9 +3715,10 @@ if (typeof window !== "undefined") {
   window.__inspectAvatarGeometry = inspectAvatarGeometry;
   window.__inspectHandClearance = inspectHandClearance;
   window.__heldItemHandAnchor = heldItemHandAnchor;
+  window.__sipAdjustedHand = sipAdjustedHand;
   window.__heldItemFaceAnchor = heldItemFaceAnchor;
   window.__paintHairHatFit = paintHairHatFit;
   window.__paintClothesCatalog = paintClothesCatalog;
 }
 
-export default { drawAvatarSprite, paintAvatarSheet, paintStoreThumb, facingIndex8, sitFootLayout, tickChibiAnim, setChibiAnimOverride, getChibiAnim, AV_W, AV_H, AV_GROUND_Y, AV_HEAD_TOP, AVATAR_SHEET_LOOKS };
+export default { drawAvatarSprite, paintAvatarSheet, paintStoreThumb, facingIndex8, sitFootLayout, tickChibiAnim, setChibiAnimOverride, getChibiAnim, sipAdjustedHand, heldItemHandAnchor, heldItemFaceAnchor, AV_W, AV_H, AV_GROUND_Y, AV_HEAD_TOP, AVATAR_SHEET_LOOKS };

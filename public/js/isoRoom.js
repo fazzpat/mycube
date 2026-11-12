@@ -1,5 +1,5 @@
 import { drawAvatarSprite, paintAvatarSheet, paintStoreThumb, AVATAR_SHEET_LOOKS, AV_W, AV_H, AV_GROUND_Y, AV_HEAD_TOP, facingIndex8, tickChibiAnim, setChibiAnimOverride, getChibiAnim, mouthPhase, heldItemHandAnchor, heldItemFaceAnchor } from "./avatar3d.js";
-import { heldKindOf, drawHeldItemSprite, sipAnim, steamFrameAt as heldSteamFrameAt, drawSipFaceOverlay } from "./heldItems.js";
+import { heldKindOf, drawHeldItemSprite, sipAnim, steamFrameAt as heldSteamFrameAt, drawSipFaceOverlay, BITE_COUNT } from "./heldItems.js";
 import { drawPetSprite as drawPetPixel, paintPetSheet, paintPetThumb, PET_W, PET_H, PET_GROUND_Y } from "./petSprites.js";
 import { programAt } from "./cubechannel.js";
 import { getTvScreen, tvChannelName } from "./tvChannels.js";
@@ -1157,6 +1157,28 @@ export function createRoom3D(container, opts = {}) {
         shoePop: shoePopAt(p.username, (p.avatar || {}).shoes, now),
         mouth: mouthPhase(p.talkText, p.talkAt, Date.now()),
       };
+      const heldKind = heldKindOf(lying ? null : p.heldItem);
+      let heldPreview = null;
+      if (heldKind && !flags.usingPhone) {
+        const pre = heldItemHandAnchor(p.avatar || {}, flags, frame);
+        const face = heldItemFaceAnchor(p.avatar || {}, flags, frame);
+        const sip = sipAnim(p.heldItem, p.username, Date.now(), { walking: walking && !lying });
+        const steam = heldKind === "coffee" ? heldSteamFrameAt(Date.now()) : 0;
+        const item = drawHeldItemSprite(heldKind, {
+          steamFrame: steam,
+          flip: pre.flip,
+          lights: lightsOn,
+          skin: face?.skin || (p.avatar || {}).skin,
+          eaten: sip.eaten || 0,
+        });
+        flags.sipLift = sip.lift || 0;
+        flags.sipLip = { x: ((item.lx ?? item.gx) - (item.gx || 0)), y: ((item.ly ?? item.gy) - (item.gy || 0)) };
+        flags.sipMouth = face?.mouth
+          ? { x: face.mouth.x, y: face.mouth.y + 1 }
+          : (face?.head ? { x: face.head.x, y: face.head.y + 6 } : null);
+        flags.sipKey = pre.key || face?.key;
+        heldPreview = { item, face, sip };
+      }
       const spr = drawAvatarSprite(p.avatar || {}, flags, frame);
       st.figTop = spr.top;
       const foot = tileToScreen(x + 0.5, y + 0.5);
@@ -1195,14 +1217,9 @@ export function createRoom3D(container, opts = {}) {
         personItem.sx = draw.headSx - AV_W / 2;
         personItem.sy = draw.headSy - AV_HEAD_TOP;
       }
-      const heldKind = heldKindOf(p.heldItem);
-      if (heldKind && !flags.usingPhone) {
+      if (heldPreview) {
         const anchor = heldItemHandAnchor(p.avatar || {}, flags, frame);
-        const face = heldItemFaceAnchor(p.avatar || {}, flags, frame);
-        const sip = sipAnim(p.heldItem, p.username, Date.now(), { walking });
-        const steam = heldKind === "coffee" ? heldSteamFrameAt(Date.now()) : 0;
-        const item = drawHeldItemSprite(heldKind, { steamFrame: steam, flip: anchor.flip, lights: lightsOn, skin: face?.skin || (p.avatar || {}).skin });
-        personItem.held = { item, anchor, face, sip };
+        personItem.held = { item: heldPreview.item, anchor, face: heldPreview.face, sip: heldPreview.sip };
       }
       list.push(personItem);
       if (p.activePet) {
@@ -1731,24 +1748,23 @@ export function createRoom3D(container, opts = {}) {
       } else if (it.kind === "person" && it.held && it.held.item) {
 
         const { item, anchor, face, sip } = it.held;
-        const lift = sip?.lift || 0;
         const hx = it.sx + anchor.x;
         const hy = it.sy + anchor.y;
-        let mx = hx, my = hy - 14;
-        if (face?.mouth) { mx = it.sx + face.mouth.x; my = it.sy + face.mouth.y + 1; }
-        else if (face?.head) { mx = it.sx + face.head.x; my = it.sy + face.head.y + 6; }
         const gx = item.gx || 0, gy = item.gy || 0;
-        const lx = item.lx ?? gx, ly = item.ly ?? gy;
-        const ix = (hx - gx) * (1 - lift) + (mx - lx) * lift;
-        const iy = (hy - gy) * (1 - lift) + (my - ly) * lift;
-        const behind = Boolean(anchor.behind) && lift < 0.4;
-        if (behind) blit(item, ix, iy);
+        // Item stays glued to the animated holding hand in every facing.
+        const ix = hx - gx, iy = hy - gy;
+        const gone = Boolean(sip?.done) || (sip?.eaten || 0) >= BITE_COUNT;
+        const lift = sip?.lift || 0;
+        // Back views: rest stays behind the body; a raise brings the glued
+        // hand+item in front so they travel to the hidden face without vanishing under the hair.
+        const behind = Boolean(anchor.behind) && lift < 0.35;
+        if (!gone && behind) blit(item, ix, iy);
         blit(it.spr, it.sx, it.sy, it.alpha ?? 1);
         if (sip?.face) {
           const ov = drawSipFaceOverlay(face);
           if (ov) blit(ov, it.sx, it.sy);
         }
-        if (!behind) blit(item, ix, iy);
+        if (!gone && !behind) blit(item, ix, iy);
       } else {
         blit(it.spr, it.sx, it.sy, it.alpha ?? 1);
       }

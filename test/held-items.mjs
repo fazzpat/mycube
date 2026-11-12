@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import {
-  HELD_KINDS, FRIDGE_ITEMS, heldKindOf, isDrink, heldItemLabel, sipAnim, sipLift,
-  steamFrameAt, hash32, SIP_MS, heldItemContentBox, drawHeldItemSprite, sodaLabelStamp,
+  HELD_KINDS, FRIDGE_ITEMS, heldKindOf, isDrink, isFood, heldItemLabel, sipAnim, sipLift, biteLift,
+  steamFrameAt, hash32, SIP_MS, BITE_COUNT, BITE_MS, BITE_FIRST_MS, BITE_GAP_MS, BITE_TAIL_MS,
+  heldEatDurationMs, heldItemContentBox, drawHeldItemSprite, sodaLabelStamp,
 } from "../public/js/heldItems.js";
 
 let passed = 0;
@@ -26,7 +27,7 @@ check("Labels are readable", heldItemLabel("pizza") === "pizza slice" && heldIte
 
 const hold = { kind: "soda", startedAt: 1_000_000 };
 check("No sip in the first 6 seconds", sipAnim(hold, "alice", 1_000_000 + 5999).active === false);
-check("Food never sips", sipAnim({ kind: "pizza", startedAt: 1_000_000 }, "alice", 1_010_000).active === false);
+check("Pizza and chicken are food, drinks are not", isFood("pizza") && isFood("chicken") && isFood("sandwich") && !isFood("soda") && !isFood("coffee"));
 check("Walking suppresses a sip", sipAnim(hold, "alice", 1_020_000, { walking: true }).active === false);
 
 // Scan a long window and collect sip intervals; they must be deterministic and 6–10s apart.
@@ -86,7 +87,53 @@ for (const kind of HELD_KINDS) {
   check("Grip exists for " + kind, spr && spr.gx > 0 && spr.gy > 0, JSON.stringify(spr && { gx: spr.gx, gy: spr.gy, box: spr.box }));
 }
 
+
+const foodDur = heldEatDurationMs("pizza");
+check("Pizza and chicken share the 4-bite lifetime", foodDur === heldEatDurationMs("chicken") && foodDur === heldEatDurationMs("sandwich"));
+check("Food lasts through 4 slow bites then a short tail", foodDur === BITE_FIRST_MS + BITE_COUNT * BITE_MS + (BITE_COUNT - 1) * BITE_GAP_MS + BITE_TAIL_MS && foodDur > 10000 && foodDur < 20000, String(foodDur));
+check("Drink lifetimes stay 45s / 50s", heldEatDurationMs("soda") === 45000 && heldEatDurationMs("water") === 45000 && heldEatDurationMs("coffee") === 50000);
+
+function biteAt(kind, elapsed, extra = {}) {
+  return sipAnim({ kind, startedAt: 2_000_000 }, "eater", 2_000_000 + elapsed, extra);
+}
+check("No bite before the first raise", biteAt("pizza", BITE_FIRST_MS - 1).active === false && biteAt("pizza", BITE_FIRST_MS - 1).eaten === 0);
+const raise = biteAt("pizza", BITE_FIRST_MS + 400);
+check("First bite is a slow raise toward the mouth", raise.active && raise.action === "bite" && raise.index === 0 && raise.lift > 0.4 && raise.lift < 1 && raise.eaten === 0, JSON.stringify(raise));
+const holdBite = biteAt("chicken", BITE_FIRST_MS + 1000);
+check("Mid-bite holds at the mouth and takes a chunk", holdBite.active && holdBite.lift === 1 && holdBite.face === true && holdBite.eaten === 1 && holdBite.index === 0, JSON.stringify(holdBite));
+const lower = biteAt("pizza", BITE_FIRST_MS + BITE_MS - 200);
+check("End of a bite lowers the hand", lower.active && lower.lift < 1 && lower.lift > 0 && lower.eaten === 1, JSON.stringify(lower));
+check("biteLift is slower than a drink sip (longer raise)", biteLift(0.22) < 1 && biteLift(0.30) === 1 && biteLift(0.75) === 1 && biteLift(1) === 0);
+
+const starts = [];
+let on = false;
+for (let t = 0; t <= foodDur; t += 25) {
+  const s = biteAt("pizza", t);
+  if (s.active && !on) starts.push({ t, index: s.index });
+  on = s.active;
+}
+check("Exactly 4 bite raises then the item is gone", starts.length === 4 && starts[0].index === 0 && starts[3].index === 3, JSON.stringify(starts));
+const biteGaps = starts.slice(1).map((s, i) => s.t - starts[i].t);
+check("Bites are spaced by the slow bite + gap", biteGaps.every((g) => Math.abs(g - (BITE_MS + BITE_GAP_MS)) <= 25), JSON.stringify(biteGaps));
+const after = biteAt("pizza", foodDur);
+check("After the 4th bite the food is finished", after.done === true && after.eaten === BITE_COUNT && after.active === false, JSON.stringify(after));
+const walkBite = biteAt("chicken", BITE_FIRST_MS + 1000, { walking: true });
+check("Walking suppresses the raise but the bite still counts", walkBite.active === false && walkBite.lift === 0 && walkBite.eaten === 1, JSON.stringify(walkBite));
+
+function itemPixels(kind, eaten) {
+  return heldItemContentBox(kind, { eaten }).filled || 0;
+}
+for (const kind of ["pizza", "chicken"]) {
+  const counts = [0, 1, 2, 3, 4].map((n) => itemPixels(kind, n));
+  check(kind + " loses a visible chunk on each bite", counts[0] > counts[1] && counts[1] > counts[2] && counts[2] > counts[3], JSON.stringify(counts));
+  check(kind + " is gone after 4 bites", counts[4] === 0, JSON.stringify(counts));
+  const midSpr = drawHeldItemSprite(kind, { hand: false, eaten: 2 });
+  const fullSpr = drawHeldItemSprite(kind, { hand: false, eaten: 0 });
+  check(kind + " bitten sprite is distinct from the whole item", midSpr.sig !== fullSpr.sig);
+}
+
 if (process.exitCode) {
+
   console.error(`held-items: ${passed} passed, then failed`);
   process.exit(1);
 }
