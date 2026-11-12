@@ -638,6 +638,10 @@ export function createRoom3D(container, opts = {}) {
     const t = Math.max(0, Math.min(1, (400 - viewH) / 160));
     return Math.round((FOLLOW_ZOOM_DEFAULT - t * 0.55) * 100) / 100;
   }
+  function atDefaultFollowZoom() {
+    const auto = followZoomForStage();
+    return Math.abs(userZoom - FOLLOW_ZOOM_DEFAULT) <= 0.05 || Math.abs(userZoom - auto) <= 0.05;
+  }
   let userZoom = FOLLOW_ZOOM_DEFAULT;
   let zoom = 1;
   let camX = 0, camY = 0;
@@ -664,7 +668,6 @@ export function createRoom3D(container, opts = {}) {
   let didPinch = false;
   let movedThisGesture = false;
   let onTileClick = null, onTileHover = null, onFurnitureClick = null, onPetClick = null;
-  let onZoomChange = null;
   let onSwitchClick = null, onSwitchTap = null, onWallClick = null, onWallHover = null;
   const personState = new Map();
 
@@ -868,7 +871,6 @@ export function createRoom3D(container, opts = {}) {
     }
     // Names and chat bubbles stay a constant readable size, independent of room zoom.
     if (overlay && overlay.style) overlay.style.setProperty("--iso-zoom", "1");
-    onZoomChange?.({ zoom, userZoom: zoomTarget || userZoom, min: minUserZoom(), max: USER_ZOOM_MAX });
   }
   function clientFromWorld(sx, sy, now) {
     const { ox, oy } = originAt(now);
@@ -898,7 +900,7 @@ export function createRoom3D(container, opts = {}) {
       camMode = "follow";
       followPaused = false;
       autoFit = false;
-      if (userZoom <= FOLLOW_ZOOM_DEFAULT + 0.001) {
+      if (atDefaultFollowZoom()) {
         const z = followZoomForStage();
         userZoom = z;
         zoomTarget = z;
@@ -906,7 +908,9 @@ export function createRoom3D(container, opts = {}) {
       }
     }
     lastPhone = phone;
-    if (phone && camMode === "follow" && userZoom <= FOLLOW_ZOOM_DEFAULT + 0.001 && !followPaused) {
+    // Don't clobber a manual pinch/wheel zoom when the viewport resizes
+    // (Safari toolbar, rotate, or a test viewport change).
+    if (phone && camMode === "follow" && atDefaultFollowZoom() && !followPaused) {
       const z = followZoomForStage();
       userZoom = z;
       zoomTarget = z;
@@ -2335,10 +2339,6 @@ export function createRoom3D(container, opts = {}) {
       if (isPhoneView() && camMode === "room") camMode = "follow";
       if (isPhoneView() && camMode === "follow") zoom = next;
     },
-    setUserZoom(z, immediate = true) {
-      setUserZoomAt(z, null, null, immediate);
-    },
-    onZoomChange(fn) { onZoomChange = fn; },
     tapAt(x, y) { handleTap({ clientX: x, clientY: y }); },
     roomFitsView() {
       const now = performance.now();

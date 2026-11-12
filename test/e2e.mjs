@@ -1692,6 +1692,7 @@ async function runAppShellFit(browser) {
 
   async function zoomOutReport(page, size, grid) {
     await page.setViewportSize(size);
+    await page.waitForTimeout(80);
     await page.evaluate((n) => {
       window.HouseRoom3D.setGridSize(n);
       window.HouseRoom3D.resize?.();
@@ -1699,6 +1700,11 @@ async function runAppShellFit(browser) {
       window.HouseRoom3D.setZoom(0.01);
     }, grid);
     await page.waitForTimeout(80);
+    await page.evaluate(() => {
+      window.HouseRoom3D.resize?.();
+      window.HouseRoom3D.setZoom(0.01);
+    });
+    await page.waitForTimeout(40);
     return page.evaluate(() => {
       const range = window.HouseRoom3D.zoomRange?.() || {};
       const inView = window.HouseRoom3D.roomInView?.(1);
@@ -1861,132 +1867,6 @@ async function runAppShellFit(browser) {
     pageZoomLock.chatSize >= 16,
     JSON.stringify({ chatSize: pageZoomLock.chatSize })
   );
-
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.evaluate(() => {
-    window.__exitEdit?.();
-    window.__setCamMode?.("follow");
-    window.HouseRoom3D.setZoom(2);
-    window.__syncZoomBar?.();
-  });
-  await page.waitForTimeout(80);
-  const zoomBarFit = await page.evaluate(() => {
-    const bar = document.querySelector("[data-testid=zoom-bar]");
-    const plus = document.querySelector("[data-testid=zoom-in]");
-    const minus = document.querySelector("[data-testid=zoom-out]");
-    const track = document.querySelector("[data-testid=zoom-slider]");
-    const top = document.querySelector(".room-view .topbar");
-    const dock = document.querySelector("[data-testid=chat-dock]");
-    const box = (el) => {
-      if (!el) return null;
-      const r = el.getBoundingClientRect();
-      return { t: r.top, b: r.bottom, l: r.left, r: r.right, w: r.width, h: r.height };
-    };
-    const overlap = (a, b) => a && b && a.l < b.r - 1 && a.r > b.l + 1 && a.t < b.b - 1 && a.b > b.t + 1;
-    const br = box(bar), tr = box(top), dr = box(dock), pr = box(plus), mr = box(minus), sr = box(track);
-    const cs = bar ? getComputedStyle(bar) : null;
-    const vw = window.innerWidth, vh = window.innerHeight;
-    return {
-      visible: Boolean(bar && cs.visibility !== "hidden" && cs.display !== "none" && br.w > 0 && br.h > 0),
-      inView: Boolean(br && br.l >= -1 && br.r <= vw + 1 && br.t >= -1 && br.b <= vh + 1),
-      leftSide: Boolean(br && br.l < vw * 0.28),
-      plusSize: pr ? Math.min(pr.w, pr.h) : 0,
-      minusSize: mr ? Math.min(mr.w, mr.h) : 0,
-      overlapsTop: overlap(br, tr),
-      overlapsDock: overlap(br, dr),
-    };
-  });
-  check(
-    "The zoom bar sits on the left, inside the safe area, and misses the top row and bottom icons",
-    Boolean(zoomBarFit.visible && zoomBarFit.inView && zoomBarFit.leftSide && zoomBarFit.plusSize >= 36 && zoomBarFit.minusSize >= 36 && !zoomBarFit.overlapsTop && !zoomBarFit.overlapsDock),
-    JSON.stringify(zoomBarFit)
-  );
-  const beforeBar = await page.evaluate(() => window.HouseRoom3D.visualZoom?.());
-  await page.click("[data-testid=zoom-in]");
-  await page.waitForTimeout(80);
-  const afterIn = await page.evaluate(() => ({ zoom: window.HouseRoom3D.visualZoom?.(), now: document.querySelector("[data-testid=zoom-slider]")?.getAttribute("aria-valuenow") }));
-  await page.click("[data-testid=zoom-out]");
-  await page.click("[data-testid=zoom-out]");
-  await page.waitForTimeout(80);
-  const afterOut = await page.evaluate(() => window.HouseRoom3D.visualZoom?.());
-  check(
-    "The zoom bar + and − buttons change room zoom",
-    Boolean(afterIn.zoom > beforeBar + 0.05 && afterOut < afterIn.zoom - 0.05),
-    JSON.stringify({ beforeBar, afterIn, afterOut })
-  );
-  const sliderZoom = await page.evaluate(() => {
-    const track = document.querySelector("[data-testid=zoom-slider]");
-    const r = track.getBoundingClientRect();
-    const x = r.left + r.width / 2;
-    const yTop = r.top + 1;
-    track.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true, clientX: x, clientY: yTop, pointerId: 21, pointerType: "mouse", buttons: 1 }));
-    track.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, cancelable: true, clientX: x, clientY: yTop, pointerId: 21, pointerType: "mouse", buttons: 0 }));
-    return window.HouseRoom3D.visualZoom?.();
-  });
-  const rangeMax = await page.evaluate(() => window.HouseRoom3D.zoomRange?.().max);
-  check(
-    "The zoom bar slider sets room zoom and uses the same range as pinch",
-    Boolean(sliderZoom >= (rangeMax || 4) - 0.55),
-    JSON.stringify({ sliderZoom, rangeMax })
-  );
-  const beforePinch = await page.evaluate(() => Number(document.querySelector("[data-testid=zoom-slider]")?.getAttribute("aria-valuenow") || 0));
-  const zoomCanvasBox = await page.locator(".room3d-root canvas").boundingBox();
-  const midX = Math.round(zoomCanvasBox.x + zoomCanvasBox.width * 0.55);
-  const midY = Math.round(zoomCanvasBox.y + zoomCanvasBox.height * 0.45);
-  await page.evaluate(({ x, y }) => {
-    const c = document.querySelector(".room3d-root canvas");
-    const fire = (type, id, px, py) => c.dispatchEvent(new PointerEvent(type, {
-      pointerId: id, pointerType: "touch", clientX: px, clientY: py, bubbles: true, cancelable: true, isPrimary: id === 1, width: 12, height: 12,
-    }));
-    fire("pointerdown", 1, x - 20, y);
-    fire("pointerdown", 2, x + 20, y);
-    fire("pointermove", 1, x - 8, y);
-    fire("pointermove", 2, x + 8, y);
-    fire("pointerup", 1, x - 8, y);
-    fire("pointerup", 2, x + 8, y);
-  }, { x: midX, y: midY });
-  await page.waitForTimeout(120);
-  const afterBarPinch = await page.evaluate(() => Number(document.querySelector("[data-testid=zoom-slider]")?.getAttribute("aria-valuenow") || 0));
-  check(
-    "The zoom bar stays in sync with pinch zoom",
-    afterBarPinch < beforePinch - 0.05,
-    JSON.stringify({ beforePinch, afterBarPinch })
-  );
-
-  async function zoomBarHiddenWhen(fn) {
-    await fn();
-    const hidden = await page.evaluate(() => {
-      const bar = document.querySelector("[data-testid=zoom-bar]");
-      const cs = bar && getComputedStyle(bar);
-      return !bar || cs.visibility === "hidden" || cs.display === "none" || cs.pointerEvents === "none";
-    });
-    return hidden;
-  }
-  const hiddenShop = await zoomBarHiddenWhen(async () => {
-    await page.evaluate(() => window.__openStore?.());
-    await page.waitForTimeout(80);
-  });
-  await page.evaluate(() => window.__closeStore?.());
-  const hiddenPhone = await zoomBarHiddenWhen(async () => {
-    await page.evaluate(() => window.__openPhone?.());
-    await page.waitForTimeout(80);
-  });
-  await page.evaluate(() => window.__closePhone?.() || document.querySelector("[data-testid=phone-backdrop]")?.click());
-  await page.waitForTimeout(40);
-  const hiddenEdit = await zoomBarHiddenWhen(async () => {
-    await page.evaluate(() => window.__enterEdit?.());
-    await page.waitForSelector("[data-testid=edit-inventory]:not(.hidden)");
-  });
-  await page.evaluate(() => window.__exitEdit?.());
-  check(
-    "The zoom bar hides while the shop, phone, or Edit Room menu is open",
-    Boolean(hiddenShop && hiddenPhone && hiddenEdit),
-    JSON.stringify({ hiddenShop, hiddenPhone, hiddenEdit })
-  );
-  await page.evaluate(() => {
-    window.__setCamMode?.("follow");
-    window.HouseRoom3D.setZoom(2);
-  });
 
   const sizes = [
     { name: "iPhone SE", width: 375, height: 667 },
@@ -3696,16 +3576,64 @@ try {
     Boolean(typyingViews.bob.hasDots && !typyingViews.bob.hasDraft && !typyingViews.bob.hasCount),
     JSON.stringify(typyingViews.bob)
   );
+  const typyingPlace = await alice.evaluate(() => {
+    const typ = document.querySelector("[data-testid=typing-alice]");
+    const name = document.querySelector('[data-testid="my-avatar"], [data-testid="avatar-alice"]');
+    const layer = document.getElementById("bubble-layer") || typ?.offsetParent;
+    const lr = layer?.getBoundingClientRect();
+    const tr = typ?.getBoundingClientRect();
+    const nr = name?.getBoundingClientRect();
+    const head = window.HouseRoom3D?.projectHead?.("alice");
+    if (!tr || !head || !lr) return null;
+    const headX = lr.left + head.x;
+    const leftOfHead = tr.right <= headX + 2;
+    const rightOfHead = typ.classList.contains("is-flipped") && tr.left >= headX - 2;
+    const nameHit = nr && tr.left < nr.right - 1 && tr.right > nr.left + 1 && tr.top < nr.bottom - 1 && tr.bottom > nr.top + 1;
+    return {
+      leftOfHead, rightOfHead, flipped: typ.classList.contains("is-flipped"), nameHit,
+      typ: { l: tr.left, r: tr.right, t: tr.top, b: tr.bottom, w: tr.width, h: tr.height },
+      headX, name: nr ? { l: nr.left, r: nr.right, t: nr.top, b: nr.bottom } : null,
+    };
+  });
+  check(
+    "The typying bubble sits beside the left of the head and does not cover the name",
+    Boolean(typyingPlace && typyingPlace.leftOfHead && !typyingPlace.flipped && !typyingPlace.nameHit),
+    JSON.stringify(typyingPlace)
+  );
+  const typyingDotsPlace = await bob.evaluate(() => {
+    const typ = document.querySelector("[data-testid=typing-alice]");
+    const name = document.querySelector('[data-testid="avatar-alice"]');
+    const layer = document.getElementById("bubble-layer") || typ?.offsetParent;
+    const lr = layer?.getBoundingClientRect();
+    const tr = typ?.getBoundingClientRect();
+    const nr = name?.getBoundingClientRect();
+    const head = window.HouseRoom3D?.projectHead?.("alice");
+    if (!tr || !head || !lr) return null;
+    const headX = lr.left + head.x;
+    const nameHit = nr && tr.left < nr.right - 1 && tr.right > nr.left + 1 && tr.top < nr.bottom - 1 && tr.bottom > nr.top + 1;
+    return { leftOfHead: tr.right <= headX + 2, flipped: typ.classList.contains("is-flipped"), nameHit, hasTail: Boolean(typ.querySelector(".thought-tail")), hasDots: Boolean(typ.querySelector(".think-dots")) };
+  });
+  check(
+    "Other players see typying dots to the left of the head",
+    Boolean(typyingDotsPlace && typyingDotsPlace.leftOfHead && typyingDotsPlace.hasDots && typyingDotsPlace.hasTail && !typyingDotsPlace.nameHit),
+    JSON.stringify(typyingDotsPlace)
+  );
   await alice.locator('[data-testid="chat-input"]').fill("x".repeat(120), { force: true });
   await alice.waitForTimeout(80);
   const typyingWrap = await alice.evaluate(() => {
     const el = document.querySelector("[data-testid=typing-alice]");
     const r = el?.getBoundingClientRect();
-    return r ? { top: r.top, bottom: r.bottom, left: r.left, right: r.right, w: r.width, h: r.height, vw: window.innerWidth, vh: window.innerHeight, text: (el.innerText || "").length } : null;
+    const name = document.querySelector('[data-testid="my-avatar"], [data-testid="avatar-alice"]');
+    const nr = name?.getBoundingClientRect();
+    const layer = document.getElementById("bubble-layer")?.getBoundingClientRect();
+    const head = window.HouseRoom3D?.projectHead?.("alice");
+    const headX = layer && head ? layer.left + head.x : null;
+    const nameHit = r && nr && r.left < nr.right - 1 && r.right > nr.left + 1 && r.top < nr.bottom - 1 && r.bottom > nr.top + 1;
+    return r ? { top: r.top, bottom: r.bottom, left: r.left, right: r.right, w: r.width, h: r.height, vw: window.innerWidth, vh: window.innerHeight, text: (el.innerText || "").length, font: getComputedStyle(el.querySelector(".draft-text") || el).fontSize, maxW: getComputedStyle(el).maxWidth, leftOfHead: headX != null && r.right <= headX + 2, nameHit } : null;
   });
   check(
-    "Long typying text wraps and stays on screen",
-    Boolean(typyingWrap && typyingWrap.top >= 0 && typyingWrap.left >= -1 && typyingWrap.right <= typyingWrap.vw + 1 && typyingWrap.bottom <= typyingWrap.vh + 1 && typyingWrap.w <= 260 && typyingWrap.h >= 28),
+    "Long typying text wraps tighter, stays on screen, and stays off the name",
+    Boolean(typyingWrap && typyingWrap.top >= 0 && typyingWrap.left >= -1 && typyingWrap.right <= typyingWrap.vw + 1 && typyingWrap.bottom <= typyingWrap.vh + 1 && typyingWrap.w <= 170 && typyingWrap.h >= 48 && typyingWrap.font === "11px" && typyingWrap.leftOfHead && !typyingWrap.nameHit),
     JSON.stringify(typyingWrap)
   );
   await sendChatMsg(alice);

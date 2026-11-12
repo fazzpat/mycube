@@ -2760,22 +2760,26 @@ body.phone-open .phone-dock-btn {
   line-height: 1.25;
 }
 
-/* 2000s-style thinking bubble: cream fill, dark edge, bouncing dots + trail. */
+/* Compact typying thought bubble, parked beside the left of the head. */
 .thinking-stack {
   position: absolute;
   pointer-events: none;
   z-index: 12;
-  transform: translate(-50%, -100%);
-  transform-origin: bottom center;
-  padding-bottom: 16px;
+  transform: none;
+  padding: 0 14px 0 0;
+  max-width: 150px;
+  overflow: visible;
+}
+.thinking-stack.is-flipped {
+  padding: 0 0 0 14px;
 }
 .thinking-bubble {
   position: relative;
   background: #f4efe4;
   color: #2a1c16;
-  border-radius: 16px;
-  padding: 7px 9px 6px;
-  box-shadow: 0 0 0 2px #5a3a28, 0 3px 0 rgba(42, 24, 16, 0.35);
+  border-radius: 12px;
+  padding: 5px 7px 4px;
+  box-shadow: 0 0 0 2px #5a3a28, 0 2px 0 rgba(42, 24, 16, 0.35);
   line-height: 0;
 }
 .think-dots {
@@ -2813,6 +2817,44 @@ body.phone-open .phone-dock-btn {
   height: 4px;
   left: 13px;
   bottom: -13px;
+}
+.thought-tail {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  width: 14px;
+  height: 16px;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+.thinking-stack.is-flipped .thought-tail {
+  right: auto;
+  left: 0;
+}
+.thought-tail i {
+  position: absolute;
+  border-radius: 50%;
+  background: #f4efe4;
+  box-shadow: 0 0 0 1.5px #5a3a28;
+  display: block;
+}
+.thought-tail i:nth-child(1) {
+  width: 7px;
+  height: 7px;
+  left: 1px;
+  top: 3px;
+}
+.thought-tail i:nth-child(2) {
+  width: 4px;
+  height: 4px;
+  left: 9px;
+  top: 6px;
+}
+.thinking-stack.is-flipped .thought-tail i:nth-child(1) {
+  left: 6px;
+}
+.thinking-stack.is-flipped .thought-tail i:nth-child(2) {
+  left: 1px;
 }
 @keyframes thinkBounce {
   0%, 80%, 100% { transform: translateY(0); opacity: 0.55; }
@@ -4656,18 +4698,19 @@ body.chat-open #chat-composer .chat-count {
 }
 
 .thinking-stack.is-local-draft {
-  max-width: min(240px, calc(100vw - 24px));
+  max-width: 150px;
 }
 .thinking-bubble.draft-bubble {
   line-height: 1.25 !important;
-  max-width: min(240px, calc(100vw - 24px));
-  min-width: 72px;
-  padding: 7px 10px 6px;
+  max-width: 150px;
+  min-width: 52px;
+  padding: 4px 6px 3px;
   text-align: left;
   overflow: visible;
+  border-radius: 10px;
 }
 .draft-text {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -4678,8 +4721,8 @@ body.chat-open #chat-composer .chat-count {
 }
 .draft-count {
   display: block;
-  margin-top: 3px;
-  font-size: 9px;
+  margin-top: 1px;
+  font-size: 8px;
   font-weight: 800;
   letter-spacing: 0.04em;
   color: #8a5a32;
@@ -4931,101 +4974,6 @@ body.edit-mode #chat-dock,
   margin-left: 4px;
 }
 
-
-/* ZOOM_BAR: compact cream/brown vertical zoom on the left of the room,
-   centered in the safe band between the top row and the bottom icons. */
-.zoom-bar {
-  position: fixed;
-  left: max(6px, var(--sal, env(safe-area-inset-left, 0px)));
-  top: calc((
-    (var(--vv-top, 0px) + max(var(--room-topbar-h, 0px), calc(44px + var(--sat, env(safe-area-inset-top, 0px)))) + 8px)
-    + (100dvh - var(--dock-h, 76px) - var(--chrome-bottom, var(--sab, env(safe-area-inset-bottom, 0px))) - 8px)
-  ) / 2);
-  transform: translateY(-50%);
-  z-index: 40;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  width: 36px;
-  height: auto;
-  pointer-events: none;
-  touch-action: manipulation;
-}
-.zoom-bar-btn,
-.zoom-bar-track {
-  pointer-events: auto;
-  touch-action: manipulation;
-  -webkit-user-select: none;
-  user-select: none;
-}
-.zoom-bar-btn {
-  flex: 0 0 auto;
-  width: 36px;
-  height: 36px;
-  min-width: 36px;
-  min-height: 36px;
-  margin: 0;
-  padding: 0;
-  border-radius: 10px;
-  border: 1px solid #8a6a44;
-  background: #efe6d4;
-  color: #3a2418;
-  font-family: "Nunito", "Trebuchet MS", sans-serif;
-  font-size: 20px;
-  font-weight: 800;
-  line-height: 1;
-  box-shadow: inset 1px 1px 0 #fff8ee, 1px 1px 0 #5a3a20;
-  display: grid;
-  place-items: center;
-  cursor: pointer;
-}
-.zoom-bar-btn:active {
-  transform: translate(1px, 1px);
-  box-shadow: inset 1px 1px 0 #fff8ee;
-}
-.zoom-bar-track {
-  position: relative;
-  flex: 0 0 auto;
-  width: 36px;
-  height: 96px;
-  min-height: 72px;
-  max-height: 120px;
-  cursor: pointer;
-}
-.zoom-bar-rail {
-  position: absolute;
-  left: 50%;
-  top: 6px;
-  bottom: 6px;
-  width: 6px;
-  margin-left: -3px;
-  border-radius: 999px;
-  background: #c4b090;
-  border: 1px solid #8a5a32;
-  box-shadow: inset 0 1px 0 #efe6d4;
-}
-.zoom-bar-thumb {
-  position: absolute;
-  left: 50%;
-  width: 18px;
-  height: 18px;
-  margin-left: -9px;
-  border-radius: 50%;
-  background: #f4c15d;
-  border: 1px solid #8a5a32;
-  box-shadow: inset 1px 1px 0 #fff4cc, 0 1px 0 #5a3a20;
-  pointer-events: none;
-}
-body.shop-open .zoom-bar,
-body.phone-open .zoom-bar,
-body.edit-mode .zoom-bar,
-#view-room.hidden .zoom-bar,
-body[data-view]:not([data-view="room"]) .zoom-bar {
-  visibility: hidden !important;
-  pointer-events: none !important;
-}
 
 /* Keep every text field at 16px so iOS Safari will not auto-zoom on focus. */
 input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="hidden"]):not([type="button"]):not([type="submit"]):not([type="reset"]),

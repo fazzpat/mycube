@@ -775,7 +775,6 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     const el = $("#floor");
     state.room3d = createRoom3D(el);
     window.HouseRoom3D = state.room3d;
-    state.room3d.onZoomChange?.(syncZoomBar);
     state.room3d.onTileClick(handleTileClick);
     state.room3d.onTileHover((tx, ty) => {
       if (state._grabbing) {
@@ -1049,22 +1048,62 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
             count.dataset.testid = "typying-count";
             count.textContent = `${draft.length}/${CHAT_MAX}`;
             bubble.append(text, count);
-            typ.append(bubble);
+            const tail = document.createElement("span");
+            tail.className = "thought-tail";
+            tail.setAttribute("aria-hidden", "true");
+            tail.append(document.createElement("i"), document.createElement("i"));
+            typ.append(bubble, tail);
           } else {
-            typ.innerHTML = '<div class="thinking-bubble" aria-label="typing"><span class="think-dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="think-trail" aria-hidden="true"><i></i><i></i></span></div>';
+            typ.innerHTML = '<div class="thinking-bubble" aria-label="typing"><span class="think-dots" aria-hidden="true"><i></i><i></i><i></i></span></div><span class="thought-tail" aria-hidden="true"><i></i><i></i></span>';
           }
         }
         typ.classList.toggle("is-local-draft", draftOn);
-        const typW = Math.max(typ.offsetWidth || 80, 80);
-        const typH = typ.offsetHeight || 40;
+        typ.classList.remove("is-flipped");
+        typ.style.maxWidth = "150px";
+        typ.style.left = "0px";
+        typ.style.top = "0px";
+        const typW = Math.max(typ.offsetWidth || 56, 40);
+        const typH = typ.offsetHeight || 24;
+        const nameW = nameEl.offsetWidth || 40;
         const nameH = nameEl.offsetHeight || 16;
-        let tx = Math.min(Math.max(pos.x, typW / 2 + PAD), W - typW / 2 - PAD);
-        let ty = Math.round(ny - nameH - 2);
-        if (ty - typH < PAD) ty = typH + PAD;
-        typ.style.left = tx + "px";
-        typ.style.top = ty + "px";
+        const nameL = nx - nameW / 2, nameR = nx + nameW / 2, nameT = ny - nameH, nameB = ny;
+        const headX = pos.x;
+        const headY = Number.isFinite(pos.footY) ? pos.y + Math.min(20, Math.max(10, (pos.footY - pos.y) * 0.22)) : pos.y + 14;
+        const GAP = 8;
+        const overlaps = (l, t) => l < nameR - 1 && l + typW > nameL + 1 && t < nameB - 1 && t + typH > nameT + 1;
+        let flipped = false;
+        let tx = headX - GAP - typW;
+        let ty = headY - typH / 2;
+        if (tx < PAD) {
+          flipped = true;
+          tx = headX + GAP;
+        }
+        if (flipped && tx + typW > W - PAD) {
+          const leftOpt = headX - GAP - typW;
+          if (leftOpt + typW / 2 >= PAD) { flipped = false; tx = leftOpt; }
+        }
+        tx = Math.min(Math.max(tx, PAD), W - typW - PAD);
+        ty = Math.min(Math.max(ty, PAD), H - typH - PAD);
+        if (overlaps(tx, ty)) {
+          if (!flipped) {
+            const pushed = nameL - typW - 4;
+            if (pushed >= PAD) tx = pushed;
+            else { flipped = true; tx = Math.min(Math.max(nameR + 4, headX + GAP), W - typW - PAD); }
+          } else {
+            const pushed = nameR + 4;
+            if (pushed + typW <= W - PAD) tx = pushed;
+          }
+          tx = Math.min(Math.max(tx, PAD), W - typW - PAD);
+        }
+        if (overlaps(tx, ty)) {
+          if (nameB + typH + PAD <= H) ty = nameB + 2;
+          else ty = Math.max(PAD, nameT - typH - 2);
+          ty = Math.min(Math.max(ty, PAD), H - typH - PAD);
+        }
+        typ.classList.toggle("is-flipped", flipped);
+        typ.style.left = Math.round(tx) + "px";
+        typ.style.top = Math.round(ty) + "px";
         typ.style.zIndex = "12";
-        typ.style.maxWidth = Math.min(240, W - PAD * 2) + "px";
         seen.add("t:" + p.username);
       }
 
@@ -3127,115 +3166,6 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     }
   }
 
-  function zoomBarRange() {
-    const r = state.room3d?.zoomRange?.() || {};
-    const min = Number(r.min);
-    const max = Number(r.max);
-    const z = Number(r.userZoom ?? r.zoom);
-    return {
-      min: Number.isFinite(min) ? min : 0.5,
-      max: Number.isFinite(max) ? max : 4,
-      zoom: Number.isFinite(z) ? z : 1,
-    };
-  }
-  function zoomToT(z, min, max) {
-    const lo = Math.log(Math.max(0.05, min));
-    const hi = Math.log(Math.max(min * 1.01, max));
-    const a = Math.log(Math.max(min, Math.min(max, z)));
-    return (a - lo) / Math.max(1e-6, hi - lo);
-  }
-  function tToZoom(t, min, max) {
-    const lo = Math.log(Math.max(0.05, min));
-    const hi = Math.log(Math.max(min * 1.01, max));
-    return Math.exp(lo + Math.max(0, Math.min(1, t)) * (hi - lo));
-  }
-  function applyRoomZoom(z, immediate = true) {
-    if (!state.room3d) return;
-    if (typeof state.room3d.setUserZoom === "function") state.room3d.setUserZoom(z, immediate);
-    else state.room3d.setZoom?.(z);
-    syncZoomBar();
-  }
-  function syncZoomBar() {
-    const bar = $("#zoom-bar");
-    const thumb = bar?.querySelector(".zoom-bar-thumb");
-    const track = $("#zoom-slider");
-    if (!bar || !thumb || !track) return;
-    const { min, max, zoom } = zoomBarRange();
-    const t = zoomToT(zoom, min, max);
-    const trackH = track.clientHeight || 96;
-    const thumbH = thumb.offsetHeight || 18;
-    const y = (1 - t) * Math.max(0, trackH - thumbH);
-    thumb.style.top = y + "px";
-    track.setAttribute("aria-valuemin", String(Math.round(min * 100) / 100));
-    track.setAttribute("aria-valuemax", String(Math.round(max * 100) / 100));
-    track.setAttribute("aria-valuenow", String(Math.round(zoom * 100) / 100));
-  }
-  function zoomFromTrackEvent(e) {
-    const track = $("#zoom-slider");
-    if (!track) return;
-    const rect = track.getBoundingClientRect();
-    const y = (e.clientY ?? e.touches?.[0]?.clientY ?? 0) - rect.top;
-    const t = 1 - (y / Math.max(1, rect.height));
-    const { min, max } = zoomBarRange();
-    applyRoomZoom(tToZoom(t, min, max), true);
-  }
-  function bindZoomBar() {
-    const plus = $("#zoom-in");
-    const minus = $("#zoom-out");
-    const track = $("#zoom-slider");
-    plus?.addEventListener("click", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const { min, max, zoom } = zoomBarRange();
-      applyRoomZoom(Math.min(max, zoom * 1.2), true);
-    });
-    minus?.addEventListener("click", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const { min, max, zoom } = zoomBarRange();
-      applyRoomZoom(Math.max(min, zoom / 1.2), true);
-    });
-    if (track) {
-      let dragging = false;
-      const onMove = (ev) => {
-        if (!dragging) return;
-        ev.preventDefault();
-        const pt = ev.touches?.[0] || ev;
-        zoomFromTrackEvent(pt);
-      };
-      const onUp = () => {
-        dragging = false;
-        window.removeEventListener("pointermove", onMove);
-        window.removeEventListener("pointerup", onUp);
-        window.removeEventListener("pointercancel", onUp);
-      };
-      track.addEventListener("pointerdown", (ev) => {
-        ev.preventDefault();
-        ev.stopPropagation();
-        dragging = true;
-        try { track.setPointerCapture?.(ev.pointerId); } catch {}
-        zoomFromTrackEvent(ev);
-        window.addEventListener("pointermove", onMove);
-        window.addEventListener("pointerup", onUp);
-        window.addEventListener("pointercancel", onUp);
-      });
-      track.addEventListener("keydown", (ev) => {
-        const { min, max, zoom } = zoomBarRange();
-        if (ev.key === "ArrowUp" || ev.key === "ArrowRight") {
-          ev.preventDefault();
-          applyRoomZoom(Math.min(max, zoom * 1.1), true);
-        } else if (ev.key === "ArrowDown" || ev.key === "ArrowLeft") {
-          ev.preventDefault();
-          applyRoomZoom(Math.max(min, zoom / 1.1), true);
-        }
-      });
-    }
-    state.room3d?.onZoomChange?.(syncZoomBar);
-    syncZoomBar();
-    window.__syncZoomBar = syncZoomBar;
-    window.__applyRoomZoom = applyRoomZoom;
-  }
-
   function lockPageScroll() {
     // iOS Safari can shift the layout or visual viewport, hiding the top HUD.
     // Always snap back to (0, 0). Avoid transforms on the app shell — they
@@ -3316,7 +3246,6 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
       if (chat.placeholder !== next) chat.placeholder = next;
     }
     if (state.view === "room") state.room3d?.resize();
-    syncZoomBar();
   }
 
   function syncKeyboardInset() {
@@ -4699,7 +4628,6 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
   ["gesturestart", "gesturechange", "gestureend"].forEach((type) => {
     document.addEventListener(type, (e) => e.preventDefault(), { passive: false, capture: true });
   });
-  bindZoomBar();
   syncAppShell();
   syncKeyboardInset();
   window.__setKeyboardInset = (px) => {
