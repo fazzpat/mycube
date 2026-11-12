@@ -1,4 +1,4 @@
-import { heldItemHandAnchor, heldItemFaceAnchor, sipAdjustedHand, AV_W } from "../public/js/avatar3d.js";
+import { heldItemHandAnchor, heldItemFaceAnchor, sipAdjustedHand, sipBackOccluded, SIP_BACK_OCCLUDE_LIFT, AV_W } from "../public/js/avatar3d.js";
 import { drawHeldItemSprite, sipAnim, BITE_COUNT, BITE_FIRST_MS } from "../public/js/heldItems.js";
 
 let passed = 0;
@@ -50,10 +50,12 @@ for (const kind of ["pizza", "chicken", "soda"]) {
     const lipDist = Math.hypot(lipX - sipMouth.x, lipY - sipMouth.y);
     if (back) {
       const restLip = Math.hypot(rest.x + sipLip.x - sipMouth.x, rest.y + sipLip.y - sipMouth.y);
-      check(`${kind} ${f.name}: back-facing raise stays attached and closer to the hidden face`,
-        raised.behind === true && lipDist < restLip - 1, JSON.stringify({ lipDist, restLip, key: rest.key, raised, mid }));
-      check(`${kind} ${f.name}: back-facing hand stays off the spine`,
-        Math.abs(raised.x - mid) > 3, JSON.stringify({ x: raised.x, mid, key: rest.key }));
+      check(`${kind} ${f.name}: back-facing raise stays attached and goes toward the hidden mouth`,
+        raised.behind === true && raised.occluded === true && lipDist < restLip - 1 && lipDist <= 1.25,
+        JSON.stringify({ lipDist, restLip, key: rest.key, raised }));
+      check(`${kind} ${f.name}: idle back hold stays visible at the side, not occluded`,
+        rest.occluded === false && rest.behind === true && Math.abs(rest.x - mid) > 3,
+        JSON.stringify({ rest, mid }));
     } else {
       check(`${kind} ${f.name}: lip meets the mouth while the hand keeps the grip`,
         lipDist <= 1.25, JSON.stringify({ lipDist, lipX, lipY, sipMouth, raised, sipLip }));
@@ -66,6 +68,13 @@ for (const kind of ["pizza", "chicken", "soda"]) {
 }
 
 check("sipAdjustedHand is a no-op at lift 0", sipAdjustedHand({ x: 10, y: 20 }, { sipLift: 0, sipMouth: { x: 1, y: 1 } }).x === 10);
+check("Back-facing mid-sip is occluded; a low lift is not",
+  sipBackOccluded({ sipLift: 1, sipKey: "n" }) === true
+  && sipBackOccluded({ sipLift: 1, sipKey: "ne" }) === true
+  && sipBackOccluded({ sipLift: SIP_BACK_OCCLUDE_LIFT, sipKey: "n" }) === false
+  && sipBackOccluded({ sipLift: 0, sipKey: "n" }) === false
+  && sipBackOccluded({ sipLift: 1, sipKey: "s" }) === false
+  && sipBackOccluded({ sipLift: 1, sipKey: "e" }) === false);
 
 const pizzaBite = sipAnim({ kind: "pizza", startedAt: 1, }, "pat", 1 + BITE_FIRST_MS + 1000);
 check("A mid-bite still reports one of 4 chunks eaten", pizzaBite.action === "bite" && pizzaBite.eaten === 1 && pizzaBite.eaten < BITE_COUNT, JSON.stringify(pizzaBite));

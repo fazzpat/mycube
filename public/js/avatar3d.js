@@ -2693,6 +2693,15 @@ function headMotion(frame, walk, sit, bodyUpper = 0) {
   return { y: bodyUpper || 0, x: 0 };
 }
 
+export const SIP_BACK_OCCLUDE_LIFT = 0.25;
+
+/** True when a back-facing sip/bite has carried the hand in front of the body. */
+export function sipBackOccluded(flags, key) {
+  const k = key || flags?.sipKey || "";
+  const lift = Number(flags?.sipLift) || 0;
+  return (k === "n" || k === "ne") && lift > SIP_BACK_OCCLUDE_LIFT;
+}
+
 /** Move the holding hand with a sip/bite so the gripped item stays in the palm. */
 export function sipAdjustedHand(rest, flags) {
   const lift = Number(flags?.sipLift) || 0;
@@ -2700,15 +2709,10 @@ export function sipAdjustedHand(rest, flags) {
   const m = flags.sipMouth;
   if (!m) return rest;
   const lip = flags.sipLip || { x: 0, y: 0 };
-  let tx = m.x - (lip.x || 0);
-  let ty = m.y - (lip.y || 0);
-  const key = flags.sipKey || "";
-  if (key === "n" || key === "ne") {
-    // Raise to mouth height beside the hidden face. Only a slight inward
-    // move, so the hand + item peek at the side of the head instead of
-    // vanishing under the hair.
-    tx = rest.x + (tx - rest.x) * 0.45;
-  }
+  const tx = m.x - (lip.x || 0);
+  const ty = m.y - (lip.y || 0);
+  // Back views travel all the way to the hidden mouth (in front of the body
+  // from the character's side). Layering hides the hand+item once occluded.
   return {
     ...rest,
     x: rest.x + (tx - rest.x) * lift,
@@ -2824,11 +2828,14 @@ function composeAvatar(av, flagsIn, frame) {
   const tappingPhone = holdingPhone && (aKind === "phone1" || aKind === "phoneTap");
   const layers = [];
   const backView = bk === "n" || bk === "ne";
+  const sipOcclude = sipBackOccluded(flags, bk);
   const fFoot = footSpr(farFoot);
   const nFoot = footSpr(nearFoot);
   const fHand = handSpr(farHand, false, false);
   const nHand = handSpr(nearHand, holdingPhone, tappingPhone);
-  if (sit) layers.push(fHand, body, head, nHand, fFoot, nFoot);
+  if (sit && sipOcclude) layers.push(fHand, nHand, body, head, fFoot, nFoot);
+  else if (sit) layers.push(fHand, body, head, nHand, fFoot, nFoot);
+  else if (sipOcclude) layers.push(fFoot, nHand, body, head, nFoot, fHand);
   else if (backView) layers.push(fFoot, body, head, nFoot, fHand, nHand);
   else layers.push(fFoot, fHand, body, head, nFoot, nHand);
 
@@ -3639,11 +3646,13 @@ export function heldItemHandAnchor(avatar = {}, flags = {}, frame = 0) {
     side: bodyView.flip ? -1 : 1,
   };
   const hand = sipAdjustedHand(rest, flags);
-  // Back views: item stays behind the sprite so the head can occlude a raise-to-mouth.
+  // Back views: the item is drawn behind the sprite. During a raise it travels
+  // to the hidden mouth and is occluded by the body/head.
   const behind = bk === "n" || bk === "ne";
   return {
     x: hand.x, y: hand.y,
     behind,
+    occluded: sipBackOccluded(flags, bk),
     side: rest.side,
     flip: Boolean(bodyView.flip),
     key: bk,
@@ -3721,4 +3730,4 @@ if (typeof window !== "undefined") {
   window.__paintClothesCatalog = paintClothesCatalog;
 }
 
-export default { drawAvatarSprite, paintAvatarSheet, paintStoreThumb, facingIndex8, sitFootLayout, tickChibiAnim, setChibiAnimOverride, getChibiAnim, sipAdjustedHand, heldItemHandAnchor, heldItemFaceAnchor, AV_W, AV_H, AV_GROUND_Y, AV_HEAD_TOP, AVATAR_SHEET_LOOKS };
+export default { drawAvatarSprite, paintAvatarSheet, paintStoreThumb, facingIndex8, sitFootLayout, tickChibiAnim, setChibiAnimOverride, getChibiAnim, sipAdjustedHand, sipBackOccluded, heldItemHandAnchor, heldItemFaceAnchor, AV_W, AV_H, AV_GROUND_Y, AV_HEAD_TOP, AVATAR_SHEET_LOOKS };

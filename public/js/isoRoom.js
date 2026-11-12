@@ -1754,17 +1754,18 @@ export function createRoom3D(container, opts = {}) {
         // Item stays glued to the animated holding hand in every facing.
         const ix = hx - gx, iy = hy - gy;
         const gone = Boolean(sip?.done) || (sip?.eaten || 0) >= BITE_COUNT;
-        const lift = sip?.lift || 0;
-        // Back views: rest stays behind the body; a raise brings the glued
-        // hand+item in front so they travel to the hidden face without vanishing under the hair.
-        const behind = Boolean(anchor.behind) && lift < 0.35;
-        if (!gone && behind) blit(item, ix, iy);
+        const behind = Boolean(anchor.behind);
+        const occluded = Boolean(anchor.occluded);
+        // Back views: idle hold peeks from the side, behind the body. During a
+        // raise the hand+item go to the hidden mouth in front of the body and
+        // stay occluded (not drawn in front, hidden by the body/head).
+        if (!gone && behind && !occluded) blit(item, ix, iy);
         blit(it.spr, it.sx, it.sy, it.alpha ?? 1);
         if (sip?.face) {
           const ov = drawSipFaceOverlay(face);
           if (ov) blit(ov, it.sx, it.sy);
         }
-        if (!gone && !behind) blit(item, ix, iy);
+        if (!gone && !behind && !occluded) blit(item, ix, iy);
       } else {
         blit(it.spr, it.sx, it.sy, it.alpha ?? 1);
       }
