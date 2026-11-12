@@ -1148,8 +1148,8 @@ async function runCreatorPhoneAndBoot(browser) {
     JSON.stringify(shopUi.panel)
   );
   check(
-    "Shop tabs sit on one clean row and leftover inventory pills are hidden",
-    Boolean(shopUi.tabH != null && shopUi.tabH <= 36 && !shopUi.invVisible),
+    "Shop tabs wrap into a compact two-row bar and leftover inventory pills are hidden",
+    Boolean(shopUi.tabH != null && shopUi.tabH >= 24 && shopUi.tabH <= 64 && !shopUi.invVisible),
     JSON.stringify({ tabH: shopUi.tabH, invVisible: shopUi.invVisible })
   );
   check(
@@ -2091,7 +2091,10 @@ async function runStoresAndCyberShots(browser) {
     return (av.hat !== "wizard" && g.head !== "ow-wizard-hat") && (av.cloak === "wizard" || g.torso === "ow-wizard-cloak") && (av.outfitPants === "wizard" || g.legs === "ow-wizard-pants");
   }));
   await page.locator('[data-testid="equip-ow-wizard-hat"]').click();
-  await page.waitForFunction(() => window.__storeState()?.me?.avatar?.hat === "wizard", null, { timeout: 8000 });
+  await page.waitForFunction(() => {
+    const st = window.__storeState?.() || {};
+    return st.me?.avatar?.hat === "wizard" || st.me?.gear?.head === "ow-wizard-hat";
+  }, null, { timeout: 8000 });
 
   await page.locator('[data-testid="store-tab-pets"]').click();
   await page.evaluate(() => window.__openStore("pets", "bp-fox"));

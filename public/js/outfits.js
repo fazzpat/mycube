@@ -105,49 +105,52 @@ function torsoBox(key) {
   return { cx: 24 + AV_PAD_X, y0, hw: 12.8, h };
 }
 
-/** Pointy steel-blue felt hat, wide floppy brim, slightly bent tip. No stars. Stays above the eyes. */
+/** Pointy steel-blue felt hat, elliptical brim that reads as a circle in
+    perspective, rounded crown base, and a clean sharp taper. A slight bend
+    at the tip is ok. No stars. Stays above the eyes. */
 export function drawOutfitHat(buf, av, key, upper = 0) {
   if (av?.hat !== "wizard") return;
   const g = headGeom(key);
   const cx = g.cx;
   const cy = g.cy + upper;
   const crown = cy - g.ry + 2.2;
-  const brimY = crown + 5.6;
+  const brimCy = crown + 5.2;
   const faceTop = cy - 2; // keep brim/cone out of the eye window
-  // Floppy brim — wide, slightly drooped at the edges, not a visor over the eyes.
-  const brimRx = g.rx * 1.58;
-  const brimRy = 2.6;
-  for (let x = Math.round(-brimRx - 1); x <= Math.round(brimRx + 1); x++) {
-    const t = x / brimRx;
-    if (t * t > 1.08) continue;
-    const drop = Math.round((t * t) * 1.8);
-    const yb = Math.round(brimY + drop);
-    if (yb >= faceTop - 1 && Math.abs(t) < 0.45 && key !== "n" && key !== "ne") continue;
-    const span = Math.max(1, Math.round((1 - t * t) * brimRy));
-    for (let y = yb - span; y <= yb + 1; y++) {
-      if (key !== "n" && key !== "ne" && y >= faceTop) continue;
-      felt(buf, Math.round(cx + x), y, y >= yb ? HAT.sh : HAT, "hat-brim", 55);
+  const back = key === "n" || key === "ne";
+  // Circular brim in perspective: a proper ellipse, not a flat diamond or frown.
+  const brimRx = g.rx * 1.38;
+  const brimRy = 4.4;
+  const rxi = Math.ceil(brimRx) + 1, ryi = Math.ceil(brimRy) + 1;
+  for (let y = -ryi; y <= ryi; y++) {
+    for (let x = -rxi; x <= rxi; x++) {
+      const d = (x / brimRx) * (x / brimRx) + (y / brimRy) * (y / brimRy);
+      if (d < 0.60 || d > 1.05) continue;
+      const px = Math.round(cx + x);
+      const py = Math.round(brimCy + y);
+      if (!back && py >= faceTop && Math.abs(x) < brimRx * 0.55) continue;
+      const edge = d > 0.92 || d < 0.70;
+      felt(buf, px, py, edge ? HAT.sh : HAT, "hat-brim", y < 0 ? 54 : 55);
     }
   }
-  // Felt crown / cone with a slightly bent tip.
-  const bend = key === "e" ? 7 : key === "n" || key === "ne" ? -4 : 6;
-  const tipY = crown - 13;
+  // Rounded crown base sitting in the brim, then a sharp clean taper.
+  const baseY = brimCy - 0.6;
+  const baseR = g.rx * 0.72;
+  fillEllipse(buf, cx, baseY, baseR, 2.6, HAT, "hat-base", 56);
+  const bend = key === "e" ? 2.6 : back ? -1.8 : 2.2;
+  const tipY = crown - 14;
   const tipX = cx + bend;
-  const baseY = brimY - 1;
-  const baseR = g.rx * 0.92;
   for (let y = tipY; y <= baseY; y++) {
     const u = (y - tipY) / (baseY - tipY || 1);
-    const wx = Math.max(0.8, u * baseR);
-    const curve = (1 - u) * (1 - u);
-    const mid = tipX * (1 - u) + cx * u + Math.sin(u * Math.PI) * (key === "e" ? 0.4 : 1.2) * curve;
+    const wx = Math.max(0.5, Math.pow(u, 1.4) * baseR);
+    const tipBlend = Math.max(0, 1 - u / 0.32);
+    const mid = cx + bend * tipBlend * tipBlend;
     for (let x = Math.round(mid - wx); x <= Math.round(mid + wx); x++) {
-      const edge = Math.abs(x - mid) > wx - 1;
+      const edge = Math.abs(x - mid) >= wx - 0.65;
       felt(buf, x, Math.round(y), edge ? HAT.sh : HAT, "hat", 56);
     }
   }
-  // Slight crease on the bent tip.
   plot(buf, Math.round(tipX), Math.round(tipY + 1), HAT.sh, "hat", 57);
-  plot(buf, Math.round(tipX + (key === "e" ? 1 : 0)), Math.round(tipY), HAT.hi, "hat", 57);
+  plot(buf, Math.round(tipX), Math.round(tipY), HAT.hi, "hat", 57);
 }
 
 /** Tunic, belt, hooded cloak, and/or blue lower legs depending on equipped slots. */
@@ -190,13 +193,30 @@ export function drawOutfitBody(buf, av, key, upper = 0, sit = false) {
       plot(buf, bx, by + 1, BRASS.sh, "buckle", 33);
     }
 
-    // Long dark-blue hooded cloak, closed at the throat, flowing to the ankles.
+    // Tailored cloak: hug the bean/shoulder silhouette, slight taper through
+    // the torso, and a gentle flare only at the hem — no rectangular slab.
     const throatY = Math.round(y0 + 1);
-    const shoulderW = t.hw + 2.2;
+    const shoulderW = t.hw + 0.7;
+    const midBody = y0 + h * 0.50;
+    const bodyRy = h * 0.50;
     for (let y = throatY; y <= hemY; y++) {
       const u = (y - throatY) / (hemY - throatY || 1);
-      const spread = shoulderW + u * (back ? 6.5 : 5.2);
-      const open = (!back && y > waist + 2) ? 3.2 + u * 1.4 : 0; // front split below the clasp
+      let bodyHalf;
+      const ny = (y - midBody) / (bodyRy || 1);
+      if (y <= y0 + h + 1 && ny * ny < 1) {
+        bodyHalf = t.hw * Math.sqrt(Math.max(0, 1 - ny * ny));
+      } else if (y < midBody) {
+        bodyHalf = t.hw * 0.55;
+      } else {
+        bodyHalf = t.hw * 0.62;
+      }
+      let spread = Math.max(bodyHalf + 0.8, shoulderW * 0.72);
+      if (u < 0.22) spread = Math.max(spread, shoulderW - u * 1.2);
+      if (u > 0.68) {
+        const v = (u - 0.68) / 0.32;
+        spread = (t.hw * 0.62 + 0.8) + v * v * (back ? 3.0 : 2.2);
+      }
+      const open = (!back && y > waist + 2) ? 3.0 + u * 1.2 : 0; // front split below the clasp
       for (let x = Math.round(cx - spread); x <= Math.round(cx + spread); x++) {
         if (open && Math.abs(x - cx) < open && y > throatY + 4) continue;
         // Leave the central tunic visible on the front upper body.
@@ -224,8 +244,8 @@ export function drawOutfitBody(buf, av, key, upper = 0, sit = false) {
       }
     } else if (key !== "e") {
       // Small hood peek at the sides of the neck on front views.
-      fillEllipse(buf, cx - t.hw - 1.5, hoodY, 3.2, 3.0, CLOAK, "hood", 21, { dither: true });
-      fillEllipse(buf, cx + t.hw + 1.5, hoodY, 3.2, 3.0, CLOAK, "hood", 21, { dither: true });
+      fillEllipse(buf, cx - t.hw + 0.2, hoodY, 2.8, 2.8, CLOAK, "hood", 21, { dither: true });
+      fillEllipse(buf, cx + t.hw - 0.2, hoodY, 2.8, 2.8, CLOAK, "hood", 21, { dither: true });
     }
   }
 
@@ -281,33 +301,52 @@ export function drawOutfitBoot(buf, x, y, key, side, sit = false) {
   plot(buf, Math.round(x - 1), Math.round(y - 4), LEATHER.hi, "boot-hi", 39);
 }
 
-/** Tall gnarled staff with a pointed blue crystal. Drawn in sprite space at the holding hand. */
-export function drawWizardStaff(buf, hand, key = "s") {
+/** Sprite-space x for a vertical staff held beside the body, clear of the head. */
+export function staffSideX(hand, key = "s", box) {
+  const t = box || torsoBox(key);
+  const g = headGeom(key);
+  const cx = t.cx;
+  const side = (hand && Number.isFinite(hand.x) && hand.x < cx) ? -1 : 1;
+  const need = Math.max((t.hw || 12) + 4.2, (g.rx || 14) + 3.4);
+  return Math.max(5, Math.min(AV_W - 6, Math.round(cx + side * need)));
+}
+
+/** Park the gripping hand at hip/waist height on the staff, beside the body. */
+export function placeStaffHand(hand, key, box) {
+  if (!hand) return hand;
+  const t = box || torsoBox(key);
+  const x = staffSideX(hand, key, t);
+  const hip = (t.y0 || 44) + (t.h || 16) * 0.86;
+  const y = Number.isFinite(hand.y) ? hand.y : hip;
+  return { ...hand, x, y };
+}
+
+/** Tall gnarled staff with a pointed blue crystal, held vertically at the side. */
+export function drawWizardStaff(buf, hand, key = "s", box) {
   if (!hand) return;
-  const away = (hand.x >= AV_W / 2 ? 2 : -2);
-  const hx = hand.x + away, hy = hand.y;
+  const t = box || torsoBox(key);
+  const hx = staffSideX(hand, key, t);
+  const hy = hand.y;
   const top = 3;
   const bot = AV_GROUND_Y;
-  // Twisted shaft, slightly thicker at the base, kinked mid-staff.
+  // Nearly vertical shaft — knots for a gnarled look, not a lean across the body.
   for (let y = top + 8; y <= bot; y++) {
-    const u = (y - (top + 8)) / (bot - (top + 8) || 1);
-    const twist = Math.round(Math.sin(y * 0.45) * 1.4 + Math.sin(y * 0.17) * 0.8);
     const thick = y > bot - 4 ? 2 : 1;
-    const x = Math.round(hx + twist);
+    const knot = Math.sin(y * 0.55) * 0.35;
+    const x = Math.round(hx + knot);
     for (let dx = -thick; dx <= thick; dx++) {
       const col = dx < 0 ? WOOD.sh : (dx > 0 ? WOOD.hi : WOOD.mid);
       plot(buf, x + dx, y, col, "staff", 28);
     }
-    // Occasional knot
-    if (y % 11 === 3) plot(buf, x + 2, y, WOOD.sh, "staff-knot", 28);
+    if (y % 11 === 3) plot(buf, x + 1, y, WOOD.sh, "staff-knot", 28);
   }
-  // Grip area slightly thicker
+  // Grip at hip / waist height
   for (let y = Math.round(hy - 2); y <= Math.round(hy + 2); y++) {
     plot(buf, Math.round(hx - 1), y, WOOD.sh, "staff", 29);
     plot(buf, Math.round(hx + 1), y, WOOD.hi, "staff", 29);
   }
-  // Pointed blue crystal
-  const cx = Math.round(hx + Math.sin((top + 8) * 0.45) * 1.4);
+  // Pointed blue crystal above the shoulder/head, beside the head.
+  const cx = hx;
   const cy = top + 8;
   for (let i = 0; i < 9; i++) {
     const w = i < 3 ? i : (8 - i) * 0.7;
@@ -347,6 +386,7 @@ export function installOutfitDraw(setOutfitDraw) {
     hasBoots: hasWizardBoots,
     drawBoot: drawOutfitBoot,
     shouldDrawStaff,
+    placeStaffHand,
     drawStaff: drawWizardStaff,
   });
 }
@@ -421,5 +461,6 @@ if (typeof window !== "undefined") {
 export default {
   OUTFIT_STOCK, outfitById, wearingOutfit, applyOutfitItem, stripOutfitItem,
   drawOutfitHat, drawOutfitBody, drawOutfitGlove, drawOutfitBoot, drawWizardStaff,
-  installOutfitDraw, paintOutfitThumb, shouldDrawStaff, hasWizardGloves, hasWizardBoots,
+  installOutfitDraw, paintOutfitThumb, shouldDrawStaff, placeStaffHand, staffSideX,
+  hasWizardGloves, hasWizardBoots,
 };

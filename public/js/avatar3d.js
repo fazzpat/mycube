@@ -2862,6 +2862,12 @@ function composeAvatar(av, flagsIn, frame) {
   const farHand = { x: flipX(leftHand.x), y: leftHand.y, side: -1 };
   let nearHand = { x: flipX(rightHand.x), y: rightHand.y, side: 1 };
   if ((Number(flags.sipLift) || 0) > 0) nearHand = sipAdjustedHand(nearHand, flags);
+  if (outfitDraw?.shouldDrawStaff?.(flags, av, bk) && outfitDraw.placeStaffHand) {
+    // Park the staff hand at the hip, beside the body, so a vertical staff
+    // sits next to the figure instead of crossing the torso or face.
+    const flippedBox = { ...t, cx: flipX(t.cx) };
+    nearHand = outfitDraw.placeStaffHand(nearHand, bk, flippedBox) || nearHand;
+  }
 
   function footSpr(fp) {
     const shoeSide = sit ? fp.side : (bodyView.flip ? -fp.side : fp.side);
@@ -2911,7 +2917,7 @@ function composeAvatar(av, flagsIn, frame) {
     // Staff is taller than the figure; draw it on the composed sprite so the
     // holding hand (already in `out`) can cover the grip.
     const staffBuf = makeBuf();
-    outfitDraw.drawStaff(staffBuf, nearHand, bk);
+    outfitDraw.drawStaff(staffBuf, nearHand, bk, { ...t, cx: flipX(t.cx) });
     blitBuf(out, staffBuf);
     // Redraw the holding hand over the grip so the staff stays in the palm.
     blitBuf(out, nHand);
