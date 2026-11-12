@@ -1823,6 +1823,171 @@ async function runAppShellFit(browser) {
     window.HouseRoom3D.resize?.();
   });
 
+  const vpMeta = await page.evaluate(() => document.querySelector('meta[name="viewport"]')?.content || "");
+  check(
+    "The viewport meta disables browser page scaling",
+    /maximum-scale\s*=\s*1/.test(vpMeta) && /user-scalable\s*=\s*no/.test(vpMeta),
+    vpMeta
+  );
+  const pageZoomLock = await page.evaluate(() => {
+    const canvas = document.querySelector(".room3d-root canvas, #floor canvas, #floor");
+    const html = document.documentElement;
+    const body = document.body;
+    const dock = document.querySelector("[data-testid=chat-dock]");
+    const inv = document.querySelector("[data-testid=edit-inv-items]");
+    const shop = document.querySelector("#store-panel .store-grid, .store-grid");
+    const chat = document.getElementById("chat-input");
+    const stack = document.querySelector(".speech-stack");
+    return {
+      locked: html.dataset.pageZoomLock === "1",
+      canvas: canvas ? getComputedStyle(canvas).touchAction : "",
+      html: getComputedStyle(html).touchAction,
+      body: getComputedStyle(body).touchAction,
+      dock: dock ? getComputedStyle(dock).touchAction : "",
+      inv: inv ? getComputedStyle(inv).touchAction : "",
+      shop: shop ? getComputedStyle(shop).touchAction : "",
+      chatSize: chat ? parseFloat(getComputedStyle(chat).fontSize) : 0,
+      bubbleScale: stack ? getComputedStyle(stack).transform : "",
+      isoZoom: document.querySelector(".bubble-layer")?.style.getPropertyValue("--iso-zoom") || getComputedStyle(document.querySelector(".bubble-layer") || html).getPropertyValue("--iso-zoom"),
+    };
+  });
+  check(
+    "Page zoom is locked and only the room canvas uses touch-action none",
+    Boolean(pageZoomLock.locked && pageZoomLock.canvas === "none" && /manipulation/.test(pageZoomLock.html) && /manipulation/.test(pageZoomLock.body)),
+    JSON.stringify(pageZoomLock)
+  );
+  check(
+    "Text inputs stay at least 16px so iOS will not zoom on focus",
+    pageZoomLock.chatSize >= 16,
+    JSON.stringify({ chatSize: pageZoomLock.chatSize })
+  );
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.evaluate(() => {
+    window.__exitEdit?.();
+    window.__setCamMode?.("follow");
+    window.HouseRoom3D.setZoom(2);
+    window.__syncZoomBar?.();
+  });
+  await page.waitForTimeout(80);
+  const zoomBarFit = await page.evaluate(() => {
+    const bar = document.querySelector("[data-testid=zoom-bar]");
+    const plus = document.querySelector("[data-testid=zoom-in]");
+    const minus = document.querySelector("[data-testid=zoom-out]");
+    const track = document.querySelector("[data-testid=zoom-slider]");
+    const top = document.querySelector(".room-view .topbar");
+    const dock = document.querySelector("[data-testid=chat-dock]");
+    const box = (el) => {
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return { t: r.top, b: r.bottom, l: r.left, r: r.right, w: r.width, h: r.height };
+    };
+    const overlap = (a, b) => a && b && a.l < b.r - 1 && a.r > b.l + 1 && a.t < b.b - 1 && a.b > b.t + 1;
+    const br = box(bar), tr = box(top), dr = box(dock), pr = box(plus), mr = box(minus), sr = box(track);
+    const cs = bar ? getComputedStyle(bar) : null;
+    const vw = window.innerWidth, vh = window.innerHeight;
+    return {
+      visible: Boolean(bar && cs.visibility !== "hidden" && cs.display !== "none" && br.w > 0 && br.h > 0),
+      inView: Boolean(br && br.l >= -1 && br.r <= vw + 1 && br.t >= -1 && br.b <= vh + 1),
+      leftSide: Boolean(br && br.l < vw * 0.28),
+      plusSize: pr ? Math.min(pr.w, pr.h) : 0,
+      minusSize: mr ? Math.min(mr.w, mr.h) : 0,
+      overlapsTop: overlap(br, tr),
+      overlapsDock: overlap(br, dr),
+    };
+  });
+  check(
+    "The zoom bar sits on the left, inside the safe area, and misses the top row and bottom icons",
+    Boolean(zoomBarFit.visible && zoomBarFit.inView && zoomBarFit.leftSide && zoomBarFit.plusSize >= 36 && zoomBarFit.minusSize >= 36 && !zoomBarFit.overlapsTop && !zoomBarFit.overlapsDock),
+    JSON.stringify(zoomBarFit)
+  );
+  const beforeBar = await page.evaluate(() => window.HouseRoom3D.visualZoom?.());
+  await page.click("[data-testid=zoom-in]");
+  await page.waitForTimeout(80);
+  const afterIn = await page.evaluate(() => ({ zoom: window.HouseRoom3D.visualZoom?.(), now: document.querySelector("[data-testid=zoom-slider]")?.getAttribute("aria-valuenow") }));
+  await page.click("[data-testid=zoom-out]");
+  await page.click("[data-testid=zoom-out]");
+  await page.waitForTimeout(80);
+  const afterOut = await page.evaluate(() => window.HouseRoom3D.visualZoom?.());
+  check(
+    "The zoom bar + and − buttons change room zoom",
+    Boolean(afterIn.zoom > beforeBar + 0.05 && afterOut < afterIn.zoom - 0.05),
+    JSON.stringify({ beforeBar, afterIn, afterOut })
+  );
+  const sliderZoom = await page.evaluate(() => {
+    const track = document.querySelector("[data-testid=zoom-slider]");
+    const r = track.getBoundingClientRect();
+    const x = r.left + r.width / 2;
+    const yTop = r.top + 1;
+    track.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true, clientX: x, clientY: yTop, pointerId: 21, pointerType: "mouse", buttons: 1 }));
+    track.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, cancelable: true, clientX: x, clientY: yTop, pointerId: 21, pointerType: "mouse", buttons: 0 }));
+    return window.HouseRoom3D.visualZoom?.();
+  });
+  const rangeMax = await page.evaluate(() => window.HouseRoom3D.zoomRange?.().max);
+  check(
+    "The zoom bar slider sets room zoom and uses the same range as pinch",
+    Boolean(sliderZoom >= (rangeMax || 4) - 0.55),
+    JSON.stringify({ sliderZoom, rangeMax })
+  );
+  const beforePinch = await page.evaluate(() => Number(document.querySelector("[data-testid=zoom-slider]")?.getAttribute("aria-valuenow") || 0));
+  const zoomCanvasBox = await page.locator(".room3d-root canvas").boundingBox();
+  const midX = Math.round(zoomCanvasBox.x + zoomCanvasBox.width * 0.55);
+  const midY = Math.round(zoomCanvasBox.y + zoomCanvasBox.height * 0.45);
+  await page.evaluate(({ x, y }) => {
+    const c = document.querySelector(".room3d-root canvas");
+    const fire = (type, id, px, py) => c.dispatchEvent(new PointerEvent(type, {
+      pointerId: id, pointerType: "touch", clientX: px, clientY: py, bubbles: true, cancelable: true, isPrimary: id === 1, width: 12, height: 12,
+    }));
+    fire("pointerdown", 1, x - 20, y);
+    fire("pointerdown", 2, x + 20, y);
+    fire("pointermove", 1, x - 8, y);
+    fire("pointermove", 2, x + 8, y);
+    fire("pointerup", 1, x - 8, y);
+    fire("pointerup", 2, x + 8, y);
+  }, { x: midX, y: midY });
+  await page.waitForTimeout(120);
+  const afterBarPinch = await page.evaluate(() => Number(document.querySelector("[data-testid=zoom-slider]")?.getAttribute("aria-valuenow") || 0));
+  check(
+    "The zoom bar stays in sync with pinch zoom",
+    afterBarPinch < beforePinch - 0.05,
+    JSON.stringify({ beforePinch, afterBarPinch })
+  );
+
+  async function zoomBarHiddenWhen(fn) {
+    await fn();
+    const hidden = await page.evaluate(() => {
+      const bar = document.querySelector("[data-testid=zoom-bar]");
+      const cs = bar && getComputedStyle(bar);
+      return !bar || cs.visibility === "hidden" || cs.display === "none" || cs.pointerEvents === "none";
+    });
+    return hidden;
+  }
+  const hiddenShop = await zoomBarHiddenWhen(async () => {
+    await page.evaluate(() => window.__openStore?.());
+    await page.waitForTimeout(80);
+  });
+  await page.evaluate(() => window.__closeStore?.());
+  const hiddenPhone = await zoomBarHiddenWhen(async () => {
+    await page.evaluate(() => window.__openPhone?.());
+    await page.waitForTimeout(80);
+  });
+  await page.evaluate(() => window.__closePhone?.() || document.querySelector("[data-testid=phone-backdrop]")?.click());
+  await page.waitForTimeout(40);
+  const hiddenEdit = await zoomBarHiddenWhen(async () => {
+    await page.evaluate(() => window.__enterEdit?.());
+    await page.waitForSelector("[data-testid=edit-inventory]:not(.hidden)");
+  });
+  await page.evaluate(() => window.__exitEdit?.());
+  check(
+    "The zoom bar hides while the shop, phone, or Edit Room menu is open",
+    Boolean(hiddenShop && hiddenPhone && hiddenEdit),
+    JSON.stringify({ hiddenShop, hiddenPhone, hiddenEdit })
+  );
+  await page.evaluate(() => {
+    window.__setCamMode?.("follow");
+    window.HouseRoom3D.setZoom(2);
+  });
+
   const sizes = [
     { name: "iPhone SE", width: 375, height: 667 },
     { name: "iPhone 14", width: 390, height: 844 },
@@ -3823,7 +3988,7 @@ try {
     };
   });
   check("The Put away button does not cover the item row or tabs", Boolean(putAwayFit.inHead && !putAwayFit.coversTabs && !putAwayFit.coversItems), JSON.stringify(putAwayFit));
-  check("The room canvas uses touch-action: manipulation to disable double-tap zoom", putAwayFit.touchAction === "manipulation", JSON.stringify(putAwayFit));
+  check("The room canvas uses touch-action: none so only the room pinches", putAwayFit.touchAction === "none", JSON.stringify(putAwayFit));
 
   await alice.click('[data-testid="edit-item-plant"]');
   await alice.waitForFunction(() => window.HouseRoom3D.getFurniture().some((f) => f.type === "plant"));

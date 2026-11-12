@@ -3,6 +3,15 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-visual" />
+  <script>
+    (function () {
+      function stopPageZoom(e) { e.preventDefault(); }
+      document.addEventListener("gesturestart", stopPageZoom, { passive: false, capture: true });
+      document.addEventListener("gesturechange", stopPageZoom, { passive: false, capture: true });
+      document.addEventListener("gestureend", stopPageZoom, { passive: false, capture: true });
+      document.documentElement.dataset.pageZoomLock = "1";
+    })();
+  </script>
   <meta name="theme-color" content="#000000" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -249,6 +258,14 @@
             </svg>
           </button>
         </div>
+      </div>
+      <div id="zoom-bar" class="zoom-bar" data-testid="zoom-bar" role="group" aria-label="Room zoom">
+        <button type="button" class="zoom-bar-btn" id="zoom-in" data-testid="zoom-in" aria-label="Zoom in">+</button>
+        <div class="zoom-bar-track" id="zoom-slider" data-testid="zoom-slider" role="slider" aria-orientation="vertical" aria-label="Room zoom" tabindex="0">
+          <div class="zoom-bar-rail" aria-hidden="true"></div>
+          <div class="zoom-bar-thumb" data-testid="zoom-thumb" aria-hidden="true"></div>
+        </div>
+        <button type="button" class="zoom-bar-btn" id="zoom-out" data-testid="zoom-out" aria-label="Zoom out">−</button>
       </div>
       <div id="pet-actions" class="pet-actions hidden" data-testid="pet-actions">
         <button type="button" class="btn small" data-testid="pet-follow" id="pet-follow">Follow me</button>

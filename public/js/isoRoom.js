@@ -664,6 +664,7 @@ export function createRoom3D(container, opts = {}) {
   let didPinch = false;
   let movedThisGesture = false;
   let onTileClick = null, onTileHover = null, onFurnitureClick = null, onPetClick = null;
+  let onZoomChange = null;
   let onSwitchClick = null, onSwitchTap = null, onWallClick = null, onWallHover = null;
   const personState = new Map();
 
@@ -832,9 +833,9 @@ export function createRoom3D(container, opts = {}) {
   function setUserZoomAt(z, clientX, clientY, immediate = false) {
     const next = clampZoom(z);
     autoFit = false;
+    followPaused = true;
     if (camMode === "room" && isPhoneView()) {
       camMode = "follow";
-      followPaused = true;
     }
     if (clientX != null && clientY != null) {
       zoomAtClient(clientX, clientY, immediate ? next : zoom);
@@ -865,8 +866,9 @@ export function createRoom3D(container, opts = {}) {
         clampCamHard();
       }
     }
-    // Keep names/bubbles readable at min zoom; they still grow with a close-up.
-    if (overlay && overlay.style) overlay.style.setProperty("--iso-zoom", String(Math.max(0.85, zoom)));
+    // Names and chat bubbles stay a constant readable size, independent of room zoom.
+    if (overlay && overlay.style) overlay.style.setProperty("--iso-zoom", "1");
+    onZoomChange?.({ zoom, userZoom: zoomTarget || userZoom, min: minUserZoom(), max: USER_ZOOM_MAX });
   }
   function clientFromWorld(sx, sy, now) {
     const { ox, oy } = originAt(now);
@@ -2328,8 +2330,15 @@ export function createRoom3D(container, opts = {}) {
       const next = clampZoom(z);
       userZoom = next;
       zoomTarget = next;
+      autoFit = false;
+      followPaused = true;
+      if (isPhoneView() && camMode === "room") camMode = "follow";
       if (isPhoneView() && camMode === "follow") zoom = next;
     },
+    setUserZoom(z, immediate = true) {
+      setUserZoomAt(z, null, null, immediate);
+    },
+    onZoomChange(fn) { onZoomChange = fn; },
     tapAt(x, y) { handleTap({ clientX: x, clientY: y }); },
     roomFitsView() {
       const now = performance.now();

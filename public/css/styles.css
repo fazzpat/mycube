@@ -2152,7 +2152,7 @@ input, textarea, select {
   flex-direction: column-reverse;
   align-items: center;
   gap: 4px;
-  transform: translate(-50%, -100%) scale(var(--iso-zoom, 1));
+  transform: translate(-50%, -100%);
   transform-origin: bottom center;
 }
 .speech-bubble {
@@ -3432,6 +3432,14 @@ body.shop-open #toasts {
   flex-direction: column;
   gap: 6px;
   align-content: start;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+#store-panel .store-tabs,
+#store-panel .store-slot-tabs {
+  touch-action: pan-x;
+  -webkit-overflow-scrolling: touch;
 }
 #store-panel .store-item,
 #store-panel .shop-item {
@@ -4884,9 +4892,15 @@ body.edit-mode #chat-dock,
   display: block;
 }
 
-/* PUTAWAY_DOUBLE_TAP: no iOS double-tap zoom on the room canvas. */
-#floor, #floor canvas, .room3d-root, .room3d-root canvas, .iso-overlay, .bubble-layer {
-  touch-action: manipulation !important;
+/* Room canvas takes all gestures so the browser cannot pinch- or double-tap-zoom the page.
+   HUD and the rest of the app use manipulation (set on html/body) to block page zoom
+   while still allowing taps. Scrollable panels keep their own pan-x / pan-y. */
+#floor, #floor canvas, .room3d-root, .room3d-root canvas, .iso-room {
+  touch-action: none !important;
+}
+.iso-overlay, .bubble-layer {
+  touch-action: none;
+  pointer-events: none;
 }
 
 /* PUTAWAY_BTN: sits in the Edit Room header corner, next to close,
@@ -4915,4 +4929,107 @@ body.edit-mode #chat-dock,
 }
 #edit-inventory .edit-inv-head .edit-done-btn {
   margin-left: 4px;
+}
+
+
+/* ZOOM_BAR: compact cream/brown vertical zoom on the left of the room,
+   centered in the safe band between the top row and the bottom icons. */
+.zoom-bar {
+  position: fixed;
+  left: max(6px, var(--sal, env(safe-area-inset-left, 0px)));
+  top: calc((
+    (var(--vv-top, 0px) + max(var(--room-topbar-h, 0px), calc(44px + var(--sat, env(safe-area-inset-top, 0px)))) + 8px)
+    + (100dvh - var(--dock-h, 76px) - var(--chrome-bottom, var(--sab, env(safe-area-inset-bottom, 0px))) - 8px)
+  ) / 2);
+  transform: translateY(-50%);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 36px;
+  height: auto;
+  pointer-events: none;
+  touch-action: manipulation;
+}
+.zoom-bar-btn,
+.zoom-bar-track {
+  pointer-events: auto;
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.zoom-bar-btn {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  min-height: 36px;
+  margin: 0;
+  padding: 0;
+  border-radius: 10px;
+  border: 1px solid #8a6a44;
+  background: #efe6d4;
+  color: #3a2418;
+  font-family: "Nunito", "Trebuchet MS", sans-serif;
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 1;
+  box-shadow: inset 1px 1px 0 #fff8ee, 1px 1px 0 #5a3a20;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+.zoom-bar-btn:active {
+  transform: translate(1px, 1px);
+  box-shadow: inset 1px 1px 0 #fff8ee;
+}
+.zoom-bar-track {
+  position: relative;
+  flex: 0 0 auto;
+  width: 36px;
+  height: 96px;
+  min-height: 72px;
+  max-height: 120px;
+  cursor: pointer;
+}
+.zoom-bar-rail {
+  position: absolute;
+  left: 50%;
+  top: 6px;
+  bottom: 6px;
+  width: 6px;
+  margin-left: -3px;
+  border-radius: 999px;
+  background: #c4b090;
+  border: 1px solid #8a5a32;
+  box-shadow: inset 0 1px 0 #efe6d4;
+}
+.zoom-bar-thumb {
+  position: absolute;
+  left: 50%;
+  width: 18px;
+  height: 18px;
+  margin-left: -9px;
+  border-radius: 50%;
+  background: #f4c15d;
+  border: 1px solid #8a5a32;
+  box-shadow: inset 1px 1px 0 #fff4cc, 0 1px 0 #5a3a20;
+  pointer-events: none;
+}
+body.shop-open .zoom-bar,
+body.phone-open .zoom-bar,
+body.edit-mode .zoom-bar,
+#view-room.hidden .zoom-bar,
+body[data-view]:not([data-view="room"]) .zoom-bar {
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+/* Keep every text field at 16px so iOS Safari will not auto-zoom on focus. */
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="hidden"]):not([type="button"]):not([type="submit"]):not([type="reset"]),
+textarea,
+select {
+  font-size: 16px !important;
 }

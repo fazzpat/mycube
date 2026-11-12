@@ -361,7 +361,7 @@ body[data-view="creator"]:has(#view-creator.is-keyboard) #toasts {
 
 .creator-window input[type="text"] {
   font-family: "Press Start 2P", monospace;
-  font-size: 12px;
+  font-size: 16px;
   border: 3px solid #f4c15d;
   border-radius: 0;
   background: #1a1424;
@@ -1045,10 +1045,10 @@ body[data-view="creator"]:has(#view-creator.is-keyboard) #toasts {
   display: none !important;
 }
 #phone-overlay.is-character-edit .creator-window input[type="text"] {
-  min-height: 22px !important;
-  height: 22px !important;
-  padding: 0 4px !important;
-  font-size: 7px !important;
+  min-height: 32px !important;
+  height: auto !important;
+  padding: 4px 8px !important;
+  font-size: 16px !important;
   border-width: 2px !important;
   box-shadow: none !important;
 }
@@ -1271,7 +1271,7 @@ body[data-view="creator"]:has(#view-creator.is-keyboard) #toasts {
 .creator-window.is-rail-layout .creator-footer label { font-size: 10px; }
 .creator-window.is-rail-layout .creator-footer input {
   width: 100%;
-  font-size: 14px;
+  font-size: 16px;
   padding: 6px 8px;
   box-sizing: border-box;
 }
@@ -1603,7 +1603,7 @@ body[data-view="creator"]:has(#view-creator.is-keyboard) #toasts {
 }
 .creator-window.is-rail-layout .creator-footer input {
   width: 100%;
-  font-size: 14px;
+  font-size: 16px;
   padding: 7px 10px;
   box-sizing: border-box;
   border-radius: 10px;
@@ -1734,4 +1734,13 @@ body[data-view="creator"]:has(#view-creator.is-keyboard) #toasts {
     height: auto !important;
     min-height: 0 !important;
   }
+}
+
+/* Keep Edit Character option lists scrollable without triggering page zoom. */
+.creator-window.is-rail-layout .creator-left,
+.creator-window.is-rail-layout .creator-tab-panels,
+.edit-char-overlay .creator-tab-panels,
+.creator-window [data-panel] {
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
 }
