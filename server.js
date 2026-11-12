@@ -76,6 +76,8 @@ const FURNITURE_CATALOG = {
   clothescab: { name: "Clothes cabinet", price: 30, w: 1, h: 1, blocks: true },
   coffeemachine: { name: "Coffee maker", price: 25, w: 1, h: 1, blocks: true },
   stove: { name: "Stove", price: 30, w: 1, h: 1, blocks: true },
+  pooltable: { name: "Pool Table", price: 60, w: 2, h: 2, blocks: true },
+  cuerack: { name: "Cue Rack", price: 20, w: 1, h: 1, blocks: false, surface: "wall" },
   recordplayer: { name: "Record table", price: 28, w: 1, h: 1, blocks: true },
   art_mona: { name: "Mona Cuba", price: 22, w: 1, h: 1, blocks: false, surface: "wall" },
   art_starry: { name: "Starry Cube Night", price: 28, w: 1, h: 1, blocks: false, surface: "wall" },
@@ -95,7 +97,7 @@ const FURNITURE_CATALOG = {
   pinball: { name: "Pinball cabinet", price: 38, w: 1, h: 1, blocks: true },
 };
 Object.assign(FURNITURE_CATALOG, PAINTING_CATALOG);
-const WALL_ART_TYPES = new Set(["art_mona","art_starry","art_pop","art_sunset","art_cubism","art_poster","art_hang","art_neon"]);
+const WALL_ART_TYPES = new Set(["art_mona","art_starry","art_pop","art_sunset","art_cubism","art_poster","art_hang","art_neon","cuerack"]);
 for (const piece of ART_PIECES) {
   FURNITURE_CATALOG[piece.type] = artCatalogEntry(piece);
   WALL_ART_TYPES.add(piece.type);

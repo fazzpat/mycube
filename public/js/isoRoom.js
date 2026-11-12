@@ -12,6 +12,7 @@ import { DEFAULT_DECOR, normalizeDecor, legacyAliases, floorColorHex, wallColorP
 import { chessSeatPose, chessBoardMetrics } from "./chessTable.js";
 import { steamFrameAt } from "./coffeeMaker.js";
 import { steamFrameAt as stoveSteamFrameAt, flameFrameAt } from "./stove.js";
+import { CUE_RACK_TYPE, drawCueRackOnWall, cueRackQuad } from "./billiards.js";
 import { lieDrawPose, bedZeds, drawBedZeds } from "./bed.js";
 import {
   TYPE as RECORD_TYPE, spinFrameAt, notesAt, drawNotes, platterOffset, paintListenHint,
@@ -170,6 +171,7 @@ function pixelArtQuad(wall, slot) {
   ];
 }
 function artQuadFor(type, wall, slot) {
+  if (type === CUE_RACK_TYPE) return cueRackQuad(wall, slot, wallPt);
   return isPainting(type) ? pixelArtQuad(wall, slot) : wallArtQuad(wall, slot);
 }
 function artMetrics(type, wall, slot) {
@@ -1407,7 +1409,10 @@ export function createRoom3D(container, opts = {}) {
       const wall = (art.wall === "z" || art.wall === "left") ? "left" : "back";
       const typ = String(art.type || "");
       const q = artQuadFor(typ, wall, art.slot);
-      if (isPainting(typ)) {
+      if (typ === CUE_RACK_TYPE) {
+        drawCueRackOnWall(ctx, wall, art.slot, lightsOn, { wallPt, fillPoly });
+        if (highlightId && art.id === highlightId) fillPoly(ctx, q, null, "#d4b46a", 2);
+      } else if (isPainting(typ)) {
         drawPaintingOnWall(ctx, typ, q, { dim: lightsOn ? 1 : 0.42 });
         if (highlightId && art.id === highlightId) fillPoly(ctx, q, null, "#d4b46a", 2);
       } else if (typ.includes("neon") || typ.includes("poster")) {
@@ -1452,7 +1457,11 @@ export function createRoom3D(container, opts = {}) {
     if (wallGhost) {
       const wall = (wallGhost.wall === "z" || wallGhost.wall === "left") ? "left" : "back";
       const q = artQuadFor(wallGhost.type, wall, wallGhost.slot);
-      if (isPainting(wallGhost.type) && wallGhost.ok !== false) {
+      if (wallGhost.type === CUE_RACK_TYPE && wallGhost.ok !== false) {
+        ctx.globalAlpha = 0.55;
+        drawCueRackOnWall(ctx, wall, wallGhost.slot, lightsOn, { wallPt, fillPoly });
+        ctx.globalAlpha = 1;
+      } else if (isPainting(wallGhost.type) && wallGhost.ok !== false) {
         drawPaintingOnWall(ctx, wallGhost.type, q, { alpha: 0.55, dim: lightsOn ? 1 : 0.5 });
       } else {
         ctx.globalAlpha = 0.45;

@@ -6,7 +6,7 @@
   "description": "MyCube — 3D hangout cubes with disappearing speech bubbles",
   "scripts": {
     "start": "node server.js",
-    "test": "node test/furniture-layout.mjs && node test/held-items.mjs && node test/bed.mjs && node test/stove.mjs && node test/record-player.mjs && node test/record-player-audio-e2e.mjs && node test/art-pieces.mjs && node test/e2e.mjs && node test/chess-e2e.mjs && node test/art-e2e.mjs",
+    "test": "node test/furniture-layout.mjs && node test/held-items.mjs && node test/bed.mjs && node test/stove.mjs && node test/billiards.mjs && node test/record-player.mjs && node test/record-player-audio-e2e.mjs && node test/art-pieces.mjs && node test/e2e.mjs && node test/chess-e2e.mjs && node test/art-e2e.mjs",
     "test:chess": "node test/chess-e2e.mjs",
     "test:art": "node test/art-pieces.mjs && node test/art-e2e.mjs"
   },

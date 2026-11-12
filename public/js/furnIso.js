@@ -5,6 +5,7 @@ import { heldItemStamp } from "./heldItems.js";
 import { drawRecordPlayer, TYPE as RECORD_PLAYER } from "./recordPlayer.js";
 import { drawChessTableSmall, drawChessStool, CHESS_STOOL_TYPE } from "./chessTable.js";
 import { drawStove } from "./stove.js";
+import { drawPoolTable } from "./billiards.js";
 
 const TW = 64;
 const TH = 32;
@@ -18,7 +19,7 @@ const TILES = {
   heavybag: [1, 1], benchpress: [2, 1], treadmill: [1, 2], cubics: [1, 1],
   clothescab: [1, 1], coffeemachine: [1, 1], stove: [1, 1], recordplayer: [1, 1], djdeck: [2, 1], sodavending: [1, 1],
   neonsign: [1, 1], pinball: [1, 1], rack: [1, 1], mannequin: [1, 1],
-  petpen: [2, 1], cage: [1, 1], counter: [2, 1],
+  petpen: [2, 1], cage: [1, 1], counter: [2, 1], pooltable: [2, 2],
 };
 
 const BODY_H = {
@@ -26,7 +27,7 @@ const BODY_H = {
   couch: 26, capsulecouch: 26, chair: 24, hoverchair: 32, bed: 16, tv: 60, holotv: 60,
   fridge: 44, kitchenette: 24, bookshelf: 42, chesstable: 14, chessstool: 14, punchbag: 46, heavybag: 46,
   benchpress: 22, treadmill: 30, cubics: 64, pinball: 40, clothescab: 42, coffeemachine: 48, stove: 40, recordplayer: 40,
-  djdeck: 18, sodavending: 46, neonsign: 46, rack: 36, mannequin: 42, petpen: 22, cage: 24,
+  djdeck: 18, sodavending: 46, neonsign: 46, rack: 36, mannequin: 42, petpen: 22, cage: 24, pooltable: 18,
 };
 
 export const FURN_SHEET_TYPES = [
@@ -34,7 +35,7 @@ export const FURN_SHEET_TYPES = [
   "chair", "hoverchair", "couch", "capsulecouch", "bed", "tv", "holotv", "fridge",
   "kitchenette", "bookshelf", "clothescab", "chesstable", "coffeemachine", "stove", "recordplayer", "cubics",
   "pinball", "djdeck", "sodavending", "punchbag", "benchpress", "treadmill",
-  "rack", "mannequin", "petpen", "cage",
+  "rack", "mannequin", "petpen", "cage", "pooltable",
 ];
 
 export function normalizeFurnRot(rot) {
@@ -1490,6 +1491,7 @@ function paintPiece(ctx, type, rot, lights, on, open, opts = {}) {
     case "clothescab": drawBookshelf(ctx, tw, th, r, lights, type === "clothescab"); break;
     case "coffeemachine": drawCoffeeMaker(ctx, tw, th, r, lights, opts, ISO_DRAW); break;
     case "stove": drawStove(ctx, tw, th, r, lights, opts, ISO_DRAW); break;
+    case "pooltable": drawPoolTable(ctx, tw, th, r, lights, opts, ISO_DRAW); break;
     case "recordplayer": drawRecordPlayer(ctx, tw, th, r, lights, { ...opts, on }, ISO_DRAW); break;
     case "punchbag":
     case "heavybag":
