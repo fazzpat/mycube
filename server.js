@@ -34,6 +34,7 @@ import {
   emptyGear,
   normalizeGear,
 } from "./public/js/storeCatalog.js";
+import { OUTFIT_STOCK, outfitById, wearingOutfit, stripOutfitItem } from "./public/js/outfits.js";
 import { colorOrHex } from "./public/js/hexColor.js";
 import { ART_PIECES, artCatalogEntry, PAINTING_CATALOG } from "./public/js/artPieces.js";
 import { reservedWallSlots as layoutReservedWallSlots } from "./public/js/wallLayout.js";
@@ -518,6 +519,8 @@ function sanitizeAvatar(raw = {}, previous = {}) {
     hatColor,
     necklace,
     headphoneColor: hatColor,
+    cloak: m.cloak === "wizard" ? "wizard" : "none",
+    outfitPants: m.outfitPants === "wizard" ? "wizard" : "none",
   };
 }
 
@@ -2065,7 +2068,12 @@ io.on("connection", (socket) => {
     if (!user?.avatar) return;
     const item = (user.collection?.clothes || []).find((c) => c.id === id);
     if (!item) return;
-    user.avatar = sanitizeAvatar({ ...user.avatar, ...(item.item || {}) }, user.avatar);
+    const stock = item.catalogId ? outfitById(item.catalogId) : null;
+    if (stock && wearingOutfit(user.avatar, stock)) {
+      user.avatar = sanitizeAvatar(stripOutfitItem(user.avatar, item.item || {}), user.avatar);
+    } else {
+      user.avatar = sanitizeAvatar({ ...user.avatar, ...(item.item || {}) }, user.avatar);
+    }
     emitProfile(user);
     if (user.roomId) io.to(user.roomId).emit("userUpdated", snapshotPerson(user));
   });
@@ -2199,14 +2207,31 @@ io.on("connection", (socket) => {
       emitProfile(user);
       return;
     }
-    if (kind === "outerwear") {
-      const stock = outerwearById(id);
+    if (kind === "outerwear" || kind === "outfits") {
+      const stock = outerwearById(id) || outfitById(id);
       if (!stock) {
         socket.emit("errorMsg", { message: "That item isn't in stock." });
         return;
       }
+      if (stock.slot === "pet" || stock.kind === "pet") {
+        if ((user.collection.pets || []).some((p) => p.item === stock.item || p.item === stock.item?.activePet)) {
+          socket.emit("errorMsg", { message: "You already have that pet." });
+          return;
+        }
+        if (user.coins < stock.price) {
+          socket.emit("errorMsg", { message: "Not enough coins." });
+          return;
+        }
+        user.coins -= stock.price;
+        const petItem = typeof stock.item === "string" ? stock.item : (stock.item?.activePet || stock.item?.prop || stock.item);
+        user.collection.pets.push({ item: petItem, label: stock.label });
+        socket.emit("storeBought", { kind, id: stock.id, item: petItem, coins: user.coins, collection: user.collection });
+        emitProfile(user);
+        return;
+      }
+      const propItem = stock.slot === "prop" ? (stock.item?.prop || (typeof stock.item === "string" ? stock.item : null)) : null;
       const already = (user.collection.outerwear || []).some((c) => c.catalogId === stock.id)
-        || (stock.slot === "prop" && (user.collection.props || []).some((p) => p.item === stock.item.prop));
+        || (propItem && (user.collection.props || []).some((p) => p.item === propItem));
       if (already) {
         socket.emit("errorMsg", { message: "You already own that." });
         return;
@@ -2217,16 +2242,16 @@ io.on("connection", (socket) => {
       }
       user.coins -= stock.price;
       const cid = "ow" + Date.now() + Math.floor(Math.random() * 1000);
-      user.collection.outerwear.push({ id: cid, catalogId: stock.id, slot: stock.slot, item: { ...stock.item }, label: stock.label });
-      if (stock.slot === "prop" && stock.item?.prop) {
-        if (!(user.collection.props || []).some((p) => p.item === stock.item.prop)) {
-          user.collection.props.push({ id: cid, item: stock.item.prop, label: stock.label });
-        }
+      const itemCopy = stock.item && typeof stock.item === "object" ? { ...stock.item } : (propItem ? { prop: propItem } : { ...stock.item });
+      user.collection.outerwear.push({ id: cid, catalogId: stock.id, slot: stock.slot === "hat" ? "head" : stock.slot === "cloak" ? "torso" : stock.slot === "pants" ? "legs" : stock.slot, item: itemCopy, label: stock.label });
+      if (propItem && !(user.collection.props || []).some((p) => p.item === propItem)) {
+        user.collection.props.push({ id: cid, item: propItem, label: stock.label });
       }
-      socket.emit("storeBought", { kind: "outerwear", id: stock.id, collectionId: cid, coins: user.coins, collection: user.collection });
+      socket.emit("storeBought", { kind: kind === "outfits" ? "outfits" : "outerwear", id: stock.id, collectionId: cid, coins: user.coins, collection: user.collection });
       emitProfile(user);
     }
   });
+
 
 
   socket.on("setLights", ({ on } = {}) => {

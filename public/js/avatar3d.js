@@ -9,6 +9,10 @@ export const AV_H = 64 + AV_PAD_TOP;
 export const AV_GROUND_Y = 61 + AV_PAD_TOP;
 export const AV_HEAD_TOP = 1 + AV_PAD_TOP;
 const AV_SEAT_DROP = 8;
+
+/** Optional outfit overlays (hat/cloak/pants/staff). Registered by outfits.js. */
+let outfitDraw = null;
+export function setOutfitDraw(api) { outfitDraw = api || null; }
 const CX = 24 + AV_PAD_X;
 
 export function facingIndex8(facing, dirX, dirY) {
@@ -106,6 +110,10 @@ function normalizeAvatar(raw = {}) {
     headphoneColor: a.headphoneColor || a.hatColor || "#2a2a2e",
     outer: a.outer || "none",
     vestColor: a.vestColor || "",
+    // Outfit overlays from outfits.js. Passed through so the cache key and
+    // registered drawers can see cloak/pants independently of shirt/jeans.
+    cloak: a.cloak === "wizard" ? "wizard" : "none",
+    outfitPants: a.outfitPants === "wizard" ? "wizard" : "none",
   };
 }
 
@@ -2795,6 +2803,7 @@ function composeAvatar(av, flagsIn, frame) {
   let body = makeBuf();
   drawTorso(body, av, bk, pal, upper, sit, pose.squash || 0);
   drawCuffs(body, av, bk, pal, upper, sit);
+  outfitDraw?.drawBody?.(body, av, bk, upper, sit);
   if (bodyView.flip) body = flipBuf(body, true);
   body = addInkOutline(body);
 
@@ -2812,7 +2821,9 @@ function composeAvatar(av, flagsIn, frame) {
     if (!hatOn) drawHairFront(head, av, hk, pal, headUpper);
   }
   if (glassesStyleOf(av) !== "none") drawGlasses(head, av, hk, headUpper);
-  if (hatOn) drawHat(head, av, hk, pal, headUpper);
+  // Outfit hats (wizard) are drawn by the outfits.js hook, not drawHat.
+  if (hatOn && hatOf(av) !== "wizard") drawHat(head, av, hk, pal, headUpper);
+  outfitDraw?.drawHat?.(head, av, hk, headUpper);
   if (hatOn) drawHairPeeks(head, av, hk, pal, headUpper, bob, frame, walk);
   if (av.accessory === "headphones") drawHeadphones(head, av, hk, pal, headUpper);
   if (emote === "heart") {
@@ -2854,7 +2865,10 @@ function composeAvatar(av, flagsIn, frame) {
 
   function footSpr(fp) {
     const shoeSide = sit ? fp.side : (bodyView.flip ? -fp.side : fp.side);
-    return stickerSprite((buf) => drawShoe(buf, fp.x, fp.y, bk, shoeStyleOf(av.shoes), shoes, shoeSide, sit));
+    return stickerSprite((buf) => {
+      if (outfitDraw?.hasBoots?.(av) && outfitDraw.drawBoot) outfitDraw.drawBoot(buf, fp.x, fp.y, bk, shoeSide, sit);
+      else drawShoe(buf, fp.x, fp.y, bk, shoeStyleOf(av.shoes), shoes, shoeSide, sit);
+    });
   }
   function handSpr(hp, holdPhone, tapPhone) {
     return stickerSprite((buf) => {
@@ -2863,7 +2877,8 @@ function composeAvatar(av, flagsIn, frame) {
       if (holdPhone) {
         drawHeldPhone(buf, hp.x, hp.y, { key: bk });
       }
-      drawMitten(buf, hp.x, hp.y, pal, hp.side);
+      if (outfitDraw?.hasGloves?.(av) && outfitDraw.drawGlove) outfitDraw.drawGlove(buf, hp.x, hp.y, hp.side);
+      else drawMitten(buf, hp.x, hp.y, pal, hp.side);
       if (holdPhone && tapPhone) {
         const inn = hp.x >= AV_W / 2 ? -1 : 1;
         circle(buf, hp.x + inn * 1, hp.y + 1, 1.3, pal.skin, "hand", 64);
@@ -2892,6 +2907,15 @@ function composeAvatar(av, flagsIn, frame) {
 
   const out = makeBuf();
   for (const layer of layers) blitBuf(out, layer);
+  if (outfitDraw?.shouldDrawStaff?.(flags, av, bk) && outfitDraw.drawStaff) {
+    // Staff is taller than the figure; draw it on the composed sprite so the
+    // holding hand (already in `out`) can cover the grip.
+    const staffBuf = makeBuf();
+    outfitDraw.drawStaff(staffBuf, nearHand, bk);
+    blitBuf(out, staffBuf);
+    // Redraw the holding hand over the grip so the staff stays in the palm.
+    blitBuf(out, nHand);
+  }
   const cleaned = addContactShade(shadeUnderChin(stripNeckGapStickers(stripInnerStickers(out))));
 
   const pop = Number(flags.shoePop);
@@ -2963,7 +2987,7 @@ export function drawAvatarSprite(avatar = {}, flags = {}, frame = 0) {
   const mouth = flags.mouth || "line";
   const sipKey = Math.round((Number(flags.sipLift) || 0) * 8);
   const cubeKey = flags.solvingCube ? ("cube" + (flags.cubeT ?? phase)) : "";
-  const key = "chibi:" + JSON.stringify(av) + ":" + bodyDir + ":" + headDir + ":" + Boolean(flags.sitting) + ":" + walk + ":" + phase + ":" + Boolean(flags.usingPhone) + ":" + cubeKey + ":" + Boolean(flags.boxing) + ":" + (flags.actionEmote || "") + ":" + held + ":" + Boolean(flags.gym) + ":" + blink + ":" + lookX + ":" + lookY + ":" + pop + ":" + mouth + ":sip" + sipKey;
+  const key = "chibi:" + JSON.stringify(av) + ":" + bodyDir + ":" + headDir + ":" + Boolean(flags.sitting) + ":" + Boolean(flags.lying) + ":" + walk + ":" + phase + ":" + Boolean(flags.usingPhone) + ":" + cubeKey + ":" + Boolean(flags.boxing) + ":" + (flags.actionEmote || "") + ":" + held + ":" + Boolean(flags.gym) + ":" + blink + ":" + lookX + ":" + lookY + ":" + pop + ":" + mouth + ":sip" + sipKey;
   const hit = cache.get(key);
   if (hit) return hit;
   const composed = composeAvatar(av, flags, frame);
@@ -3901,4 +3925,4 @@ if (typeof window !== "undefined") {
   window.__paintClothesCatalog = paintClothesCatalog;
 }
 
-export default { drawAvatarSprite, paintAvatarSheet, paintStoreThumb, facingIndex8, sitFootLayout, tickChibiAnim, setChibiAnimOverride, getChibiAnim, sipAdjustedHand, sipBackOccluded, heldItemHandAnchor, heldItemFaceAnchor, AV_W, AV_H, AV_GROUND_Y, AV_HEAD_TOP, AVATAR_SHEET_LOOKS };
+export default { drawAvatarSprite, paintAvatarSheet, paintStoreThumb, facingIndex8, sitFootLayout, tickChibiAnim, setChibiAnimOverride, getChibiAnim, sipAdjustedHand, sipBackOccluded, heldItemHandAnchor, heldItemFaceAnchor, setOutfitDraw, AV_W, AV_H, AV_GROUND_Y, AV_HEAD_TOP, AVATAR_SHEET_LOOKS };

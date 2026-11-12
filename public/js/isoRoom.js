@@ -1,7 +1,11 @@
-import { drawAvatarSprite, paintAvatarSheet, paintStoreThumb, AVATAR_SHEET_LOOKS, AV_W, AV_H, AV_GROUND_Y, AV_HEAD_TOP, AV_PAD_X, AV_PAD_TOP, facingIndex8, tickChibiAnim, setChibiAnimOverride, getChibiAnim, mouthPhase, heldItemHandAnchor, heldItemFaceAnchor } from "./avatar3d.js";
+import { drawAvatarSprite, paintAvatarSheet, paintStoreThumb, AVATAR_SHEET_LOOKS, AV_W, AV_H, AV_GROUND_Y, AV_HEAD_TOP, AV_PAD_X, AV_PAD_TOP, facingIndex8, tickChibiAnim, setChibiAnimOverride, getChibiAnim, mouthPhase, heldItemHandAnchor, heldItemFaceAnchor, setOutfitDraw } from "./avatar3d.js";
 import { heldKindOf, drawHeldItemSprite, sipAnim, steamFrameAt as heldSteamFrameAt, drawSipFaceOverlay, BITE_COUNT } from "./heldItems.js";
 import { applyEquippedGear } from "./storeCatalog.js";
-import { drawPetSprite as drawPetPixel, paintPetSheet, paintPetThumb, PET_W, PET_H, PET_GROUND_Y } from "./petSprites.js";
+import { drawPetSprite as drawPetPixel, paintPetSheet, paintPetThumb, PET_W, PET_H, PET_GROUND_Y, setPetKindDrawer } from "./petSprites.js";
+import { installOutfitDraw } from "./outfits.js";
+import { installFlamePet } from "./flamePet.js";
+installOutfitDraw(setOutfitDraw);
+installFlamePet(setPetKindDrawer);
 import { programAt } from "./cubechannel.js";
 import { getTvScreen, tvChannelName } from "./tvChannels.js";
 import {
@@ -1153,7 +1157,7 @@ export function createRoom3D(container, opts = {}) {
       const flags = {
         sitting: p.sitting && !lying, walking: walking && !lying, facing: face, dirX: st.dirX, dirY: st.dirY,
         usingPhone: p.usingPhone && !lying, solvingCube: p.solvingCube && !lying, boxing: p.boxing, actionEmote: p.actionEmote,
-        heldItem: lying ? null : p.heldItem, heldProp: p.heldProp, gym: p.gym,
+        heldItem: lying ? null : p.heldItem, heldProp: lying ? null : p.heldProp, gym: p.gym,
         blink: lying ? "closed" : anim.blink, lookX: anim.lookX, lookY: anim.lookY,
         bodyDir: anim.bodyDir, headDir: anim.headDir,
         shoePop: shoePopAt(p.username, (p.avatar || {}).shoes, now),

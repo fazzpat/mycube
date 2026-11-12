@@ -3440,8 +3440,8 @@ body.shop-open #toasts {
 }
 #store-panel .store-tab {
   flex: 0 0 auto;
-  font-size: 10px;
-  padding: 4px 6px;
+  font-size: 9px;
+  padding: 4px 5px;
   min-height: 26px;
   min-width: max-content;
   white-space: nowrap;

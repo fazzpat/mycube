@@ -1985,7 +1985,7 @@ async function runStoresAndCyberShots(browser) {
   await page.waitForTimeout(200);
   await page.evaluate(() => window.__openStore("clothes", "nt-tee"));
   await page.waitForSelector('[data-testid="store-panel"]:not(.hidden)');
-  check("The shop shows Furniture, Clothes, Outerwear, Pets, and Wall art tabs", (await page.locator('[data-testid="store-tab-furniture"]').count()) === 1 && (await page.locator('[data-testid="store-tab-clothes"]').count()) === 1 && (await page.locator('[data-testid="store-tab-outerwear"]').count()) === 1 && (await page.locator('[data-testid="store-tab-pets"]').count()) === 1 && (await page.locator('[data-testid="store-tab-art"]').count()) === 1);
+  check("The shop shows Furniture, Clothes, Outerwear, Pets, Wall art, and Outfits tabs", (await page.locator('[data-testid="store-tab-furniture"]').count()) === 1 && (await page.locator('[data-testid="store-tab-clothes"]').count()) === 1 && (await page.locator('[data-testid="store-tab-outerwear"]').count()) === 1 && (await page.locator('[data-testid="store-tab-pets"]').count()) === 1 && (await page.locator('[data-testid="store-tab-art"]').count()) === 1 && (await page.locator('[data-testid="store-tab-outfits"]').count()) === 1);
   await page.locator('[data-testid="store-item-nt-tee"]').click();
   await page.waitForTimeout(200);
   const previewOn = await page.evaluate(() => Boolean(document.querySelector('[data-testid="store-preview"] canvas, [data-testid="store-preview"] *')));
@@ -2015,6 +2015,68 @@ async function runStoresAndCyberShots(browser) {
   check("Owned clothes can be equipped from the clothing tab", await page.evaluate(() => window.__storeState()?.me?.avatar?.top === "varsity" && window.__storeState()?.me?.avatar?.shirt === "#c43a3a"));
   await page.waitForTimeout(300);
   await page.screenshot({ path: `${SHOT}/40-clothing-store.png` });
+
+  await page.evaluate(() => window.__debugKit({ coins: 200 }));
+  await page.waitForTimeout(150);
+  await page.evaluate(() => window.__openStore("outfits", "ow-wizard-hat"));
+  await page.waitForSelector('[data-testid="store-panel"]:not(.hidden)');
+  const outfitIds = ["ow-wizard-hat", "ow-wizard-cloak", "ow-wizard-pants", "ow-wizard-staff", "ow-flame-ball"];
+  const listed = await page.evaluate((ids) => ids.every((id) => document.querySelector(`[data-testid="store-item-${id}"]`)), outfitIds);
+  check("The Outfits tab lists the wizard set and Flame Ball", listed);
+  for (const id of outfitIds) {
+    await page.locator(`[data-testid="store-item-${id}"]`).click();
+    await page.locator('[data-testid="store-buy"]').click();
+    await page.waitForFunction((sku) => {
+      const st = window.__storeState?.() || {};
+      const col = st.collection || {};
+      if (sku === "ow-flame-ball") return (col.pets || []).some((p) => p.item === "flame");
+      if (sku === "ow-wizard-staff") return (col.props || []).some((p) => p.item === "wizardstaff") || (col.outerwear || []).some((c) => c.catalogId === sku);
+      return (col.outerwear || []).some((c) => c.catalogId === sku) || (col.clothes || []).some((c) => c.catalogId === sku);
+    }, id, { timeout: 8000 });
+  }
+  check("Buying Outfits items adds hat, cloak, pants, staff, and Flame Ball to inventory", await page.evaluate(() => {
+    const col = window.__storeState()?.collection || {};
+    const ow = col.outerwear || [];
+    const clothes = col.clothes || [];
+    const has = (id) => ow.some((c) => c.catalogId === id) || clothes.some((c) => c.catalogId === id);
+    return has("ow-wizard-hat") && has("ow-wizard-cloak") && has("ow-wizard-pants")
+      && ((col.props || []).some((p) => p.item === "wizardstaff") || has("ow-wizard-staff"))
+      && (col.pets || []).some((p) => p.item === "flame");
+  }));
+  await page.locator('[data-testid="equip-ow-wizard-hat"]').click();
+  await page.locator('[data-testid="equip-ow-wizard-cloak"]').click();
+  await page.locator('[data-testid="equip-ow-wizard-pants"]').click();
+  await page.locator('[data-testid="equip-ow-wizard-staff"]').click();
+  await page.locator('[data-testid="equip-ow-flame-ball"]').click();
+  await page.waitForFunction(() => {
+    const st = window.__storeState?.() || {};
+    const av = st.me?.avatar || {};
+    const g = st.me?.gear || {};
+    return (av.hat === "wizard" || g.head === "ow-wizard-hat")
+      && (av.cloak === "wizard" || g.torso === "ow-wizard-cloak")
+      && (av.outfitPants === "wizard" || g.legs === "ow-wizard-pants")
+      && (st.heldProp || st.me?.heldProp) === "wizardstaff"
+      && (st.activePet || st.me?.activePet) === "flame";
+  }, null, { timeout: 8000 });
+  check("Equipping each Outfits item independently syncs hat, cloak, pants, staff, and pet", await page.evaluate(() => {
+    const st = window.__storeState?.() || {};
+    const av = st.me?.avatar || {};
+    const g = st.me?.gear || {};
+    return (av.hat === "wizard" || g.head === "ow-wizard-hat")
+      && (av.cloak === "wizard" || g.torso === "ow-wizard-cloak")
+      && (av.outfitPants === "wizard" || g.legs === "ow-wizard-pants")
+      && (st.heldProp || st.me?.heldProp) === "wizardstaff"
+      && (st.activePet || st.me?.activePet) === "flame";
+  }));
+  await page.locator('[data-testid="equip-ow-wizard-hat"]').click();
+  await page.waitForFunction(() => (window.__storeState()?.me?.avatar?.hat || "none") !== "wizard", null, { timeout: 8000 });
+  check("Unequipping the wizard hat leaves the cloak and pants on", await page.evaluate(() => {
+    const av = window.__storeState()?.me?.avatar || {};
+    const g = window.__storeState()?.me?.gear || {};
+    return (av.hat !== "wizard" && g.head !== "ow-wizard-hat") && (av.cloak === "wizard" || g.torso === "ow-wizard-cloak") && (av.outfitPants === "wizard" || g.legs === "ow-wizard-pants");
+  }));
+  await page.locator('[data-testid="equip-ow-wizard-hat"]').click();
+  await page.waitForFunction(() => window.__storeState()?.me?.avatar?.hat === "wizard", null, { timeout: 8000 });
 
   await page.locator('[data-testid="store-tab-pets"]').click();
   await page.evaluate(() => window.__openStore("pets", "bp-fox"));

@@ -46,7 +46,7 @@ export const HEADPHONE_COLORS = [
   "#2a2a2e", "#ff7a59", "#7c5cff", "#f4c15d", "#ef476f", "#20b2aa", "#f6f3ee", "#3d4f7c",
   "#f4c15d", "#6a8a3a", "#c43a3a",
 ];
-export const PETS = ["cat", "dog", "bunny", "fox", "hamster", "parrot", "turtle"];
+export const PETS = ["cat", "dog", "bunny", "fox", "hamster", "parrot", "turtle", "flame"];
 
 export const BASE_TOPS = ["tshirt", "hoodie", "jacket"];
 export const BASE_BOTTOMS = ["jeans", "joggers"];
@@ -55,8 +55,8 @@ export const BASE_ACCESSORIES = ["none", "cap", "beanie", "chain", "headphones"]
 export const BASE_HAIR = ["short", "long", "curly", "bun", "spiky", "bangs"];
 
 export const HAT_ACCESSORIES = new Set(["cap", "beanie", "trucker", "bucket", "fitted"]);
-export const HATS = ["none", "cap", "beanie", "trucker", "bucket", "fitted"];
-export const HAT_LABELS = { none: "No hat", cap: "Cap", beanie: "Beanie", trucker: "Trucker hat", bucket: "Bucket hat", fitted: "Fitted cap" };
+export const HATS = ["none", "cap", "beanie", "trucker", "bucket", "fitted", "crown", "wizard"];
+export const HAT_LABELS = { none: "No hat", cap: "Cap", beanie: "Beanie", trucker: "Trucker hat", bucket: "Bucket hat", fitted: "Fitted cap", crown: "Crown", wizard: "Wizard Hat" };
 export const GLASSES_STYLES = ["none", "round", "square", "shades"];
 export const GLASSES_LABELS = { none: "No glasses", round: "Round glasses", square: "Square glasses", shades: "Shades" };
 export const GLASSES_COLORS = ["#2a2422", "#6b3a2a", "#d4b46a", "#c0c4c8", "#ef476f", "#4a90d9", "#1a1a22"];
@@ -87,7 +87,7 @@ export const STORE_LOCKED = {
   bottom: new Set(["cargo", "shorts", "baggy", "track", "skirt", "flares"]),
   shoes: new Set(["skate", "hightop", "boots", "checker"]),
   accessory: new Set(["trucker", "wristband", "belt", "bucket", "fitted", "shades"]),
-  hat: new Set(["trucker", "bucket", "fitted"]),
+  hat: new Set(["trucker", "bucket", "fitted", "wizard"]),
   hair: new Set(["undercut"]),
 };
 
@@ -205,9 +205,13 @@ export const OUTERWEAR_STOCK = [
   { id: "ow-shorts", slot: "legs", label: "Shorts", price: 10, item: { bottom: "shorts", bottomColor: "#3d4f7c" } },
   { id: "ow-balloon", slot: "prop", label: "Balloon", price: 8, item: { prop: "balloon" } },
   { id: "ow-skate", slot: "prop", label: "Skateboard", price: 12, item: { prop: "skateboard" } },
+  { id: "ow-wizard-hat", slot: "head", label: "Wizard Hat", price: 16, item: { hat: "wizard", hatColor: "#4a5c78" } },
+  { id: "ow-wizard-cloak", slot: "torso", label: "Wizard Cloak", price: 22, item: { cloak: "wizard" } },
+  { id: "ow-wizard-pants", slot: "legs", label: "Wizard Pants", price: 18, item: { outfitPants: "wizard" } },
+  { id: "ow-wizard-staff", slot: "prop", label: "Wizard Staff", price: 18, item: { prop: "wizardstaff" } },
 ];
 
-export const PROP_ITEMS = ["balloon", "skateboard", "guitar", "coffee"];
+export const PROP_ITEMS = ["balloon", "skateboard", "guitar", "coffee", "wizardstaff"];
 
 export function outerwearById(id) {
   return OUTERWEAR_STOCK.find((c) => c.id === id) || null;

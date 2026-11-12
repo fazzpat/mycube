@@ -37,11 +37,18 @@ const PALS = {
   turtle:  { fur: tones("#6aaa48"), belly: tones("#e0ec90"), accent: tones("#5a8a3a"), nose: { r: 60, g: 36, b: 28 } },
 };
 
+const kindDrawers = new Map();
+export function setPetKindDrawer(kind, fn) {
+  if (kind && fn) kindDrawers.set(kind, fn);
+  else if (kind) kindDrawers.delete(kind);
+}
+
 function aliasKind(kind) {
   if (kind === "robocat") return "cat";
   if (kind === "drone") return "parrot";
   if (kind === "neonfox") return "fox";
   if (kind === "jellyfish") return "turtle";
+  if (kindDrawers.has(kind)) return kind;
   return PALS[kind] ? kind : "cat";
 }
 
@@ -300,7 +307,9 @@ export function drawPetSprite(kind, flags = {}, frame = 0) {
   const key = ["ink", k, view.key, view.flip ? 1 : 0, sit ? 1 : 0, walking ? 1 : 0, walkStep, blink, wag, bob].join(":");
   if (cache.has(key)) return cache.get(key);
   let buf = makeBuf();
-  drawPet(buf, k, view.key, PALS[k], sit, walkStep, blink, wag, bob);
+  const custom = kindDrawers.get(kind) || kindDrawers.get(k);
+  if (custom) custom(buf, { kind: k, key: view.key, flip: view.flip, sit, walkStep, blink, wag, bob, frame, walking });
+  else drawPet(buf, k, view.key, PALS[k], sit, walkStep, blink, wag, bob);
   if (view.flip) buf = flipBuf(buf, true);
   buf = plantPet(buf);
   buf = addInk(buf);
@@ -383,4 +392,4 @@ if (typeof window !== "undefined") {
   window.__paintPetThumb = paintPetThumb;
 }
 
-export default { drawPetSprite, paintPetSheet, paintPetThumb, PET_W, PET_H, PET_GROUND_Y, PET_SHEET_KINDS };
+export default { drawPetSprite, paintPetSheet, paintPetThumb, setPetKindDrawer, PET_W, PET_H, PET_GROUND_Y, PET_SHEET_KINDS };
