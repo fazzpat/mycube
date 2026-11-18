@@ -122,7 +122,8 @@ export function listUnequippedCollection(user) {
 }
 
 export function chestOpenPad(open) {
-  return open ? { side: 18, top: 26 } : { side: 0, top: 0 };
+  // Extra canvas so upward beams and sparkles are not clipped at default zoom.
+  return open ? { side: 36, top: 64 } : { side: 0, top: 0 };
 }
 
 function lerp(a, b, t) {
@@ -206,10 +207,18 @@ export function drawCubeChest(ctx, tw, th, rot, lights, opts = {}, iso) {
   box(ctx, full.x - 0.02, full.y - 0.02, full.w + 0.04, full.h + 0.04, bodyH - 1, 2, seam);
 
   if (lidT > 0.2) {
-    const glow = lights ? "#fff6c4" : "#ffe9a0";
-    const inner = lights ? "#fffceb" : "#ffe08a";
+    // Dark wood well so the light pouring out has contrast, plus a warm gold floor.
     box(ctx, full.x + 0.08, full.y + 0.08, full.w - 0.16, full.h - 0.16, bodyH - 1, 2, {
-      top: inner, left: glow, right: glow, outline: "#c9a24a",
+      top: lights ? "#7a4a12" : "#5a3410",
+      left: lights ? "#a86a18" : "#7a4a12",
+      right: lights ? "#5a340c" : "#3a2008",
+      outline: "#c9a24a",
+    });
+    box(ctx, full.x + 0.22, full.y + 0.22, full.w - 0.44, full.h - 0.44, bodyH + 1, 0, {
+      top: lights ? "#ffe9a0" : "#f0c050",
+      left: "#ffe9a0",
+      right: "#ffd060",
+      outline: "#fff4c4",
     });
   }
 
@@ -237,65 +246,93 @@ export function drawCubeChest(ctx, tw, th, rot, lights, opts = {}, iso) {
     box(ctx, full.x + (full.w - latchW) / 2, full.y + full.h - latchH - 0.04, latchW, latchH, bodyH + lidHeight, 2, gold);
   }
 
-  if (lidT < 0.35) return;
+  if (lidT < 0.28) return;
 
-  const origin = pt(full.x + full.w / 2, full.y + full.h / 2, bodyH + 2);
-  const strength = Math.min(1, (lidT - 0.35) / 0.65);
-  const pulse = 0.7 + 0.3 * Math.sin((shine / 8) * Math.PI * 2);
+  const mouth = pt(full.x + full.w / 2, full.y + full.h * 0.42, bodyH + 3);
+  const strength = Math.min(1, (lidT - 0.28) / 0.72);
+  const pulse = 0.78 + 0.22 * Math.sin((shine / 8) * Math.PI * 2);
+  const rise = (shine % 8) * 1.6;
 
-  // Soft halo behind / around the opening.
   ctx.save();
-  const rings = [
-    { a: 0.22 * strength * pulse, r: 28, c: "rgba(255, 236, 140, 1)" },
-    { a: 0.18 * strength, r: 20, c: "rgba(180, 230, 255, 1)" },
-    { a: 0.16 * strength * pulse, r: 14, c: "rgba(220, 170, 255, 1)" },
+
+  // Warm bloom that pours up out of the open well. Keep it tight enough
+  // that the fanning beams still read as distinct rays.
+  const blooms = [
+    { a: 0.32 * strength * pulse, rx: 28, ry: 34, dy: -16, c: "rgba(255, 196, 60, 1)" },
+    { a: 0.40 * strength * pulse, rx: 18, ry: 26, dy: -12, c: "rgba(255, 226, 110, 1)" },
+    { a: 0.55 * strength, rx: 12, ry: 16, dy: -6, c: "rgba(255, 248, 200, 1)" },
   ];
-  for (const ring of rings) {
-    ctx.globalAlpha = ring.a;
-    ctx.fillStyle = ring.c;
+  for (const b of blooms) {
+    ctx.globalAlpha = b.a;
+    ctx.fillStyle = b.c;
     ctx.beginPath();
-    ctx.ellipse(origin.x, origin.y - 4, ring.r, ring.r * 0.7, 0, 0, Math.PI * 2);
+    ctx.ellipse(mouth.x, mouth.y + b.dy, b.rx, b.ry, 0, 0, Math.PI * 2);
     ctx.fill();
   }
-  ctx.globalAlpha = 1;
 
-  // Light rays shooting outward.
-  const rays = 6;
+  // Beams fanning upward from inside the well — wide wash plus a sharp core.
+  const rays = 7;
   for (let i = 0; i < rays; i++) {
-    const ang = -Math.PI / 2 + (i - (rays - 1) / 2) * 0.38 + (shine % 2) * 0.04;
-    const len = 22 + (i % 3) * 4 + (shine % 3);
-    const spread = 0.09;
-    const x1 = origin.x + Math.cos(ang - spread) * 3;
-    const y1 = origin.y + Math.sin(ang - spread) * 2;
-    const x2 = origin.x + Math.cos(ang + spread) * 3;
-    const y2 = origin.y + Math.sin(ang + spread) * 2;
-    const x3 = origin.x + Math.cos(ang) * len;
-    const y3 = origin.y + Math.sin(ang) * len;
-    ctx.globalAlpha = 0.28 * strength * pulse;
-    ctx.fillStyle = i % 2 ? "rgba(255, 248, 200, 1)" : "rgba(200, 240, 255, 1)";
+    const mid = (rays - 1) / 2;
+    const ang = -Math.PI / 2 + (i - mid) * 0.28 + ((shine % 4) - 1.5) * 0.016;
+    const len = (48 + Math.abs(i - mid) * 4 + (shine % 3) * 3) * (0.88 + 0.2 * pulse) * (0.8 + 0.2 * strength);
+    const x0 = mouth.x;
+    const y0 = mouth.y + 2;
+    const wash = 0.09;
+    const core = 0.028;
+    const tipX = x0 + Math.cos(ang) * len;
+    const tipY = y0 + Math.sin(ang) * len;
+    ctx.globalAlpha = (i === mid ? 0.72 : 0.5) * strength * pulse;
+    ctx.fillStyle = i % 2 === 0 ? "rgba(255, 220, 90, 1)" : "rgba(255, 242, 180, 1)";
     ctx.beginPath();
-    ctx.moveTo(x1, y1);
-    ctx.lineTo(x3, y3);
-    ctx.lineTo(x2, y2);
+    ctx.moveTo(x0 + Math.cos(ang - wash) * 3, y0 + Math.sin(ang - wash) * 2);
+    ctx.lineTo(tipX, tipY);
+    ctx.lineTo(x0 + Math.cos(ang + wash) * 3, y0 + Math.sin(ang + wash) * 2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.globalAlpha = 0.85 * strength * pulse;
+    ctx.fillStyle = "rgba(255, 255, 240, 1)";
+    ctx.beginPath();
+    ctx.moveTo(x0 + Math.cos(ang - core) * 2, y0 + Math.sin(ang - core) * 1);
+    ctx.lineTo(x0 + Math.cos(ang) * (len * 0.92), y0 + Math.sin(ang) * (len * 0.92));
+    ctx.lineTo(x0 + Math.cos(ang + core) * 2, y0 + Math.sin(ang + core) * 1);
     ctx.closePath();
     ctx.fill();
   }
+
+  // Bright core sitting in the mouth of the chest, drawn after the beams
+  // so the light clearly originates inside and pours outward.
+  ctx.globalAlpha = 0.95 * strength;
+  ctx.fillStyle = "rgba(255, 252, 230, 1)";
+  ctx.beginPath();
+  ctx.ellipse(mouth.x, mouth.y + 1, 9, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = 0.8 * strength * pulse;
+  ctx.fillStyle = "rgba(255, 236, 140, 1)";
+  ctx.beginPath();
+  ctx.ellipse(mouth.x, mouth.y - 3, 6, 8, 0, 0, Math.PI * 2);
+  ctx.fill();
   ctx.globalAlpha = 1;
 
   const stars = [
-    [origin.x - 16, origin.y - 14, 2],
-    [origin.x + 15, origin.y - 18, 2],
-    [origin.x - 8, origin.y - 22, 1],
-    [origin.x + 6, origin.y - 10, 2],
-    [origin.x + 18, origin.y - 6, 1],
-    [origin.x - 18, origin.y - 4, 1],
+    [mouth.x - 14, mouth.y - 16, 2],
+    [mouth.x + 16, mouth.y - 22, 2],
+    [mouth.x - 6, mouth.y - 30, 2],
+    [mouth.x + 4, mouth.y - 12, 2],
+    [mouth.x + 20, mouth.y - 8, 1],
+    [mouth.x - 20, mouth.y - 6, 1],
+    [mouth.x + 10, mouth.y - 38, 2],
+    [mouth.x - 18, mouth.y - 28, 1],
+    [mouth.x + 1, mouth.y - 46, 2],
+    [mouth.x - 8, mouth.y - 20, 1],
   ];
   for (let i = 0; i < stars.length; i++) {
-    if ((shine + i) % 5 === 0) continue;
-    const [sx, sy, sz] = stars[i];
-    const col = (shine + i) % 2 === 0 ? "#fffce6" : "#d8ffff";
-    ctx.globalAlpha = 0.55 * strength + 0.45;
-    star(ctx, sx, sy, sz, col);
+    if ((shine + i) % 4 === 0) continue;
+    const [sx, sy0, sz] = stars[i];
+    const sy = sy0 - rise * (0.6 + (i % 3) * 0.2);
+    const col = (shine + i) % 2 === 0 ? "#fffce6" : "#ffd56a";
+    ctx.globalAlpha = 0.7 * strength + 0.3 * pulse;
+    star(ctx, sx, sy, sz + ((shine + i) % 3 === 0 ? 1 : 0), col);
   }
   ctx.globalAlpha = 1;
   ctx.restore();

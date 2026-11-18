@@ -5423,8 +5423,13 @@ try {
       const fit = await alice.evaluate(() => window.__cubeChestState?.());
       check(
         `The chest storage window fits a ${size.width}x${size.height} phone without being cut off`,
-        Boolean(fit?.open && fit.onScreen && fit.chestCells >= 16 && fit.personalCells >= 9),
-        JSON.stringify(fit)
+        Boolean(fit?.open && fit.onScreen && fit.clearsChrome && fit.chestCells >= 16 && fit.personalCells >= 9),
+        JSON.stringify({ rect: fit?.rect, safe: fit?.safe, onScreen: fit?.onScreen, clearsChrome: fit?.clearsChrome, chestCells: fit?.chestCells, personalCells: fit?.personalCells })
+      );
+      check(
+        `Chest and personal cells are matching squares with visible icons at ${size.width}x${size.height}`,
+        Boolean(fit?.allSquare && fit?.sameCell && fit?.iconsFit && fit?.chestMetrics?.[0]?.w >= 28 && Math.abs((fit?.chestMetrics?.[3]?.w || 0) - (fit?.chestMetrics?.[0]?.w || 0)) <= 1.5),
+        JSON.stringify({ sameCell: fit?.sameCell, allSquare: fit?.allSquare, iconsFit: fit?.iconsFit, chest: fit?.chestMetrics, personal: fit?.personalMetrics })
       );
     }
     await alice.evaluate(() => window.__closeCubeChest?.());

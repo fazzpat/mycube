@@ -3949,63 +3949,102 @@ import {
     }
   }
 
+  function roomWindowSafeRect() {
+    const pad = 8;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    let top = pad;
+    const topSels = ["#view-room .topbar", "#shop-toggle", "#edit-room-btn", "#leave-cube", "#room-coins-btn"];
+    for (const sel of topSels) {
+      const n = document.querySelector(sel);
+      if (!n || n.hidden) continue;
+      const r = n.getBoundingClientRect();
+      if (r.height > 0 && r.width > 0 && r.bottom < vh * 0.45) top = Math.max(top, Math.ceil(r.bottom) + pad);
+    }
+    let bottom = vh - pad;
+    const dockSels = ["#chat-dock", ".dock.room-fabs", "#phone-btn", "#char-slots-btn", "#emote-wheel-btn", "#chat-bubble-btn"];
+    for (const sel of dockSels) {
+      const n = document.querySelector(sel);
+      if (!n || n.hidden) continue;
+      const r = n.getBoundingClientRect();
+      if (!(r.height > 0) || r.bottom < vh * 0.45) continue;
+      bottom = Math.min(bottom, Math.floor(r.top) - pad);
+    }
+    if (vh - bottom < 48) bottom = Math.min(bottom, vh - 64);
+    if (bottom - top < 160) {
+      top = pad;
+      bottom = Math.max(top + 160, vh - 64);
+    }
+    return { top, bottom, left: pad, right: vw - pad, width: vw - pad * 2, height: Math.max(160, bottom - top), vw, vh };
+  }
+
   function layoutCubeChestWindow() {
     const el = cubeChestEl();
     if (!el || !state.cubeChestId) return;
     el.classList.add("is-open");
     el.hidden = false;
-    const pad = 8;
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    const box = state.room3d?.furnitureScreenBox?.(state.cubeChestId);
-    const width = Math.max(240, Math.min(300, vw - pad * 2));
+    const safe = roomWindowSafeRect();
+    const width = Math.max(248, Math.min(312, safe.width));
     el.style.width = width + "px";
-    el.style.maxWidth = (vw - pad * 2) + "px";
-    el.style.maxHeight = (vh - pad * 2) + "px";
+    el.style.maxWidth = safe.width + "px";
+    el.style.maxHeight = safe.height + "px";
     el.style.overflow = "hidden";
-    el.style.left = Math.round(Math.max(pad, Math.min((vw - width) / 2, vw - pad - width))) + "px";
+    el.style.left = Math.round(safe.left + Math.max(0, (safe.width - width) / 2)) + "px";
+    el.style.top = safe.top + "px";
+
     const innerW = width - 16;
-    const chestGap = 4;
+    const gap = 5;
+    const scrollSlack = 8;
+    let cell = Math.max(28, Math.min(48, Math.floor((innerW - gap * 3 - scrollSlack) / 4)));
     let chestRows = 4;
     let persRows = 3;
-    let chestCell = Math.max(24, Math.min(40, Math.floor((innerW - chestGap * 3) / 4)));
-    let persCell = Math.max(22, Math.min(38, Math.floor((innerW - chestGap * 2) / 3)));
-    const chrome = 150; // title, tabs, labels, hint, padding
-    const maxH = vh - pad * 2;
-    let chestGridH = chestCell * chestRows + chestGap * (chestRows - 1);
-    let persGridH = persCell * persRows + chestGap * (persRows - 1);
-    while (chrome + chestGridH + persGridH > maxH && (chestRows > 2 || persRows > 2 || chestCell > 24 || persCell > 22)) {
-      if (chestRows > 3) chestRows -= 1;
-      else if (persRows > 2) persRows -= 1;
-      else if (chestCell > 24) chestCell -= 1;
-      else if (persCell > 22) persCell -= 1;
-      else if (chestRows > 2) chestRows -= 1;
-      else break;
-      chestGridH = chestCell * chestRows + chestGap * (chestRows - 1);
-      persGridH = persCell * persRows + chestGap * (persRows - 1);
-    }
     const chestGrid = el.querySelector("[data-testid=cube-chest-grid]");
     const persGrid = el.querySelector("[data-testid=cube-chest-personal]");
-    if (chestGrid) {
-      chestGrid.style.height = chestGridH + "px";
-      chestGrid.style.gridAutoRows = chestCell + "px";
+    const applyGrid = (cellSize, cRows, pRows) => {
+      const chestGridH = cellSize * cRows + gap * (cRows - 1);
+      const persGridH = cellSize * pRows + gap * (pRows - 1);
+      el.style.setProperty("--chest-cell", cellSize + "px");
+      if (chestGrid) {
+        chestGrid.style.height = chestGridH + "px";
+        chestGrid.style.gridAutoRows = cellSize + "px";
+        chestGrid.style.gridTemplateColumns = `repeat(4, ${cellSize}px)`;
+      }
+      if (persGrid) {
+        persGrid.style.height = persGridH + "px";
+        persGrid.style.gridAutoRows = cellSize + "px";
+        persGrid.style.gridTemplateColumns = `repeat(3, ${cellSize}px)`;
+      }
+      return chestGridH + persGridH;
+    };
+    applyGrid(cell, chestRows, persRows);
+    void el.offsetHeight;
+    const measured = el.getBoundingClientRect().height;
+    const assigned = cell * chestRows + gap * (chestRows - 1) + cell * persRows + gap * (persRows - 1);
+    const chrome = Math.max(80, measured - assigned);
+    while (chrome + cell * chestRows + gap * (chestRows - 1) + cell * persRows + gap * (persRows - 1) > safe.height
+        && (chestRows > 2 || persRows > 2 || cell > 28)) {
+      if (chestRows > 3) chestRows -= 1;
+      else if (persRows > 2) persRows -= 1;
+      else if (chestRows > 2) chestRows -= 1;
+      else cell -= 1;
     }
-    if (persGrid) {
-      persGrid.style.height = persGridH + "px";
-      persGrid.style.gridAutoRows = persCell + "px";
+    applyGrid(cell, chestRows, persRows);
+    el.style.maxHeight = safe.height + "px";
+    void el.offsetHeight;
+    const rh = Math.min(el.getBoundingClientRect().height || 0, safe.height);
+    let top = safe.top + Math.max(0, (safe.height - rh) / 2);
+    const box = state.room3d?.furnitureScreenBox?.(state.cubeChestId);
+    if (box && box.top != null) {
+      const prefer = box.top - 8;
+      top = Math.min(Math.max(prefer, safe.top), Math.max(safe.top, safe.bottom - rh));
     }
-    el.style.top = pad + "px";
-    const rh = Math.min(el.getBoundingClientRect().height || 0, maxH);
-    let top = pad;
-    if (box && box.top != null) top = box.top - 8;
-    top = Math.min(Math.max(top, pad), Math.max(pad, vh - pad - rh));
     el.style.top = Math.round(top) + "px";
     const rect = el.getBoundingClientRect();
-    if (rect.bottom > vh - pad) {
-      el.style.top = Math.round(Math.max(pad, vh - pad - Math.min(rect.height, maxH))) + "px";
+    if (rect.bottom > safe.bottom) {
+      el.style.top = Math.round(Math.max(safe.top, safe.bottom - Math.min(rect.height, safe.height))) + "px";
     }
-    if (rect.right > vw - pad) {
-      el.style.left = Math.round(Math.max(pad, vw - pad - rect.width)) + "px";
+    if (rect.left < safe.left || rect.right > safe.right) {
+      el.style.left = Math.round(safe.left + Math.max(0, (safe.width - Math.min(rect.width, safe.width)) / 2)) + "px";
     }
   }
 
@@ -6361,6 +6400,27 @@ import {
     const grid = el?.querySelector("[data-testid=cube-chest-grid]");
     const pgrid = el?.querySelector("[data-testid=cube-chest-personal]");
     const shine = state.cubeChestId ? state.room3d?.chestShine?.(state.cubeChestId) : null;
+    const safe = roomWindowSafeRect();
+    const measureCells = (root, limit = 8) => [...(root?.querySelectorAll(".char-inv-cell") || [])].slice(0, limit).map((c) => {
+      const cr = c.getBoundingClientRect();
+      const cv = c.querySelector("canvas")?.getBoundingClientRect();
+      return {
+        w: Math.round(cr.width * 10) / 10,
+        h: Math.round(cr.height * 10) / 10,
+        square: Math.abs(cr.width - cr.height) <= 1.5,
+        canvasFit: !cv || (cv.left >= cr.left - 1 && cv.top >= cr.top - 1 && cv.right <= cr.right + 1 && cv.bottom <= cr.bottom + 1),
+      };
+    });
+    const chestMetrics = measureCells(grid);
+    const personalMetrics = measureCells(pgrid);
+    const sameCell = Boolean(
+      chestMetrics[0] && personalMetrics[0]
+      && Math.abs(chestMetrics[0].w - personalMetrics[0].w) <= 1.5
+      && Math.abs(chestMetrics[0].h - personalMetrics[0].h) <= 1.5
+    );
+    const allSquare = chestMetrics.every((c) => c.square) && personalMetrics.every((c) => c.square);
+    const iconsFit = chestMetrics.every((c) => c.canvasFit) && personalMetrics.every((c) => c.canvasFit);
+    const clearsChrome = Boolean(r && r.top >= safe.top - 1 && r.bottom <= safe.bottom + 1);
     return {
       open: Boolean(state.cubeChestId && el && el.classList.contains("is-open")),
       id: state.cubeChestId || null,
@@ -6369,10 +6429,17 @@ import {
       items: (store.items || []).map((it) => ({ id: it.id, kind: it.kind, slot: it.slot, item: it.item, label: it.label, tag: it.tag || "" })),
       personal: personal.map((it) => ({ id: it.id, kind: it.kind, slot: it.slot, item: it.item, label: it.label })),
       rect: r ? { left: r.left, right: r.right, top: r.top, bottom: r.bottom, w: r.width, h: r.height } : null,
-      onScreen: Boolean(r && r.left >= -1 && r.top >= -1 && r.right <= vw + 1 && r.bottom <= vh + 1),
+      onScreen: Boolean(r && r.left >= -1 && r.top >= -1 && r.right <= vw + 1 && r.bottom <= vh + 1 && clearsChrome),
+      clearsChrome,
+      safe: { top: safe.top, bottom: safe.bottom, height: safe.height },
       chestCells: grid ? grid.querySelectorAll(".char-inv-cell").length : 0,
       chestCols: 4,
       personalCells: pgrid ? pgrid.querySelectorAll(".char-inv-cell").length : 0,
+      chestMetrics,
+      personalMetrics,
+      sameCell,
+      allSquare,
+      iconsFit,
       shine,
       cap: 64,
       personalCap: 9,

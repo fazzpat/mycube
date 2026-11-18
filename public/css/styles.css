@@ -5384,11 +5384,16 @@ select {
   -webkit-overflow-scrolling: touch;
   touch-action: pan-y;
   min-height: 0;
+  width: 100%;
+  justify-content: center;
+  justify-items: center;
+  align-content: start;
+  box-sizing: border-box;
   scrollbar-width: thin;
   scrollbar-color: rgba(90, 58, 40, 0.35) transparent;
 }
-.cube-chest-grid { grid-template-columns: repeat(4, 1fr); }
-.cube-chest-personal-grid { grid-template-columns: repeat(3, 1fr); }
+.cube-chest-grid { grid-template-columns: repeat(4, var(--chest-cell, 40px)); }
+.cube-chest-personal-grid { grid-template-columns: repeat(3, var(--chest-cell, 40px)); }
 .cube-chest-personal {
   display: flex;
   flex-direction: column;
@@ -5405,4 +5410,27 @@ select {
   margin: 4px 0 0;
   flex: 0 0 auto;
 }
-#cube-chest .char-inv-cell { aspect-ratio: 1; }
+#cube-chest .char-inv-cell {
+  width: var(--chest-cell, 40px);
+  height: var(--chest-cell, 40px);
+  min-width: var(--chest-cell, 40px);
+  min-height: var(--chest-cell, 40px);
+  max-width: var(--chest-cell, 40px);
+  max-height: var(--chest-cell, 40px);
+  aspect-ratio: 1 / 1;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+}
+#cube-chest .char-inv-cell canvas {
+  width: 82%;
+  height: 82%;
+  max-width: 82%;
+  max-height: 82%;
+  object-fit: contain;
+  object-position: center;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
