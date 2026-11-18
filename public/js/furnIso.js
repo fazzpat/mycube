@@ -6,6 +6,7 @@ import { drawRecordPlayer, TYPE as RECORD_PLAYER } from "./recordPlayer.js";
 import { drawChessTableSmall, drawChessStool, CHESS_STOOL_TYPE } from "./chessTable.js";
 import { drawStove } from "./stove.js";
 import { drawPoolTable } from "./billiards.js";
+import { decodeArtwork, EASEL_CANVAS_BG, EASEL_GRID, paintCells } from "./easel.js";
 import { blanketLocal, pillowLocal, foldLocal, BLANKET_LIFT, BLANKET_THICK, PILLOW_THICK } from "./bed.js";
 import { isSeatType } from "./seats.js";
 
@@ -19,7 +20,7 @@ const TILES = {
   tv: [2, 1], holotv: [2, 1], fridge: [1, 1], kitchenette: [2, 1], chair: [1, 1],
   hoverchair: [1, 1], bookshelf: [2, 1], chesstable: [1, 1], chessstool: [1, 1], punchbag: [1, 1],
   heavybag: [1, 1], benchpress: [2, 1], treadmill: [1, 2], cubics: [1, 1],
-  clothescab: [1, 1], coffeemachine: [1, 1], stove: [1, 1], recordplayer: [1, 1], djdeck: [2, 1], sodavending: [1, 1],
+  clothescab: [1, 1], coffeemachine: [1, 1], stove: [1, 1], recordplayer: [1, 1], easel: [1, 1], djdeck: [2, 1], sodavending: [1, 1],
   neonsign: [1, 1], pinball: [1, 1], rack: [1, 1], mannequin: [1, 1],
   petpen: [2, 1], cage: [1, 1], counter: [2, 1], pooltable: [2, 2],
 };
@@ -28,14 +29,14 @@ const BODY_H = {
   rug: 4, plant: 36, podplant: 38, lamp: 48, table: 18, coffeetable: 14, counter: 20,
   couch: 26, capsulecouch: 26, chair: 24, hoverchair: 32, bed: 14, tv: 60, holotv: 60,
   fridge: 44, kitchenette: 24, bookshelf: 42, chesstable: 14, chessstool: 14, punchbag: 46, heavybag: 46,
-  benchpress: 22, treadmill: 30, cubics: 64, pinball: 40, clothescab: 42, coffeemachine: 48, stove: 40, recordplayer: 40,
+  benchpress: 22, treadmill: 30, cubics: 64, pinball: 40, clothescab: 42, coffeemachine: 48, stove: 40, recordplayer: 40, easel: 46,
   djdeck: 18, sodavending: 46, neonsign: 46, rack: 36, mannequin: 42, petpen: 22, cage: 24, pooltable: 18,
 };
 
 export const FURN_SHEET_TYPES = [
   "rug", "plant", "podplant", "lamp", "neonsign", "table", "coffeetable", "counter",
   "chair", "hoverchair", "couch", "capsulecouch", "bed", "tv", "holotv", "fridge",
-  "kitchenette", "bookshelf", "clothescab", "chesstable", "coffeemachine", "stove", "recordplayer", "cubics",
+  "kitchenette", "bookshelf", "clothescab", "chesstable", "coffeemachine", "stove", "recordplayer", "easel", "cubics",
   "pinball", "djdeck", "sodavending", "punchbag", "benchpress", "treadmill",
   "rack", "mannequin", "petpen", "cage", "pooltable",
 ];
@@ -1504,6 +1505,7 @@ function paintPiece(ctx, type, rot, lights, on, open, opts = {}) {
     case "stove": drawStove(ctx, tw, th, r, lights, opts, ISO_DRAW); break;
     case "pooltable": drawPoolTable(ctx, tw, th, r, lights, opts, ISO_DRAW); break;
     case "recordplayer": drawRecordPlayer(ctx, tw, th, r, lights, { ...opts, on }, ISO_DRAW); break;
+    case "easel": drawEasel(ctx, tw, th, r, lights, opts); break;
     case "punchbag":
     case "heavybag":
     case "benchpress":
@@ -1522,6 +1524,80 @@ function paintPiece(ctx, type, rot, lights, on, open, opts = {}) {
   }
 }
 
+
+function canvasFromArtwork(art) {
+  if (!art) return null;
+  const decoded = art.cells && !art.palette ? art : (art.data ? null : art);
+  const pack = decoded?.cells && Array.isArray(decoded.cells) ? decoded : null;
+  const cells = pack?.cells || (art.data || art).cells && null;
+  let list = null, w = EASEL_GRID, h = EASEL_GRID;
+  if (Array.isArray(art.cells)) { list = art.cells; w = art.w || EASEL_GRID; h = art.h || EASEL_GRID; }
+  else {
+    const d = decodeArtwork(art.data || art);
+    if (d) { list = d.cells; w = d.w; h = d.h; }
+  }
+  if (!list) return null;
+  const c = (typeof document !== "undefined") ? document.createElement("canvas") : null;
+  if (!c) return null;
+  c.width = w;
+  c.height = h;
+  const ctx = c.getContext("2d");
+  ctx.imageSmoothingEnabled = false;
+  ctx.fillStyle = EASEL_CANVAS_BG;
+  ctx.fillRect(0, 0, w, h);
+  paintCells(ctx, list, w, h, 0, 0, 1);
+  return c;
+}
+
+function drawEasel(ctx, tw, th, rot, lights, opts = {}) {
+  const wood = pal("#8b5a2b", lights, { ink: "#3a2418", cream: "#f4efe6", frame: "#c4a06a", peg: "#6b4228" });
+  const r = normalizeFurnRot(rot);
+  // Local 1x1 tile: legs form an A, canvas faces `r`.
+  shadow(ctx, 0.12, 0.12, 0.76, 0.76, lights ? 0.22 : 0.12);
+  // Back support / third leg, away from the canvas.
+  const back = [
+    { x: 0.46, y: 0.12, w: 0.08, h: 0.18 },
+    { x: 0.70, y: 0.46, w: 0.18, h: 0.08 },
+    { x: 0.46, y: 0.70, w: 0.08, h: 0.18 },
+    { x: 0.12, y: 0.46, w: 0.18, h: 0.08 },
+  ][r];
+  box(ctx, back.x, back.y, back.w, back.h, 0, 36, { top: wood.peg, left: wood.left, right: wood.right, outline: wood.ink });
+  // Front A-frame legs.
+  const legs = [
+    [{ x: 0.16, y: 0.62, w: 0.10, h: 0.22 }, { x: 0.74, y: 0.62, w: 0.10, h: 0.22 }],
+    [{ x: 0.62, y: 0.16, w: 0.22, h: 0.10 }, { x: 0.62, y: 0.74, w: 0.22, h: 0.10 }],
+    [{ x: 0.16, y: 0.16, w: 0.10, h: 0.22 }, { x: 0.74, y: 0.16, w: 0.10, h: 0.22 }],
+    [{ x: 0.16, y: 0.16, w: 0.22, h: 0.10 }, { x: 0.16, y: 0.74, w: 0.22, h: 0.10 }],
+  ][r];
+  for (const leg of legs) {
+    box(ctx, leg.x, leg.y, leg.w, leg.h, 0, 40, { top: wood.top, left: wood.left, right: wood.right, outline: wood.ink });
+  }
+  // Shelf / ledge under the canvas.
+  const shelf = [
+    { x: 0.18, y: 0.58, w: 0.64, h: 0.16, lift: 16 },
+    { x: 0.58, y: 0.18, w: 0.16, h: 0.64, lift: 16 },
+    { x: 0.18, y: 0.26, w: 0.64, h: 0.16, lift: 16 },
+    { x: 0.26, y: 0.18, w: 0.16, h: 0.64, lift: 16 },
+  ][r];
+  box(ctx, shelf.x, shelf.y, shelf.w, shelf.h, shelf.lift, 3, { top: wood.top, left: wood.left, right: wood.right, outline: wood.ink });
+  // Canvas board — a thin upright slab facing `r`.
+  const board = [
+    { x: 0.22, y: 0.62, w: 0.56, h: 0.08, lift: 19, height: 24 },
+    { x: 0.62, y: 0.22, w: 0.08, h: 0.56, lift: 19, height: 24 },
+    { x: 0.22, y: 0.30, w: 0.56, h: 0.08, lift: 19, height: 24 },
+    { x: 0.30, y: 0.22, w: 0.08, h: 0.56, lift: 19, height: 24 },
+  ][r];
+  box(ctx, board.x, board.y, board.w, board.h, board.lift, board.height, { top: wood.frame, left: wood.left, right: wood.right, outline: wood.ink });
+  const face = { 0: "+y", 1: "+x", 2: "-y", 3: "-x" }[r];
+  const corners = faceCorners(board.x, board.y, board.w, board.h, board.lift, board.height, face);
+  const img = canvasFromArtwork(opts.canvas);
+  if (img) {
+    faceImage(ctx, corners, 0.08, 0.08, 0.92, 0.92, img);
+  } else {
+    faceRect(ctx, corners, 0.08, 0.08, 0.92, 0.92, wood.cream, wood.ink);
+  }
+}
+
 export function drawFurnitureSprite(type, opts = {}) {
   if (type === "shopkeeper") return null;
   const lights = opts.lights !== false;
@@ -1536,12 +1612,13 @@ export function drawFurnitureSprite(type, opts = {}) {
   const flicker = type === "cubics" ? (opts.flicker ?? 0) : 0;
   const part = opts.part || "all";
   const screen = opts.screen || null;
-  const key = "iso-furn:" + type + ":" + rot + ":" + lights + ":" + on + ":" + open + ":" + (opts.sku || "") + ":" + part + (type === "coffeemachine" ? (":brew" + brewing + ":st" + steamFrame) : "") + (type === "stove" ? (":on" + on + ":st" + steamFrame + ":fl" + flameFrame) : "") + (type === "recordplayer" ? (":v" + vinyl + ":sp" + spinFrame + ":on" + on) : "") + (type === "cubics" ? (":fk" + flicker) : "");
+  const canvasKey = type === "easel" ? (":cv" + (opts.canvasKey || (opts.canvas && (opts.canvas.cells || opts.canvas.data && opts.canvas.data.cells) || "" ).toString().slice(0, 24))) : "";
+  const key = "iso-furn:" + type + ":" + rot + ":" + lights + ":" + on + ":" + open + ":" + (opts.sku || "") + ":" + part + (type === "coffeemachine" ? (":brew" + brewing + ":st" + steamFrame) : "") + (type === "stove" ? (":on" + on + ":st" + steamFrame + ":fl" + flameFrame) : "") + (type === "recordplayer" ? (":v" + vinyl + ":sp" + spinFrame + ":on" + on) : "") + (type === "cubics" ? (":fk" + flicker) : "") + canvasKey;
   const m = furnSpriteMetrics(type, rot, { open });
   const body = sprite(key, m.w, m.h, (ctx) => {
     ctx.save();
     ctx.translate(m.ox, m.oy);
-    paintPiece(ctx, type, rot, lights, on, open, { brewing, steamFrame, flameFrame, sku: opts.sku, spinFrame, vinyl, flicker, on, part });
+    paintPiece(ctx, type, rot, lights, on, open, { brewing, steamFrame, flameFrame, sku: opts.sku, spinFrame, vinyl, flicker, on, part, canvas: opts.canvas });
     ctx.restore();
   });
   if (!screen || !on || (type !== "tv" && type !== "holotv")) return body;

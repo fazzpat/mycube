@@ -14,6 +14,10 @@ import { DECOR_GROUPS, paintDecorThumb, normalizeDecor, DEFAULT_DECOR } from "./
 import { canonHex } from "./hexColor.js";
 import { openColorWheel, closeColorWheel, isColorWheelOpen } from "./colorWheel.js";
 import { ART_PIECES, paintArtThumb, registerArtCatalog, installPaintings } from "./artPieces.js";
+import {
+  EASEL_TYPE, isEaselArt, artworkThumbHtml, paintArtworkThumb, registerEaselCatalog,
+} from "./easel.js";
+import { mountEaselPaint, openEaselPaint, closeEaselPaint, isEaselPaintOpen, easelPaintDemo } from "./easelPaint.js";
 import { installWallLayout, switchFloorTile } from "./wallLayout.js";
 import { installChessLayout } from "./chessTable.js";
 import { startGame, move as cubicsMove, softDrop, hardDrop, tick as cubicsTick, snapshot as cubicsSnap, drawCubics, jokeAt } from "./cubics.js";
@@ -46,8 +50,22 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
   window.__joinResults = [];
 
   installPaintings(window.HouseIso);
+  registerEaselCatalog(window.HouseIso);
+  if (window.HouseIso && typeof window.HouseIso.furnitureSVG === "function") {
+    const origSvg = window.HouseIso.furnitureSVG;
+    window.HouseIso.furnitureSVG = (type) => {
+      if (isEaselArt(type)) {
+        const art = artworkByType(type);
+        return artworkThumbHtml(type, art?.title);
+      }
+      return origSvg(type);
+    };
+  }
   installWallLayout(window.HouseIso);
   installChessLayout(window.HouseIso);
+  mountEaselPaint({
+    onSave(payload) { socket.emit("saveEaselArt", payload); },
+  });
   mountRecordPicker({
     onSelect(id, vinyl) {
       // play() is also invoked in the picker pointer handler; call it here too
@@ -1868,7 +1886,15 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     }
   }
 
+  function artworkByType(type) {
+    const mine = (state.me?.artworks || []).find((a) => a.type === type || a.id === type);
+    if (mine) return mine;
+    return (state.room?.wallArt || []).find((a) => a.type === type) || null;
+  }
+  window.__artworkByType = artworkByType;
+
   function labelFor(type) {
+    if (isEaselArt(type)) return artworkByType(type)?.title || "Painting";
     return HouseIso.CATALOG[type]?.name || type;
   }
 
@@ -2085,7 +2111,7 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     }
     const ok = HouseIso.canPlaceWall(type, wall, slot, state.room?.size || 6)
       && !HouseIso.wallOccupied(state.room?.wallArt || [], wall, slot, state.movingWallId);
-    state.room3d?.setWallGhost(type, wall, slot, ok);
+    state.room3d?.setWallGhost(type, wall, slot, ok, isEaselArt(type) ? artworkByType(type) : null);
     const chk = $("#confirm-place");
     if (chk) {
       if (ok) SHOW(chk);
@@ -2420,6 +2446,7 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
       ? bits.join("")
       : `<span class="empty">Pocket's empty. Buy furniture or a pet in the shop.</span>`;
     box.querySelectorAll("canvas[data-art-thumb]").forEach((c) => paintArtThumb(c, c.dataset.artThumb));
+    box.querySelectorAll("canvas[data-easel-thumb]").forEach((c) => paintArtworkThumb(c, artworkByType(c.dataset.easelThumb)));
     box.querySelectorAll("[data-place]").forEach((b) => {
       b.addEventListener("click", () => {
         if (state._invDragging) return;
@@ -3606,6 +3633,17 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     if (type === "recordplayer" || type === RECORD_TYPE) {
       approachFurniture(furn, () => {
         openRecordPicker(id, state.room.recordPlayers?.[id]);
+      });
+      return;
+    }
+    if (type === "easel" || type === EASEL_TYPE) {
+      if (!isOwner()) {
+        toast("Only the cube owner can paint at the easel.");
+        return;
+      }
+      approachFurniture(furn, () => {
+        const piece = (state.room?.furniture || []).find((x) => x.id === id) || furn;
+        openEaselPaint(id, piece.canvas || {});
       });
       return;
     }
@@ -5390,6 +5428,11 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     }
   });
 
+  socket.on("easelArtSaved", (payload) => {
+    closeEaselPaint();
+    if (payload?.title) toast("Saved \"" + payload.title + "\" to your inventory.");
+    if (state.editMode) paintEditInventory();
+  });
   socket.on("profile", (user) => {
     const wasCreating = state.view === "creator" && !state.me?.avatar;
     state.me = user;
@@ -5453,6 +5496,7 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
   socket.on("leftRoom", () => {
     stopRecordAudio();
     if (isRecordPickerOpen()) closeRecordPicker();
+    if (isEaselPaintOpen()) closeEaselPaint();
     closePhone();
     closeCharSlots();
     state.room = null;
@@ -5688,6 +5732,7 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     state.room3d?.setRecordPlayers(state.room.recordPlayers || {});
     syncRoomRecordAudio(state.room.recordPlayers || {});
     if (isRecordPickerOpen()) closeRecordPicker();
+    if (isEaselPaintOpen()) closeEaselPaint();
     if (state.selectedFurnId === id) {
       state.selectedFurnId = null;
       hideFurnActions();
@@ -5987,6 +6032,13 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
   window.__selectRecord = (id, vinyl) => socket.emit("selectRecordPlayer", { id, vinyl });
   window.__stopRecord = (id) => socket.emit("selectRecordPlayer", { id, stop: true });
   window.__openRecordPicker = (id) => openRecordPicker(id, state.room?.recordPlayers?.[id]);
+  window.__openEaselPaint = (id) => {
+    const piece = (state.room?.furniture || []).find((x) => x.id === id);
+    openEaselPaint(id, piece?.canvas || {});
+  };
+  window.__closeEaselPaint = () => closeEaselPaint();
+  window.__easelPaintDemo = easelPaintDemo;
+  window.__isEaselPaintOpen = isEaselPaintOpen;
   window.__closeRecordPicker = () => closeRecordPicker();
   window.__recordAudioState = () => getRecordAudioState();
   window.__listenToRecord = (id) => {
@@ -6016,6 +6068,7 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     } catch {}
     stopRecordAudio();
     if (isRecordPickerOpen()) closeRecordPicker();
+    if (isEaselPaintOpen()) closeEaselPaint();
     closePhone();
     state.me = null;
     state.room = null;

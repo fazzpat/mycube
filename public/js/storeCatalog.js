@@ -183,6 +183,7 @@ export const NEW_FURNITURE = [
   { type: "holotv", name: "TV", price: 32 },
   { type: "pinball", name: "Pinball cabinet", price: 38 },
   { type: "recordplayer", name: "Record table", price: 28 },
+  { type: "easel", name: "Easel", price: 26 },
 ];
 
 export function clothingById(id) {

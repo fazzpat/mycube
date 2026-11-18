@@ -37,6 +37,10 @@ import {
 import { OUTFIT_STOCK, outfitById, wearingOutfit, stripOutfitItem } from "./public/js/outfits.js";
 import { colorOrHex } from "./public/js/hexColor.js";
 import { ART_PIECES, artCatalogEntry, PAINTING_CATALOG } from "./public/js/artPieces.js";
+import {
+  EASEL_TYPE, EASEL_CATALOG, EASEL_MAX_ARTWORKS, isEaselArt, easelArtType,
+  validateArtwork, publicArtwork, sanitizeTitle,
+} from "./public/js/easel.js";
 import { reservedWallSlots as layoutReservedWallSlots } from "./public/js/wallLayout.js";
 import { chessSeatTiles, chessSeatPose, migrateChessTable } from "./public/js/chessTable.js";
 import { liePose, migrateBed, bedTiles } from "./public/js/bed.js";
@@ -86,6 +90,7 @@ const FURNITURE_CATALOG = {
   pooltable: { name: "Pool Table", price: 60, w: 2, h: 2, blocks: true },
   cuerack: { name: "Cue Rack", price: 20, w: 1, h: 1, blocks: false, surface: "wall" },
   recordplayer: { name: "Record table", price: 28, w: 1, h: 1, blocks: true },
+  easel: { ...EASEL_CATALOG },
   art_mona: { name: "Mona Cuba", price: 22, w: 1, h: 1, blocks: false, surface: "wall" },
   art_starry: { name: "Starry Cube Night", price: 28, w: 1, h: 1, blocks: false, surface: "wall" },
   art_pop: { name: "Pop-art cubes", price: 18, w: 1, h: 1, blocks: false, surface: "wall" },
@@ -229,6 +234,7 @@ function ensureCollection(user) {
   if (!Array.isArray(c.pets)) c.pets = [];
   if (!Array.isArray(c.outerwear)) c.outerwear = [];
   user.gear = normalizeGear(user.gear || emptyGear());
+  if (!Array.isArray(user.artworks)) user.artworks = [];
   return user;
 }
 function roomSize(room) {
@@ -673,6 +679,7 @@ function publicUser(user) {
     avatar: user.avatar,
     coins: user.coins,
     inventory: user.inventory.slice(),
+    artworks: (user.artworks || []).map((a) => publicArtwork(a)).filter(Boolean),
     friends: friendList(user),
     roomId: user.roomId,
     invites: invitesFor(user.username),
@@ -716,7 +723,7 @@ function notifyFriendWatchers(subject) {
 
 
 function isWallArt(type) {
-  return WALL_ART_TYPES.has(type) || FURNITURE_CATALOG[type]?.surface === "wall";
+  return isEaselArt(type) || WALL_ART_TYPES.has(type) || FURNITURE_CATALOG[type]?.surface === "wall";
 }
 
 function reservedWallSlots(size) {
@@ -1347,6 +1354,7 @@ io.on("connection", (socket) => {
       avatar: defaultAvatar(username),
       coins: START_COINS,
       inventory: [],
+      artworks: [],
       friends: [],
       socketId: null,
       roomId: null,
@@ -2668,6 +2676,40 @@ io.on("connection", (socket) => {
   });
 
 
+  socket.on("saveEaselArt", ({ id, title, data } = {}) => {
+    const user = getUser(socket);
+    const room = requireOwner(socket, user);
+    if (!room) return;
+    ensureCollection(user);
+    if (!Array.isArray(user.artworks)) user.artworks = [];
+    const furn = id ? room.furniture.find((f) => f.id === id && f.type === EASEL_TYPE) : null;
+    if (id && !furn) {
+      socket.emit("errorMsg", { message: "That easel is not in this cube." });
+      return;
+    }
+    const check = validateArtwork({ ...(data || {}), title }, { count: user.artworks.length });
+    if (!check.ok) {
+      socket.emit("errorMsg", { message: check.error });
+      return;
+    }
+    const artId = "a" + (furnSeq++);
+    const type = easelArtType(artId);
+    const art = {
+      id: artId,
+      type,
+      title: sanitizeTitle(check.artwork.title || title),
+      data: { ...check.artwork.data, title: sanitizeTitle(check.artwork.title || title) },
+    };
+    user.artworks.push(art);
+    user.inventory.push(type);
+    if (furn) {
+      furn.canvas = { type: art.type, title: art.title, data: art.data };
+      io.to(room.id).emit("furnitureUpdated", furn);
+    }
+    emitProfile(user);
+    socket.emit("easelArtSaved", { id: art.id, type: art.type, title: art.title, easelId: id || null });
+  });
+
   socket.on("placeWallArt", ({ type, wall, slot } = {}) => {
     const user = getUser(socket);
     const room = requireOwner(socket, user);
@@ -2686,6 +2728,13 @@ io.on("connection", (socket) => {
     }
     user.inventory.splice(idx, 1);
     const piece = { id: "w" + furnSeq++, type, wall, slot: s };
+    if (isEaselArt(type)) {
+      const art = (user.artworks || []).find((a) => a.type === type);
+      if (art) {
+        piece.title = art.title;
+        piece.data = art.data;
+      }
+    }
     room.wallArt.push(piece);
     emitProfile(user);
     emitRoom(room, "wallArtPlaced", piece);

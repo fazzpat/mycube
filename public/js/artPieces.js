@@ -3,6 +3,7 @@
    isoRoom.js uses TW = 64, TH = 32, so a 1-unit wall square is 32 x 32. */
 
 import { ART_PIXELS } from "./artPixels.js";
+import { isEaselArt, wallPixelsFromArtwork } from "./easel.js";
 
 export const FLOOR_TILE_PX = 32;
 export const ART_SIZE = FLOOR_TILE_PX;
@@ -32,7 +33,7 @@ export function artByType(type) {
 }
 
 export function isPixelArt(type) {
-  return Boolean(artByType(type));
+  return Boolean(artByType(type)) || isEaselArt(type);
 }
 
 export const isPainting = isPixelArt;
@@ -86,7 +87,10 @@ export function installPaintings(houseIso) {
   }
 }
 
-export function renderArtPixels(type) {
+export function renderArtPixels(type, artwork) {
+  if (artwork && (artwork.data || artwork.cells || isEaselArt(type))) {
+    return wallPixelsFromArtwork(artwork.data ? artwork : (artwork.cells ? artwork : { data: artwork }));
+  }
   const pixels = ART_PIXELS[type];
   if (!pixels) return { width: ART_SIZE, height: ART_SIZE, pixels: [] };
   return { width: ART_SIZE, height: ART_SIZE, pixels };
@@ -97,8 +101,8 @@ export function uniqueColors(type) {
   return [...new Set(pixels.filter((c) => c && c !== "#00000000"))];
 }
 
-export function paintArt(ctx, type, x = 0, y = 0, scale = 1) {
-  const { width, height, pixels } = renderArtPixels(type);
+export function paintArt(ctx, type, x = 0, y = 0, scale = 1, artwork) {
+  const { width, height, pixels } = renderArtPixels(type, artwork);
   const s = scale;
   ctx.imageSmoothingEnabled = false;
   for (let py = 0; py < height; py++) {
@@ -126,15 +130,17 @@ export function getArtCanvas(type, doc = (typeof document !== "undefined" ? docu
   return c;
 }
 
-export function paintArtThumb(canvas, type, scale) {
+export function paintArtThumb(canvas, type, scale, artwork) {
   if (!canvas) return;
   const s = scale || Math.max(1, Math.floor(Math.min(canvas.width, canvas.height) / ART_SIZE) || 2);
   const ctx = canvas.getContext("2d");
   ctx.imageSmoothingEnabled = false;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  const ox = Math.floor((canvas.width - ART_SIZE * s) / 2);
-  const oy = Math.floor((canvas.height - ART_SIZE * s) / 2);
-  paintArt(ctx, type, ox, oy, s);
+  const art = artwork || (typeof window !== "undefined" && window.__artworkByType?.(type));
+  const { width, height } = renderArtPixels(type, art);
+  const ox = Math.floor((canvas.width - width * s) / 2);
+  const oy = Math.floor((canvas.height - height * s) / 2);
+  paintArt(ctx, type, ox, oy, s, art);
 }
 
 export function preloadPaintings(onLoad) {
@@ -168,7 +174,7 @@ export function drawPaintingOnWall(ctx, type, quad, opts = {}) {
   if (!quad || quad.length < 4) return;
   const alpha = opts.alpha ?? 1;
   const dim = opts.dim ?? 1;
-  const { width: w, height: h, pixels } = renderArtPixels(type);
+  const { width: w, height: h, pixels } = renderArtPixels(type, opts.artwork);
   if (!pixels.length) return;
   ctx.save();
   ctx.imageSmoothingEnabled = false;

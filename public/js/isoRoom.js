@@ -25,6 +25,7 @@ import {
   isRecordListening,
 } from "./recordPlayer.js";
 import { isPainting, drawPaintingOnWall, preloadPaintings, ART_TILE_SPAN, ART_WORLD_UP, ART_HANG_UP, ART_SIZE } from "./artPieces.js";
+import { artworkHash, EASEL_TYPE } from "./easel.js";
 preloadPaintings();
 /* 2D isometric pixel room renderer — 2000s house style, HouseRoom3D API. */
 const TW = 64;
@@ -1081,6 +1082,8 @@ export function createRoom3D(container, opts = {}) {
         on: isTv ? tvOn : isRec ? recOn : Boolean(uses[f.id]?.on),
         open: type === "fridge" ? Boolean(uses[f.id]?.open) : false,
         sku: f.sku,
+        canvas: type === EASEL_TYPE ? (f.canvas || null) : null,
+        canvasKey: type === EASEL_TYPE ? artworkHash(f.canvas) : "",
         brewing: type === "coffeemachine" && uses[f.id]?.phase === "brew",
         steamFrame: type === "coffeemachine" ? steamFrameAt(now) : (type === "stove" ? stoveSteamFrameAt(now) : 0),
         flameFrame: type === "stove" ? flameFrameAt(now) : 0,
@@ -1537,7 +1540,7 @@ export function createRoom3D(container, opts = {}) {
         drawCueRackOnWall(ctx, wall, art.slot, lightsOn, { wallPt, fillPoly });
         if (highlightId && art.id === highlightId) fillPoly(ctx, q, null, "#d4b46a", 2);
       } else if (isPainting(typ)) {
-        drawPaintingOnWall(ctx, typ, q, { dim: lightsOn ? 1 : 0.42 });
+        drawPaintingOnWall(ctx, typ, q, { dim: lightsOn ? 1 : 0.42, artwork: art });
         if (highlightId && art.id === highlightId) fillPoly(ctx, q, null, "#d4b46a", 2);
       } else if (typ.includes("neon") || typ.includes("poster")) {
         fillPoly(ctx, q, typ.includes("neon") ? "#c43a4a" : "#3a5a7a", "#2a2c30");
@@ -1586,7 +1589,7 @@ export function createRoom3D(container, opts = {}) {
         drawCueRackOnWall(ctx, wall, wallGhost.slot, lightsOn, { wallPt, fillPoly });
         ctx.globalAlpha = 1;
       } else if (isPainting(wallGhost.type) && wallGhost.ok !== false) {
-        drawPaintingOnWall(ctx, wallGhost.type, q, { alpha: 0.55, dim: lightsOn ? 1 : 0.5 });
+        drawPaintingOnWall(ctx, wallGhost.type, q, { alpha: 0.55, dim: lightsOn ? 1 : 0.5, artwork: wallGhost });
       } else {
         ctx.globalAlpha = 0.45;
         fillPoly(ctx, q, wallGhost.ok === false ? "#ff2b2b" : "#7ac8ff", "#fff");
@@ -2188,7 +2191,7 @@ export function createRoom3D(container, opts = {}) {
       return rec?.on ? notesAt(id, rec, nowServer()) : [];
     },
     setWallArt(list) { wallArt = list || []; },
-    setWallGhost(type, wall, slot, ok) { wallGhost = type ? { type, wall, slot, ok } : null; },
+    setWallGhost(type, wall, slot, ok, artwork) { wallGhost = type ? { type, wall, slot, ok, ...(artwork || {}) } : null; },
     setArcade(m) { arcade = m || {}; },
     getArcade() { return arcade; },
     setServerTime(t) { serverTime0 = t || Date.now(); serverAt = performance.now(); },

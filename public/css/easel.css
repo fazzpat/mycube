@@ -1,0 +1,112 @@
+.easel-paint {
+  position: absolute;
+  left: 50%;
+  bottom: 88px;
+  transform: translateX(-50%);
+  width: min(366px, calc(100% - 20px));
+  max-height: calc(100% - 132px);
+  overflow: auto;
+  z-index: 42;
+  background: #f4ead4;
+  border: 3px solid #2a1810;
+  border-radius: 16px;
+  box-shadow: 0 10px 0 #2a1810, 0 16px 24px rgba(20, 12, 8, 0.28);
+  padding: 10px 10px 12px;
+  color: #2a1810;
+  font-family: Verdana, Geneva, sans-serif;
+}
+.easel-paint-title {
+  text-align: center;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  font-size: 13px;
+  margin: 0 0 8px;
+}
+.easel-canvas-wrap {
+  display: flex;
+  justify-content: center;
+  margin: 0 0 8px;
+}
+.easel-canvas-wrap canvas {
+  image-rendering: pixelated;
+  background: #f4efe6;
+  border: 3px solid #2a1810;
+  border-radius: 4px;
+  touch-action: none;
+  cursor: crosshair;
+  width: 288px;
+  height: 288px;
+}
+.easel-tools, .easel-palette, .easel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+  margin: 0 0 8px;
+}
+.easel-tool, .easel-btn {
+  appearance: none;
+  border: 2px solid #2a1810;
+  background: #efe0c0;
+  color: #2a1810;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 11px;
+  padding: 6px 9px;
+  min-height: 32px;
+  cursor: pointer;
+}
+.easel-tool.is-on, .easel-btn.is-on {
+  background: #f4c15d;
+}
+.easel-btn.primary {
+  background: #3ecf8e;
+}
+.easel-btn.secondary {
+  background: #e8dcc4;
+}
+.easel-swatch {
+  width: 22px;
+  height: 22px;
+  border: 2px solid #2a1810;
+  border-radius: 4px;
+  padding: 0;
+  cursor: pointer;
+}
+.easel-swatch.is-on {
+  outline: 2px solid #2a1810;
+  outline-offset: 1px;
+}
+.easel-custom {
+  width: 32px;
+  height: 22px;
+  border: 2px solid #2a1810;
+  border-radius: 4px;
+  padding: 0;
+  background: #fff;
+  cursor: pointer;
+}
+.easel-title-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin: 0 0 8px;
+}
+.easel-title-row label {
+  font-size: 11px;
+  font-weight: 700;
+}
+.easel-title-row input {
+  flex: 1;
+  border: 2px solid #2a1810;
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 13px;
+  background: #fffaf0;
+  color: #2a1810;
+  min-width: 0;
+}
+@media (max-height: 700px) {
+  .easel-canvas-wrap canvas { width: 240px; height: 240px; }
+  .easel-paint { bottom: 72px; max-height: calc(100% - 110px); }
+}
