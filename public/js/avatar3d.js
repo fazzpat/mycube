@@ -2849,6 +2849,8 @@ function composeAvatar(av, flagsIn, frame) {
   if (hatOn && hatOf(av) !== "wizard" && hatOf(av) !== "crown") drawHat(head, av, hk, pal, headUpper);
   outfitDraw?.drawHat?.(head, av, hk, headUpper, { ...flags, frame, walking: Boolean(flags.walking) && !sit });
   if (hatOn) drawHairPeeks(head, av, hk, pal, headUpper, bob, frame, walk);
+  // Wizard hat: hide leftover hair/scalp above the brim after peeks, then restamp the crown.
+  outfitDraw?.clipHairUnderHat?.(head, av, hk, headUpper, { ...flags, frame, walking: Boolean(flags.walking) && !sit });
   if (hatOn && hatOf(av) === "crown") drawHat(head, av, hk, pal, headUpper);
   if (av.accessory === "headphones") drawHeadphones(head, av, hk, pal, headUpper);
   if (emote === "heart") {
@@ -2862,6 +2864,7 @@ function composeAvatar(av, flagsIn, frame) {
   const dx = neckX(bodyView, upper) - neckX(headView, headUpper) + (headView.flip ? -motion.x : motion.x);
   if (dx) head = shiftBufXY(head, dx, 0);
   head = addInkOutline(head);
+  outfitDraw?.tuckWizardHatInk?.(head, av, hk, headUpper);
 
   const t = torsoBox(bk, sit);
   const aKind = pose.armKind || "idle";

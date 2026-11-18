@@ -74,6 +74,14 @@ function felt(buf, x, y, pal, kind, depth, w, h) {
   plot(buf, x, y, on ? pal.hi : pal.mid, kind, depth, w, h);
 }
 
+function feltForce(buf, x, y, pal, kind, depth, w = AV_W, h = AV_H) {
+  x = x | 0; y = y | 0;
+  if (x < 0 || y < 0 || x >= w || y >= h || !pal) return;
+  const on = (((x * 13 + y * 7) ^ (x * 5 - y * 3)) % 11 + 11) % 11 === 0;
+  const c = (on ? pal.hi : pal.mid) || pal;
+  buf[y * w + x] = { color: c.mid ? c.mid : c, kind, depth };
+}
+
 function fillEllipse(buf, cx, cy, rx, ry, pal, kind, depth, opts = {}) {
   const rxi = Math.ceil(rx) + 1, ryi = Math.ceil(ry) + 1;
   const dither = opts.dither;
@@ -105,9 +113,74 @@ function torsoBox(key) {
   return { cx: 24 + AV_PAD_X, y0, hw: 12.8, h };
 }
 
-/** Larger snug wizard hat: brim wraps the head, crown hugs the hair,
-    droopy curved tip that bounces with a lagged sway when walking.
-    Stays above the eyes. */
+/** Wide-based wizard hat that covers the whole top of the head. The cone is
+    tall with a clearly droopy top third; that tip bounces when walking and
+    settles at idle. The brim stays above the eyes. */
+export function wizardHatHeadUpper(flags = {}, frame = 0) {
+  if (flags.sitting) return 8;
+  if (flags.walking) {
+    const bobs = [1, 0, -1, 0, 1, 0, -1, 0];
+    return bobs[(((Number(frame) || 0) % 8) + 8) % 8];
+  }
+  return ((Number(frame) || 0) % 16) < 8 ? 0 : -1;
+}
+
+export function wizardHatBrimCoverY(key, upper = 0) {
+  const g = headGeom(key);
+  const cy = g.cy + upper;
+  const faceTop = cy - 2;
+  const brimCy = faceTop - 2.2;
+  // Last row strictly above the brim; bangs and side hair may start on the brim line.
+  return Math.floor(brimCy) - 1;
+}
+
+const HAIR_OR_SCALP = /^(skin-head|hair|hair-cap|hair-lock|hair-bun|hair-puff|hair-peek|hair-tail|hair-tip|hair-buzz|hair-hi|hair-bun-ink|part)/;
+
+/** After bangs/peeks, hide leftover hair or scalp above the brim and restamp the hat. */
+export function clipHairUnderHat(buf, av, key, upper = 0, flags = {}) {
+  if (av?.hat !== "wizard" || !buf) return;
+  const coverY = wizardHatBrimCoverY(key, upper);
+  const holes = [];
+  for (let y = 0; y <= coverY; y++) {
+    for (let x = 0; x < AV_W; x++) {
+      const i = y * AV_W + x;
+      const p = buf[i];
+      if (p && HAIR_OR_SCALP.test(p.kind || "")) {
+        buf[i] = null;
+        holes.push([x, y]);
+      }
+    }
+  }
+  drawOutfitHat(buf, av, key, upper, flags);
+  // Any leftover gap from tucked hair is stamped with felt so the crown stays solid.
+  for (const [x, y] of holes) {
+    const i = y * AV_W + x;
+    const p = buf[i];
+    if (p && /^hat/.test(p.kind || "")) continue;
+    felt(buf, x, y, HAT, "hat-tuck", 58);
+  }
+}
+
+/** After the head ink outline, replace hair- or skin-colored ink that was
+    pulled up around the brim so no scalp/hair peeks above the hat. Safe after flip. */
+export function tuckWizardHatInk(buf, av, key, upper = 0) {
+  if (av?.hat !== "wizard" || !buf) return;
+  const coverY = wizardHatBrimCoverY(key, upper);
+  const warm = (c) => c && c.r >= (c.b || 0) && c.r > 18 && (c.b || 0) < 90;
+  for (let y = 0; y <= coverY; y++) {
+    for (let x = 0; x < AV_W; x++) {
+      const i = y * AV_W + x;
+      const p = buf[i];
+      if (!p) continue;
+      const kind = p.kind || "";
+      const col = p.color || p;
+      if (HAIR_OR_SCALP.test(kind) || (kind === "ink" && warm(col))) {
+        buf[i] = { color: HAT.ink, kind: "hat-ink", depth: 80 };
+      }
+    }
+  }
+}
+
 export function drawOutfitHat(buf, av, key, upper = 0, flags = {}) {
   if (av?.hat !== "wizard") return;
   const g = headGeom(key);
@@ -117,41 +190,63 @@ export function drawOutfitHat(buf, av, key, upper = 0, flags = {}) {
   const back = key === "n" || key === "ne";
   const walk = Boolean(flags.walking) && !flags.sitting && !flags.lying;
   const phase = Number(flags.frame) || 0;
-  // Secondary motion with a slight lag; settles to a rest droop when idle.
-  const sway = walk ? Math.sin(phase * Math.PI / 4 - 0.95) * 2.6 : 0;
-  const bounce = walk ? Math.max(0, Math.sin(phase * Math.PI / 4 - 1.25)) * 1.5 : 0;
+  // Secondary motion with lag; the hooked tip springs while walking and rests idle.
+  const sway = walk ? Math.sin(phase * Math.PI / 4 - 0.95) * 3.8 : 0;
+  const bounce = walk ? Math.max(0, Math.sin(phase * Math.PI / 4 - 1.25)) * 2.4 : 0;
 
-  // Brim sits just above the eyes and wraps the head width (not perched on top).
-  const brimCy = faceTop - 2.4;
-  const brimRx = g.rx * 1.22;
-  const brimRy = 5.0;
+  const skipFace = (px, py) => !back && py >= faceTop && Math.abs(px - cx) < g.rx * 0.62;
+
+  // Brim sits just above the eyes and wraps the full head width.
+  const brimCy = faceTop - 2.2;
+  const brimRx = g.rx * 1.30;
+  const brimRy = 5.2;
   const rxi = Math.ceil(brimRx) + 1, ryi = Math.ceil(brimRy) + 1;
   for (let y = -ryi; y <= ryi; y++) {
     for (let x = -rxi; x <= rxi; x++) {
       const d = (x / brimRx) * (x / brimRx) + (y / brimRy) * (y / brimRy);
-      if (d < 0.60 || d > 1.05) continue;
+      if (d < 0.58 || d > 1.06) continue;
       const px = Math.round(cx + x);
       const py = Math.round(brimCy + y);
-      if (!back && py >= faceTop && Math.abs(x) < brimRx * 0.58) continue;
+      if (skipFace(px, py)) continue;
       const edge = d > 0.92 || d < 0.70;
       felt(buf, px, py, edge ? HAT.sh : HAT, "hat-brim", y < 0 ? 54 : 55);
     }
   }
-  // Crown base hugs the hair inside the brim.
-  const baseY = brimCy - 0.3;
-  const baseR = g.rx * 0.90;
-  fillEllipse(buf, cx, baseY, baseR, 2.8, HAT, "hat-base", 56);
-  const restBend = key === "e" ? 6.0 : back ? -5.2 : 5.6;
-  const tipY = Math.round(baseY - 18 + bounce);
+
+  // Solid cap covers the whole skull and hair crown, not a thin band on top.
+  const skullTop = cy - g.ry - 1.4;
+  const capBot = brimCy + 0.6;
+  const capCy = (skullTop + capBot) / 2;
+  const capRy = (capBot - skullTop) / 2 + 0.5;
+  const capRx = g.rx * 1.16;
+  const cxi = Math.ceil(capRx) + 1, cyi = Math.ceil(capRy) + 1;
+  for (let y = -cyi; y <= cyi; y++) {
+    for (let x = -cxi; x <= cxi; x++) {
+      const d = (x / (capRx || 1)) * (x / (capRx || 1)) + (y / (capRy || 1)) * (y / (capRy || 1));
+      if (d > 1) continue;
+      const px = Math.round(cx + x);
+      const py = Math.round(capCy + y);
+      if (skipFace(px, py)) continue;
+      felt(buf, px, py, d > 0.78 ? HAT.sh : HAT, "hat-cap", 56);
+    }
+  }
+
+  // Tall, wide cone: crown base spans roughly the head width; the top third hooks over.
+  const baseY = brimCy - 0.2;
+  const baseR = g.rx * 1.08;
+  const restBend = key === "e" ? 9.5 : back ? -9.2 : 9.2;
+  const coneH = 24;
+  const tipY = Math.max(1, Math.round(baseY - coneH + bounce));
   const tipX = cx + restBend + sway;
   for (let y = tipY; y <= baseY; y++) {
     const u = (y - tipY) / (baseY - tipY || 1);
-    const wx = Math.max(0.5, Math.pow(u, 1.32) * baseR);
-    // Droopy curved tip: hang is strongest at the point, eases into the crown.
-    const droop = (1 - u) * (1 - u);
-    const mid = cx + (restBend + sway) * droop;
+    const wx = Math.max(1.0, Math.pow(u, 0.95) * baseR);
+    const hook = u < 1 / 3 ? Math.pow((1 / 3 - u) / (1 / 3), 1.35) : 0;
+    const lean = u < 0.62 ? Math.pow((0.62 - u) / 0.62, 1.1) * 0.28 : 0;
+    const mid = cx + (restBend + sway) * (hook + lean);
     for (let x = Math.round(mid - wx); x <= Math.round(mid + wx); x++) {
-      const edge = Math.abs(x - mid) >= wx - 0.65;
+      if (skipFace(x, Math.round(y))) continue;
+      const edge = Math.abs(x - mid) >= wx - 0.7;
       felt(buf, x, Math.round(y), edge ? HAT.sh : HAT, "hat", 56);
     }
   }
@@ -159,7 +254,7 @@ export function drawOutfitHat(buf, av, key, upper = 0, flags = {}) {
   plot(buf, Math.round(tipX), Math.round(tipY), HAT.hi, "hat", 57);
 }
 
-/** Tunic, belt, tailored rounded cloak, trailing floor cape, and/or blue lower legs. */
+/** Tunic, belt, tailored rounded cloak, trailing floor cape, and/or a light-blue robe skirt. */
 export function drawOutfitBody(buf, av, key, upper = 0, sit = false, flags = {}) {
   const cloakOn = av?.cloak === "wizard";
   const pantsOn = av?.outfitPants === "wizard";
@@ -235,15 +330,13 @@ export function drawOutfitBody(buf, av, key, upper = 0, sit = false, flags = {})
       else midHalf = t.hw * 0.62 + 0.8 + (u > 0.68 ? ((u - 0.68) / 0.32) ** 2 * (back ? 2.4 : 1.6) : 0);
       const spread = roundedHalf(y, throatY, cloakBot, midHalf, sit ? 3.0 : 3.6);
       if (spread <= 0.5) continue;
-      const open = (!back && y > waist + 2) ? 3.0 + u * 1.2 : 0;
+      const open = (!back && y > waist + 2) ? Math.max(3.6, t.hw * 0.58 + u * 2.4) : 0;
       for (let x = Math.round(cx - spread); x <= Math.round(cx + spread); x++) {
         if (open && Math.abs(x - cx) < open && y > throatY + 4) continue;
         if (!back && y < tunicHem && Math.abs(x - cx) < tunW + 0.2 && y > throatY + 3) continue;
         felt(buf, x, y, Math.abs(x - cx) > spread - 1.2 ? CLOAK.sh : CLOAK, "cloak", 20);
       }
     }
-    // Floor-dragging cape from the shoulders. Hidden when lying; tucked when sitting.
-    drawWizardCape(buf, key, t, cx, throatY, hemY, sit, flags, back, waist, tunicHem, tunW);
     // Closed throat / clasp.
     fillEllipse(buf, cx, throatY + 1.2, 3.2, 2.0, CLOAK, "clasp", 34);
     if (!back) {
@@ -270,19 +363,39 @@ export function drawOutfitBody(buf, av, key, upper = 0, sit = false, flags = {})
   }
 
   if (pantsOn) {
-    // Blue lower legs under / below the tunic hem, down to the boot tops.
-    const bootTop = sit ? AV_GROUND_Y - 10 : AV_GROUND_Y - 12;
-    const legTop = cloakOn ? Math.round(waist + 8) : Math.round(y0 + h * 0.58);
-    const stance = key === "e" ? 3.2 : 5.0;
-    for (const side of key === "e" ? [1] : [-1, 1]) {
-      const lx = cx + side * stance * (key === "e" ? 0.2 : 1);
-      const lw = key === "e" ? 4.2 : 3.6;
-      for (let y = legTop; y < bootTop; y++) {
-        for (let x = Math.round(lx - lw); x <= Math.round(lx + lw); x++) {
-          felt(buf, x, y, TUNIC, "wiz-pants", 30);
-        }
+    // Light-blue robe skirt from the belt/waist down to just above the ankles.
+    // One panel covering the legs (not separate pant legs), with a slight walk sway.
+    const walk = Boolean(flags?.walking) && !sit && !flags?.lying;
+    const phase = Number(flags?.frame) || 0;
+    const sway = walk ? Math.sin(phase * Math.PI / 4 - 1.2) * 3.2 : 0;
+    const skirtTop = cloakOn ? Math.round(waist + 2) : Math.round(y0 + h * 0.58);
+    const skirtBot = sit ? AV_GROUND_Y - 12 : AV_GROUND_Y - 6;
+    const startW = t.hw * 1.02;
+    for (let y = skirtTop; y <= skirtBot; y++) {
+      const u = (y - skirtTop) / (skirtBot - skirtTop || 1);
+      const mid = cx + sway * u * u;
+      let midHalf = startW * (0.98 + 0.22 * u);
+      const topCap = 1.6, botCap = 2.2;
+      if (y <= skirtTop + topCap) {
+        const cu = (y - skirtTop) / topCap;
+        midHalf *= Math.sqrt(Math.max(0, 1 - (1 - cu) * (1 - cu)));
+      } else if (y >= skirtBot - botCap) {
+        const cu = (skirtBot - y) / botCap;
+        midHalf *= Math.sqrt(Math.max(0, 1 - (1 - cu) * (1 - cu)));
+      }
+      if (midHalf <= 0.5) continue;
+      for (let x = Math.round(mid - midHalf); x <= Math.round(mid + midHalf); x++) {
+        felt(buf, x, y, Math.abs(x - mid) > midHalf - 1.1 ? TUNIC.sh : TUNIC, "wiz-robe", 30);
       }
     }
+  }
+
+  if (cloakOn) {
+    const throatY = Math.round(y0 + 1);
+    const tunicHem = Math.round(waist + 8);
+    const tunW = t.hw + 0.4;
+    // Cape last so it can sit over the back (and after the robe skirt).
+    drawWizardCape(buf, key, t, cx, throatY, hemY, sit, flags, back, waist, tunicHem, tunW);
   }
 }
 
@@ -293,6 +406,7 @@ function drawWizardCape(buf, key, t, cx, throatY, hemY, sit, flags, back, waist,
   const lag = walk ? Math.sin(phase * Math.PI / 4 - 1.05) : 0;
   const trail = sit ? 0 : (walk ? 8 + lag * 2.6 : 4);
   const sway = walk ? Math.sin(phase * Math.PI / 4 - 1.45) * 2.2 : 0;
+  const side = (key === "e" || key === "se");
   let dx = 0, dy = 0;
   if (key === "e") { dx = -trail; dy = 1; }
   else if (key === "se") { dx = -trail * 0.78; dy = 1; }
@@ -302,25 +416,51 @@ function drawWizardCape(buf, key, t, cx, throatY, hemY, sit, flags, back, waist,
   const shoulderY = throatY + 2;
   const pool = sit ? 0 : 2;
   const capeBot = Math.min(AV_H - 1, Math.round(hemY + pool + (sit ? 0 : Math.max(0, dy))));
-  const attachW = t.hw + 1.0;
+  // Back views stay at least as wide as the torso so the body never peeks through.
+  const attachW = t.hw + (back ? 2.2 : 1.0);
+  const BODY = /^(skin|skin-head|skin-jaw|skin-face|shirt|tunic|belt|buckle|wiz-pants|wiz-robe|cloak)$/;
   for (let y = shoulderY; y <= capeBot; y++) {
     const u = (y - shoulderY) / (capeBot - shoulderY || 1);
     const flow = u * u;
     const mid = cx + dx * flow;
     let midHalf = sit
       ? attachW * 0.9 + 1.6 * u
-      : attachW * (1 - u * 0.08) + (2.8 + trail * 0.45) * flow;
+      : (back
+        ? attachW + (2.4 + trail * 0.35) * flow
+        : attachW * (1 - u * 0.08) + (2.8 + trail * 0.45) * flow);
     const topU = (y - shoulderY) / 3;
     const botU = (capeBot - y) / 4;
     if (y <= shoulderY + 3) midHalf *= Math.sqrt(Math.max(0, 1 - (1 - Math.max(0, Math.min(1, topU))) ** 2));
     else if (y >= capeBot - 4) midHalf *= Math.sqrt(Math.max(0, 1 - (1 - Math.max(0, Math.min(1, botU))) ** 2));
     const spread = midHalf;
     if (spread <= 0.6) continue;
-    const open = (!back && !sit) ? Math.max(0, (tunW || t.hw) * 0.9 * (1 - flow * 0.7)) : 0;
+    const open = (!back && !side && !sit) ? Math.max(0, (tunW || t.hw) * 0.85 * (1 - flow * 0.2)) : 0;
     for (let x = Math.round(mid - spread); x <= Math.round(mid + spread); x++) {
       if (open && Math.abs(x - cx) < open && y < hemY) continue;
       if (sit && !back && y > waist + 4 && Math.abs(x - cx) < t.hw * 0.7) continue;
-      felt(buf, x, y, Math.abs(x - mid) > spread - 1.2 ? CLOAK.sh : CLOAK, "cape", 16);
+      // Front stays behind the body (depth 16). Back, and the trailing half on
+      // side views, stamps over the body so nothing shows through the cape.
+      let depth = 16;
+      let force = false;
+      if (back) { depth = 38; force = true; }
+      else if (side && (x - cx) <= 0.5) { depth = 38; force = true; }
+      const pal = Math.abs(x - mid) > spread - 1.2 ? CLOAK.sh : CLOAK;
+      if (force) feltForce(buf, x, y, pal, "cape", depth);
+      else felt(buf, x, y, pal, "cape", depth);
+    }
+  }
+  if (back) {
+    // Guarantee a solid, opaque back panel from shoulders to the hem.
+    const coverW = t.hw + 1.6;
+    for (let y = shoulderY; y <= capeBot; y++) {
+      const edgeTaper = y >= capeBot - 3 ? (capeBot - y) / 3 : 1;
+      const w = coverW * Math.sqrt(Math.max(0.35, edgeTaper));
+      for (let x = Math.round(cx - w); x <= Math.round(cx + w); x++) {
+        const i = y * AV_W + x;
+        const p = buf[i];
+        if (p && /^(cape|hood|hood-in|hood-edge|clasp|hat)/.test(p.kind || "")) continue;
+        if (!p || BODY.test(p.kind || "")) feltForce(buf, x, y, CLOAK, "cape", 38);
+      }
     }
   }
 }
@@ -484,6 +624,8 @@ export function installOutfitDraw(setOutfitDraw) {
     drawStaff: drawWizardStaff,
     feetUnderBody,
     cloakHemY,
+    clipHairUnderHat,
+    tuckWizardHatInk,
   });
 }
 
@@ -559,4 +701,5 @@ export default {
   drawOutfitHat, drawOutfitBody, drawOutfitGlove, drawOutfitBoot, drawWizardStaff,
   installOutfitDraw, paintOutfitThumb, shouldDrawStaff, placeStaffHand, staffSideX,
   hasWizardGloves, hasWizardBoots, feetUnderBody, cloakHemY,
+  clipHairUnderHat, tuckWizardHatInk, wizardHatBrimCoverY, wizardHatHeadUpper,
 };
