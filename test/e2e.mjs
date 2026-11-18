@@ -5180,6 +5180,257 @@ try {
     await alice.evaluate(() => window.__closeCharSlots?.());
   }
 
+  log("Cube Chest furniture storage");
+  await alice.setViewportSize({ width: 390, height: 844 });
+  await alice.evaluate(() => window.__closeCharSlots?.());
+  await alice.evaluate(() => window.__closeCubeChest?.());
+  await alice.evaluate(() => {
+    window.__debugKit({
+      furniture: ["cubechest", "cubechest"],
+      coins: 400,
+      outerwear: ["ow-beanie", "ow-hoodie", "ow-crown"],
+      pets: ["fox"],
+      props: ["balloon"],
+    });
+    window.__equipChest?.("head", null);
+    window.__equipChest?.("torso", null);
+    window.__equipChest?.("legs", null);
+    window.__equipChest?.("pet", null);
+    window.__equipChest?.("prop", null);
+  });
+  await alice.waitForTimeout(120);
+  const shopChest = await alice.evaluate(() => {
+    window.__openStore?.("furniture", "cubechest");
+    const card = document.querySelector('[data-testid="store-item-cubechest"]');
+    const thumb = document.querySelector('[data-testid="store-thumb-cubechest"]');
+    const buy = document.querySelector('[data-testid="buy-cubechest"]');
+    const price = card?.querySelector(".price")?.textContent || "";
+    const label = card?.querySelector(".meta")?.textContent || "";
+    let painted = false;
+    if (thumb) {
+      const ctx = thumb.getContext("2d");
+      const data = ctx.getImageData(0, 0, thumb.width, thumb.height).data;
+      for (let i = 0; i < data.length; i += 4) {
+        if (data[i + 3] > 10 && (data[i] !== 239 || data[i + 1] !== 230 || data[i + 2] !== 212)) { painted = true; break; }
+      }
+    }
+    return { hasCard: Boolean(card), hasBuy: Boolean(buy), price, label, painted, w: thumb?.width || 0 };
+  });
+  check("The Furniture tab lists a Cube Chest with a sprite icon and a coin price", Boolean(shopChest.hasCard && shopChest.hasBuy && shopChest.painted && /36/.test(shopChest.price) && /cube chest/i.test(shopChest.label)), JSON.stringify(shopChest));
+  await alice.evaluate(() => document.querySelector("#store-panel .shop-close, #store-close, [data-testid=store-close]")?.click() || window.__closeStore?.());
+  await alice.waitForTimeout(80);
+
+  const chestPlaced = await alice.evaluate(() => {
+    window.__enterEdit?.();
+    const extras = (window.HouseRoom3D.getFurniture() || []).filter((f) => f.type === "plant" || f.type === "podplant" || f.type === "rug");
+    for (const f of extras.slice(0, 3)) {
+      window.__clickFurniture(f.id, f.type);
+      window.__putAwaySelected?.();
+    }
+    const findFree = (avoid = []) => {
+      const size = window.HouseRoom3D.gridSize?.() || 6;
+      const furn = window.HouseRoom3D.getFurniture() || [];
+      const blocked = new Set();
+      for (const f of furn) {
+        const dims = window.HouseIso?.dims?.(f.type, f.rot) || { w: 1, h: 1 };
+        for (let y = 0; y < dims.h; y++) for (let x = 0; x < dims.w; x++) blocked.add(`${f.x + x},${f.y + y}`);
+      }
+      for (const a of avoid) blocked.add(`${a.x},${a.y}`);
+      for (let y = size - 1; y >= 0; y--) {
+        for (let x = 0; x < size; x++) {
+          if (!blocked.has(`${x},${y}`)) return { x, y };
+        }
+      }
+      return null;
+    };
+    const a = findFree();
+    if (!a) return { error: "no free tile" };
+    window.__startPlace?.("cubechest");
+    window.__clickTile(a.x, a.y);
+    const b = findFree();
+    if (b) {
+      window.__startPlace?.("cubechest");
+      window.__clickTile(b.x, b.y);
+    }
+    return { a, b };
+  });
+  await alice.waitForFunction(() => (window.HouseRoom3D.getFurniture() || []).filter((f) => f.type === "cubechest").length >= 1, null, { timeout: 8000 });
+  const chests = await alice.evaluate(() => (window.HouseRoom3D.getFurniture() || []).filter((f) => f.type === "cubechest").map((f) => ({ id: f.id, x: f.x, y: f.y, rot: f.rot, chestId: f.chestId })));
+  check("A Cube Chest snaps to the grid as a placeable floor item", Boolean(chestPlaced?.a && chests.length >= 1), JSON.stringify({ chestPlaced, chests }));
+  const chestA = chests[0];
+  const chestB = chests[1] || null;
+  if (chestA) {
+    await alice.evaluate((id) => {
+      window.__enterEdit?.();
+      window.__clickFurniture(id, "cubechest");
+      window.__rotatePending?.();
+    }, chestA.id);
+    await alice.waitForTimeout(120);
+  }
+  const rotAfter = await alice.evaluate((id) => window.HouseRoom3D.getFurniture().find((f) => f.id === id)?.rot, chestA?.id);
+  check("A placed Cube Chest can be rotated in Edit Room", chestA && rotAfter !== chestA.rot, JSON.stringify({ before: chestA?.rot, after: rotAfter }));
+  await alice.evaluate(() => window.__exitEdit?.());
+  await alice.waitForTimeout(120);
+
+  if (chestA) {
+    await alice.evaluate((id) => window.__clickFurniture(id, "cubechest"), chestA.id);
+    const opened = await alice.waitForFunction(() => window.__cubeChestState?.()?.open, null, { timeout: 10000 }).then(() => true).catch(() => false);
+    await alice.waitForTimeout(400);
+    const shine = await alice.evaluate((id) => window.HouseRoom3D.chestShine?.(id), chestA.id);
+    const ui = await alice.evaluate(() => window.__cubeChestState?.());
+    check("Tapping a placed chest opens it with a shine and a storage window", Boolean(opened && shine?.open && (shine.lid > 0 || shine.shine >= 0) && ui?.chestCells >= 16 && ui?.chestCols === 4 && ui?.personalCells >= 9), JSON.stringify({ opened, shine, cells: ui?.chestCells, cols: ui?.chestCols, personal: ui?.personalCells, tabs: ui?.tabs }));
+    const tabIds = await alice.evaluate(() => [...document.querySelectorAll("[data-testid^=cube-chest-tab-]")].map((b) => b.dataset.tab));
+    check("The chest window has All, Outerwear, Pets, Props, and two custom tabs", ["all", "outerwear", "pets", "props", "a", "b"].every((t) => tabIds.includes(t)), JSON.stringify(tabIds));
+    await alice.evaluate((name) => window.__renameChestTab?.("a", name), "Costumes");
+    await alice.waitForFunction(() => window.__cubeChestState?.()?.tabs?.a === "Costumes", null, { timeout: 5000 }).then(() => true).catch(() => false);
+    const renamed = await alice.evaluate(() => window.__cubeChestState?.()?.tabs);
+    check("The owner can rename a custom chest tab", renamed?.a === "Costumes", JSON.stringify(renamed));
+
+    const beforeMove = await alice.evaluate(() => window.__cubeChestState?.());
+    const beanie = (beforeMove?.personal || []).find((i) => i.item === "ow-beanie" || i.item === "beanie");
+    if (beanie) {
+      await alice.evaluate((id) => window.__chestDeposit(id, "a"), beanie.id);
+      await alice.waitForFunction((id) => (window.__cubeChestState?.()?.items || []).some((i) => i.id === id), beanie.id, { timeout: 5000 });
+    }
+    const afterDep = await alice.evaluate(() => window.__cubeChestState?.());
+    check("Tapping a personal inventory item stores it in the chest", Boolean((afterDep?.items || []).some((i) => i.item === "ow-beanie" || i.item === "beanie" || i.catalogId === "ow-beanie")), JSON.stringify({ items: afterDep?.items, personal: afterDep?.personal }));
+    // Keep personal inventory under the 9-slot cap so the withdraw can succeed.
+    await alice.evaluate(async () => {
+      for (let n = 0; n < 8; n++) {
+        const st = window.__cubeChestState?.();
+        if ((st?.personal || []).length < 9) break;
+        const extra = (st.personal || []).find((i) => i.item !== "ow-beanie" && i.item !== "beanie");
+        if (!extra) break;
+        window.__chestDeposit(extra.id);
+        await new Promise((r) => setTimeout(r, 80));
+      }
+    });
+    const stored = (await alice.evaluate(() => (window.__cubeChestState?.()?.items || []).find((i) => i.item === "ow-beanie" || i.item === "beanie" || i.catalogId === "ow-beanie")));
+    if (stored) {
+      await alice.evaluate((id) => window.__chestWithdraw(id), stored.id);
+      await alice.waitForFunction((id) => !(window.__cubeChestState?.()?.items || []).some((i) => i.id === id), stored.id, { timeout: 5000 }).catch(() => {});
+    }
+    const afterW = await alice.evaluate(() => window.__cubeChestState?.());
+    check("Tapping a chest item moves it back to the personal inventory", Boolean((afterW?.personal || []).some((i) => i.item === "ow-beanie" || i.item === "beanie") && !(afterW?.items || []).some((i) => i.id === stored?.id)), JSON.stringify({ items: afterW?.items, personal: afterW?.personal }));
+
+    // Equipped items stay out of the personal list (and so can't be stored).
+    await alice.evaluate(() => window.__equipChest?.("head", "ow-crown"));
+    await alice.waitForTimeout(80);
+    const equippedHidden = await alice.evaluate(() => {
+      const st = window.__cubeChestState?.();
+      return { personal: st?.personal || [], hasCrown: (st?.personal || []).some((i) => i.item === "ow-crown") };
+    });
+    check("Equipped items cannot be stored until they are unequipped", equippedHidden.hasCrown === false, JSON.stringify(equippedHidden));
+    await alice.evaluate(() => window.__equipChest?.("head", null));
+
+    // Persist across put-away: deposit hoodie, close, put away, place again.
+    const hoodie = (await alice.evaluate(() => window.__cubeChestState?.()?.personal || [])).find((i) => i.item === "ow-hoodie" || i.item === "hoodie");
+    if (hoodie) {
+      await alice.evaluate((id) => window.__chestDeposit(id), hoodie.id);
+      await alice.waitForFunction((id) => (window.__cubeChestState?.()?.items || []).some((i) => i.id === id), hoodie.id, { timeout: 5000 });
+    }
+    await alice.evaluate(() => window.__closeCubeChest?.());
+    await alice.waitForFunction((id) => !window.HouseRoom3D.chestOpen?.(id), chestA.id, { timeout: 5000 }).catch(() => {});
+    const lidClosed = await alice.evaluate((id) => window.HouseRoom3D.chestShine?.(id), chestA.id);
+    check("Closing the storage window closes the chest lid", Boolean(!lidClosed?.open), JSON.stringify(lidClosed));
+
+    await alice.evaluate(() => window.__enterEdit?.());
+    await alice.evaluate((id) => {
+      window.__clickFurniture(id, "cubechest");
+      window.__putAwaySelected?.();
+    }, chestA.id);
+    await alice.waitForFunction((id) => !(window.HouseRoom3D.getFurniture() || []).some((f) => f.id === id), chestA.id, { timeout: 8000 });
+    const replaced = await alice.evaluate(() => {
+      const size = window.HouseRoom3D.gridSize?.() || 6;
+      const furn = window.HouseRoom3D.getFurniture() || [];
+      const blocked = new Set();
+      for (const f of furn) {
+        const dims = window.HouseIso?.dims?.(f.type, f.rot) || { w: 1, h: 1 };
+        for (let y = 0; y < dims.h; y++) for (let x = 0; x < dims.w; x++) blocked.add(`${f.x + x},${f.y + y}`);
+      }
+      let spot = null;
+      for (let y = size - 1; y >= 0 && !spot; y--) for (let x = 0; x < size && !spot; x++) if (!blocked.has(`${x},${y}`)) spot = { x, y };
+      if (!spot) return { error: "no tile" };
+      window.__startPlace?.("cubechest");
+      window.__clickTile(spot.x, spot.y);
+      return { spot };
+    });
+    await alice.waitForFunction(() => (window.HouseRoom3D.getFurniture() || []).some((f) => f.type === "cubechest"), null, { timeout: 8000 });
+    await alice.evaluate(() => window.__exitEdit?.());
+    const chestAgain = await alice.evaluate(() => (window.HouseRoom3D.getFurniture() || []).filter((f) => f.type === "cubechest").map((f) => f.id));
+    const reopenId = chestAgain[0];
+    if (reopenId) {
+      await alice.evaluate((id) => window.__clickFurniture(id, "cubechest"), reopenId);
+      await alice.waitForFunction(() => window.__cubeChestState?.()?.open, null, { timeout: 8000 });
+    }
+    const kept = await alice.evaluate(() => (window.__cubeChestState?.()?.items || []).map((i) => i.item || i.catalogId));
+    check("Putting a chest away keeps the items stored inside it", kept.includes("ow-hoodie") || kept.includes("hoodie"), JSON.stringify({ replaced, kept, chestAgain }));
+
+    const bobBlocked = await bob.evaluate(async (id) => {
+      window.__openCubeChest?.(id);
+      await new Promise((r) => setTimeout(r, 400));
+      const st = window.__cubeChestState?.();
+      const toast = document.querySelector(".toast, #toasts .toast, [data-testid=toast]")?.textContent || document.body.innerText.slice(0, 0);
+      return { open: Boolean(st?.open), toasts: [...document.querySelectorAll("#toasts .toast, .toast")].map((t) => t.textContent) };
+    }, reopenId || chestA.id);
+    check("Other players see the chest open but cannot take items unless they own the cube", bobBlocked.open === false, JSON.stringify(bobBlocked));
+
+    const bobSeesOpen = await bob.waitForFunction((id) => window.HouseRoom3D.chestOpen?.(id) === true, reopenId || chestA.id, { timeout: 5000 }).then(() => true).catch(() => false);
+    check("Other players see the lid open and the glow", bobSeesOpen);
+
+    // Second chest is separate storage (if we still have one placed, or place the leftover).
+    let otherId = (chestAgain || []).find((id) => id !== reopenId) || chestB?.id;
+    if (!otherId) {
+      otherId = await alice.evaluate(() => {
+        window.__enterEdit?.();
+        const size = window.HouseRoom3D.gridSize?.() || 6;
+        const furn = window.HouseRoom3D.getFurniture() || [];
+        const blocked = new Set();
+        for (const f of furn) {
+          const dims = window.HouseIso?.dims?.(f.type, f.rot) || { w: 1, h: 1 };
+          for (let y = 0; y < dims.h; y++) for (let x = 0; x < dims.w; x++) blocked.add(`${f.x + x},${f.y + y}`);
+        }
+        let spot = null;
+        for (let y = size - 1; y >= 0 && !spot; y--) for (let x = 0; x < size && !spot; x++) if (!blocked.has(`${x},${y}`)) spot = { x, y };
+        if (!spot) return null;
+        window.__startPlace?.("cubechest");
+        window.__clickTile(spot.x, spot.y);
+        return "pending";
+      });
+      if (otherId === "pending") {
+        await alice.waitForTimeout(200);
+        await alice.evaluate(() => window.__exitEdit?.());
+        otherId = await alice.evaluate((keep) => (window.HouseRoom3D.getFurniture() || []).filter((f) => f.type === "cubechest" && f.id !== keep).map((f) => f.id)[0], reopenId);
+      }
+    }
+    if (otherId) {
+      await alice.evaluate(() => window.__closeCubeChest?.());
+      await alice.evaluate((id) => window.__clickFurniture(id, "cubechest"), otherId);
+      await alice.waitForFunction(() => window.__cubeChestState?.()?.open, null, { timeout: 8000 });
+    }
+    const otherItems = await alice.evaluate(() => (window.__cubeChestState?.()?.items || []).map((i) => i.item));
+    check("Multiple chests each keep their own separate storage", Boolean(otherId) && !otherItems.includes("ow-hoodie") && !otherItems.includes("hoodie"), JSON.stringify({ otherId, otherItems }));
+
+    // Phone-size window fit.
+    for (const size of [{ width: 390, height: 844 }, { width: 375, height: 667 }]) {
+      await alice.setViewportSize(size);
+      await alice.waitForTimeout(80);
+      if (reopenId) {
+        await alice.evaluate(() => window.__closeCubeChest?.());
+        await alice.evaluate((id) => window.__clickFurniture(id, "cubechest"), reopenId);
+        await alice.waitForFunction(() => window.__cubeChestState?.()?.open, null, { timeout: 8000 });
+      }
+      const fit = await alice.evaluate(() => window.__cubeChestState?.());
+      check(
+        `The chest storage window fits a ${size.width}x${size.height} phone without being cut off`,
+        Boolean(fit?.open && fit.onScreen && fit.chestCells >= 16 && fit.personalCells >= 9),
+        JSON.stringify(fit)
+      );
+    }
+    await alice.evaluate(() => window.__closeCubeChest?.());
+    await alice.setViewportSize({ width: 1280, height: 800 });
+  }
+
   log("New avatar looks together in a cube");
   await ctxA.close();
   await ctxB.close();

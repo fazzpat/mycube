@@ -9,6 +9,7 @@ import { drawPoolTable } from "./billiards.js";
 import { decodeArtwork, EASEL_CANVAS_BG, EASEL_GRID, paintCells } from "./easel.js";
 import { blanketLocal, pillowLocal, foldLocal, BLANKET_LIFT, BLANKET_THICK, PILLOW_THICK } from "./bed.js";
 import { isSeatType } from "./seats.js";
+import { drawCubeChest, CUBE_CHEST_TYPE, chestOpenPad } from "./cubeChest.js";
 
 const TW = 64;
 const TH = 32;
@@ -21,7 +22,7 @@ const TILES = {
   hoverchair: [1, 1], bookshelf: [2, 1], chesstable: [1, 1], chessstool: [1, 1], punchbag: [1, 1],
   heavybag: [1, 1], benchpress: [2, 1], treadmill: [1, 2], cubics: [1, 1],
   clothescab: [1, 1], coffeemachine: [1, 1], stove: [1, 1], recordplayer: [1, 1], easel: [1, 1], djdeck: [2, 1], sodavending: [1, 1],
-  neonsign: [1, 1], pinball: [1, 1], rack: [1, 1], mannequin: [1, 1],
+  neonsign: [1, 1], pinball: [1, 1], cubechest: [1, 1], rack: [1, 1], mannequin: [1, 1],
   petpen: [2, 1], cage: [1, 1], counter: [2, 1], pooltable: [2, 2],
 };
 
@@ -30,14 +31,14 @@ const BODY_H = {
   couch: 26, capsulecouch: 26, chair: 24, hoverchair: 32, bed: 14, tv: 60, holotv: 60,
   fridge: 44, kitchenette: 24, bookshelf: 42, chesstable: 14, chessstool: 14, punchbag: 46, heavybag: 46,
   benchpress: 22, treadmill: 30, cubics: 64, pinball: 40, clothescab: 42, coffeemachine: 48, stove: 40, recordplayer: 40, easel: 46,
-  djdeck: 18, sodavending: 46, neonsign: 46, rack: 36, mannequin: 42, petpen: 22, cage: 24, pooltable: 18,
+  djdeck: 18, sodavending: 46, neonsign: 46, cubechest: 28, rack: 36, mannequin: 42, petpen: 22, cage: 24, pooltable: 18,
 };
 
 export const FURN_SHEET_TYPES = [
   "rug", "plant", "podplant", "lamp", "neonsign", "table", "coffeetable", "counter",
   "chair", "hoverchair", "couch", "capsulecouch", "bed", "tv", "holotv", "fridge",
   "kitchenette", "bookshelf", "clothescab", "chesstable", "coffeemachine", "stove", "recordplayer", "easel", "cubics",
-  "pinball", "djdeck", "sodavending", "punchbag", "benchpress", "treadmill",
+  "pinball", "cubechest", "djdeck", "sodavending", "punchbag", "benchpress", "treadmill",
   "rack", "mannequin", "petpen", "cage", "pooltable",
 ];
 
@@ -80,11 +81,14 @@ export function furnSpriteMetrics(type, rot = 0, opts = {}) {
   const pad = 2;
   // Extra left pad so an open fridge door isn't clipped, without shifting the body.
   const doorPad = (type === "fridge" && opts && opts.open) ? 30 : 0;
-  const ox = pad + h * (TW / 2) + doorPad;
-  const oy = pad + bodyH;
-  const width = pad * 2 + (w + h) * (TW / 2) + doorPad;
-  const height = pad * 2 + (w + h) * (TH / 2) + bodyH;
-  return { w: width, h: height, ox, oy, tw: w, th: h, bodyH, pad, doorPad };
+  const chestPad = (type === "cubechest" || type === CUBE_CHEST_TYPE) ? chestOpenPad(Boolean(opts && opts.open)) : { side: 0, top: 0 };
+  const sidePad = doorPad + (chestPad.side || 0);
+  const topPad = chestPad.top || 0;
+  const ox = pad + h * (TW / 2) + sidePad;
+  const oy = pad + bodyH + topPad;
+  const width = pad * 2 + (w + h) * (TW / 2) + sidePad;
+  const height = pad * 2 + (w + h) * (TH / 2) + bodyH + topPad;
+  return { w: width, h: height, ox, oy, tw: w, th: h, bodyH, pad, doorPad: sidePad };
 }
 
 export function furnBlitPos(tx, ty, type, rot, toScreen, opts) {
@@ -1498,6 +1502,7 @@ function paintPiece(ctx, type, rot, lights, on, open, opts = {}) {
     case "chessstool": drawChessStool(ctx, tw, th, r, lights, ISO_DRAW); break;
     case "cubics": drawRetroArcade(ctx, tw, th, r, lights, opts.flicker || 0); break;
     case "pinball": drawArcade(ctx, tw, th, r, lights, type); break;
+    case "cubechest": drawCubeChest(ctx, tw, th, r, lights, opts, ISO_DRAW); break;
     case "sodavending": drawVending(ctx, tw, th, r, lights); break;
     case "bookshelf":
     case "clothescab": drawBookshelf(ctx, tw, th, r, lights, type === "clothescab"); break;
@@ -1610,15 +1615,17 @@ export function drawFurnitureSprite(type, opts = {}) {
   const spinFrame = type === "recordplayer" ? (opts.spinFrame ?? 0) : 0;
   const vinyl = type === "recordplayer" ? (opts.vinyl || "") : "";
   const flicker = type === "cubics" ? (opts.flicker ?? 0) : 0;
+  const lid = (type === "cubechest") ? (opts.lid ?? (open ? 7 : 0)) : 0;
+  const shine = (type === "cubechest" && open) ? (opts.shine ?? 0) : 0;
   const part = opts.part || "all";
   const screen = opts.screen || null;
   const canvasKey = type === "easel" ? (":cv" + (opts.canvasKey || (opts.canvas && (opts.canvas.cells || opts.canvas.data && opts.canvas.data.cells) || "" ).toString().slice(0, 24))) : "";
-  const key = "iso-furn:" + type + ":" + rot + ":" + lights + ":" + on + ":" + open + ":" + (opts.sku || "") + ":" + part + (type === "coffeemachine" ? (":brew" + brewing + ":st" + steamFrame) : "") + (type === "stove" ? (":on" + on + ":st" + steamFrame + ":fl" + flameFrame) : "") + (type === "recordplayer" ? (":v" + vinyl + ":sp" + spinFrame + ":on" + on) : "") + (type === "cubics" ? (":fk" + flicker) : "") + canvasKey;
+  const key = "iso-furn:" + type + ":" + rot + ":" + lights + ":" + on + ":" + open + ":" + (opts.sku || "") + ":" + part + (type === "coffeemachine" ? (":brew" + brewing + ":st" + steamFrame) : "") + (type === "stove" ? (":on" + on + ":st" + steamFrame + ":fl" + flameFrame) : "") + (type === "recordplayer" ? (":v" + vinyl + ":sp" + spinFrame + ":on" + on) : "") + (type === "cubics" ? (":fk" + flicker) : "") + (type === "cubechest" ? (":lid" + lid + ":sh" + shine) : "") + canvasKey;
   const m = furnSpriteMetrics(type, rot, { open });
   const body = sprite(key, m.w, m.h, (ctx) => {
     ctx.save();
     ctx.translate(m.ox, m.oy);
-    paintPiece(ctx, type, rot, lights, on, open, { brewing, steamFrame, flameFrame, sku: opts.sku, spinFrame, vinyl, flicker, on, part, canvas: opts.canvas });
+    paintPiece(ctx, type, rot, lights, on, open, { brewing, steamFrame, flameFrame, sku: opts.sku, spinFrame, vinyl, flicker, on, part, open, lid, shine, canvas: opts.canvas });
     ctx.restore();
   });
   if (!screen || !on || (type !== "tv" && type !== "holotv")) return body;

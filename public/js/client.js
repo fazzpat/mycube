@@ -30,6 +30,10 @@ import {
   syncRoomRecordAudio, stopRecordAudio,
 } from "./recordPlayer.js";
 import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
+import {
+  CUBE_CHEST_TYPE, PERSONAL_INV_CAP, CUBE_CHEST_CAP,
+  filterChestItems, normalizeChestStore,
+} from "./cubeChest.js";
 
 (() => {
   const socket = io({ transports: ["websocket", "polling"] });
@@ -113,6 +117,9 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     chessId: null,
     chessSel: null,
     fridgeId: null,
+    cubeChestId: null,
+    cubeChest: null,
+    cubeChestTab: "all",
     activityId: null,
     lastBoxing: new Map(),
     lastHits: new Map(),
@@ -1710,6 +1717,7 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
   function openCharSlots(name) {
     const who = state.me?.username;
     if (!who || state.editMode || state.view !== "room") return;
+    closeCubeChestWindow();
     if (isEditCharOpen?.() || isPhoneEditOpen?.()) return;
     if (name && name !== who) return;
     const person = charSlotsPerson(who);
@@ -2325,6 +2333,7 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
       return;
     }
     closeCharSlots();
+    closeCubeChestWindow();
     if (phoneOpen()) hidePhoneUI();
     endPhoneHoldIfIdle();
     if (isChatOpen?.()) closeChatComposer?.();
@@ -3029,8 +3038,8 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
       "couch", "chair", "hoverchair", "capsulecouch",
       "tv", "holotv", "chesstable", "fridge", "punchbag", "heavybag",
       "benchpress", "treadmill", "cubics", "clothescab", "coffeemachine", "stove",
-      "recordplayer", "bed",
-    ].includes(type) || type === RECORD_TYPE;
+      "recordplayer", "bed", "easel", "cubechest",
+    ].includes(type) || type === RECORD_TYPE || type === EASEL_TYPE;
   }
 
   function requestWalkTo(tx, ty) {
@@ -3204,6 +3213,7 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
   function ownsStoreItem(kind, stock) {
     if (kind === "furniture" || kind === "art") {
       const typ = stock.type || stock.id;
+      if (typ === CUBE_CHEST_TYPE) return false;
       return (state.me?.inventory || []).includes(typ);
     }
     const col = state.me?.collection;
@@ -3600,6 +3610,10 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
       approachFurniture(furn, () => socket.emit("openFridge", { id }));
       return;
     }
+    if (type === "cubechest" || type === CUBE_CHEST_TYPE) {
+      approachFurniture(furn, () => socket.emit("openCubeChest", { id }));
+      return;
+    }
     if (type === "punchbag") {
       approachFurniture(furn, () => socket.emit("usePunchbag", { id }));
       return;
@@ -3773,6 +3787,240 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
   function hideFridgePicker() {
     HIDE($("#fridge-picker"));
     state.fridgeId = null;
+  }
+
+  function cubeChestEl() {
+    return document.getElementById("cube-chest");
+  }
+
+  function closeCubeChestWindow() {
+    const el = cubeChestEl();
+    if (el) {
+      el.classList.remove("is-open");
+      el.hidden = true;
+    }
+    const id = state.cubeChestId;
+    state.cubeChestId = null;
+    state.cubeChest = null;
+    state.cubeChestTab = "all";
+    if (id) socket.emit("closeCubeChest", { id });
+  }
+
+  function ensureCubeChestWindow() {
+    let el = cubeChestEl();
+    if (el) return el;
+    el = document.createElement("div");
+    el.id = "cube-chest";
+    el.className = "cube-chest";
+    el.hidden = true;
+    el.dataset.testid = "cube-chest-window";
+    el.innerHTML = `
+      <div class="cube-chest-head">
+        <h2 class="cube-chest-title">Cube Chest</h2>
+        <button type="button" class="cube-chest-close" data-testid="cube-chest-close" aria-label="Close chest">×</button>
+      </div>
+      <div class="cube-chest-tabs" data-testid="cube-chest-tabs"></div>
+      <button type="button" class="cube-chest-rename" data-testid="cube-chest-rename" hidden>Rename tab</button>
+      <div class="cube-chest-section">
+        <div class="cube-chest-label">Chest</div>
+        <div class="cube-chest-grid" data-testid="cube-chest-grid"></div>
+      </div>
+      <div class="cube-chest-personal">
+        <div class="cube-chest-label">Your inventory</div>
+        <div class="cube-chest-personal-grid" data-testid="cube-chest-personal"></div>
+        <p class="cube-chest-hint">Tap an item to move it. Unequip gear first.</p>
+      </div>
+    `;
+    el.querySelector("[data-testid=cube-chest-close]").addEventListener("click", (e) => {
+      e.preventDefault();
+      closeCubeChestWindow();
+    });
+    el.querySelector("[data-testid=cube-chest-rename]").addEventListener("click", (e) => {
+      e.preventDefault();
+      const tab = state.cubeChestTab;
+      if (tab !== "a" && tab !== "b") return;
+      const cur = state.cubeChest?.tabs?.[tab] || (tab === "a" ? "Stash" : "Keepsakes");
+      const name = window.prompt("Name this tab", cur);
+      if (name == null) return;
+      socket.emit("renameChestTab", { id: state.cubeChestId, tab, name });
+    });
+    document.body.append(el);
+    return el;
+  }
+
+  function paintCubeChestThumb(canvas, rec, person) {
+    if (!canvas || !rec) return;
+    if (rec.kind === "pet" || rec.slot === "pet") paintPetThumb(canvas, rec.item);
+    else if (rec.kind === "prop" || rec.slot === "prop") paintPropThumb(canvas, rec.item);
+    else paintOuterwearThumb(canvas, rec.catalogId || rec.item, person);
+  }
+
+  function paintCubeChestWindow() {
+    const el = ensureCubeChestWindow();
+    const store = state.cubeChest || { items: [], tabs: { a: "Stash", b: "Keepsakes" } };
+    const tab = state.cubeChestTab || "all";
+    const person = charSlotsPerson(state.me?.username) || { self: true, collection: state.me?.collection, gear: state.me?.gear, activePet: state.me?.activePet, heldProp: state.me?.heldProp, avatar: state.me?.avatar };
+    const tabs = [
+      { id: "all", label: "All" },
+      { id: "outerwear", label: "Outerwear" },
+      { id: "pets", label: "Pets" },
+      { id: "props", label: "Props" },
+      { id: "a", label: store.tabs?.a || "Stash" },
+      { id: "b", label: store.tabs?.b || "Keepsakes" },
+    ];
+    const tabRow = el.querySelector("[data-testid=cube-chest-tabs]");
+    tabRow.replaceChildren();
+    for (const t of tabs) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "cube-chest-tab" + (t.id === tab ? " is-on" : "");
+      b.dataset.testid = "cube-chest-tab-" + t.id;
+      b.dataset.tab = t.id;
+      b.textContent = t.label;
+      b.addEventListener("click", (e) => {
+        e.preventDefault();
+        state.cubeChestTab = t.id;
+        paintCubeChestWindow();
+        layoutCubeChestWindow();
+      });
+      tabRow.append(b);
+    }
+    const rename = el.querySelector("[data-testid=cube-chest-rename]");
+    if (rename) rename.hidden = !(tab === "a" || tab === "b");
+
+    const filtered = filterChestItems(store.items || [], tab);
+    const chestGrid = el.querySelector("[data-testid=cube-chest-grid]");
+    chestGrid.replaceChildren();
+    const chestCells = Math.max(16, Math.ceil(filtered.length / 4) * 4);
+    for (let i = 0; i < chestCells; i++) {
+      const rec = filtered[i];
+      const b = document.createElement(rec ? "button" : "div");
+      if (rec) b.type = "button";
+      b.className = "char-inv-cell" + (rec ? "" : " is-empty");
+      if (rec) {
+        b.dataset.testid = "cube-chest-item-" + rec.id;
+        b.dataset.itemId = rec.id;
+        b.title = rec.label || rec.item;
+        const c = document.createElement("canvas");
+        c.width = 56; c.height = 56;
+        c.setAttribute("aria-hidden", "true");
+        paintCubeChestThumb(c, rec, person);
+        b.append(c);
+        b.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (!state.cubeChestId) return;
+          socket.emit("chestWithdraw", { id: state.cubeChestId, itemId: rec.id });
+        });
+      } else {
+        b.dataset.testid = "cube-chest-empty-" + i;
+      }
+      chestGrid.append(b);
+    }
+
+    const personal = chestInventoryItems(person);
+    const pGrid = el.querySelector("[data-testid=cube-chest-personal]");
+    pGrid.replaceChildren();
+    const pCells = Math.max(9, Math.ceil(personal.length / 3) * 3);
+    for (let i = 0; i < pCells; i++) {
+      const rec = personal[i];
+      const b = document.createElement(rec ? "button" : "div");
+      if (rec) b.type = "button";
+      b.className = "char-inv-cell" + (rec ? "" : " is-empty");
+      if (rec) {
+        b.dataset.testid = "cube-chest-inv-" + rec.slot + "-" + rec.item;
+        b.dataset.itemId = rec.id;
+        b.title = rec.label || rec.item;
+        const c = document.createElement("canvas");
+        c.width = 56; c.height = 56;
+        c.setAttribute("aria-hidden", "true");
+        paintCubeChestThumb(c, rec, person);
+        b.append(c);
+        b.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (!state.cubeChestId) return;
+          socket.emit("chestDeposit", { id: state.cubeChestId, itemId: rec.id, tab: state.cubeChestTab });
+        });
+      } else {
+        b.dataset.testid = "cube-chest-inv-empty-" + i;
+      }
+      pGrid.append(b);
+    }
+  }
+
+  function layoutCubeChestWindow() {
+    const el = cubeChestEl();
+    if (!el || !state.cubeChestId) return;
+    el.classList.add("is-open");
+    el.hidden = false;
+    const pad = 8;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const box = state.room3d?.furnitureScreenBox?.(state.cubeChestId);
+    const width = Math.max(240, Math.min(300, vw - pad * 2));
+    el.style.width = width + "px";
+    el.style.maxWidth = (vw - pad * 2) + "px";
+    el.style.maxHeight = (vh - pad * 2) + "px";
+    el.style.overflow = "hidden";
+    el.style.left = Math.round(Math.max(pad, Math.min((vw - width) / 2, vw - pad - width))) + "px";
+    const innerW = width - 16;
+    const chestGap = 4;
+    let chestRows = 4;
+    let persRows = 3;
+    let chestCell = Math.max(24, Math.min(40, Math.floor((innerW - chestGap * 3) / 4)));
+    let persCell = Math.max(22, Math.min(38, Math.floor((innerW - chestGap * 2) / 3)));
+    const chrome = 150; // title, tabs, labels, hint, padding
+    const maxH = vh - pad * 2;
+    let chestGridH = chestCell * chestRows + chestGap * (chestRows - 1);
+    let persGridH = persCell * persRows + chestGap * (persRows - 1);
+    while (chrome + chestGridH + persGridH > maxH && (chestRows > 2 || persRows > 2 || chestCell > 24 || persCell > 22)) {
+      if (chestRows > 3) chestRows -= 1;
+      else if (persRows > 2) persRows -= 1;
+      else if (chestCell > 24) chestCell -= 1;
+      else if (persCell > 22) persCell -= 1;
+      else if (chestRows > 2) chestRows -= 1;
+      else break;
+      chestGridH = chestCell * chestRows + chestGap * (chestRows - 1);
+      persGridH = persCell * persRows + chestGap * (persRows - 1);
+    }
+    const chestGrid = el.querySelector("[data-testid=cube-chest-grid]");
+    const persGrid = el.querySelector("[data-testid=cube-chest-personal]");
+    if (chestGrid) {
+      chestGrid.style.height = chestGridH + "px";
+      chestGrid.style.gridAutoRows = chestCell + "px";
+    }
+    if (persGrid) {
+      persGrid.style.height = persGridH + "px";
+      persGrid.style.gridAutoRows = persCell + "px";
+    }
+    el.style.top = pad + "px";
+    const rh = Math.min(el.getBoundingClientRect().height || 0, maxH);
+    let top = pad;
+    if (box && box.top != null) top = box.top - 8;
+    top = Math.min(Math.max(top, pad), Math.max(pad, vh - pad - rh));
+    el.style.top = Math.round(top) + "px";
+    const rect = el.getBoundingClientRect();
+    if (rect.bottom > vh - pad) {
+      el.style.top = Math.round(Math.max(pad, vh - pad - Math.min(rect.height, maxH))) + "px";
+    }
+    if (rect.right > vw - pad) {
+      el.style.left = Math.round(Math.max(pad, vw - pad - rect.width)) + "px";
+    }
+  }
+
+  function applyCubeChestState(payload) {
+    if (!payload?.id) return;
+    state.cubeChestId = payload.id;
+    state.cubeChest = normalizeChestStore(payload);
+    if (payload.tab && ["all", "outerwear", "pets", "props", "a", "b"].includes(payload.tab) && !state.cubeChestTab) {
+      state.cubeChestTab = payload.tab;
+    }
+    if (!state.cubeChestTab) state.cubeChestTab = "all";
+    closeCharSlots();
+    ensureCubeChestWindow();
+    paintCubeChestWindow();
+    layoutCubeChestWindow();
   }
 
   function syncCamToggle() {
@@ -5256,7 +5504,7 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     window.visualViewport.addEventListener("resize", syncKeyboardInset);
     window.visualViewport.addEventListener("scroll", syncKeyboardInset);
   }
-  window.addEventListener("resize", () => { lockPageScroll(); syncAppShell(); syncKeyboardInset(); });
+  window.addEventListener("resize", () => { lockPageScroll(); syncAppShell(); syncKeyboardInset(); if (state.charSlots) layoutCharSlots(); if (state.cubeChestId) layoutCubeChestWindow(); });
   window.addEventListener("orientationchange", () => setTimeout(() => { lockPageScroll(); syncAppShell(); syncKeyboardInset(); }, 50));
   ["gesturestart", "gesturechange", "gestureend"].forEach((type) => {
     document.addEventListener(type, (e) => e.preventDefault(), { passive: false, capture: true });
@@ -5436,6 +5684,10 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
   socket.on("profile", (user) => {
     const wasCreating = state.view === "creator" && !state.me?.avatar;
     state.me = user;
+    if (state.cubeChestId) {
+      paintCubeChestWindow();
+      layoutCubeChestWindow();
+    }
     updateCoins();
     if (!$("#rewards-sheet")?.classList.contains("hidden") || !$("#spin-modal")?.classList.contains("hidden")) paintRewards();
     const self = state.people.get(user.username);
@@ -5820,6 +6072,11 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     if (id) openWardrobe(id);
   });
 
+  socket.on("cubeChestState", (payload) => {
+    if (!payload?.id) return;
+    applyCubeChestState(payload);
+  });
+
   socket.on("useUpdated", ({ id, use }) => {
     if (!state.room) return;
     state.room.uses = state.room.uses || {};
@@ -5837,6 +6094,12 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
     const me = state.me?.username;
     if (use && use.type === "fridge" && use.open && use.user === me) showFridgePicker(id);
     if ((!use || !use.open) && state.fridgeId === id) hideFridgePicker();
+    if ((!use || !use.open) && state.cubeChestId === id) {
+      const el = cubeChestEl();
+      if (el) { el.classList.remove("is-open"); el.hidden = true; }
+      state.cubeChestId = null;
+      state.cubeChest = null;
+    }
     refreshActivityUI();
     paintOverlays();
   });
@@ -6086,6 +6349,39 @@ import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
   window.__openCharacterEditor = () => openCharacterEditor("phone");
   window.__openCharSlots = (name) => openCharSlots(name || state.me?.username);
   window.__closeCharSlots = () => closeCharSlots();
+  window.__closeCubeChest = () => closeCubeChestWindow();
+  window.__openCubeChest = (id) => { if (id) socket.emit("openCubeChest", { id }); };
+  window.__cubeChestState = () => {
+    const el = cubeChestEl();
+    const r = el && !el.hidden ? el.getBoundingClientRect() : null;
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const store = state.cubeChest || { items: [], tabs: {} };
+    const person = state.me ? charSlotsPerson(state.me.username) : null;
+    const personal = person ? chestInventoryItems(person) : [];
+    const grid = el?.querySelector("[data-testid=cube-chest-grid]");
+    const pgrid = el?.querySelector("[data-testid=cube-chest-personal]");
+    const shine = state.cubeChestId ? state.room3d?.chestShine?.(state.cubeChestId) : null;
+    return {
+      open: Boolean(state.cubeChestId && el && el.classList.contains("is-open")),
+      id: state.cubeChestId || null,
+      tab: state.cubeChestTab || "all",
+      tabs: store.tabs || {},
+      items: (store.items || []).map((it) => ({ id: it.id, kind: it.kind, slot: it.slot, item: it.item, label: it.label, tag: it.tag || "" })),
+      personal: personal.map((it) => ({ id: it.id, kind: it.kind, slot: it.slot, item: it.item, label: it.label })),
+      rect: r ? { left: r.left, right: r.right, top: r.top, bottom: r.bottom, w: r.width, h: r.height } : null,
+      onScreen: Boolean(r && r.left >= -1 && r.top >= -1 && r.right <= vw + 1 && r.bottom <= vh + 1),
+      chestCells: grid ? grid.querySelectorAll(".char-inv-cell").length : 0,
+      chestCols: 4,
+      personalCells: pgrid ? pgrid.querySelectorAll(".char-inv-cell").length : 0,
+      shine,
+      cap: 64,
+      personalCap: 9,
+      vw, vh,
+    };
+  };
+  window.__chestDeposit = (itemId, tab) => socket.emit("chestDeposit", { id: state.cubeChestId, itemId, tab: tab || state.cubeChestTab });
+  window.__chestWithdraw = (itemId) => socket.emit("chestWithdraw", { id: state.cubeChestId, itemId });
+  window.__renameChestTab = (tab, name) => socket.emit("renameChestTab", { id: state.cubeChestId, tab, name });
   window.__equipChest = (slot, item) => emitEquipChest(slot, item);
   window.__personState = (name) => {
     const p = state.people.get(name);

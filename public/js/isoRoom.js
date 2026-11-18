@@ -1057,8 +1057,11 @@ export function createRoom3D(container, opts = {}) {
       const type = f.type;
       const rot = normalizeFurnRot(f.rot);
       const fridgeOpen = type === "fridge" && Boolean(uses[f.id]?.open);
-      const m = furnSpriteMetrics(type, rot, { open: fridgeOpen });
-      const pos = furnBlitPos(f.x, f.y, type, rot, tileToScreen, { open: fridgeOpen });
+      const chestUse = type === "cubechest" ? uses[f.id] : null;
+      const chestOpen = type === "cubechest" && Boolean(chestUse?.open);
+      const spriteOpen = fridgeOpen || chestOpen;
+      const m = furnSpriteMetrics(type, rot, { open: spriteOpen });
+      const pos = furnBlitPos(f.x, f.y, type, rot, tileToScreen, { open: spriteOpen });
       const tv = tvs[f.id] || {};
       const rec = recordPlayers[f.id] || {};
       const isTv = type === "tv" || type === "holotv";
@@ -1080,7 +1083,9 @@ export function createRoom3D(container, opts = {}) {
         lights: lightsOn,
         rot,
         on: isTv ? tvOn : isRec ? recOn : Boolean(uses[f.id]?.on),
-        open: type === "fridge" ? Boolean(uses[f.id]?.open) : false,
+        open: type === "fridge" ? Boolean(uses[f.id]?.open) : chestOpen,
+        lid: chestOpen ? Math.min(7, Math.floor((Date.now() - (chestUse?.openedAt || Date.now())) / 40)) : 0,
+        shine: chestOpen ? Math.floor(now / 80) % 8 : 0,
         sku: f.sku,
         canvas: type === EASEL_TYPE ? (f.canvas || null) : null,
         canvasKey: type === EASEL_TYPE ? artworkHash(f.canvas) : "",
@@ -2179,6 +2184,25 @@ export function createRoom3D(container, opts = {}) {
     tvChannel(id) { return tvs[id]?.on ? (tvs[id].channel || 0) : -1; },
     tvChannelName(id) { return tvs[id]?.on ? tvChannelName(tvs[id].channel || 0) : ""; },
     fridgeOpen(id) { return Boolean(uses[id]?.open); },
+    chestOpen(id) { return Boolean(uses[id]?.open && (uses[id]?.type === "cubechest" || furniture.find((f) => f.id === id)?.type === "cubechest")); },
+    chestShine(id) {
+      const u = uses[id];
+      if (!u?.open) return { open: false, lid: 0, shine: 0 };
+      const lid = Math.min(7, Math.floor((Date.now() - (u.openedAt || Date.now())) / 40));
+      return { open: true, lid, shine: Math.floor(performance.now() / 80) % 8, openedAt: u.openedAt || 0 };
+    },
+    furnitureScreenBox(id) {
+      const f = furniture.find((x) => x.id === id);
+      if (!f) return null;
+      const rot = normalizeFurnRot(f.rot);
+      const open = (f.type === "fridge" || f.type === "cubechest") && Boolean(uses[f.id]?.open);
+      const pos = furnBlitPos(f.x, f.y, f.type, rot, tileToScreen, { open });
+      const proj = clientFromWorld(pos.sx, pos.sy);
+      if (!proj) return null;
+      const z = zoom;
+      return { left: proj.x, top: proj.y, right: proj.x + pos.w * z, bottom: proj.y + pos.h * z, w: pos.w * z, h: pos.h * z };
+    },
+
     setUses(u) { uses = u || {}; },
     setChessMap(m) { chess = m || {}; },
     setTvs(m) { tvs = m || {}; },

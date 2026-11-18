@@ -45,6 +45,11 @@ import { reservedWallSlots as layoutReservedWallSlots } from "./public/js/wallLa
 import { chessSeatTiles, chessSeatPose, migrateChessTable } from "./public/js/chessTable.js";
 import { liePose, migrateBed, bedTiles } from "./public/js/bed.js";
 import { heldEatDurationMs } from "./public/js/heldItems.js";
+import {
+  CUBE_CHEST_TYPE, CUBE_CHEST_CAP, PERSONAL_INV_CAP,
+  emptyChestStore, normalizeChestStore, normalizeChestItem,
+  listUnequippedCollection, sanitizeTabName,
+} from "./public/js/cubeChest.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT) || 3000;
@@ -107,6 +112,7 @@ const FURNITURE_CATALOG = {
   podplant: { name: "Potted Plant", price: 16, w: 1, h: 1, blocks: true },
   holotv: { name: "TV", price: 32, w: 2, h: 1, blocks: true },
   pinball: { name: "Pinball cabinet", price: 38, w: 1, h: 1, blocks: true },
+  cubechest: { name: "Cube Chest", price: 36, w: 1, h: 1, blocks: true },
 };
 Object.assign(FURNITURE_CATALOG, PAINTING_CATALOG);
 const WALL_ART_TYPES = new Set(["art_mona","art_starry","art_pop","art_sunset","art_cubism","art_poster","art_hang","art_neon","cuerack"]);
@@ -237,6 +243,95 @@ function ensureCollection(user) {
   if (!Array.isArray(user.artworks)) user.artworks = [];
   return user;
 }
+function ensureChestStores(user) {
+  if (!user) return user;
+  if (!user.chestStores || typeof user.chestStores !== "object") user.chestStores = {};
+  if (!Array.isArray(user.chestBag)) user.chestBag = [];
+  return user;
+}
+
+function grantCubeChest(user) {
+  ensureChestStores(user);
+  const chestId = "c" + chestSeq++;
+  user.chestStores[chestId] = emptyChestStore();
+  user.chestBag.push(chestId);
+  user.inventory.push(CUBE_CHEST_TYPE);
+  return chestId;
+}
+
+function chestStoreOf(user, chestId) {
+  ensureChestStores(user);
+  if (!chestId || !user.chestStores[chestId]) return null;
+  user.chestStores[chestId] = normalizeChestStore(user.chestStores[chestId]);
+  return user.chestStores[chestId];
+}
+
+function publicChestState(id, chestId, store, tab = "all") {
+  const st = normalizeChestStore(store || {});
+  return { id, chestId, items: st.items, tabs: st.tabs, tab, cap: CUBE_CHEST_CAP, personalCap: PERSONAL_INV_CAP };
+}
+
+function takeUnequippedItem(user, itemId, room) {
+  const rec = listUnequippedCollection(user).find((i) => String(i.id) === String(itemId));
+  if (!rec) return null;
+  if (rec.kind === "pet") {
+    const arr = user.collection.pets;
+    const i = arr.findIndex((p) => String(p.id || p.item) === String(rec.id));
+    if (i === -1) return null;
+    arr.splice(i, 1);
+    return rec;
+  }
+  if (rec.kind === "outerwear" || rec.catalogId) {
+    const arr = user.collection.outerwear;
+    const i = arr.findIndex((o) => String(o.id || o.catalogId) === String(rec.id));
+    if (i !== -1) {
+      arr.splice(i, 1);
+      return rec;
+    }
+    if (rec.kind !== "prop") return null;
+  }
+  if (rec.kind === "prop") {
+    const arr = user.collection.props;
+    const i = arr.findIndex((p) => String(p.id || p.item) === String(rec.id));
+    if (i === -1) return null;
+    arr.splice(i, 1);
+    return rec;
+  }
+  return null;
+}
+
+function returnChestItemToCollection(user, chestItem) {
+  const rec = normalizeChestItem(chestItem);
+  if (!rec) return false;
+  ensureCollection(user);
+  if (rec.kind === "pet") {
+    if (!user.collection.pets.some((p) => p.item === rec.item || String(p.id || "") === rec.id)) {
+      user.collection.pets.push({ id: rec.id, item: rec.item, label: rec.label });
+    }
+    return true;
+  }
+  if (rec.kind === "outerwear" || rec.catalogId) {
+    if (!user.collection.outerwear.some((o) => String(o.id || o.catalogId) === rec.id || o.catalogId === rec.catalogId && rec.kind === "outerwear")) {
+      const stock = outerwearById(rec.catalogId) || outfitById(rec.catalogId);
+      user.collection.outerwear.push({
+        id: rec.id,
+        catalogId: rec.catalogId,
+        slot: rec.slot,
+        item: stock?.item ? { ...stock.item } : {},
+        label: rec.label,
+      });
+    }
+    return true;
+  }
+  if (rec.kind === "prop") {
+    if (!user.collection.props.some((p) => p.item === rec.item || String(p.id || "") === rec.id)) {
+      user.collection.props.push({ id: rec.id, item: rec.item, label: rec.label });
+    }
+    return true;
+  }
+  return false;
+}
+
 function roomSize(room) {
   return room?.size || START_SIZE;
 }
@@ -415,6 +510,7 @@ const users = new Map();
 const rooms = new Map();
 let roomSeq = 1;
 let furnSeq = 1;
+let chestSeq = 1;
 
 function userOwnsStyle(user, field, value) {
   if (!STORE_LOCKED[field] || !STORE_LOCKED[field].has(value)) return true;
@@ -1363,6 +1459,8 @@ io.on("connection", (socket) => {
       sitting: false,
       emote: null,
       collection: emptyCollection(),
+      chestStores: {},
+      chestBag: [],
       heldProp: null,
       activePet: null,
       gear: emptyGear(),
@@ -1747,7 +1845,8 @@ io.on("connection", (socket) => {
       return;
     }
     user.coins -= item.price;
-    user.inventory.push(type);
+    if (type === CUBE_CHEST_TYPE) grantCubeChest(user);
+    else user.inventory.push(type);
     emitProfile(user);
     socket.emit("bought", { type, name: item.name, coins: user.coins });
   });
@@ -1771,6 +1870,15 @@ io.on("connection", (socket) => {
     }
     user.inventory.splice(idx, 1);
     const piece = { id: "f" + furnSeq++, type, x: tx, y: ty, rot: r };
+    if (type === CUBE_CHEST_TYPE) {
+      ensureChestStores(user);
+      let chestId = user.chestBag.pop();
+      if (!chestId || !user.chestStores[chestId]) {
+        chestId = "c" + chestSeq++;
+        user.chestStores[chestId] = emptyChestStore();
+      }
+      piece.chestId = chestId;
+    }
     room.furniture.push(piece);
     emitProfile(user);
     io.to(room.id).emit("furniturePlaced", piece);
@@ -1827,6 +1935,12 @@ io.on("connection", (socket) => {
     if (room.recordPlayers?.[id]) delete room.recordPlayers[id];
     if (room.uses?.[id]) delete room.uses[id];
     room.furniture.splice(idx, 1);
+    if (piece.type === CUBE_CHEST_TYPE) {
+      ensureChestStores(user);
+      const chestId = piece.chestId || ("c" + chestSeq++);
+      if (!user.chestStores[chestId]) user.chestStores[chestId] = emptyChestStore();
+      user.chestBag.push(chestId);
+    }
     user.inventory.push(piece.type);
     emitProfile(user);
     io.to(room.id).emit("furnitureRemoved", { id, type: piece.type });
@@ -2520,6 +2634,146 @@ io.on("connection", (socket) => {
     }
   });
 
+  socket.on("openCubeChest", ({ id } = {}) => {
+    const user = getUser(socket);
+    if (!user?.roomId) return;
+    const room = rooms.get(user.roomId);
+    const furn = room?.furniture.find((f) => f.id === id && f.type === CUBE_CHEST_TYPE);
+    if (!furn) return;
+    ensureRoomExtras(room);
+    if (!isRoomOwner(user, room)) {
+      socket.emit("errorMsg", { message: "Only the cube owner can use this chest." });
+      return;
+    }
+    if (room.uses[id] && room.uses[id].user && room.uses[id].user !== user.username) {
+      socket.emit("errorMsg", { message: "Someone else is at this chest." });
+      return;
+    }
+    ensureChestStores(user);
+    if (!furn.chestId || !user.chestStores[furn.chestId]) {
+      furn.chestId = furn.chestId || ("c" + chestSeq++);
+      user.chestStores[furn.chestId] = user.chestStores[furn.chestId] || emptyChestStore();
+    }
+    const already = room.uses[id] && room.uses[id].user === user.username && room.uses[id].open;
+    if (!already) {
+      clearUserActivities(user, room, { forfeit: true });
+      room.uses[id] = { type: CUBE_CHEST_TYPE, user: user.username, open: true, openedAt: Date.now() };
+      user.stationId = id;
+      emitRoom(room, "useUpdated", { id, use: room.uses[id] });
+      emitPerson(user);
+    }
+    const store = chestStoreOf(user, furn.chestId);
+    socket.emit("cubeChestState", publicChestState(id, furn.chestId, store, "all"));
+  });
+
+  socket.on("closeCubeChest", ({ id } = {}) => {
+    const user = getUser(socket);
+    if (!user?.roomId) return;
+    const room = rooms.get(user.roomId);
+    if (room?.uses?.[id]?.user === user.username) {
+      delete room.uses[id];
+      if (user.stationId === id) user.stationId = null;
+      emitRoom(room, "useUpdated", { id, use: null });
+      emitPerson(user);
+    }
+  });
+
+  socket.on("chestDeposit", ({ id, itemId, tab } = {}) => {
+    const user = getUser(socket);
+    if (!user?.roomId) return;
+    const room = rooms.get(user.roomId);
+    if (!isRoomOwner(user, room)) {
+      socket.emit("errorMsg", { message: "Only the cube owner can use this chest." });
+      return;
+    }
+    const furn = room?.furniture.find((f) => f.id === id && f.type === CUBE_CHEST_TYPE);
+    if (!furn) return;
+    ensureCollection(user);
+    ensureChestStores(user);
+    const store = chestStoreOf(user, furn.chestId);
+    if (!store) {
+      socket.emit("errorMsg", { message: "That chest isn't ready." });
+      return;
+    }
+    if (store.items.length >= CUBE_CHEST_CAP) {
+      socket.emit("errorMsg", { message: "This chest is full." });
+      emitProfile(user);
+      socket.emit("cubeChestState", publicChestState(id, furn.chestId, store, tab || "all"));
+      return;
+    }
+    const rec = listUnequippedCollection(user).find((i) => String(i.id) === String(itemId));
+    if (!rec) {
+      socket.emit("errorMsg", { message: "Unequip that item before storing it." });
+      emitProfile(user);
+      socket.emit("cubeChestState", publicChestState(id, furn.chestId, store, tab || "all"));
+      return;
+    }
+    const taken = takeUnequippedItem(user, rec.id, room);
+    if (!taken) {
+      socket.emit("errorMsg", { message: "Couldn't move that item." });
+      emitProfile(user);
+      return;
+    }
+    if (taken.kind === "pet") removeOwnedPetFromRoom(room, user, taken.item);
+    const tag = (tab === "a" || tab === "b") ? tab : "";
+    store.items.push(normalizeChestItem({ ...taken, tag }));
+    user.chestStores[furn.chestId] = store;
+    emitProfile(user);
+    if (taken.kind === "pet") emitRoomPets(room);
+    socket.emit("cubeChestState", publicChestState(id, furn.chestId, store, tab || "all"));
+  });
+
+  socket.on("chestWithdraw", ({ id, itemId } = {}) => {
+    const user = getUser(socket);
+    if (!user?.roomId) return;
+    const room = rooms.get(user.roomId);
+    if (!isRoomOwner(user, room)) {
+      socket.emit("errorMsg", { message: "Only the cube owner can use this chest." });
+      return;
+    }
+    const furn = room?.furniture.find((f) => f.id === id && f.type === CUBE_CHEST_TYPE);
+    if (!furn) return;
+    ensureCollection(user);
+    const store = chestStoreOf(user, furn.chestId);
+    if (!store) return;
+    const idx = store.items.findIndex((i) => String(i.id) === String(itemId));
+    if (idx === -1) {
+      socket.emit("errorMsg", { message: "That item isn't in this chest." });
+      socket.emit("cubeChestState", publicChestState(id, furn.chestId, store, "all"));
+      return;
+    }
+    if (listUnequippedCollection(user).length >= PERSONAL_INV_CAP) {
+      socket.emit("errorMsg", { message: "Your inventory is full." });
+      socket.emit("cubeChestState", publicChestState(id, furn.chestId, store, "all"));
+      return;
+    }
+    const [item] = store.items.splice(idx, 1);
+    if (!returnChestItemToCollection(user, item)) {
+      store.items.splice(idx, 0, item);
+      socket.emit("errorMsg", { message: "Couldn't move that item." });
+    }
+    user.chestStores[furn.chestId] = store;
+    emitProfile(user);
+    socket.emit("cubeChestState", publicChestState(id, furn.chestId, store, "all"));
+  });
+
+  socket.on("renameChestTab", ({ id, tab, name } = {}) => {
+    const user = getUser(socket);
+    if (!user?.roomId) return;
+    const room = rooms.get(user.roomId);
+    if (!isRoomOwner(user, room)) {
+      socket.emit("errorMsg", { message: "Only the cube owner can use this chest." });
+      return;
+    }
+    const furn = room?.furniture.find((f) => f.id === id && f.type === CUBE_CHEST_TYPE);
+    if (!furn || (tab !== "a" && tab !== "b")) return;
+    const store = chestStoreOf(user, furn.chestId);
+    if (!store) return;
+    store.tabs[tab] = sanitizeTabName(name, tab === "a" ? "Stash" : "Keepsakes");
+    user.chestStores[furn.chestId] = store;
+    socket.emit("cubeChestState", publicChestState(id, furn.chestId, store, tab));
+  });
+
   socket.on("fridgeTake", ({ id, item } = {}) => {
     const user = getUser(socket);
     if (!user?.roomId) return;
@@ -2923,7 +3177,8 @@ io.on("connection", (socket) => {
     }
     if (Array.isArray(kit.furniture)) {
       for (const typ of kit.furniture) {
-        if (FURNITURE_CATALOG[typ]) user.inventory.push(typ);
+        if (typ === CUBE_CHEST_TYPE) grantCubeChest(user);
+        else if (FURNITURE_CATALOG[typ]) user.inventory.push(typ);
       }
     }
     if (kit.chessFen && kit.chessId && user.roomId) {

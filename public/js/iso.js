@@ -47,6 +47,7 @@
     podplant: { name: "Potted Plant", price: 16, w: 1, h: 1, blocks: true },
     holotv: { name: "TV", price: 32, w: 2, h: 1, blocks: true },
     pinball: { name: "Pinball cabinet", price: 38, w: 1, h: 1, blocks: true },
+    cubechest: { name: "Cube Chest", price: 36, w: 1, h: 1, blocks: true },
   };
   const WALL_ART = ["art_mona", "art_starry", "art_pop", "art_sunset", "art_cubism", "art_poster", "art_hang", "art_neon", "cuerack"];
 
