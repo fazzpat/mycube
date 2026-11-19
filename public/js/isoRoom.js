@@ -26,6 +26,7 @@ import {
 } from "./recordPlayer.js";
 import { isPainting, drawPaintingOnWall, preloadPaintings, ART_TILE_SPAN, ART_WORLD_UP, ART_HANG_UP, ART_SIZE } from "./artPieces.js";
 import { artworkHash, EASEL_TYPE } from "./easel.js";
+import { PIANO_TYPE, pianoParticles, drawPianoParticles, notesKey as pianoNotesKey } from "./piano.js";
 preloadPaintings();
 /* 2D isometric pixel room renderer — 2000s house style, HouseRoom3D API. */
 const TW = 64;
@@ -628,6 +629,7 @@ export function createRoom3D(container, opts = {}) {
   let uses = {};
   let tvs = {};
   let recordPlayers = {};
+  let pianoNotes = {};
   let chess = {};
   let arcade = {};
   let people = [];
@@ -1096,8 +1098,12 @@ export function createRoom3D(container, opts = {}) {
         vinyl: isRec ? (rec.vinyl || null) : null,
         flicker: type === "cubics" ? Math.floor(now / 220) % 3 : 0,
         screen,
+        notes: type === PIANO_TYPE || type === "keyboardpiano" ? (pianoNotes[f.id] || []) : [],
+        notesKey: type === PIANO_TYPE || type === "keyboardpiano" ? pianoNotesKey(pianoNotes[f.id] || []) : "",
       });
       const recNotes = isRec && recOn ? notesAt(f.id, rec, nowServer()) : null;
+      const pNotes = (type === PIANO_TYPE || type === "keyboardpiano") ? (pianoNotes[f.id] || []) : null;
+      const pianoParts = pNotes && pNotes.length ? pianoParticles(f.id, pNotes, now) : null;
       const screenQuad = (isTv && tvOn && glow) ? tvScreenQuadSprite(type, rot) : null;
       const baseDepth = f.x + f.y + (m.tw + m.th) / 2 + 0.2;
       if (isSeatType(type) && type !== "chesstable" && type !== "hoverchair") {
@@ -1106,7 +1112,7 @@ export function createRoom3D(container, opts = {}) {
         list.push({ kind: "furn", id: f.id, type, depth: baseDepth - 0.05, sx: pos.sx, sy: pos.sy, w: pos.w, h: pos.h, spr: baseSpr, raw: f, part: "base" });
         list.push({ kind: "furn", id: f.id, type, depth: seatBackDepth(f, m.tw, m.th), sx: pos.sx, sy: pos.sy, w: pos.w, h: pos.h, spr: frontSpr, raw: f, part: "back" });
       } else {
-        list.push({ kind: "furn", id: f.id, type, depth: baseDepth, sx: pos.sx, sy: pos.sy, w: pos.w, h: pos.h, spr, raw: f, glow: Boolean(screenQuad), screenQuad, recNotes, recOn });
+        list.push({ kind: "furn", id: f.id, type, depth: baseDepth, sx: pos.sx, sy: pos.sy, w: pos.w, h: pos.h, spr, raw: f, glow: Boolean(screenQuad), screenQuad, recNotes, recOn, pianoParts });
       }
       if (type === "chesstable") {
         for (const seat of [0, 1]) {
@@ -1794,6 +1800,9 @@ export function createRoom3D(container, opts = {}) {
         const off = platterOffset(it.raw?.rot);
         drawNotes(ctx, it.sx + off.x, it.sy + off.y, it.recNotes, lightsOn);
       }
+      if (it.pianoParts?.length) {
+        drawPianoParticles(ctx, it.sx + it.w * 0.45, it.sy + 8, it.pianoParts, lightsOn);
+      }
       if (it.glow && it.screenQuad && it.screenQuad.length >= 4) {
         // Subtle ambient only, clipped to the TV screen parallelogram.
         ctx.save();
@@ -2207,6 +2216,14 @@ export function createRoom3D(container, opts = {}) {
     setChessMap(m) { chess = m || {}; },
     setTvs(m) { tvs = m || {}; },
     setRecordPlayers(m) { recordPlayers = m || {}; },
+    setPianoNotes(id, notes) {
+      if (!id) return;
+      const list = Array.isArray(notes) ? notes.filter((n) => Number.isFinite(n)) : [];
+      if (!list.length) delete pianoNotes[id];
+      else pianoNotes[id] = list;
+    },
+    pianoNotes(id) { return (pianoNotes[id] || []).slice(); },
+    pianoPlaying(id) { return Boolean((pianoNotes[id] || []).length); },
     recordOn(id) { return Boolean(recordPlayers[id]?.on); },
     recordVinyl(id) { return recordPlayers[id]?.on ? (recordPlayers[id].vinyl || null) : null; },
     recordState(id) { return recordPlayers[id] ? { ...recordPlayers[id] } : { on: false, vinyl: null }; },

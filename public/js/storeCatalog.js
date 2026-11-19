@@ -186,6 +186,7 @@ export const NEW_FURNITURE = [
   { type: "easel", name: "Easel", price: 26 },
   { type: "musicmixer", name: "Music Mixer", price: 28 },
   { type: "cubechest", name: "Cube Chest", price: 36 },
+  { type: "keyboardpiano", name: "Keyboard Piano", price: 40 },
 ];
 
 export function clothingById(id) {

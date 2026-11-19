@@ -44,6 +44,12 @@ import {
   CUBE_CHEST_TYPE, PERSONAL_INV_CAP, CUBE_CHEST_CAP,
   filterChestItems, normalizeChestStore,
 } from "./cubeChest.js";
+import {
+  PIANO_TYPE, mountPiano, openPiano, closePiano, isPianoOpen, layoutPianoPanel,
+  applyRemotePianoNote, pianoPanelState, pressPianoMidi, releasePianoMidi,
+  currentPianoId,
+} from "./piano.js";
+import { unlockPianoAudio, getPianoAudioState } from "./pianoAudio.js";
 
 (() => {
   const socket = io({ transports: ["websocket", "polling"] });
@@ -119,6 +125,37 @@ import {
     onError(msg) { toast(msg); },
     onClose() {
       if (state.room?.recordPlayers) syncRoomRecordAudio(state.room.recordPlayers);
+    },
+  });
+  const pianoSounding = new Map();
+  function syncPianoNotes(id) {
+    const set = pianoSounding.get(id);
+    state.room3d?.setPianoNotes?.(id, set ? [...set] : []);
+  }
+  function markPianoNote(id, midi, on) {
+    if (!id || midi == null) return;
+    if (!pianoSounding.has(id)) pianoSounding.set(id, new Set());
+    const set = pianoSounding.get(id);
+    if (on) set.add(midi);
+    else set.delete(midi);
+    if (!set.size) pianoSounding.delete(id);
+    syncPianoNotes(id);
+  }
+  function clearPianoNotes(id) {
+    if (id) pianoSounding.delete(id);
+    else pianoSounding.clear();
+    if (id) syncPianoNotes(id);
+    else state.room3d?.setPianoNotes?.();
+  }
+  mountPiano({
+    getSafe: () => roomWindowSafeRect(),
+    onNote({ id, note, on, voice, vel }) {
+      markPianoNote(id, note, on);
+      socket.emit("pianoNote", { id, note, on, voice, vel });
+    },
+    onClose(id) {
+      clearPianoNotes(id);
+      if (id) socket.emit("closePiano", { id });
     },
   });
   registerArtCatalog(HouseIso);
@@ -2410,6 +2447,7 @@ import {
     }
     closeCharSlots();
     closeCubeChestWindow();
+    if (isPianoOpen()) closePiano();
     if (phoneOpen()) hidePhoneUI();
     endPhoneHoldIfIdle();
     if (isChatOpen?.()) closeChatComposer?.();
@@ -3114,8 +3152,8 @@ import {
       "couch", "chair", "hoverchair", "capsulecouch",
       "tv", "holotv", "chesstable", "fridge", "punchbag", "heavybag",
       "benchpress", "treadmill", "cubics", "clothescab", "coffeemachine", "stove",
-      "recordplayer", "bed", "easel", "musicmixer", "cubechest",
-    ].includes(type) || type === RECORD_TYPE || type === EASEL_TYPE || type === MIXER_TYPE;
+      "recordplayer", "bed", "easel", "musicmixer", "cubechest", "keyboardpiano",
+    ].includes(type) || type === RECORD_TYPE || type === EASEL_TYPE || type === MIXER_TYPE || type === PIANO_TYPE;
   }
 
   function requestWalkTo(tx, ty) {
@@ -3636,6 +3674,7 @@ import {
 
   function handleFurnitureClick(id, type, extra = {}) {
     closeCharSlots();
+    if ((type !== PIANO_TYPE && type !== "keyboardpiano") && isPianoOpen()) closePiano();
     if (state.room?.shop && (isShopProp(type) || extra?.avatar)) {
       openStorePanel(state.room.shop);
       return;
@@ -3688,6 +3727,14 @@ import {
     }
     if (type === "cubechest" || type === CUBE_CHEST_TYPE) {
       approachFurniture(furn, () => socket.emit("openCubeChest", { id }));
+      return;
+    }
+    if (type === "keyboardpiano" || type === PIANO_TYPE) {
+      approachFurniture(furn, () => {
+        unlockPianoAudio();
+        socket.emit("openPiano", { id });
+        openPiano(id);
+      });
       return;
     }
     if (type === "punchbag") {
@@ -5887,6 +5934,7 @@ import {
     if (isRecordPickerOpen()) closeRecordPicker();
     if (isEaselPaintOpen()) closeEaselPaint();
     if (isMixerOpen()) closeMixerUI();
+    if (isPianoOpen()) closePiano();
     closePhone();
     closeCharSlots();
     state.room = null;
@@ -6216,6 +6264,13 @@ import {
     applyCubeChestState(payload);
   });
 
+  socket.on("pianoNote", (payload) => {
+    if (!payload || !state.room) return;
+    const mine = payload.user && payload.user === state.me?.username;
+    markPianoNote(payload.id, payload.note, payload.on);
+    applyRemotePianoNote({ ...payload, fromSelf: mine });
+  });
+
   socket.on("useUpdated", ({ id, use }) => {
     if (!state.room) return;
     state.room.uses = state.room.uses || {};
@@ -6231,6 +6286,11 @@ import {
     state.room3d?.setUses(state.room.uses);
     state.room3d?.syncPeople?.([...state.people.values()]);
     const me = state.me?.username;
+    if (isPianoOpen() && currentPianoId() === id) {
+      if (!use || use.type !== PIANO_TYPE || (use.players && me && !use.players[me])) {
+        closePiano();
+      }
+    }
     if (use && use.type === "fridge" && use.open && use.user === me) showFridgePicker(id);
     if ((!use || !use.open) && state.fridgeId === id) hideFridgePicker();
     if ((!use || !use.open) && state.cubeChestId === id) {
@@ -6499,6 +6559,13 @@ import {
   window.__openCharSlots = (name) => openCharSlots(name || state.me?.username);
   window.__closeCharSlots = () => closeCharSlots();
   window.__closeCubeChest = () => closeCubeChestWindow();
+  window.__openPiano = (id) => { if (id) { unlockPianoAudio(); socket.emit("openPiano", { id }); openPiano(id); } };
+  window.__closePiano = () => closePiano();
+  window.__pianoState = () => ({ ...pianoPanelState(), sounding: state.room3d?.pianoNotes?.(currentPianoId() || pianoPanelState().id) || [] });
+  window.__pianoPress = (midi) => pressPianoMidi(midi);
+  window.__pianoRelease = (midi) => releasePianoMidi(midi);
+  window.__pianoAudioState = () => getPianoAudioState();
+  window.__pianoNotes = (id) => state.room3d?.pianoNotes?.(id) || [];
   window.__openCubeChest = (id) => { if (id) socket.emit("openCubeChest", { id }); };
   window.__cubeChestState = () => {
     const el = cubeChestEl();

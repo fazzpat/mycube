@@ -5436,6 +5436,210 @@ try {
     await alice.setViewportSize({ width: 1280, height: 800 });
   }
 
+  log("Keyboard Piano furniture");
+  await alice.evaluate(() => {
+    window.__closeCubeChest?.();
+    window.__closePiano?.();
+    window.__exitEdit?.();
+  });
+  await alice.evaluate(() => window.__openStore?.("furniture", "keyboardpiano"));
+  await alice.waitForSelector('[data-testid="store-item-keyboardpiano"]', { timeout: 5000 });
+  await alice.waitForFunction(() => {
+    const thumb = document.querySelector('[data-testid="store-thumb-keyboardpiano"]');
+    const canvas = thumb && (thumb.tagName === "CANVAS" ? thumb : thumb.querySelector("canvas"));
+    if (!canvas) return false;
+    const data = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height).data;
+    return data.some((v, i) => i % 4 === 3 && v > 8);
+  }, null, { timeout: 5000 }).catch(() => {});
+  const pianoShop = await alice.evaluate(() => {
+    const card = document.querySelector('[data-testid="store-item-keyboardpiano"]');
+    const thumb = document.querySelector('[data-testid="store-thumb-keyboardpiano"]');
+    const buy = document.querySelector('[data-testid="buy-keyboardpiano"]');
+    const canvas = thumb && (thumb.tagName === "CANVAS" ? thumb : thumb.querySelector("canvas"));
+    let painted = false;
+    if (canvas) {
+      const data = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height).data;
+      painted = data.some((v, i) => i % 4 === 3 && v > 8);
+    }
+    const cat = window.HouseIso?.CATALOG?.keyboardpiano;
+    return {
+      hasCard: Boolean(card),
+      hasBuy: Boolean(buy),
+      painted,
+      price: card?.innerText || "",
+      label: card?.innerText || "",
+      catalog: cat ? { name: cat.name, price: cat.price, w: cat.w, h: cat.h } : null,
+    };
+  });
+  check(
+    "The Furniture tab lists a Keyboard Piano with a sprite icon and a 40-coin price",
+    Boolean(pianoShop.hasCard && pianoShop.hasBuy && pianoShop.painted && /40/.test(pianoShop.price) && /keyboard piano/i.test(pianoShop.label) && pianoShop.catalog?.w === 2 && pianoShop.catalog?.h === 1),
+    JSON.stringify(pianoShop)
+  );
+  await alice.evaluate(() => window.__closeStore?.());
+  await alice.evaluate(() => window.__debugKit({ furniture: ["keyboardpiano"], coins: 200 }));
+  await alice.waitForTimeout(80);
+  const findPianoHole = () => alice.evaluate(() => {
+    const size = window.HouseRoom3D.gridSize?.() || 6;
+    const furn = window.HouseRoom3D.getFurniture() || [];
+    const blocked = new Set();
+    const mark = (x, y) => blocked.add(`${x},${y}`);
+    for (const f of furn) {
+      if (f.type === "keyboardpiano") continue;
+      const dims = window.HouseIso?.dims?.(f.type, f.rot) || { w: 1, h: 1 };
+      for (let y = 0; y < dims.h; y++) {
+        for (let x = 0; x < dims.w; x++) {
+          mark(f.x + x, f.y + y);
+          // Chess tables also reserve neighboring seat tiles on the server.
+          if (f.type === "chesstable") {
+            for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) mark(f.x + x + dx, f.y + y + dy);
+          }
+        }
+      }
+    }
+    for (let y = 0; y < size - 1; y++) {
+      for (let x = 0; x < size - 1; x++) {
+        if (![0, 1].some((dx) => [0, 1].some((dy) => blocked.has(`${x + dx},${y + dy}`)))) return { x, y };
+      }
+    }
+    return null;
+  });
+  await alice.evaluate(() => window.__enterEdit?.());
+  let pianoSpot = await findPianoHole();
+  if (!pianoSpot) {
+    for (let i = 0; i < 8 && !pianoSpot; i++) {
+      const removed = await alice.evaluate(() => {
+        window.__enterEdit?.();
+        window.__cancelPlace?.();
+        const skip = new Set(["keyboardpiano", "door"]);
+        const furn = window.HouseRoom3D.getFurniture() || [];
+        const target = furn.find((f) => !skip.has(f.type) && (f.type === "plant" || f.type === "podplant" || f.type === "rug" || (window.HouseIso?.dims?.(f.type, f.rot) || { w: 1, h: 1 }).w * (window.HouseIso?.dims?.(f.type, f.rot) || { w: 1, h: 1 }).h === 1))
+          || furn.find((f) => !skip.has(f.type));
+        if (!target) return null;
+        window.__clickFurniture(target.id, target.type);
+        window.__putAwaySelected?.();
+        return target.id;
+      });
+      if (!removed) break;
+      await alice.waitForFunction((id) => !(window.HouseRoom3D.getFurniture() || []).some((f) => f.id === id), removed, { timeout: 4000 }).catch(() => {});
+      pianoSpot = await findPianoHole();
+    }
+  }
+  const pianoPlaced = await alice.evaluate((spot) => {
+    window.__enterEdit?.();
+    window.__cancelPlace?.();
+    window.__startPlace?.("keyboardpiano");
+    const again = spot || { x: 1, y: 1 };
+    window.__clickTile(again.x, again.y);
+    return again;
+  }, pianoSpot);
+  await alice.waitForFunction(() => (window.HouseRoom3D.getFurniture() || []).some((f) => f.type === "keyboardpiano"), null, { timeout: 8000 });
+  const pianoPiece = await alice.evaluate(() => {
+    const f = (window.HouseRoom3D.getFurniture() || []).find((x) => x.type === "keyboardpiano");
+    const dims = f ? (window.HouseIso?.dims?.(f.type, f.rot) || { w: 1, h: 1 }) : null;
+    return f ? { id: f.id, x: f.x, y: f.y, rot: f.rot, w: dims.w, h: dims.h } : null;
+  });
+  check("A Keyboard Piano snaps to the grid as a 2-tile floor item", Boolean(pianoPiece?.id && pianoPiece.w * pianoPiece.h === 2), JSON.stringify({ pianoPlaced, pianoPiece }));
+  if (pianoPiece?.id) {
+    const rotBefore = pianoPiece.rot;
+    await alice.evaluate((id) => {
+      window.__cancelPlace?.();
+      window.__clickFurniture(id, "keyboardpiano");
+      window.__rotatePending?.();
+    }, pianoPiece.id);
+    await alice.waitForFunction((arg) => {
+      const rot = (window.HouseRoom3D.getFurniture() || []).find((f) => f.id === arg.id)?.rot;
+      return rot != null && rot !== arg.before;
+    }, { id: pianoPiece.id, before: rotBefore }, { timeout: 5000 }).catch(() => {});
+    let rotAfter = await alice.evaluate((id) => (window.HouseRoom3D.getFurniture() || []).find((f) => f.id === id)?.rot, pianoPiece.id);
+    if (rotAfter === rotBefore) {
+      const better = await findPianoHole();
+      if (better) {
+        await alice.evaluate(({ id, x, y }) => {
+          window.__cancelPlace?.();
+          window.__moveFurnitureTo?.(id, x, y);
+        }, { id: pianoPiece.id, x: better.x, y: better.y });
+        await alice.waitForFunction((arg) => {
+          const f = (window.HouseRoom3D.getFurniture() || []).find((p) => p.id === arg.id);
+          return f && f.x === arg.x && f.y === arg.y;
+        }, { id: pianoPiece.id, x: better.x, y: better.y }, { timeout: 4000 }).catch(() => {});
+        await alice.evaluate((id) => {
+          window.__cancelPlace?.();
+          window.__clickFurniture(id, "keyboardpiano");
+          window.__rotatePending?.();
+        }, pianoPiece.id);
+        await alice.waitForFunction((arg) => {
+          const rot = (window.HouseRoom3D.getFurniture() || []).find((f) => f.id === arg.id)?.rot;
+          return rot != null && rot !== arg.before;
+        }, { id: pianoPiece.id, before: rotBefore }, { timeout: 5000 }).catch(() => {});
+        rotAfter = await alice.evaluate((id) => (window.HouseRoom3D.getFurniture() || []).find((f) => f.id === id)?.rot, pianoPiece.id);
+      }
+    }
+    check("A placed Keyboard Piano can be rotated in Edit Room", rotAfter !== rotBefore, JSON.stringify({ before: rotBefore, after: rotAfter }));
+    await alice.evaluate(() => window.__exitEdit?.());
+    await alice.waitForTimeout(120);
+    await alice.evaluate((id) => window.__clickFurniture(id, "keyboardpiano"), pianoPiece.id);
+    const opened = await alice.waitForFunction(() => window.__pianoState?.()?.open, null, { timeout: 10000 }).then(() => true).catch(() => false);
+    const ui = await alice.evaluate(() => window.__pianoState?.());
+    check(
+      "Tapping a placed piano opens a playable keyboard with voices and octave controls",
+      Boolean(opened && ui?.open && ui.keyCount >= 25 && ui.whiteCount >= 15 && (ui.voices || []).includes("grand") && (ui.voices || []).includes("epiano") && (ui.voices || []).includes("organ") && (ui.voices || []).includes("synth") && (ui.voices || []).includes("bells")),
+      JSON.stringify({ opened, voices: ui?.voices, keys: ui?.keyCount, whites: ui?.whiteCount, blacks: ui?.blackCount, label: ui?.label })
+    );
+    if (ui?.open) {
+      await alice.evaluate(() => {
+        window.__pianoPress?.(60);
+      });
+      await alice.waitForTimeout(120);
+      const lit = await alice.evaluate(() => {
+        const key = document.querySelector('[data-testid="piano-key-60"]');
+        return { on: key?.classList.contains("is-on"), notes: window.__pianoNotes?.(window.__pianoState?.()?.id) || window.__pianoState?.()?.keysOn };
+      });
+      check("Pressing a piano key lights it and sounds a note", Boolean(lit.on || (lit.notes || []).includes(60)), JSON.stringify(lit));
+      await alice.evaluate(() => window.__pianoRelease?.(60));
+      await alice.evaluate(() => document.querySelector('[data-testid="piano-voice-epiano"]')?.click());
+      const voice = await alice.evaluate(() => window.__pianoState?.()?.voice);
+      check("The piano has a selectable Electric Piano voice", voice === "epiano", JSON.stringify({ voice }));
+      await alice.evaluate(() => document.querySelector('[data-testid="piano-sustain"]')?.click());
+      const sustain = await alice.evaluate(() => window.__pianoState?.()?.sustain);
+      check("The piano has a sustain toggle", sustain === true, JSON.stringify({ sustain }));
+      await alice.evaluate(() => document.querySelector('[data-testid="piano-sustain"]')?.click());
+    }
+    // Multiplayer: bob hears/sees the note on the furniture.
+    await alice.evaluate(() => window.__pianoPress?.(64));
+    await alice.waitForTimeout(200);
+    const bobNotes = await bob.evaluate((id) => window.__pianoNotes?.(id) || window.HouseRoom3D?.pianoNotes?.(id) || [], pianoPiece.id);
+    check("Other players in the room see the played piano notes", (bobNotes || []).includes(64), JSON.stringify({ bobNotes }));
+    await alice.evaluate(() => window.__pianoRelease?.(64));
+
+    for (const size of [{ width: 390, height: 844 }, { width: 375, height: 667 }]) {
+      await alice.setViewportSize(size);
+      await alice.waitForTimeout(80);
+      if (!await alice.evaluate(() => window.__pianoState?.()?.open)) {
+        await alice.evaluate((id) => window.__clickFurniture(id, "keyboardpiano"), pianoPiece.id);
+        await alice.waitForFunction(() => window.__pianoState?.()?.open, null, { timeout: 8000 }).catch(() => {});
+      } else {
+        await alice.evaluate(() => window.dispatchEvent(new Event("resize")));
+      }
+      const fit = await alice.evaluate(() => window.__pianoState?.());
+      check(
+        `The piano board fits a ${size.width}x${size.height} phone without being cut off`,
+        Boolean(fit?.open && fit.onScreen && fit.clearsChrome && fit.boardOnScreen && fit.keyCount >= 25),
+        JSON.stringify({ rect: fit?.rect, onScreen: fit?.onScreen, clearsChrome: fit?.clearsChrome, boardOnScreen: fit?.boardOnScreen, keys: fit?.keyCount, keyRects: fit?.keyRects })
+      );
+    }
+    await alice.evaluate(() => window.__closePiano?.());
+    await alice.setViewportSize({ width: 1280, height: 800 });
+    await alice.evaluate(() => window.__enterEdit?.());
+    await alice.evaluate((id) => {
+      window.__clickFurniture(id, "keyboardpiano");
+      window.__putAwaySelected?.();
+    }, pianoPiece.id);
+    const putAway = await alice.waitForFunction((id) => !(window.HouseRoom3D.getFurniture() || []).some((f) => f.id === id), pianoPiece.id, { timeout: 8000 }).then(() => true).catch(() => false);
+    check("A Keyboard Piano can be put away from Edit Room", Boolean(putAway), JSON.stringify({ id: pianoPiece.id, putAway }));
+    await alice.evaluate(() => window.__exitEdit?.());
+  }
+
   log("New avatar looks together in a cube");
   await ctxA.close();
   await ctxB.close();

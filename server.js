@@ -54,6 +54,10 @@ import {
   emptyChestStore, normalizeChestStore, normalizeChestItem,
   listUnequippedCollection, sanitizeTabName,
 } from "./public/js/cubeChest.js";
+import {
+  PIANO_TYPE, PIANO_NAME, PIANO_PRICE, PIANO_VOICE_IDS, PIANO_MIDI_MIN, PIANO_MIDI_MAX,
+  isPianoVoice, clampMidi,
+} from "./public/js/piano.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT) || 3000;
@@ -118,6 +122,7 @@ const FURNITURE_CATALOG = {
   holotv: { name: "TV", price: 32, w: 2, h: 1, blocks: true },
   pinball: { name: "Pinball cabinet", price: 38, w: 1, h: 1, blocks: true },
   cubechest: { name: "Cube Chest", price: 36, w: 1, h: 1, blocks: true },
+  keyboardpiano: { name: PIANO_NAME, price: PIANO_PRICE, w: 2, h: 1, blocks: true },
 };
 Object.assign(FURNITURE_CATALOG, PAINTING_CATALOG);
 const WALL_ART_TYPES = new Set(["art_mona","art_starry","art_pop","art_sunset","art_cubism","art_poster","art_hang","art_neon","cuerack"]);
@@ -956,7 +961,13 @@ function trySit(user, room, furn, seat, socket) {
   return true;
 }
 
+function publicPianoUse(use) {
+  if (!use || use.type !== PIANO_TYPE) return use || null;
+  return { type: PIANO_TYPE, players: { ...(use.players || {}) } };
+}
+
 function furnitureInUse(room, id) {
+
   if (sittersOn(room, id).length) return "Someone is sitting there.";
   for (const u of users.values()) {
     if (u.roomId === room.id && u.stationId === id && u.lying) return "Someone is sleeping there.";
@@ -1131,9 +1142,33 @@ function clearUserActivities(user, room, { forfeit = true, keepChess = false } =
       room.arcade[stationId].state = null;
       emitRoom(room, "arcadeUpdated", { id: stationId, arcade: publicArcade(room)[stationId] });
     }
+    const pUse = room.uses?.[stationId];
+    if (pUse?.type === PIANO_TYPE && pUse.players?.[user.username]) {
+      delete pUse.players[user.username];
+      if (!Object.keys(pUse.players).length) {
+        delete room.uses[stationId];
+        emitRoom(room, "useUpdated", { id: stationId, use: null });
+      } else {
+        emitRoom(room, "useUpdated", { id: stationId, use: publicPianoUse(pUse) });
+      }
+    }
+  }
+  if (room && user.pianoId && user.pianoId !== stationId) {
+    const pid = user.pianoId;
+    const pUse = room.uses?.[pid];
+    if (pUse?.type === PIANO_TYPE && pUse.players?.[user.username]) {
+      delete pUse.players[user.username];
+      if (!Object.keys(pUse.players).length) {
+        delete room.uses[pid];
+        emitRoom(room, "useUpdated", { id: pid, use: null });
+      } else {
+        emitRoom(room, "useUpdated", { id: pid, use: publicPianoUse(pUse) });
+      }
+    }
   }
   clearBrewTimer(user);
   user.stationId = null;
+  user.pianoId = null;
   user.sitting = false;
   user.lying = false;
   user.lyingAt = null;
@@ -2710,6 +2745,81 @@ io.on("connection", (socket) => {
       emitRoom(room, "useUpdated", { id, use: null });
       emitPerson(user);
     }
+  });
+
+  socket.on("openPiano", ({ id } = {}) => {
+    const user = getUser(socket);
+    if (!user?.roomId) return;
+    const room = rooms.get(user.roomId);
+    const furn = room?.furniture.find((f) => f.id === id && f.type === PIANO_TYPE);
+    if (!furn) return;
+    room.uses = room.uses || {};
+    const cur = room.uses[id] && room.uses[id].type === PIANO_TYPE
+      ? room.uses[id]
+      : { type: PIANO_TYPE, players: {} };
+    cur.type = PIANO_TYPE;
+    cur.players = cur.players || {};
+    cur.players[user.username] = { voice: "grand", at: Date.now() };
+    room.uses[id] = cur;
+    user.stationId = id;
+    user.pianoId = id;
+    emitRoom(room, "useUpdated", { id, use: publicPianoUse(cur) });
+    emitPerson(user);
+  });
+
+  socket.on("closePiano", ({ id } = {}) => {
+    const user = getUser(socket);
+    if (!user?.roomId) return;
+    const room = rooms.get(user.roomId);
+    const use = room?.uses?.[id];
+    if (use?.type === PIANO_TYPE && use.players?.[user.username]) {
+      delete use.players[user.username];
+      if (!Object.keys(use.players).length) {
+        delete room.uses[id];
+        emitRoom(room, "useUpdated", { id, use: null });
+      } else {
+        emitRoom(room, "useUpdated", { id, use: publicPianoUse(use) });
+      }
+    }
+    if (user.stationId === id) user.stationId = null;
+    if (user.pianoId === id) user.pianoId = null;
+    emitPerson(user);
+  });
+
+  socket.on("pianoNote", ({ id, note, on, voice, vel } = {}) => {
+    const user = getUser(socket);
+    if (!user?.roomId) return;
+    const room = rooms.get(user.roomId);
+    const furn = room?.furniture.find((f) => f.id === id && f.type === PIANO_TYPE);
+    if (!furn) return;
+    const midi = clampMidi(note);
+    if (midi == null || midi < PIANO_MIDI_MIN || midi > PIANO_MIDI_MAX) return;
+    const kind = isPianoVoice(voice) ? voice : "grand";
+    const velocity = Math.max(0, Math.min(1, Number(vel)));
+    const now = Date.now();
+    user._pianoBurst = user._pianoBurst || { t: now, n: 0 };
+    if (now - user._pianoBurst.t > 800) { user._pianoBurst.t = now; user._pianoBurst.n = 0; }
+    user._pianoHeld = user._pianoHeld || new Set();
+    if (on) {
+      user._pianoBurst.n += 1;
+      if (user._pianoBurst.n > 20) return;
+      if (user._pianoHeld.size >= 10 && !user._pianoHeld.has(midi)) return;
+      user._pianoHeld.add(midi);
+    } else {
+      user._pianoHeld.delete(midi);
+    }
+    // Remember last voice if this player is listed on the piano.
+    if (room.uses?.[id]?.type === PIANO_TYPE && room.uses[id].players?.[user.username]) {
+      room.uses[id].players[user.username].voice = kind;
+    }
+    io.to(room.id).emit("pianoNote", {
+      id,
+      user: user.username,
+      note: midi,
+      on: Boolean(on),
+      voice: kind,
+      vel: Number.isFinite(velocity) ? velocity : 0.85,
+    });
   });
 
   socket.on("chestDeposit", ({ id, itemId, tab } = {}) => {
