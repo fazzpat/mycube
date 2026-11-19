@@ -13,6 +13,7 @@ import {
   stopRecordAudio,
   installRecordAudioGestures,
   preloadRecordAudio,
+  registerMixEngine,
 } from "./recordPlayerAudio.js";
 
 export const TYPE = "recordplayer";
@@ -68,8 +69,44 @@ export const VINYLS = [
   },
 ];
 
+let extraVinylsFn = () => [];
+export function setExtraVinyls(fn) {
+  extraVinylsFn = typeof fn === "function" ? fn : () => (fn || []);
+}
+export function extraVinyls() {
+  try {
+    const list = extraVinylsFn();
+    return Array.isArray(list) ? list.filter((v) => v && v.id) : [];
+  } catch {
+    return [];
+  }
+}
 export function vinylById(id) {
-  return VINYLS.find((v) => v.id === id) || null;
+  return VINYLS.find((v) => v.id === id) || extraVinyls().find((v) => v.id === id) || null;
+}
+export function catalogVinyls() {
+  const seen = new Set(VINYLS.map((v) => v.id));
+  const extras = [];
+  for (const v of extraVinyls()) {
+    if (!v?.id || seen.has(v.id)) continue;
+    seen.add(v.id);
+    extras.push(v);
+  }
+  return [...VINYLS, ...extras];
+}
+function escapeVinylName(s) {
+  return String(s ?? "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
+}
+export function vinylButtonHtml(v) {
+  return `<button type="button" class="record-vinyl" data-testid="record-vinyl-${v.id}" data-vinyl="${v.id}">
+        ${vinylThumb(v)}
+        <span class="record-vinyl-name">${escapeVinylName(v.name)}</span>
+      </button>`;
+}
+export function refreshRecordPickerVinyls() {
+  const grid = typeof document !== "undefined" && document.querySelector("[data-testid=record-picker-grid]");
+  if (!grid) return;
+  grid.innerHTML = catalogVinyls().map((v) => vinylButtonHtml(v)).join("");
 }
 
 export function spinFrameAt(now = Date.now(), startedAt = 0) {
@@ -318,10 +355,7 @@ export function mountRecordPicker(h = {}) {
   const pane = el(`<div id="record-picker" class="record-picker hidden" data-testid="record-picker" role="dialog" aria-label="Spin a vinyl">
     <div class="record-picker-title">SPIN A VINYL</div>
     <div class="record-picker-grid" data-testid="record-picker-grid">
-      ${VINYLS.map((v) => `<button type="button" class="record-vinyl" data-testid="record-vinyl-${v.id}" data-vinyl="${v.id}">
-        ${vinylThumb(v)}
-        <span class="record-vinyl-name">${v.name}</span>
-      </button>`).join("")}
+      ${catalogVinyls().map((v) => vinylButtonHtml(v)).join("")}
     </div>
     <div class="record-picker-actions">
       <button type="button" class="record-btn record-stop" data-testid="record-stop">STOP</button>
@@ -346,21 +380,24 @@ export function mountRecordPicker(h = {}) {
     hooks.onSelect?.(openId, id);
   };
   const replayVinyl = (id) => { if (id) playRecordVinyl(id); };
-  pane.querySelectorAll("[data-vinyl]").forEach((b) => {
-    b.addEventListener("pointerdown", (e) => {
-      if (e.button && e.button !== 0) return;
-      pickVinyl(b.dataset.vinyl);
-    });
-    b.addEventListener("touchend", (e) => {
+  const grid = pane.querySelector("[data-testid=record-picker-grid]");
+  grid?.addEventListener("pointerdown", (e) => {
+    const b = e.target.closest("[data-vinyl]");
+    if (!b || (e.button && e.button !== 0)) return;
+    pickVinyl(b.dataset.vinyl);
+  });
+  grid?.addEventListener("touchend", (e) => {
+    const b = e.target.closest("[data-vinyl]");
+    if (b) replayVinyl(b.dataset.vinyl);
+  }, { passive: true });
+  grid?.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-vinyl]");
+    if (!b) return;
+    if (Date.now() - lastVinylAt < 450) {
       replayVinyl(b.dataset.vinyl);
-    }, { passive: true });
-    b.addEventListener("click", () => {
-      if (Date.now() - lastVinylAt < 450) {
-        replayVinyl(b.dataset.vinyl);
-        return;
-      }
-      pickVinyl(b.dataset.vinyl);
-    });
+      return;
+    }
+    pickVinyl(b.dataset.vinyl);
   });
   pane.querySelector("[data-testid=record-stop]")?.addEventListener("click", () => hooks.onStop?.(openId));
   const listenNow = (id) => {
@@ -392,6 +429,7 @@ export function openRecordPicker(id, rec) {
   const pane = document.getElementById("record-picker");
   if (!pane) return false;
   pane.dataset.recordId = id;
+  refreshRecordPickerVinyls();
   pane.classList.remove("hidden");
   paintRecordPicker(rec);
   try { preloadRecordAudio(); } catch {}
@@ -416,6 +454,7 @@ export function recordPickerId() {
 export function paintRecordPicker(rec) {
   const pane = document.getElementById("record-picker");
   if (!pane || pane.classList.contains("hidden")) return;
+  refreshRecordPickerVinyls();
   const state = rec || hooks.getState?.(openId) || {};
   const audio = getRecordAudioState();
   pane.querySelectorAll("[data-vinyl]").forEach((b) => {
@@ -453,6 +492,7 @@ export function paintListenHint(playingId, clientRect) {
 export {
   unlockRecordAudio,
   playRecordVinyl,
+  registerMixEngine,
   isRecordListening,
   getRecordAudioState,
   setRecordVolume,

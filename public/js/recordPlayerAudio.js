@@ -401,6 +401,11 @@ export function preferredVinylSrc(id) {
   return sources[0].src;
 }
 
+let mixEngine = null;
+export function registerMixEngine(api) {
+  mixEngine = api || null;
+}
+
 function readVol() {
   try {
     if (typeof localStorage === "undefined") return DEFAULT_VOLUME;
@@ -502,6 +507,15 @@ export function playRecordVinyl(vinylId) {
   if (deck.ctx && (deck.ctx.state === "suspended" || deck.ctx.state === "interrupted")) {
     try { deck.ctx.resume(); } catch {}
   }
+  if (mixEngine?.has?.(vinylId)) {
+    if (deck.audio) {
+      try { deck.audio.pause(); } catch {}
+    }
+    mixEngine.play(vinylId, { volume: deck.volume, muted: deck.muted });
+    deck.playing = vinylId;
+    return getRecordAudioState();
+  }
+  mixEngine?.stop?.();
   if (!vinylId || !VINYL_FEELS[vinylId] || !deck.audio) return getRecordAudioState();
   attachSources(deck.audio, vinylId);
   applyElementGain();
@@ -529,6 +543,10 @@ export function primeRecordAudio() {
   if (!deck) return Promise.resolve(false);
   resumeContext(deck);
   const el = deck.audio;
+  if (el && deck.listening && deck.wanted && mixEngine?.has?.(deck.wanted)) {
+    mixEngine.play(deck.wanted, { volume: deck.volume, muted: deck.muted });
+    return Promise.resolve(true);
+  }
   if (el && deck.listening && deck.wanted && VINYL_FEELS[deck.wanted]) {
     applyElementGain();
     if (el.paused) {
@@ -568,7 +586,10 @@ export function unlockRecordAudio() {
   const el = deck.audio;
   if (el) {
     applyElementGain();
-    if (deck.wanted && VINYL_FEELS[deck.wanted]) {
+    if (deck.wanted && mixEngine?.has?.(deck.wanted)) {
+      mixEngine.play(deck.wanted, { volume: deck.volume, muted: deck.muted });
+      deck.playing = deck.wanted;
+    } else if (deck.wanted && VINYL_FEELS[deck.wanted]) {
       attachSources(el, deck.wanted);
       try { el.play(); } catch {}
       deck.playing = deck.wanted;
@@ -587,7 +608,9 @@ export function recoverRecordAudio() {
   if (live.ctx && (live.ctx.state === "suspended" || live.ctx.state === "interrupted")) {
     try { live.ctx.resume(); } catch {}
   }
-  if (live.wanted && live.audio && live.audio.paused && !live.muted) {
+  if (live.wanted && mixEngine?.has?.(live.wanted)) {
+    mixEngine.recover?.();
+  } else if (live.wanted && live.audio && live.audio.paused && !live.muted) {
     try { live.audio.play(); } catch {}
   }
 }
@@ -656,6 +679,7 @@ export function setRecordVolume(v) {
     live.volume = n;
     if (n <= 0.001) live.muted = false;
     applyElementGain();
+    mixEngine?.setGain?.(live.volume, live.muted);
   }
   return n;
 }
@@ -666,7 +690,10 @@ export function setRecordMuted(on) {
   if (live) {
     live.muted = muted;
     applyElementGain();
-    if (!muted && live.wanted && live.audio?.paused) {
+    mixEngine?.setGain?.(live.volume, live.muted);
+    if (!muted && live.wanted && mixEngine?.has?.(live.wanted)) {
+      mixEngine.recover?.();
+    } else if (!muted && live.wanted && live.audio?.paused) {
       try { live.audio.play(); } catch {}
     }
   }
@@ -677,20 +704,23 @@ export function activeRecordPlayer(map) {
   if (!map) return null;
   const list = Array.isArray(map) ? map : Object.values(map);
   for (const rec of list) {
-    if (rec && rec.on && rec.vinyl && VINYL_FEELS[rec.vinyl]) return rec;
+    if (rec && rec.on && rec.vinyl && (VINYL_FEELS[rec.vinyl] || mixEngine?.has?.(rec.vinyl) || rec.pattern)) return rec;
   }
   return null;
 }
 
 export function syncRecordAudio(rec, { userGesture = false } = {}) {
-  const on = Boolean(rec?.on && rec?.vinyl && VINYL_FEELS[rec.vinyl]);
+  const on = Boolean(rec?.on && rec?.vinyl && (VINYL_FEELS[rec.vinyl] || mixEngine?.has?.(rec.vinyl) || rec.pattern));
   if (!on) return stopRecordAudio();
   if (userGesture) unlockRecordAudio();
   const deck = live;
   if (!deck || !deck.listening) return getRecordAudioState();
   if (userGesture) return playRecordVinyl(rec.vinyl);
   // Already unlocked: keep the same track going, or switch if the room changed vinyls.
-  if (deck.playing === rec.vinyl && deck.audio && !deck.audio.paused) return getRecordAudioState();
+  const mixOn = mixEngine?.has?.(rec.vinyl) || rec.pattern;
+  if (deck.playing === rec.vinyl && ((mixOn && mixEngine?.isPlaying?.(rec.vinyl)) || (!mixOn && deck.audio && !deck.audio.paused))) {
+    return getRecordAudioState();
+  }
   return playRecordVinyl(rec.vinyl);
 }
 
@@ -704,6 +734,7 @@ export function syncRoomRecordAudio(map, opts) {
 export function stopRecordAudio() {
   const el = live?.audio
     || (typeof document !== "undefined" && (document.getElementById("record-audio") || document.querySelector("[data-testid=record-audio]")));
+  mixEngine?.stop?.();
   if (live) {
     live.playing = null;
     live.wanted = null;

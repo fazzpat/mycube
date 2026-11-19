@@ -21,7 +21,7 @@ const TILES = {
   tv: [2, 1], holotv: [2, 1], fridge: [1, 1], kitchenette: [2, 1], chair: [1, 1],
   hoverchair: [1, 1], bookshelf: [2, 1], chesstable: [1, 1], chessstool: [1, 1], punchbag: [1, 1],
   heavybag: [1, 1], benchpress: [2, 1], treadmill: [1, 2], cubics: [1, 1],
-  clothescab: [1, 1], coffeemachine: [1, 1], stove: [1, 1], recordplayer: [1, 1], easel: [1, 1], djdeck: [2, 1], sodavending: [1, 1],
+  clothescab: [1, 1], coffeemachine: [1, 1], stove: [1, 1], recordplayer: [1, 1], easel: [1, 1], musicmixer: [1, 1], djdeck: [2, 1], sodavending: [1, 1],
   neonsign: [1, 1], pinball: [1, 1], cubechest: [1, 1], rack: [1, 1], mannequin: [1, 1],
   petpen: [2, 1], cage: [1, 1], counter: [2, 1], pooltable: [2, 2],
 };
@@ -30,14 +30,14 @@ const BODY_H = {
   rug: 4, plant: 36, podplant: 38, lamp: 48, table: 18, coffeetable: 14, counter: 20,
   couch: 26, capsulecouch: 26, chair: 24, hoverchair: 32, bed: 14, tv: 60, holotv: 60,
   fridge: 44, kitchenette: 24, bookshelf: 42, chesstable: 14, chessstool: 14, punchbag: 46, heavybag: 46,
-  benchpress: 22, treadmill: 30, cubics: 64, pinball: 40, clothescab: 42, coffeemachine: 48, stove: 40, recordplayer: 40, easel: 46,
+  benchpress: 22, treadmill: 30, cubics: 64, pinball: 40, clothescab: 42, coffeemachine: 48, stove: 40, recordplayer: 40, easel: 46, musicmixer: 34,
   djdeck: 18, sodavending: 46, neonsign: 46, cubechest: 28, rack: 36, mannequin: 42, petpen: 22, cage: 24, pooltable: 18,
 };
 
 export const FURN_SHEET_TYPES = [
   "rug", "plant", "podplant", "lamp", "neonsign", "table", "coffeetable", "counter",
   "chair", "hoverchair", "couch", "capsulecouch", "bed", "tv", "holotv", "fridge",
-  "kitchenette", "bookshelf", "clothescab", "chesstable", "coffeemachine", "stove", "recordplayer", "easel", "cubics",
+  "kitchenette", "bookshelf", "clothescab", "chesstable", "coffeemachine", "stove", "recordplayer", "easel", "musicmixer", "cubics",
   "pinball", "cubechest", "djdeck", "sodavending", "punchbag", "benchpress", "treadmill",
   "rack", "mannequin", "petpen", "cage", "pooltable",
 ];
@@ -1477,6 +1477,101 @@ function drawPen(ctx, tw, th, lights, cage) {
   }
 }
 
+
+function mixerRect(full, rot, u, v, su, sv) {
+  const r = normalizeFurnRot(rot);
+  const corner = (U, V) => {
+    if (r === 0) return { x: full.x + U * full.w, y: full.y + (1 - V) * full.h };
+    if (r === 1) return { x: full.x + (1 - V) * full.w, y: full.y + (1 - U) * full.h };
+    if (r === 2) return { x: full.x + (1 - U) * full.w, y: full.y + V * full.h };
+    return { x: full.x + V * full.w, y: full.y + U * full.h };
+  };
+  const pts = [corner(u, v), corner(u + su, v), corner(u, v + sv), corner(u + su, v + sv)];
+  const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
+  const x = Math.min(...xs), y = Math.min(...ys);
+  return { x, y, w: Math.max(0.02, Math.max(...xs) - x), h: Math.max(0.02, Math.max(...ys) - y) };
+}
+
+function drawMusicMixer(ctx, tw, th, rot, lights, opts = {}) {
+  const r = normalizeFurnRot(rot);
+  const full = insetBox(tw, th);
+  const wood = pal("#6b4228", lights, { leg: "#5a3a22", rim: "#5c3a24" });
+  const darkWood = pal("#3a2418", lights);
+  const slab = pal("#3a3e44", lights, { well: "#2a2e34", ink: "#161418" });
+  const metal = pal("#8a9098", lights);
+  const tableH = 16;
+  const rimH = 4;
+  const boardH = 3.2;
+  const backH = 8;
+  const topLift = tableH + rimH + boardH;
+
+  shadow(ctx, full.x, full.y, full.w, full.h, lights ? 0.28 : 0.16);
+
+  const leg = 0.1;
+  const inset = 0.05;
+  const spots = [
+    [full.x + inset, full.y + inset],
+    [full.x + full.w - leg - inset, full.y + inset],
+    [full.x + inset, full.y + full.h - leg - inset],
+    [full.x + full.w - leg - inset, full.y + full.h - leg - inset],
+  ];
+  for (const [lx, ly] of spots) box(ctx, lx, ly, leg, leg, 0, tableH, { top: wood.leg, left: darkWood.left, right: darkWood.right, outline: wood.outline });
+
+  // Wooden apron / rim covering the square top.
+  box(ctx, full.x, full.y, full.w, full.h, tableH, rimH, { top: wood.top, left: wood.left, right: wood.right, outline: wood.outline });
+
+  // Charcoal console covering the tabletop, slightly inset so the wood rim stays visible.
+  const pad = 0.05;
+  const board = { x: full.x + pad, y: full.y + pad, w: full.w - pad * 2, h: full.h - pad * 2 };
+  box(ctx, board.x, board.y, board.w, board.h, tableH + rimH, boardH, { top: slab.top, left: slab.left, right: slab.right, outline: slab.outline });
+
+  // Raised back panel with a row of level LEDs.
+  const depth = Math.min(0.2, (r % 2 === 0 ? board.h : board.w) * 0.42);
+  let panel;
+  if (r === 0) panel = { x: board.x, y: board.y, w: board.w, h: depth };
+  else if (r === 1) panel = { x: board.x, y: board.y, w: depth, h: board.h };
+  else if (r === 2) panel = { x: board.x, y: board.y + board.h - depth, w: board.w, h: depth };
+  else panel = { x: board.x + board.w - depth, y: board.y, w: depth, h: board.h };
+  box(ctx, panel.x, panel.y, panel.w, panel.h, topLift, backH, { top: slab.well, left: slab.left, right: slab.right, outline: slab.ink });
+
+  const ledColors = ["#4dff88", "#ffe066", "#ff9a3a", "#ff4d4d"];
+  ledColors.forEach((c, i) => {
+    const u = 0.18 + i * 0.16;
+    const rec = mixerRect({ x: panel.x, y: panel.y, w: panel.w, h: panel.h }, r, u, 0.28, 0.12, 0.32);
+    box(ctx, rec.x, rec.y, rec.w, rec.h, topLift + backH, 1.2, pal(c, true));
+  });
+
+  // Grid of gray pads on the left / center of the console.
+  for (let row = 0; row < 3; row++) {
+    for (let col = 0; col < 4; col++) {
+      const rec = mixerRect(board, r, 0.08 + col * 0.13, 0.14 + row * 0.18, 0.1, 0.14);
+      const lit = (row + col) % 3 === 0;
+      box(ctx, rec.x, rec.y, rec.w, rec.h, topLift, 1.1, pal(lit ? "#6a7278" : "#4a4e54", lights));
+    }
+  }
+
+  // A few silver knobs in front of the pads.
+  for (let i = 0; i < 4; i++) {
+    const rec = mixerRect(board, r, 0.10 + i * 0.13, 0.68, 0.08, 0.1);
+    box(ctx, rec.x, rec.y, rec.w, rec.h, topLift, 1.6, metal);
+  }
+
+  // Black jog wheel on the right side of the deck.
+  const wheel = mixerRect(board, r, 0.66, 0.18, 0.28, 0.42);
+  box(ctx, wheel.x, wheel.y, wheel.w, wheel.h, topLift, 1.4, pal("#121214", lights));
+  const inner = mixerRect(board, r, 0.71, 0.26, 0.18, 0.26);
+  box(ctx, inner.x, inner.y, inner.w, inner.h, topLift + 1.4, 0.6, pal("#2a2a2e", lights));
+  const hub = mixerRect(board, r, 0.77, 0.34, 0.06, 0.1);
+  box(ctx, hub.x, hub.y, hub.w, hub.h, topLift + 2, 0.5, metal);
+
+  // Colored LED dots along the front edge of the console.
+  const frontLeds = ["#ff4da6", "#f4c15d", "#ff7a3a"];
+  frontLeds.forEach((c, i) => {
+    const rec = mixerRect(board, r, 0.22 + i * 0.14, 0.04, 0.07, 0.07);
+    box(ctx, rec.x, rec.y, rec.w, rec.h, topLift, 1.3, pal(c, true));
+  });
+}
+
 function paintPiece(ctx, type, rot, lights, on, open, opts = {}) {
   const { tw, th } = furnSpriteMetrics(type, rot);
   const r = normalizeFurnRot(rot);
@@ -1511,6 +1606,7 @@ function paintPiece(ctx, type, rot, lights, on, open, opts = {}) {
     case "pooltable": drawPoolTable(ctx, tw, th, r, lights, opts, ISO_DRAW); break;
     case "recordplayer": drawRecordPlayer(ctx, tw, th, r, lights, { ...opts, on }, ISO_DRAW); break;
     case "easel": drawEasel(ctx, tw, th, r, lights, opts); break;
+    case "musicmixer": drawMusicMixer(ctx, tw, th, r, lights, opts); break;
     case "punchbag":
     case "heavybag":
     case "benchpress":

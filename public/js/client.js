@@ -27,8 +27,18 @@ import {
   mountRecordPicker, openRecordPicker, closeRecordPicker, isRecordPickerOpen,
   paintRecordPicker, paintListenHint, syncRecordAudio, setRecordVolume, setRecordMuted,
   getRecordAudioState, unlockRecordAudio, playRecordVinyl, vinylById,
-  syncRoomRecordAudio, stopRecordAudio,
+  syncRoomRecordAudio, stopRecordAudio, setExtraVinyls, registerMixEngine,
 } from "./recordPlayer.js";
+import {
+  MIXER_TYPE, isMixVinyl, mixToVinyl, vinylThumbHtml, publicMix,
+} from "./musicMixer.js";
+import {
+  mountMixerUI, openMixerUI, closeMixerUI, isMixerOpen, mixerLoadDemo,
+} from "./musicMixerUI.js";
+import {
+  setMixPatternResolver, setMixStartedAtResolver, stopMixAudio,
+  hasMixVinyl, playMixVinyl, isMixPlaying, setMixGain, recoverMixAudio,
+} from "./musicMixerAudio.js";
 import { paintFridgeThumbs, heldItemLabel } from "./heldItems.js";
 import {
   CUBE_CHEST_TYPE, PERSONAL_INV_CAP, CUBE_CHEST_CAP,
@@ -62,6 +72,10 @@ import {
         const art = artworkByType(type);
         return artworkThumbHtml(type, art?.title);
       }
+      if (isMixVinyl(type)) {
+        const mix = mixByType(type);
+        return vinylThumbHtml(mix || { type, title: mix?.title, color: mix?.color, data: mix?.data }, mix?.title);
+      }
       return origSvg(type);
     };
   }
@@ -91,6 +105,21 @@ import {
     onMute: setRecordMuted,
     getState(id) { return state.room?.recordPlayers?.[id]; },
     onClose() {},
+  });
+  registerMixEngine({
+    has: (id) => hasMixVinyl(id),
+    play: (id, opts) => playMixVinyl(id, opts || {}),
+    stop: () => stopMixAudio(),
+    isPlaying: (id) => isMixPlaying(id),
+    setGain: (volume, muted) => setMixGain(volume, muted),
+    recover: () => recoverMixAudio(),
+  });
+  mountMixerUI({
+    onSave(payload) { socket.emit("saveMixerMix", payload); },
+    onError(msg) { toast(msg); },
+    onClose() {
+      if (state.room?.recordPlayers) syncRoomRecordAudio(state.room.recordPlayers);
+    },
   });
   registerArtCatalog(HouseIso);
   const CATALOG = Object.entries(HouseIso.CATALOG).map(([type, item]) => ({ type, ...item }));
@@ -1900,13 +1929,60 @@ import {
     return (state.room?.wallArt || []).find((a) => a.type === type) || null;
   }
   window.__artworkByType = artworkByType;
+  setMixPatternResolver((id) => {
+    for (const rec of Object.values(state.room?.recordPlayers || {})) {
+      if (rec?.vinyl === id && rec.pattern) return rec.pattern;
+    }
+    const fromMe = (state.me?.mixes || []).find((m) => m.type === id);
+    if (fromMe) return fromMe.data;
+    const fromRoom = (state.room?.mixes || []).find((m) => m.type === id);
+    return fromRoom?.data || null;
+  });
+  setMixStartedAtResolver((id) => {
+    for (const rec of Object.values(state.room?.recordPlayers || {})) {
+      if (rec?.vinyl === id && rec.startedAt) return rec.startedAt;
+    }
+    return 0;
+  });
+  setExtraVinyls(() => {
+    const map = new Map();
+    for (const m of (state.room?.mixes || state.me?.mixes || [])) {
+      const v = mixToVinyl(m);
+      if (v) map.set(v.id, v);
+    }
+    for (const rec of Object.values(state.room?.recordPlayers || {})) {
+      if (isMixVinyl(rec?.vinyl) && !map.has(rec.vinyl)) {
+        const v = mixToVinyl({ type: rec.vinyl, id: rec.vinyl, title: rec.title, color: rec.label, data: rec.pattern });
+        if (v) map.set(v.id, v);
+      }
+    }
+    return [...map.values()];
+  });
+  function mixByType(type) {
+    return (state.me?.mixes || []).find((m) => m.type === type)
+      || (state.room?.mixes || []).find((m) => m.type === type)
+      || null;
+  }
+  window.__mixByType = mixByType;
 
   function labelFor(type) {
     if (isEaselArt(type)) return artworkByType(type)?.title || "Painting";
+    if (isMixVinyl(type)) return mixByType(type)?.title || "Mix";
     return HouseIso.CATALOG[type]?.name || type;
   }
 
   function startPlace(type) {
+    if (isMixVinyl(type)) {
+      const table = (state.room?.furniture || []).find((f) => f.type === RECORD_TYPE || f.type === "recordplayer");
+      if (!table) {
+        toast("Place a Record table to play this record.");
+        return;
+      }
+      playRecordVinyl(type);
+      socket.emit("selectRecordPlayer", { id: table.id, vinyl: type });
+      toast("Now playing \"" + (mixByType(type)?.title || "mix") + "\".");
+      return;
+    }
     state.pendingPlace = type;
     state.movingId = null;
     state.movingWallId = null;
@@ -3038,8 +3114,8 @@ import {
       "couch", "chair", "hoverchair", "capsulecouch",
       "tv", "holotv", "chesstable", "fridge", "punchbag", "heavybag",
       "benchpress", "treadmill", "cubics", "clothescab", "coffeemachine", "stove",
-      "recordplayer", "bed", "easel", "cubechest",
-    ].includes(type) || type === RECORD_TYPE || type === EASEL_TYPE;
+      "recordplayer", "bed", "easel", "musicmixer", "cubechest",
+    ].includes(type) || type === RECORD_TYPE || type === EASEL_TYPE || type === MIXER_TYPE;
   }
 
   function requestWalkTo(tx, ty) {
@@ -3658,6 +3734,17 @@ import {
       approachFurniture(furn, () => {
         const piece = (state.room?.furniture || []).find((x) => x.id === id) || furn;
         openEaselPaint(id, piece.canvas || {});
+      });
+      return;
+    }
+    if (type === "musicmixer" || type === MIXER_TYPE) {
+      if (!isOwner()) {
+        toast("Only the cube owner can mix at the music mixer.");
+        return;
+      }
+      approachFurniture(furn, () => {
+        const piece = (state.room?.furniture || []).find((x) => x.id === id) || furn;
+        openMixerUI(id, piece.pattern || {});
       });
       return;
     }
@@ -5720,6 +5807,17 @@ import {
     if (payload?.title) toast("Saved \"" + payload.title + "\" to your inventory.");
     if (state.editMode) paintEditInventory();
   });
+  socket.on("mixerMixSaved", (payload) => {
+    closeMixerUI();
+    if (payload?.title) toast("Saved \"" + payload.title + "\" as a record.");
+    if (state.editMode) paintEditInventory();
+    if (isRecordPickerOpen()) paintRecordPicker();
+  });
+  socket.on("mixesUpdated", (mixes) => {
+    if (state.room) state.room.mixes = mixes || [];
+    if (state.editMode) paintEditInventory();
+    if (isRecordPickerOpen()) paintRecordPicker();
+  });
   socket.on("profile", (user) => {
     const wasCreating = state.view === "creator" && !state.me?.avatar;
     state.me = user;
@@ -5788,6 +5886,7 @@ import {
     stopRecordAudio();
     if (isRecordPickerOpen()) closeRecordPicker();
     if (isEaselPaintOpen()) closeEaselPaint();
+    if (isMixerOpen()) closeMixerUI();
     closePhone();
     closeCharSlots();
     state.room = null;
@@ -6024,6 +6123,7 @@ import {
     syncRoomRecordAudio(state.room.recordPlayers || {});
     if (isRecordPickerOpen()) closeRecordPicker();
     if (isEaselPaintOpen()) closeEaselPaint();
+    if (isMixerOpen()) closeMixerUI();
     if (state.selectedFurnId === id) {
       state.selectedFurnId = null;
       hideFurnActions();
@@ -6332,6 +6432,8 @@ import {
   window.__useCoffee = (id) => socket.emit("useCoffee", { id });
   window.__useStove = (id) => socket.emit("useStove", { id });
   window.__selectRecord = (id, vinyl) => socket.emit("selectRecordPlayer", { id, vinyl });
+  window.__recordPlayers = () => ({ ...(state.room?.recordPlayers || {}) });
+  window.__roomMixes = () => (state.room?.mixes || state.me?.mixes || []).slice();
   window.__stopRecord = (id) => socket.emit("selectRecordPlayer", { id, stop: true });
   window.__openRecordPicker = (id) => openRecordPicker(id, state.room?.recordPlayers?.[id]);
   window.__openEaselPaint = (id) => {
@@ -6339,6 +6441,13 @@ import {
     openEaselPaint(id, piece?.canvas || {});
   };
   window.__closeEaselPaint = () => closeEaselPaint();
+  window.__openMixer = (id) => {
+    const piece = (state.room?.furniture || []).find((f) => f.id === id);
+    openMixerUI(id, piece?.pattern || {});
+  };
+  window.__closeMixer = () => closeMixerUI();
+  window.__mixerLoadDemo = (kind) => mixerLoadDemo(kind);
+  window.__isMixerOpen = () => isMixerOpen();
   window.__easelPaintDemo = easelPaintDemo;
   window.__isEaselPaintOpen = isEaselPaintOpen;
   window.__closeRecordPicker = () => closeRecordPicker();
@@ -6371,6 +6480,7 @@ import {
     stopRecordAudio();
     if (isRecordPickerOpen()) closeRecordPicker();
     if (isEaselPaintOpen()) closeEaselPaint();
+    if (isMixerOpen()) closeMixerUI();
     closePhone();
     state.me = null;
     state.room = null;

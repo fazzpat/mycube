@@ -3,10 +3,10 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "MyCube — 3D hangout cubes with disappearing speech bubbles",
+  "description": "MyCube \u2014 3D hangout cubes with disappearing speech bubbles",
   "scripts": {
     "start": "node server.js",
-    "test": "node test/furniture-layout.mjs && node test/held-items.mjs && node test/eat-bites-hand.mjs && node test/bed.mjs && node test/bed-pixels.mjs && node test/seats.mjs && node test/sit-feet.mjs && node test/stove.mjs && node test/billiards.mjs && node test/record-player.mjs && node test/record-player-audio-e2e.mjs && node test/art-pieces.mjs && node test/easel.mjs && node test/outfits.mjs && node test/e2e.mjs && node test/chess-e2e.mjs && node test/art-e2e.mjs && node test/easel-e2e.mjs",
+    "test": "node test/furniture-layout.mjs && node test/held-items.mjs && node test/eat-bites-hand.mjs && node test/bed.mjs && node test/bed-pixels.mjs && node test/seats.mjs && node test/sit-feet.mjs && node test/stove.mjs && node test/billiards.mjs && node test/record-player.mjs && node test/record-player-audio-e2e.mjs && node test/art-pieces.mjs && node test/easel.mjs && node test/music-mixer.mjs && node test/outfits.mjs && node test/e2e.mjs && node test/chess-e2e.mjs && node test/art-e2e.mjs && node test/easel-e2e.mjs && node test/music-mixer-e2e.mjs",
     "test:chess": "node test/chess-e2e.mjs",
     "test:art": "node test/art-pieces.mjs && node test/art-e2e.mjs"
   },

@@ -41,6 +41,10 @@ import {
   EASEL_TYPE, EASEL_CATALOG, EASEL_MAX_ARTWORKS, isEaselArt, easelArtType,
   validateArtwork, publicArtwork, sanitizeTitle,
 } from "./public/js/easel.js";
+import {
+  MIXER_TYPE, MIXER_CATALOG, MIXER_MAX_MIXES, isMixVinyl, mixVinylType,
+  validateMix, publicMix, sanitizeTitle as sanitizeMixTitle,
+} from "./public/js/musicMixer.js";
 import { reservedWallSlots as layoutReservedWallSlots } from "./public/js/wallLayout.js";
 import { chessSeatTiles, chessSeatPose, migrateChessTable } from "./public/js/chessTable.js";
 import { liePose, migrateBed, bedTiles } from "./public/js/bed.js";
@@ -96,6 +100,7 @@ const FURNITURE_CATALOG = {
   cuerack: { name: "Cue Rack", price: 20, w: 1, h: 1, blocks: false, surface: "wall" },
   recordplayer: { name: "Record table", price: 28, w: 1, h: 1, blocks: true },
   easel: { ...EASEL_CATALOG },
+  musicmixer: { ...MIXER_CATALOG },
   art_mona: { name: "Mona Cuba", price: 22, w: 1, h: 1, blocks: false, surface: "wall" },
   art_starry: { name: "Starry Cube Night", price: 28, w: 1, h: 1, blocks: false, surface: "wall" },
   art_pop: { name: "Pop-art cubes", price: 18, w: 1, h: 1, blocks: false, surface: "wall" },
@@ -241,6 +246,7 @@ function ensureCollection(user) {
   if (!Array.isArray(c.outerwear)) c.outerwear = [];
   user.gear = normalizeGear(user.gear || emptyGear());
   if (!Array.isArray(user.artworks)) user.artworks = [];
+  if (!Array.isArray(user.mixes)) user.mixes = [];
   return user;
 }
 function ensureChestStores(user) {
@@ -687,6 +693,11 @@ function snapshotPerson(u) {
   };
 }
 
+function ownerMixes(room) {
+  const owner = users.get(String(room?.owner || "").toLowerCase());
+  return (owner?.mixes || []).map((m) => publicMix(m)).filter(Boolean);
+}
+
 function roomState(room) {
   ensureRoomExtras(room);
   return {
@@ -707,6 +718,7 @@ function roomState(room) {
     lightsOn: room.lightsOn !== false,
     tvs: room.tvs || {},
     recordPlayers: room.recordPlayers || {},
+    mixes: ownerMixes(room),
     chess: publicChessMap(room),
     uses: room.uses || {},
     wallArt: room.wallArt || [],
@@ -776,6 +788,7 @@ function publicUser(user) {
     coins: user.coins,
     inventory: user.inventory.slice(),
     artworks: (user.artworks || []).map((a) => publicArtwork(a)).filter(Boolean),
+    mixes: (user.mixes || []).map((m) => publicMix(m)).filter(Boolean),
     friends: friendList(user),
     roomId: user.roomId,
     invites: invitesFor(user.username),
@@ -1451,6 +1464,7 @@ io.on("connection", (socket) => {
       coins: START_COINS,
       inventory: [],
       artworks: [],
+      mixes: [],
       friends: [],
       socketId: null,
       roomId: null,
@@ -2426,8 +2440,28 @@ io.on("connection", (socket) => {
       return;
     }
     const allowed = ["neon-drift", "midnight-ramen", "rainy-rooftop", "cube-city-nights"];
-    if (!allowed.includes(String(vinyl))) return;
-    const cur = { on: true, vinyl: String(vinyl), startedAt: now, changedAt: now };
+    const vinylId = String(vinyl);
+    if (allowed.includes(vinylId)) {
+      const cur = { on: true, vinyl: vinylId, startedAt: now, changedAt: now };
+      room.recordPlayers[id] = cur;
+      io.to(room.id).emit("recordPlayerUpdated", { id, player: cur, serverTime: now });
+      return;
+    }
+    if (!isMixVinyl(vinylId)) return;
+    const owner = users.get(String(room.owner || "").toLowerCase());
+    const mix = (owner?.mixes || []).find((m) => m.type === vinylId);
+    if (!mix) return;
+    const pub = publicMix(mix);
+    if (!pub) return;
+    const cur = {
+      on: true,
+      vinyl: vinylId,
+      startedAt: now,
+      changedAt: now,
+      title: pub.title,
+      label: pub.color,
+      pattern: pub.data,
+    };
     room.recordPlayers[id] = cur;
     io.to(room.id).emit("recordPlayerUpdated", { id, player: cur, serverTime: now });
   });
@@ -2962,6 +2996,42 @@ io.on("connection", (socket) => {
     }
     emitProfile(user);
     socket.emit("easelArtSaved", { id: art.id, type: art.type, title: art.title, easelId: id || null });
+  });
+
+  socket.on("saveMixerMix", ({ id, title, data } = {}) => {
+    const user = getUser(socket);
+    const room = requireOwner(socket, user);
+    if (!room) return;
+    ensureCollection(user);
+    if (!Array.isArray(user.mixes)) user.mixes = [];
+    const furn = id ? room.furniture.find((f) => f.id === id && f.type === MIXER_TYPE) : null;
+    if (id && !furn) {
+      socket.emit("errorMsg", { message: "That music mixer is not in this cube." });
+      return;
+    }
+    const check = validateMix({ ...(data || {}), title }, { count: user.mixes.length });
+    if (!check.ok) {
+      socket.emit("errorMsg", { message: check.error });
+      return;
+    }
+    const mixId = "m" + (furnSeq++);
+    const type = mixVinylType(mixId);
+    const mix = {
+      id: mixId,
+      type,
+      title: sanitizeMixTitle(check.mix.title || title),
+      color: check.mix.color,
+      data: { ...check.mix.data, title: sanitizeMixTitle(check.mix.title || title), color: check.mix.color },
+    };
+    user.mixes.push(mix);
+    user.inventory.push(type);
+    if (furn) {
+      furn.pattern = { type: mix.type, title: mix.title, color: mix.color, data: mix.data };
+      io.to(room.id).emit("furnitureUpdated", furn);
+    }
+    emitProfile(user);
+    io.to(room.id).emit("mixesUpdated", ownerMixes(room));
+    socket.emit("mixerMixSaved", { id: mix.id, type: mix.type, title: mix.title, color: mix.color, mixerId: id || null });
   });
 
   socket.on("placeWallArt", ({ type, wall, slot } = {}) => {

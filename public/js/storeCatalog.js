@@ -184,6 +184,7 @@ export const NEW_FURNITURE = [
   { type: "pinball", name: "Pinball cabinet", price: 38 },
   { type: "recordplayer", name: "Record table", price: 28 },
   { type: "easel", name: "Easel", price: 26 },
+  { type: "musicmixer", name: "Music Mixer", price: 28 },
   { type: "cubechest", name: "Cube Chest", price: 36 },
 ];
 
